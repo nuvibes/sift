@@ -1,20 +1,9 @@
 <script lang="ts">
-	/*
-	 * What the badges on a thumbnail mean, written out once, where somebody can go and look.
-	 *
-	 * A glyph in the corner of a tile is a good way to carry a fact and a bad way to teach one. The
-	 * tooltip says what a mark means when you hover it, which only helps if you already suspected it
-	 * meant something, so the whole set is listed here, beside the switch that turns them on.
-	 *
-	 * The rows are BUILT from `markFor`, the same function the tiles and the walls call. That is the
-	 * point of it being here: a legend written out by hand is a legend that describes what the app
-	 * once drew, and nothing fails when it stops being true.
-	 */
+	/* What the badges on a thumbnail mean, written out once, where somebody can go and look. */
 	import Icon from '$lib/components/Icon.svelte';
 	import { HIDDEN_WORDS, markFor, type Mark } from '$lib/library/sharing-marks';
 
-	/* The legend is about the marks on a FILE, which is the only place both forms appear. A folder,
-	   a tag or a person is itself the broad decision, so its own mark is always the solid one. */
+	/* The legend is about the marks on a FILE, which is the only place both forms appear. */
 	const ON_A_FILE = { file: true };
 
 	/** Every combination a mark can be in, in the order they are worth reading. */
@@ -97,23 +86,13 @@
 		gap: var(--space-3);
 	}
 
-	/*
-	 * The mark exactly as a tile draws it, dark ground and all, because that is the thing being
-	 * described: a legend showing a bare glyph on the page background is describing something the
-	 * reader has never seen.
-	 *
-	 * Not `.chip`, which it is not: a chip is a label in a shape that you press or remove, and this
-	 * is a badge with a scrim behind it. The name matters because `.chip` would make this look like
-	 * a hand-rolled copy of the shared chip to anything counting them, when what it actually
-	 * mirrors is the tile's badge ground, and the two agree through the token, which is where
-	 * that agreement belongs.
-	 */
-	/* The geometry is the tile's own, through `--tile-chip-*`: this is a picture OF the mark somebody
-	   sees on a thumbnail, so a legend drawn a couple of pixels off is a legend that teaches the
-	   wrong glyph. Square, for the same reason the mark itself is: its width is its height, which
-	   is what puts the glyph dead centre. */
-	/* The shape and the square are `.tile-badge` / `.tile-badge-square` in `app.css`. Only the ink
-	   is this legend's, because a sharing glyph is coloured by what it says. */
+	/* The mark exactly as a tile draws it, dark ground and all, because that is the thing being
+	 * described: a legend showing a bare glyph on the page background is describing something
+	 * the reader has never seen. */
+	/* The geometry is the tile's own, through `--tile-chip-*`: this is a picture OF the mark
+	   somebody sees on a thumbnail, so a legend drawn a couple of pixels off is a legend that
+	   teaches the wrong glyph. */
+	/* The shape and the square are `.tile-badge` / `.tile-badge-square` in `app.css`. */
 	.on-a-tile {
 		color: var(--sift-ok);
 	}

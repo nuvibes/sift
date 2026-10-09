@@ -1,12 +1,5 @@
-/* An address shown a little at a time.
- *
- * Two callers (a tunnel's exit server and the address Sift shares its library on), and they
- * hand it two different SHAPES of address. What is pinned here is the split: which part stays on
- * the screen, which part is covered, and that the covered part is really the machine rather than
- * the port. Reaching for the colon first is right for a bare IPv6 address and wrong for every
- * IPv4 address with a port on it, and the wrong way round leaves the whole machine address on
- * screen and covers a number that identifies nothing.
- */
+/* An address shown a little at a time. Two callers (a tunnel's exit server and the address Sift
+ * shares its library on), and they hand it two different SHAPES of address. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -98,8 +91,7 @@ describe('the control', () => {
 
 	it('has the whole address in it either way, which is what makes this a screen measure', () => {
 		// Said out loud because it is the limit of what this is for: the address is in the page
-		// whether it is covered or not. It stops somebody reading it over a shoulder; it is not a
-		// secret and must never be described as one.
+		// whether it is covered or not.
 		const { control } = render('192.168.1.44');
 
 		expect(control?.textContent).toBe('192.168.1.44');

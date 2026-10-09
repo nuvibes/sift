@@ -1,11 +1,6 @@
 <!--
-	Reading the Site's own mark off the picture.
-
-	The pane says three things and nothing else: whether it can run, what it has read, and the two
-	controls. There is no review list here and no card anywhere in the app: what this pass is
-	certain of it files, and what it is not certain of it writes on the file where somebody looking
-	at that file will see it. A screen listing doubtful readings would be a queue of work somebody
-	has to come back to.
+	Reading the Site's own mark off the picture. The pane says three things and nothing else: whether
+	it can run, what it has read, and the two controls.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -41,10 +36,7 @@
 	import { filedUnder } from './drilldown.svelte';
 	import { COPY, SEARCHABLE, WATERMARK_RESULTS, watermarksStatusLine } from './Watermarks.search';
 
-	/* Which settings belong on the More settings page, and the order they read in. Written out
-	   rather than matched on the `watermarks.` prefix: the prefix is a detail of the key and would
-	   drag in anything later named that way. Reading watermarks has no dial for how thorough it is,
-	   and none is invented here. */
+	/* Which settings belong on the More settings page, and the order they read in. */
 	const FIELDS = [DEVICE_KEY];
 
 	let entries = $state<Map<string, SettingEntry>>(new Map());
@@ -109,10 +101,7 @@
 		}
 	}
 
-	/* Reading the library is not a button of this pane's. It is the watermark task's Run now, on
-	   Tasks where every press lives, and it runs the Build for this one product,
-	   which reads each file once for everything it lacks rather than a second time for this
-	   feature alone. */
+	/* Reading the library is not a button of this pane's. */
 
 	async function forget() {
 		try {
@@ -124,8 +113,7 @@
 		}
 	}
 
-	/* Where reading stands, in one line under the switch. The words are shared with the switch on
-	   Importing, so the two doors say the same thing. */
+	/* Where reading stands, in one line under the switch. */
 	const line = $derived(
 		watermarksStatusLine(
 			status,
@@ -217,9 +205,7 @@
 		{/snippet}
 		{#snippet setup()}
 			{#if needsModels || (enabled && modelFetch.running)}
-				<!-- Three states, and they must be three. A bar with no percentage says only that
-				     something is happening, and a button that goes back to looking exactly as it did
-				     before the press says nothing about whether the press worked. -->
+				<!-- Three states, and they must be three. -->
 				<ActionRow
 					id="watermarks.download"
 					label={COPY.models.heading}
@@ -273,8 +259,8 @@
 />
 
 <style>
-	/* The percentage beside the bar. Tabular figures so the number does not jitter sideways as it
-	   climbs, which is the whole reason a progress reading is hard to read. */
+	/* The percentage beside the bar. Tabular figures so the number does not jitter sideways as
+	   it climbs, which is the whole reason a progress reading is hard to read. */
 	.status {
 		color: var(--sift-ink-2);
 		font: var(--text-data);

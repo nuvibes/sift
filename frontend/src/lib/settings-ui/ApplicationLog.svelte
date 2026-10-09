@@ -1,47 +1,6 @@
 <script lang="ts">
 	/* LIVE: nothing moves it (log lines are written many times a second and announced by nothing; the pane reads them again whenever the narrowing changes) */
-	/*
-	 * The end of the log, on the Logs tab, under the settings that decide what goes into it.
-	 *
-	 * Those settings take effect on a running Sift. This is the way to READ what they produce
-	 * without going to the machine and opening the file, which is a poor answer for an
-	 * application somebody runs on a box in a cupboard.
-	 *
-	 * Read on arrival: the Logs tab is opened by somebody who came for the log.
-	 *
-	 * ## ONE LIST OF BOTH LOGS
-	 *
-	 * `/logs` answers with the SERVER's file: the one beside the library. In client mode that is a
-	 * different computer, and what happens on this one (dragging a file out, an update, moving the
-	 * library, a desktop freezing on a drag) is in the shell's own log. Somebody chasing a fault
-	 * does not know which of the two holds it, so both are one list in the order the lines were
-	 * written (`merged-log.ts`), each line marked with its log. They are the same SHAPE by design
-	 * (`desktop/src/log.ts` writes the format the server writes), so one parser and one renderer
-	 * draw both. A browser has no shell: the library's lines are the whole list there.
-	 *
-	 * ## Narrowed, and narrowed WHERE THE FILE IS
-	 *
-	 * One level ("Error" keeps errors and anything worse) and one box of words, over both. The
-	 * library's log is narrowed by the server (`/logs?level=&search=`), so two hundred errors come
-	 * back rather than the errors among the last two hundred lines, which on a busy log is usually
-	 * none. The app's own log comes through the desktop bridge, which has no narrowing of its own,
-	 * so it is narrowed here from its newest 500 lines, and the screen says so. `keeps` below is
-	 * the server's `_keeps` said again for that one source; the two are the same rule and a change
-	 * to one is a change to both.
-	 *
-	 * ## From another computer
-	 *
-	 * A window that is not on the computer running Sift (the app in client mode, or a browser)
-	 * cannot read any app's log through its own bridge. Where the Sift app on the computer running
-	 * Sift answers through the server (`server-shell.ts`), the app lines are THAT app's, and their
-	 * mark and the sentence name it as such.
-	 *
-	 * ## The copy that leaves the machine
-	 *
-	 * `Download log` shares every log whole and redacted, whatever the screen is narrowed to: the
-	 * desktop app makes one archive of its own and its library's (`sift.logbundle`), a browser gets
-	 * the library's from the server (`/logs/archive`), and the toast says where it went.
-	 */
+	/* The end of the log, on the Logs tab, under the settings that decide what goes into it. */
 	import { onMount } from 'svelte';
 	import {
 		Button,
@@ -80,15 +39,14 @@
 	/** What the app's own log is narrowed FROM, since the bridge cannot narrow. The route's ceiling. */
 	const APP_LINES = 500;
 
-	/* Every level, loudest first and named by the level, each keeping itself and everything worse.
-	   Debug is the quietest, which is also where a line nobody can rate is kept. */
+	/* Every level, loudest first and named by the level, each keeping itself and everything
+	   worse. */
 	type Level = LogLevel;
 	const LEVEL_CHOICES = [...LOG_LEVELS]
 		.reverse()
 		.map((value) => ({ value, label: COPY.levels[value] }));
 
-	/* How long typing waits before the log is asked again. Long enough that a word is one read and
-	   not one per letter; short enough that it reads as answering. */
+	/* How long typing waits before the log is asked again. */
 	const TYPING_MS = 300;
 
 	/* How long the tick stays on the copy button. */
@@ -110,9 +68,7 @@
 	let copyRefused = $state(false);
 	let downloading = $state(false);
 
-	/* Whether the app's own log can be asked for at all. Feature-detected on the CHANNEL rather than
-	   on "is this the desktop app": an older shell is truthfully the desktop app and has never heard
-	   of it. */
+	/* Whether the app's own log can be asked for at all. */
 	const readsHere = bridge.canReadShellLog();
 	/* The computer running Sift, where this window cannot read an app's log itself. */
 	let desk = $state<ServerDesktop | null>(null);
@@ -123,8 +79,7 @@
 
 	const narrowed = $derived(level !== 'debug' || words.trim() !== '');
 	const lines = $derived(shown?.lines ?? []);
-	/* The log whose older lines the one span of time left out, if either. Said, because a line that
-	   is simply not there reads as a line never written. */
+	/* The log whose older lines the one span of time left out, if either. */
 	const leftOut = $derived.by((): LogSource | null => {
 		if (!shown?.app) return null;
 		const kept = (from: LogSource) => lines.filter((one) => one.from === from).length;
@@ -133,15 +88,7 @@
 		return null;
 	});
 
-	/**
-	 * One raw record, in the shape the server's route hands over.
-	 *
-	 * A line that will not come apart keeps its raw text and nothing else: the same answer the
-	 * server's parser gives, and for the same reason: a log holds whatever was written to it, and a
-	 * screen that refused to draw because one line was odd would be useless exactly when wanted.
-	 * The three fields are always PRESENT and null, never absent, because that is what the wire
-	 * type says.
-	 */
+	/** One raw record, in the shape the server's route hands over. */
 	const UNPARSED = (raw: string): LogRecord => ({ raw, at: null, level: null, event: null });
 
 	function parsed(raw: string): LogRecord {
@@ -236,8 +183,8 @@
 			.finally(() => void show());
 	});
 
-	/* Asked again when the narrowing changes: immediately for the level, after a pause for the words.
-	   Read here rather than in each control's handler so the two cannot come to ask differently. */
+	/* Asked again when the narrowing changes: immediately for the level, after a pause for the
+	   words. */
 	let typing: ReturnType<typeof setTimeout> | undefined;
 	function narrowAgain(now = false) {
 		clearTimeout(typing);
@@ -245,8 +192,7 @@
 		else typing = setTimeout(() => void show(), TYPING_MS);
 	}
 
-	/* The lines on screen, as the files hold them, for pasting into a bug report. Raw rather than
-	   drawn: the record exactly as written, every field in its own order. */
+	/* The lines on screen, as the files hold them, for pasting into a bug report. */
 	async function copyShown() {
 		copyRefused = false;
 		const text = lines.map(({ line }) => line.raw).join('\n');
@@ -295,14 +241,7 @@
 		return moment === null ? (line.at ?? '') : logTime(moment);
 	}
 
-	/*
-	 * THE DAY, as a heading wherever it changes: "Today", "Yesterday", "Sep 12, 2026".
-	 *
-	 * A screenful is not one day: the read is the newest lines of files kept for days, so a quiet
-	 * library's screenful reaches back past midnight (or past a week), and "8:55 PM" beside
-	 * "8:55 PM" would read as one evening. `dayStarts` is the one place a run of records is cut
-	 * into days.
-	 */
+	/* THE DAY, as a heading wherever it changes: "Today", "Yesterday", "Sep 12, 2026". */
 	const days = $derived(dayStarts(lines.map(({ line }) => momentOf(line))));
 
 	function size(bytes: number): string {
@@ -407,8 +346,7 @@
 			<Empty scope="block" icon="checklist">{COPY.empty}</Empty>
 		{/if}
 	{:else if shown}
-		<!-- Bounded and scrolling, because a screenful of log is longer than a settings pane. Oldest
-		     at the top, which is the order it happened in and the order it reads in. -->
+		<!-- Bounded and scrolling, because a screenful of log is longer than a settings pane. -->
 		<div class="lines">
 			<Scroller>
 				{#each lines as { line, from }, index (index)}
@@ -429,8 +367,8 @@
 		margin-block-end: var(--space-4);
 	}
 
-	/* What the list holds, in a sentence: which machine's file each mark stands for, which is the
-	   thing that actually confuses people. */
+	/* What the list holds, in a sentence: which machine's file each mark stands for, which is
+	   the thing that actually confuses people. */
 	.covers {
 		margin: 0;
 		color: var(--sift-ink-3);
@@ -477,8 +415,8 @@
 		margin: 0;
 	}
 
-	/* A stated height, because the pane it sits in is itself a scrolling column: a region that grew
-	   with its contents would push everything under it off the bottom. */
+	/* A stated height, because the pane it sits in is itself a scrolling column: a region that
+	   grew with its contents would push everything under it off the bottom. */
 	.lines {
 		/* The band the pinned day takes at the top of the list. */
 		--day-band: 2rem;
@@ -488,17 +426,15 @@
 		background: var(--sift-surface-2);
 	}
 
-	/* A line comes to rest whole, under the pinned day rather than half behind it: the list snaps
-	   each line's top to the edge of the band. */
+	/* A line comes to rest whole, under the pinned day rather than half behind it: the list
+	   snaps each line's top to the edge of the band. */
 	.lines :global([data-scroll-area-viewport]) {
 		scroll-snap-type: y proximity;
 		scroll-padding-block-start: var(--day-band);
 	}
 
-	/* The day the lines under it were written on: the shared group heading, held at the top while
-	   its lines scroll past so the time on every line in view can be read with its day. The box is
-	   what sticks and what is painted, a band of its own height; the heading's look is the
-	   heading's. */
+	/* The day the lines under it were written on: the shared group heading, held at the top
+	   while its lines scroll past so the time on every line in view can be read with its day. */
 	.day {
 		position: sticky;
 		z-index: 1;

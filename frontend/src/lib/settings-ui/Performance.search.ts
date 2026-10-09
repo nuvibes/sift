@@ -1,23 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Performance pane's words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Performance.svelte` draws every word it adds from `COPY`, and the
- * search entry is built from the same object. The numbers it tunes are registered settings (the
- * registry is their copy, and it feeds the search by itself); the measurement and the readings of
- * whether Sift is keeping up are not preferences, so they are declared here. The graphics card
- * and the scan history carry their own modules.
- *
- * "This device" is the machine Sift runs on, and CPU / GPU are the only words for the two kinds
- * of processor: one word each, rather than "this machine", "this computer", "server",
- * "processor" and "graphics card" for the same two things.
- */
+/* The Performance pane's words, and what somebody can type to find them. */
 import type { Searchable } from './search';
 import { sayDuration } from '$lib/shell/duration';
 import { counted } from '$lib/entity/entity-counts';
 
 /* The two hand-drawn blocks' addresses, so a search result and a link can ring them the way a
-   setting's row is rung. The retired `performance.tune_prompt` ("Offer to measure this device")
-   is answered by the measurement block, so a link or a bookmark to that key belongs here. */
+   setting's row is rung. */
 export const MEASURE_ANCHOR = 'performance.measure';
 export const KEEPING_UP_ANCHOR = 'performance.keeping_up';
 /* The benchmark's own row (its Run press), where a toast about the run Sift started by itself
@@ -96,8 +84,8 @@ export const COPY = {
 		notSet: (n: number) => `Sift didn't set ${n === 1 ? 'this number' : 'these numbers'}.`,
 		wholeToCome: (byItself: boolean) =>
 			`This is a first measure, taken so Sift could start importing your first folder's files. ${byItself ? "The full benchmark runs by itself once Sift has nothing else to do and nobody's using this device. Press Run it again to run it now." : "The full benchmark hasn't run yet. Press Run it again to run it."}`,
-		/* The two presses on the toasts about that run: the row while it runs or after a failure,
-		   the row and its results once it set something. */
+		/* The two presses on the toasts about that run: the row while it runs or after a
+		   failure, the row and its results once it set something. */
 		open: 'Open',
 		review: 'Review',
 		failed: (why: string) =>
@@ -137,16 +125,7 @@ export const COPY = {
 		seconds: (s: string) => `${s} seconds`
 	},
 	/* ONE BLOCK, ONE QUESTION. A person asking "is Sift slow" should not have to read four
-	   tables to find out. The sentence answers it; the instruments stay behind Details for
-	   whoever wants the why.
-
-	   Every figure below is read from `/health` and means exactly this (see
-	   `kernel/diagnostics`): a PAUSE is how late the app's once-a-second heartbeat woke (the
-	   whole app was held); a WAIT is how long a do-nothing check, handed in once a second,
-	   queued for a free worker or a free database connection; BEHIND is how long the app took to
-	   clear the work already waiting for it. "Times" counts the checks that measured a quarter
-	   of a second or more (the point at which somebody watching a video notices), since Sift
-	   started. */
+	   tables to find out. */
 	keepingUp: {
 		name: 'Is Sift keeping up?',
 		searchHelp:

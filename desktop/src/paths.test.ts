@@ -1,10 +1,4 @@
-/* Where the application decides to keep somebody's library.
- *
- * These are one-line functions and they are tested anyway, because the line they return is a path
- * on somebody's disk. `%APPDATA%` instead of `%LOCALAPPDATA%` puts a media database and its
- * transcode cache into a roaming profile, which some backup tools and some domain policies then
- * copy between machines: a fault nobody would find by looking at the code.
- */
+/* Where the application decides to keep somebody's library. */
 
 import * as path from 'node:path';
 
@@ -70,8 +64,7 @@ describe('bundlePaths', () => {
 	/* Packaged, the two live beside the executable rather than two folders up from __dirname,
 	 * which inside an asar archive is not a real folder at all. */
 	it('reads from the installed resources when it is packaged', () => {
-		// Only Electron itself sets this, so a test has to. Restored below: it is a property of the
-		// whole process, and a leaked value would make the previous test's assertion meaningless.
+		// Only Electron itself sets this, so a test has to.
 		const real = process.resourcesPath;
 		Object.defineProperty(process, 'resourcesPath', {
 			value: path.join('C:', 'Program Files', 'Sift', 'resources'),
@@ -81,11 +74,7 @@ describe('bundlePaths', () => {
 			app.isPackaged = true;
 			const { python, vendorBin } = bundlePaths();
 			const resources = path.join('C:', 'Program Files', 'Sift', 'resources');
-			/* `runtime/python.exe`, NOT `.venv/Scripts/python.exe`. A packaged Sift carries a real
-			   interpreter; a virtual environment's python reads its standard library from wherever
-			   its pyvenv.cfg points, which on somebody else's computer is nowhere. Shipping the
-			   second kind would leave the backend unstartable on every machine but the one that
-			   built it. */
+			/* `runtime/python.exe`, NOT `.venv/Scripts/python.exe`. */
 			expect(python).toBe(path.join(resources, 'runtime', 'python.exe'));
 			expect(python).not.toContain('.venv');
 			expect(vendorBin).toBe(path.join(resources, 'vendor', 'bin'));
@@ -96,11 +85,7 @@ describe('bundlePaths', () => {
 });
 
 describe('the window icon', () => {
-	/* Only in development. Packaged, the icon is compiled into `Sift.exe` by the installer build
-	 * and Windows reads it from there; naming a file as well would be a second copy of the
-	 * picture that could disagree with the executable's, and would hide a build whose executable
-	 * carries no icon. From a checkout there is no executable to carry one, so the file is named.
-	 */
+	/* Only in development. */
 	it('is left to the executable once packaged', () => {
 		app.isPackaged = true;
 		expect(appIconFile()).toBeUndefined();
@@ -139,8 +124,7 @@ describe('the tray icon', () => {
 
 describe('the drag addon', () => {
 	/* Two places for one file, because it is built in the source tree and copied flat into the
-	 * installer's resources. Naming both here rather than at the call site is the difference
-	 * between one fact and two that can disagree. */
+	 * installer's resources. */
 	it('comes out of the installer s own resources once packaged', () => {
 		/* Electron sets `resourcesPath`; node does not, and `path.join` of an undefined throws,
 		   so the packaged half cannot be reached at all without standing it up. */

@@ -1,19 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The face models Sift can use, where to get them, and what their licences say.
 
-**No model file ships with Sift**, in the source or in the image, and that is a licence
-requirement rather than a size decision: the most accurate face models available are published
-for non-commercial research only, and putting them inside a public image would be redistributing
-them under terms nobody granted. So Sift describes them, and the person running it obtains their
-own copy when they switch the feature on. `docs/model-licences.md` records the terms of each, read
-from the publisher's own files.
-
-**What is left here is the part that is about faces**: which models exist, which of them belong
-together, and where this feature keeps them. Obtaining a file, resuming a download that dropped,
-proving what arrived is what was described, and taking one file out of an archive are not about
-faces at all: another feature needs the same machinery and may not import this one, so it is
-the kernel's and this asks the kernel for it. The functions below keep their names for every
-caller and test.
+No model file ships with Sift: the most accurate are for non-commercial research only, so the
+person running it fetches their own (`docs/model-licences.md`). Fetching, resuming and verifying
+are the kernel's; this names the models and where they are kept.
 """
 
 from __future__ import annotations
@@ -48,14 +38,11 @@ __all__ = [
     "verify",
 ]
 
-#: The corner of the data directory this feature keeps its models in. Naming it here, once, is
-#: what makes "switch faces off and delete its models" a thing that cannot reach anything else.
+#: This feature's corner of the data directory, so deleting its models reaches nothing else.
 NAMESPACE = "faces"
 
 
-#: Everything Sift can fetch for a face pass. Adding a row here means opening that file's actual
-#: licence, reading it, and recording it in `docs/model-licences.md`: vendor documentation is not
-#: a licence.
+#: Everything Sift can fetch for a face pass; each row's licence is read and recorded first.
 CATALOG: dict[str, Weight] = {
     "accurate.detector": Weight(
         id="accurate.detector",
@@ -66,8 +53,7 @@ CATALOG: dict[str, Weight] = {
         digest="395b30439ed1773f1fde53b7ffe1e9e5d13119811c89be0cfe3241305ea03604",
         size_bytes=2524817,
         archive_member="det_500m.onnx",
-        # The whole of buffalo_s.zip comes down for the one file in it; the release's
-        # Content-Length.
+        # The whole buffalo_s.zip comes down for its one file: the release's Content-Length.
         archive_bytes=127607557,
         licence="Non-commercial research only",
     ),
@@ -117,18 +103,13 @@ CATALOG: dict[str, Weight] = {
 }
 
 
-#: An older spelling of the recognizer's id. A rename of it moves every column but neither the
-#: file nor the row that named it, so an install carrying it holds a second 174 MB copy nothing
-#: reads.
+#: An older spelling of the recognizer's id, whose file would linger as a second copy.
 MISSPELT_RECOGNIZER = "accurate.recogniser"
 
 
 def retire_misspelt(settings: Settings) -> bool:
     """Remove the recognizer file left under its old spelling, once the current one verifies.
-
-    Only then: the old file is the same bytes, and until the new name's copy is proved intact it
-    is the one thing that could put the library back. Returns whether a file went.
-    """
+    Returns whether a file went."""
     current = CATALOG["accurate.recognizer"]
     stale = store(settings).directory() / f"{MISSPELT_RECOGNIZER}{current.suffix}"
     if not stale.is_file():
@@ -137,29 +118,17 @@ def retire_misspelt(settings: Settings) -> bool:
         verify(settings, current)
     except WeightError:
         return False
-    # Sift's own model file, in Sift's own data directory, replaced by the same bytes under the
-    # spelling the code uses; nothing anybody made is lost.
     stale.unlink()  # nosemgrep: sift-no-file-removal-outside-delete-trash
     return True
 
 
 def download_bytes(wanted: Iterable[Weight]) -> int:
-    """How much comes down to fetch these: the archive where there is one, else the file.
-
-    The number the consent switch states and the number a progress bar is drawn against. Not
-    `size_bytes`: for the default family that is 177 MB of models inside 416 MB of archives, so a
-    bar drawn against it would reach 100% with 165 MB still to come and the switch would understate
-    the download by more than half.
-    """
+    """How much comes down to fetch these: the archive where there is one, else the file."""
     return sum(weight.archive_bytes or weight.size_bytes for weight in wanted)
 
 
 def pairing(family: str) -> tuple[Weight, Weight]:
-    """The detector and recognizer of one family, in that order.
-
-    They have to come from the same one: their idea of where a face's features sit has to agree,
-    and mixing them measurably degrades matching even though nothing errors.
-    """
+    """The detector and recognizer of one family, in that order: mixed, matching degrades."""
     try:
         return CATALOG[f"{family}.detector"], CATALOG[f"{family}.recognizer"]
     except KeyError:
@@ -172,8 +141,7 @@ def store(settings: Settings) -> WeightStore:
 
 
 def directory(settings: Settings) -> Path:
-    """Where face model files live: this feature's corner of the device's model store, which a
-    cache clean never touches (`WeightStore.directory`)."""
+    """This feature's corner of the device's model store (`WeightStore.directory`)."""
     return store(settings).directory()
 
 
@@ -182,8 +150,7 @@ def path_of(settings: Settings, weight: Weight) -> Path:
 
 
 def installed(settings: Settings, weight: Weight) -> bool:
-    """Whether the file is there. Says nothing about whether it is the right one: `verify` does
-    that, and it reads the whole file, so the two questions are kept apart."""
+    """Whether the file is there; `verify` says whether it is the right one."""
     return store(settings).installed(weight)
 
 

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Editing pane's words.
- *
- * ONE COPY MODULE PER PANE. `Editing.svelte` draws every word it adds from `COPY`. Every row on the
- * pane is a registered setting and reaches the search by itself, so nothing is declared below; the
- * two confirmations are on General and are declared there.
- */
+/* The Editing pane's words. ONE COPY MODULE PER PANE. */
 import type { Searchable } from './search';
 
 export const COPY = {

@@ -22,6 +22,7 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
 import { rewrite } from './routes';
+import { tileSizeSlider } from './tile-size';
 
 /** Every screen with a pager on it. Recently viewed has none and is not one of these. */
 const WALLS = ['/browse', '/favorites', '/people', '/sites', '/tags', '/collections'] as const;
@@ -265,7 +266,7 @@ async function wallOfMarkedTiles(page: Page, count = 24) {
 	 * size at which the marks are deliberately not drawn at all), and an assertion on a wall whose
 	 * every mark is `display: none` measures nothing.
 	 */
-	await page.locator('.size input[type="range"]').fill('2');
+	await (await tileSizeSlider(page)).fill('2');
 	await expect(page.locator('.marks').first()).toBeVisible();
 }
 
@@ -353,7 +354,7 @@ test('the marks are the same size at every notch of the slider', async ({ page }
 	 */
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await wallOfMarkedTiles(page);
-	const slider = page.locator('.size input[type="range"]');
+	const slider = await tileSizeSlider(page);
 	await expect(slider).toBeEnabled();
 
 	const heights: number[] = [];

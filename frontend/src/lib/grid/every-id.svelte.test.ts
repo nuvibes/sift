@@ -1,16 +1,5 @@
-/* Reading every row a question matches, which is what "select all" has to mean once a wall is
- * paged.
- *
- * The number at the foot of the page counts the whole query and the grid holds one screenful of
- * it, so a selection that could only ever be what is loaded is a selection of the window size
- * rather than of what somebody asked for.
- *
- * Two properties matter more than the paging arithmetic, and both are here: it must not move the
- * wall, and it must never quietly hand back less than the whole list.
- *
- * The file's name comes from `everyId`; the reader answers with the ROWS: on a wall of moments a
- * row is a mark and the file is a field on it, and the caller cannot look that up for a row the
- * page does not hold.
+/*
+ * Select all reads every ROW the query matches, without moving the wall, and never answers short.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,10 +14,8 @@ vi.mock('$lib/api/client', () => ({
 
 const mocked = vi.mocked(api);
 
-/** The server's own ceiling on one page, which is what the reader has to work under. */
 const PER_PAGE = 200;
 
-/** A library of `total` files, answered a page at a time exactly as the server does. */
 function library(total: number) {
 	return async (_path: string, options?: { query?: Record<string, number> }) => {
 		const offset = Number(options?.query?.offset ?? 0);
@@ -53,7 +40,7 @@ describe('every row of the current question', () => {
 		expect(rows).toHaveLength(450);
 		expect(rows[0].id).toBe('a0');
 		expect(rows[449].id).toBe('a449');
-		// Three requests, not 450. A reader asking per file would be a select-all nobody waits for.
+		// Three requests, not 450.
 		expect(mocked.get).toHaveBeenCalledTimes(3);
 	});
 
@@ -64,17 +51,13 @@ describe('every row of the current question', () => {
 
 		await grid.everyRow({ sort: 'oldest', q: 'beach' });
 
-		// The same query the wall is showing. A reader that dropped the filter would select the
-		// library while the screen showed a search, which is the one mistake here that is
-		// destructive rather than merely wrong.
+		// The wall's own query: dropping the filter would select the library during a search.
 		const [, options] = mocked.get.mock.calls[0] as [string, { query: Record<string, unknown> }];
 		expect(options.query.sort).toBe('oldest');
 		expect(options.query.q).toBe('beach');
 	});
 
 	it('does not move the wall', async () => {
-		/* The screen behind stays where it was. Somebody who picks everything and changes their mind
-		 * must find the page they were looking at, scrolled where they left it. */
 		const grid = new Grid();
 		grid.total = 450;
 		grid.offset = 200;
@@ -88,8 +71,7 @@ describe('every row of the current question', () => {
 	});
 
 	it('asks once more when the list divides exactly by the page size', async () => {
-		// Otherwise the last full block looks like the end of a list that goes on, or the loop stops
-		// one block short of a library whose size happens to be a multiple of 200.
+		// An exact multiple of 200 must not stop a block short.
 		const grid = new Grid();
 		grid.total = 400;
 		mocked.get.mockImplementation(library(400) as never);
@@ -101,9 +83,10 @@ describe('every row of the current question', () => {
 	});
 
 	it('THROWS rather than returning what it managed', async () => {
-		/* The property this whole reader exists for. A short answer is indistinguishable from a small
-		 * library, and the failure that must not happen is somebody pressing "Select all 9,000",
-		 * being handed four thousand, and deleting them believing it was everything. */
+		/*
+		 * A short answer looks like a small library, and somebody would delete it believing it was
+		 * all.
+		 */
 		const grid = new Grid();
 		grid.total = 450;
 		let calls = 0;

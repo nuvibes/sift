@@ -1,7 +1,5 @@
 <script lang="ts" module>
-	/* A kept colour's name is its hex, which is what it was kept as. Where it is worn differently on
-	   this background, the label says how, and why in the accent's own help's words: to stay
-	   legible. */
+	/* A kept colour's name is its hex, which is what it was kept as. */
 	export function keptLabel(colour: string, worn: 'darker' | 'lighter' | 'softer' | null): string {
 		if (worn === 'darker') return `${colour}, worn darker on this background to stay legible`;
 		if (worn === 'lighter') return `${colour}, worn lighter on this background to stay legible`;
@@ -11,41 +9,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * The pickers that decide what Sift looks like: a background, an accent, and the two typefaces.
-	 *
-	 * Three questions, five answers. The accent is six named colours and a seventh worked out from
-	 * one somebody chose; the lettering is six pairings offered first and two menus under them, so
-	 * that any main face can sit over any secondary face.
-	 *
-	 * ## Why it is a component and not part of the Appearance pane
-	 *
-	 * Because two screens ask the question. The settings pane asks it whenever somebody wants
-	 * to change their mind; the first run asks it once, on the way in, because the previews are
-	 * miniatures of Sift's own surfaces and choosing is the first thing anybody learns about the
-	 * app. Copied into the second screen, this would be a hundred and fifty lines of markup and
-	 * style in two places, and the copy that drifts is the one nobody opens, which would be the
-	 * one a stranger sees first.
-	 *
-	 * ## Every picker shows the thing rather than naming it
-	 *
-	 * The background samples are painted in the base they offer, the six accent dots in the accent,
-	 * and the lettering samples set in the pairing, through the same theme attributes the page
-	 * itself takes, scoped to one swatch. There is no second copy of a colour or a font name
-	 * anywhere in here, so a sample cannot drift from what choosing it actually does.
-	 *
-	 * The colours somebody kept are the one thing painted from a value rather than from an
-	 * attribute, and they have to be: a kept colour is not in the stylesheet, so there is no rule
-	 * for a dot to re-resolve from. Each is painted as the fill it will be WORN as on the base in
-	 * force, derived the way the custom accent is, so the dot is still the thing it offers.
-	 *
-	 * ## It writes as you press, and it is the only thing that does
-	 *
-	 * `theme.set` puts the choice on the page, in the browser's mirror and on the server at the
-	 * same time, so the answer to "what does this look like" is the app changing under you. A
-	 * caller that wants the choices RECORDED as answered (the first run does, so it never asks
-	 * again), writes the keys itself; that is a different question from what the value is.
-	 */
+	/* The pickers that decide what Sift looks like: a background, an accent, and the two
+	 * typefaces. */
 	import ChoiceCard from '$lib/components/common/ChoiceCard.svelte';
 	import ChoiceGroup from '$lib/components/common/ChoiceGroup.svelte';
 	import {
@@ -85,20 +50,10 @@
 	} from '$lib/theme/theme.svelte';
 	import { wornDifferently } from '$lib/theme/accent';
 
-	/*
-	 * THE HEADINGS ARE NOT OPTIONAL.
-	 *
-	 * Without them, even where the step above has already said what it is for, the screen is three
-	 * pickers running into each other with nothing anywhere saying which is which: a row of
-	 * coloured pills between two grids of cards, and no word "Accent" on the screen at all. An
-	 * `aria-label` on each group would tell a screen reader and nobody else, which is the worse
-	 * half of the same fault.
-	 */
+	/* THE HEADINGS ARE NOT OPTIONAL. */
 
-	/* What each choice is called on screen. The keys are the stylesheet's, the words are a person's.
-	   The accent names are what the colours read as rather than a spectrum: the six are spaced
-	   evenly around the circle from Sift's blue, which puts a magenta and a cyan in the set and no
-	   orange. */
+	/* What each choice is called on screen. The keys are the stylesheet's, the words are a
+	   person's. */
 	const BASE_LABELS: Record<Base, string> = {
 		obsidian: 'Obsidian',
 		midnight: 'Midnight',
@@ -118,13 +73,11 @@
 		gold: 'Gold',
 		green: 'Green',
 		cyan: 'Cyan',
-		/* "Custom", not "Your own". The six above are named for the colour they are; the seventh
-		   is named for the fact that it is yours to set, and the word a person is looking for
-		   when they want that is the one every other application uses. */
+		/* "Custom", not "Your own". */
 		custom: 'Custom'
 	};
-	/* Every face by its own name, because that is what the two menus offer and what a pairing card
-	   is called after: a pairing is one face of each role, so its name is the two names. */
+	/* Every face by its own name, because that is what the two menus offer and what a pairing
+	   card is called after: a pairing is one face of each role, so its name is the two names. */
 	const MAIN_LABELS: Record<DisplayFace, string> = {
 		archivo: 'Archivo',
 		'space-grotesk': 'Space Grotesk',
@@ -156,15 +109,13 @@
 	const pairingName = (one: Pairing) =>
 		`${MAIN_LABELS[one.display]} and ${SECOND_LABELS[one.body]}`;
 
-	/* Which pairing is showing as chosen, and the empty string when none is: the two menus can be
-	   set to faces no pairing puts together, and marking a card in that state would say the pair
-	   came from it. `ChoiceGroup` reads an empty value as nothing chosen. */
+	/* Which pairing is showing as chosen, and the empty string when none is: the two menus can
+	   be set to faces no pairing puts together, and marking a card in that state would say the
+	   pair came from it. */
 	const chosenPairing = $derived(pairingOf(theme.faceDisplay, theme.faceBody));
 	const pairing = $derived(chosenPairing ? pairingKey(chosenPairing) : '');
 
-	/* Which of each set a fresh install is on, marked on the swatch itself.
-	   Read from the same constant the app starts from rather than written out again here, so the
-	   three markers cannot end up on the wrong swatches after a default is changed. */
+	/* Which of each set a fresh install is on, marked on the swatch itself. */
 	const isDefault = (part: 'base' | 'accent' | 'faceDisplay' | 'faceBody', option: string) =>
 		DEFAULT_CHOICE[part] === option;
 
@@ -182,55 +133,18 @@
 	const chooseAccent = (value: Accent) => void saved(theme.set('accent', value));
 	const chooseColour = (value: string) => void saved(theme.set('accentHex', value));
 
-	/*
-	 * Opening the picker IS choosing the custom accent.
-	 *
-	 * Done on the popover opening rather than in the chip's own `onclick`, and that is not a
-	 * preference: the trigger's handler comes from the popover, spread onto the chip, and a second
-	 * `onclick` written beside it replaces one or the other depending on which is written last. One
-	 * of the two would silently stop working. The popover tells us when it opened, which is the same
-	 * moment and cannot be lost.
-	 *
-	 * It has to be chosen before the picker can preview anything: the five values a colour turns into
-	 * are solved against the background in force, and the store refuses to paint a preview while one
-	 * of the six named accents is on, which is right, and would otherwise be a picker that changed
-	 * nothing at all.
-	 */
+	/* Opening the picker IS choosing the custom accent. */
 	function opened(open: boolean): void {
 		if (open && theme.accent !== CUSTOM_ACCENT) chooseAccent(CUSTOM_ACCENT);
 	}
 
-	/*
-	 * WHAT THE CHOSEN COLOUR BECOMES, READ OFF THE PAGE RATHER THAN WORKED OUT AGAIN.
-	 *
-	 * Calling `accentFamily` here to derive the fill, the text shade and the tint for the row of
-	 * samples would be a second call of the same arithmetic on the same colour, and a second one is
-	 * a copy that can disagree: it would have to read the three grounds off the page for itself,
-	 * in a second place that knows which three they are.
-	 *
-	 * It is unnecessary as well as risky. The store paints the derived family onto the document as
-	 * the very properties these three semantic names read, and it repaints them on every step of a
-	 * drag, so a swatch drawn in `--sift-accent` IS the fill that was derived, a frame after it
-	 * was derived, with nothing in between to get wrong.
-	 */
+	/* WHAT THE CHOSEN COLOUR BECOMES, READ OFF THE PAGE RATHER THAN WORKED OUT AGAIN. */
 	const DERIVED: DerivedSwatch[] = [
 		{ name: 'Fill', colour: 'var(--sift-accent)' },
 		{ name: 'Text', colour: 'var(--sift-accent-text)' },
 		{ name: 'Tint', colour: 'var(--sift-accent-bg)' }
 	];
-	/*
-	 * THE COLOURS SOMEBODY KEPT, each shown as it will be WORN.
-	 *
-	 * The miniature rule: a dot shows what pressing it puts on the page, and on this base that is
-	 * the fill the derivation makes of the colour, not the colour as it was kept. A pale yellow kept
-	 * on a dark base is worn as a deeper gold, because white words have to read on it, and a dot in
-	 * the pale yellow would promise a colour the page will never wear. So each dot is the derived
-	 * fill, through `wornAs`, which reads the grounds off the page the same way the colour in force
-	 * is painted; and where the two differ enough to see, the label says so and in which direction.
-	 *
-	 * `theme.base` is read here for what it does: a different background is a different derivation,
-	 * and the dots have to follow it.
-	 */
+	/* THE COLOURS SOMEBODY KEPT, each shown as it will be WORN. */
 	const keptColours = $derived.by(() => {
 		void theme.base;
 		return theme.swatches.map((colour) => {
@@ -243,13 +157,12 @@
 	   a Remove: the same press undone, and the way to take one out on a screen with no right button. */
 	const keptNow = $derived(theme.swatches.includes(theme.accentHex));
 
-	/* What the last press of Save came to, said under it. Empty when there is nothing to say: a colour
-	   saved shows up as a dot, which is its own answer. */
+	/* What the last press of Save came to, said under it. */
 	let keepSaid = $state('');
 
-	/* The sentence at the limit names the way to make room, rather than only saying no, and names
-	   the act rather than a pointer: the menu is a right-click on a desk and the three dots on a
-	   phone. Ten is `MAX_SWATCHES` in a word; the store's test holds the number at ten. */
+	/* The sentence at the limit names the way to make room, rather than only saying no, and
+	   names the act rather than a pointer: the menu is a right-click on a desk and the three
+	   dots on a phone. */
 	const FULL =
 		"Ten colors are saved, the most there's room for. To make room, remove one from its menu.";
 
@@ -262,8 +175,8 @@
 		}
 	}
 
-	/* Taking a colour out, with Undo, the house way: the row changes immediately, and the toast puts it
-	   back where it was. */
+	/* Taking a colour out, with Undo, the house way: the row changes immediately, and the toast
+	   puts it back where it was. */
 	async function unkeep(colour: string): Promise<void> {
 		keepSaid = '';
 		try {
@@ -290,10 +203,7 @@
 	const chooseMain = (value: DisplayFace) => void saved(theme.set('faceDisplay', value));
 	const chooseSecond = (value: BodyFace) => void saved(theme.set('faceBody', value));
 
-	/* A pairing sets both halves, which is two saves. Sent one after the other rather than together
-	   because the store writes one key at a time and rolls that one key back when the server refuses
-	   it: a pair sent as one batch would have to invent a second rollback rule for the half that
-	   did land. */
+	/* A pairing sets both halves, which is two saves. */
 	async function choosePairing(key: string): Promise<void> {
 		const chosen = PAIRINGS.find((one) => pairingKey(one) === key);
 		if (!chosen) return;
@@ -301,15 +211,7 @@
 		await saved(theme.set('faceBody', chosen.body));
 	}
 
-	/*
-	 * NO PARAGRAPH UNDER EACH HEADING, on either screen.
-	 *
-	 * Each would describe what its previews already show: that the backgrounds are dark, that the
-	 * accents are the same brightness, that the fonts differ in shape and not in size. Every one of
-	 * those is visible in the swatch beside the sentence, and reading about a colour you are
-	 * looking at is slower than looking at it. Somebody in Settings came to change a colour, not to
-	 * be told what a colour is, so one picker with no paragraph serves both screens.
-	 */
+	/* NO PARAGRAPH UNDER EACH HEADING, on either screen. */
 </script>
 
 <!-- Busy until the store has heard what the account is wearing: until then every swatch shows the
@@ -329,10 +231,10 @@
 				note={BASE_NOTES[option]}
 			>
 				{#snippet preview()}
-					<!-- A miniature of the thing being chosen: the canvas, a card raised off it, and
-					     the accent. A word alone asks somebody to imagine a colour they have never
-					     seen. It carries the same attribute the page takes, so the sample cannot
-					     drift from what choosing it does. -->
+					<!--
+						A miniature of the thing being chosen: the canvas, a card raised off it, and
+						the accent.
+					-->
 					<span class="sample" data-base={option}>
 						<span class="sample-card"></span>
 						<span class="sample-accent"></span>
@@ -363,21 +265,7 @@
 			</Pressable>
 		{/each}
 
-		<!--
-			THE SEVENTH, AND ITS DOT IS THE WHOLE CIRCLE OF HUES.
-
-			It carries no `data-accent` for a reason the six do not have to think about: there is no
-			rule in the stylesheet to re-resolve from, because the colour is not in the stylesheet.
-
-			Not the colour that was CHOSEN. The six chips beside it each stand for one colour, and
-			this one does not: it stands for "whichever you like". Wearing one colour would make
-			it read as a seventh named accent, and on a fresh account the colour it wore would be
-			the default blue, which is one of the six. A rainbow says what the chip is for before it
-			is pressed. The colour actually in force is on the page, which is where a theme is
-			judged anyway.
-
-			Pressing it opens the picker. The popover owns the press. See `opened`.
-		-->
+		<!-- THE SEVENTH, AND ITS DOT IS THE WHOLE CIRCLE OF HUES. -->
 		<Popover onOpenChange={opened} side="bottom" align="start" label="Custom accent color">
 			{#snippet trigger({ props })}
 				<Pressable
@@ -393,19 +281,7 @@
 				</Pressable>
 			{/snippet}
 
-			<!--
-				THE PICKER IS INSIDE THE PANEL.
-
-				Not a swatch that opens the operating system's colour chooser: a window in another
-				typeface with another focus ring, which is the one thing every other control in this
-				app refuses. The chip opens this, and the square, the hue and the hex are all in it.
-
-				No paragraph under the box describing the five derived values: the row of samples at
-				the foot of the picker SHOWS three of them changing as the marker moves. The promise
-				such a paragraph would make (that every one of them is held to a legibility floor
-				against the background in force) is a measured property of `theme/accent.ts`
-				rather than something a settings pane has to say out loud.
-			-->
+			<!-- THE PICKER IS INSIDE THE PANEL. -->
 			<ColorPicker
 				label="Accent color"
 				value={theme.accentHex}
@@ -433,19 +309,7 @@
 		</Popover>
 	</div>
 
-	<!--
-		THE KEPT COLOURS, a second row under the six, in the order they were arranged.
-
-		Each is a radio like the six: pressing one wears it, and the one in force is marked, beside
-		Custom being marked above, which is the truth: the accent is the custom one, and it is this
-		colour. Named by its hex for a screen reader, the colour it was kept as. Right-click for
-		Remove and for moving it along the row; Delete does the same from the keyboard.
-
-		A phone has no right button, and a hold is a selection there, never a menu (`ContextMenu`). Its
-		door to a menu is the three dots acting on what is picked, as a tile's is on the selection
-		bar: pressing a dot wears it, which is this row's picking, and the dots after the row open
-		the same rows for the colour in force, as the sheet every menu is at a phone's width.
-	-->
+	<!-- THE KEPT COLOURS, a second row under the six, in the order they were arranged. -->
 	{#if keptColours.length > 0}
 		<div class="kept-line">
 			<div
@@ -515,17 +379,7 @@
 <section class="block" aria-busy={!theme.loaded || undefined}>
 	<SectionHeading id="appearance.theme_face_display">Font</SectionHeading>
 
-	<!--
-		THE PAIRINGS FIRST, THEN THE TWO FACES SEPARATELY.
-
-		The pairings are not a shortcut to the menus below: each is a display face and a text face
-		chosen on purpose to sit together, and they are still the answer almost everybody wants. The
-		menus are every other combination, and they sit underneath because choosing one of them is
-		choosing to take the pairing apart.
-
-		Pressing a pairing sets both menus. Moving either menu to a pair no card offers leaves no
-		pairing marked, which is honest: saying otherwise would name a card that did not produce it.
-	-->
+	<!-- THE PAIRINGS FIRST, THEN THE TWO FACES SEPARATELY. -->
 	<ChoiceGroup label="Font pairing" value={pairing} onchange={(next) => void choosePairing(next)}>
 		{#each PAIRINGS as option (pairingKey(option))}
 			<ChoiceCard
@@ -560,10 +414,7 @@
 			onValueChange={(next: string) => chooseMain(next as DisplayFace)}
 		>
 			{#snippet optionLabel(option)}
-				<!-- The name of a face, set in that face. `data-face-display` re-declares
-				     `--font-display` on this one span, the same way the pairing samples above take
-				     both attributes, so the word is drawn in the family it names and nothing else on
-				     the row moves. -->
+				<!-- The name of a face, set in that face. -->
 				<span class="face-name main" data-face-display={option.value}>{option.label}</span>
 			{/snippet}
 		</Select>
@@ -598,9 +449,7 @@
 		margin-block-start: var(--space-4);
 	}
 
-	/* The card, its chosen state and the two lines of words under it are `ChoiceCard`'s. What is
-	   left here is the accent swatch, which is a different shape: a dot and a name, with no preview
-	   of a whole screen to draw. */
+	/* The card, its chosen state and the two lines of words under it are `ChoiceCard`'s. */
 	.accents :global(.accent[aria-checked='true']) {
 		border-color: var(--sift-accent-text);
 		background: var(--sift-accent-bg);
@@ -613,8 +462,8 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The miniature. A canvas, a card raised off it, and a mark in the accent: the three steps that
-	   actually differ between the bases, at the size of a thumbnail. */
+	/* The miniature. A canvas, a card raised off it, and a mark in the accent: the three steps
+	   that actually differ between the bases, at the size of a thumbnail. */
 	.sample {
 		display: flex;
 		align-items: center;
@@ -649,9 +498,7 @@
 		gap: var(--space-2);
 	}
 
-	/* A swatch and its name, as one pill you press. `Pressable` rather than the shared button,
-	   because it carries a colour sample rather than a label, and it is a radio, which the button
-	   is not. `:global` because the class is handed to a component. */
+	/* A swatch and its name, as one pill you press. */
 	.accents :global(.accent) {
 		display: inline-flex;
 		align-items: center;
@@ -664,8 +511,8 @@
 		color: var(--sift-ink);
 	}
 
-	/* The ContextMenu's own wrapper around each kept dot, laid out as the dot it holds rather than as
-	   a block on a line of its own. Scoped under the row so the class reaches nothing else. */
+	/* The ContextMenu's own wrapper around each kept dot, laid out as the dot it holds rather
+	   than as a block on a line of its own. */
 	.kept :global(.saved-dot-trigger) {
 		display: inline-flex;
 	}
@@ -700,34 +547,21 @@
 		background: var(--sift-accent);
 	}
 
-	/* The seventh chip's dot: every hue together, which is what the chip stands for. The gradient is
-	   a token: a rainbow written here would be a colour outside the one file allowed to name one,
-	   and this one is not a theme decision but the colour space itself. */
+	/* The seventh chip's dot: every hue together, which is what the chip stands for. */
 	.dot.rainbow {
 		background: var(--accent-rainbow);
 	}
 
 	/* The colour's name, beside its swatch, with a rule of its own: taking whatever the pill
-	   gives it, it could not be told from the "(default)" note after it: two runs of text at
-	   the same weight saying two different kinds of thing. */
+	   gives it, it could not be told from the "(default)" note after it: two runs of text at the
+	   same weight saying two different kinds of thing. */
 	.accent-name {
 		color: var(--sift-ink);
 	}
 
-	/*
-	 * A FACE'S NAME, SET IN THAT FACE, on both menus and on the triggers that open them.
-	 *
-	 * Names in one typeface would say what each family is CALLED, which a reader already has, and
-	 * not what any of them looks like, which is the whole of what the choice is about. The word is
-	 * the sample.
-	 *
-	 * Two classes rather than one rule keyed on the attribute, and the difference is a rule of this
-	 * repository rather than a style: only `app.css` may write a selector on a theme attribute, so
-	 * the attribute goes on the element to re-declare the family and a plain class is what reads it.
-	 * Nothing else about the row moves: the size, the weight and the ink are the list's.
-	 */
-	/* The row around it already clips and ellipsises (`.ui-select-item-label`), so all this owes is
-	   that a name in a wide face does not wrap onto a second line inside it. */
+	/* A FACE'S NAME, SET IN THAT FACE, on both menus and on the triggers that open them. */
+	/* The row around it already clips and ellipsises (`.ui-select-item-label`), so all this owes
+	   is that a name in a wide face does not wrap onto a second line inside it. */
 	.face-name {
 		white-space: nowrap;
 	}

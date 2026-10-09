@@ -16,6 +16,7 @@ import weakref
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from sift.kernel.access import visibility_tables as vt
 from sift.kernel.audience import Audience
 from sift.kernel.db import Connection, Row, before_commit
 from sift.kernel.log import get_logger
@@ -84,11 +85,11 @@ def steps() -> list[tuple[str, list[str]]]:
     counts are moved by the fold."""
     from sift.kernel.access import visibility as v
 
-    decide = "INSERT INTO visibility_decided (user_id, asset_id, concealed)" + v._filled(
-        v._VERDICT_ROWS, PAIRS=v._STAGED
+    decide = "INSERT INTO visibility_decided (user_id, asset_id, concealed)" + vt._filled(
+        v._VERDICT_ROWS, PAIRS=vt._STAGED
     )
-    settle = [_CLEAR, v._CLEAR_PLACES, v._FILL_STAGED_PLACES, decide, v._CLEAR_PLACES, _LET_GO]
-    settled = [v._DELETE_STAGED, _INSERT_DECIDED, _CLEAR, v._CLEAR_PENDING]
+    settle = [_CLEAR, vt._CLEAR_PLACES, v._FILL_STAGED_PLACES, decide, vt._CLEAR_PLACES, _LET_GO]
+    settled = [vt._DELETE_STAGED, _INSERT_DECIDED, _CLEAR, vt._CLEAR_PENDING]
     return [(SETTLE, settle), (SETTLED, settled)]
 
 
@@ -454,18 +455,17 @@ def _read_members(
     """One statement reading the named files' members of these kinds (and the file itself) into
     `side`: on side 0 the kinds not read yet, marked; on side 1 the kinds side 0 read. A kind
     a table's own touch reads is marked by itself; every other kind goes with the file (`#`)."""
-    from sift.kernel.access import visibility as v
 
     def read(ident: str, kind: str) -> str:
-        marked = v._filled(_MARKED, ID=ident, KIND=kind if kind in own else "")
+        marked = vt._filled(_MARKED, ID=ident, KIND=kind if kind in own else "")
         return "NOT " + marked if side == 0 else marked
 
-    arms = [v._filled(_FILE_ARM, READ=read("a.id", ""))] if file else []
+    arms = [vt._filled(_FILE_ARM, READ=read("a.id", ""))] if file else []
     for one in kinds:
         n = "1" if one.distinct else "COUNT(*)"
         sized = " CROSS JOIN assets a ON a.id = m.asset_id" if one.sized else ""
         arms.append(
-            v._filled(
+            vt._filled(
                 _ARM,
                 KIND=one.kind,
                 COLUMN=one.column,
@@ -480,8 +480,8 @@ def _read_members(
     if side == 0:
         names = ([""] if file else []) + [one.kind for one in kinds if one.kind in own]
         marks = ", ".join(f"('#{name}')" for name in names)
-        arms.append(v._filled(_MARK_ARM, MARKS=marks))
-    return v._filled(_READ_MEMBERS, SIDE=str(side), ARMS=" UNION ALL ".join(arms)).replace(
+        arms.append(vt._filled(_MARK_ARM, MARKS=marks))
+    return vt._filled(_READ_MEMBERS, SIDE=str(side), ARMS=" UNION ALL ".join(arms)).replace(
         ASSETS, assets
     )
 
@@ -495,7 +495,6 @@ def fold(
 ) -> list[str]:
     """Move the counts of the named files by what they hold now against what the counts hold,
     and let go of them."""
-    from sift.kernel.access import visibility as v
 
     paired = ", ".join(f"('{a.kind}', '{b.kind}')" for a, b in pairs)
     things, files = "m.kind != ''", "m.kind = ''"
@@ -509,9 +508,9 @@ def fold(
         # The kinds a touch read before its change: by what each file held against what it holds
         # (nothing, for a file going, whose rows are already gone).
         *([_read_members(kinds, 1, _READ_BEFORE, own)] if staying else []),
-        v._filled(_COUNTS_MOVED, SIDES=v._filled(_SIDES, WHICH=things), MOVED=_MOVED),
-        v._filled(_PAIRS_MOVED, PAIR_SIDES=v._filled(_PAIR_SIDES, PAIRED=paired)),
-        v._filled(_STATS_MOVED, SIDES=v._filled(_SIDES, WHICH=files), MOVED=_MOVED),
+        vt._filled(_COUNTS_MOVED, SIDES=vt._filled(_SIDES, WHICH=things), MOVED=_MOVED),
+        vt._filled(_PAIRS_MOVED, PAIR_SIDES=vt._filled(_PAIR_SIDES, PAIRED=paired)),
+        vt._filled(_STATS_MOVED, SIDES=vt._filled(_SIDES, WHICH=files), MOVED=_MOVED),
         _MOVED_READ_GO,
         # The rest, where only an answer moved: their members are what the counts hold, since a
         # change to a member is read before it lands, so each moves by the answer's difference.
@@ -526,12 +525,11 @@ def fold(
 def _answers_moved(kinds: Sequence[Counted], pairs: Sequence[tuple[Counted, Counted]]) -> list[str]:
     """Per kind, pair and the totals: the counts moved by each pair's answer, for the files whose
     members no touch read."""
-    from sift.kernel.access import visibility as v
 
     made = []
     for one in kinds:
         made.append(
-            v._filled(
+            vt._filled(
                 _KIND_MOVED,
                 ANSWER_MOVED=_ANSWER_MOVED,
                 SUMS_MOVED=_SUMS_MOVED if one.sized else _COUNTS_MOVED_ONLY,
@@ -544,7 +542,7 @@ def _answers_moved(kinds: Sequence[Counted], pairs: Sequence[tuple[Counted, Coun
         )
     for a, b in pairs:
         made.append(
-            v._filled(
+            vt._filled(
                 _PAIR_MOVED,
                 ANSWER_MOVED=_ANSWER_MOVED,
                 KIND_A=a.kind,
@@ -555,7 +553,7 @@ def _answers_moved(kinds: Sequence[Counted], pairs: Sequence[tuple[Counted, Coun
                 TABLE_B=b.source,
             )
         )
-    made.append(v._filled(_FILE_MOVED, ANSWER_MOVED=_ANSWER_MOVED, SUMS_MOVED=_BYTES_MOVED))
+    made.append(vt._filled(_FILE_MOVED, ANSWER_MOVED=_ANSWER_MOVED, SUMS_MOVED=_BYTES_MOVED))
     return made
 
 
@@ -599,19 +597,19 @@ def moving_steps(
     own = _own(kinds, pairs)
     touch = [_STALE_MEMBERS, _read_members(kinds, 0, _STAGED_THERE, own), _DUE_NOW, _RECORD]
     rows = [
-        v._CLEAR_PLACES,
+        vt._CLEAR_PLACES,
         v._FILL_STAGED_PLACES,
-        v._DELETE_STAGED,
+        vt._DELETE_STAGED,
         v._INSERT_STAGED,
-        v._CLEAR_PLACES,
-        v._CLEAR_PENDING,
+        vt._CLEAR_PLACES,
+        vt._CLEAR_PENDING,
     ]
     # A file about to go: its rows dropped and its counts folded while its members are there, so
     # what its memberships' own triggers then reach finds nothing recorded to take.
     going = [
-        v._DELETE_STAGED,
+        vt._DELETE_STAGED,
         *fold(kinds, pairs, _STAGED_FILES, staying=False),
-        v._CLEAR_PENDING,
+        vt._CLEAR_PENDING,
     ]
     # A table the verdict does not read moves no answer, so only the kinds over it are read.
     alone = [
@@ -686,13 +684,12 @@ _FILED = (
 
 def filing_page(filing: Row, limit: int) -> tuple[str, dict[str, object]]:
     """The next page of a filing's files, as a read and its values: in order of id, from `after`."""
-    from sift.kernel.access import visibility as v
 
     kind = str(filing["object_type"])
     pairs = {
-        "root": v._ONE_USER_IN_ROOT.replace("{root}", "{object}"),
-        "folder": v._ONE_USER_UNDER_FOLDER.replace("{folder}", "{object}"),
-    }.get(kind) or v._MEMBERS_OF[kind]
+        "root": vt._ONE_USER_IN_ROOT.replace("{root}", "{object}"),
+        "folder": vt._ONE_USER_UNDER_FOLDER.replace("{folder}", "{object}"),
+    }.get(kind) or vt._MEMBERS_OF[kind]
     sql = (
         "SELECT DISTINCT asset_id FROM ("  # noqa: S608 (module constants and named values only)
         + pairs.format(user=":user", object=":object")
@@ -717,9 +714,8 @@ _PAGE_CALLS = (
 
 async def file_page(connection: Connection, filing: Row, files: Sequence[str], limit: int) -> None:
     """One page of a filing decided, as its press would have, and the filing moved on past it."""
-    from sift.kernel.access import visibility as v
 
-    await connection.execute(v._CLEAR_PENDING)
+    await connection.execute(vt._CLEAR_PENDING)
     await connection.execute(_STAGE_FILED, (filing["user_id"], json.dumps(list(files))))
     for statement in _PAGE_CALLS:
         await connection.execute(statement)
@@ -824,11 +820,10 @@ async def create_step_views(
     connection: Connection, triggers: Sequence[tuple[str, str, str]]
 ) -> None:
     """The view each step trigger sits on."""
-    from sift.kernel.access import visibility as v
 
     for _name, table, _ddl in triggers:
         if table.startswith(RECOMPUTE):
-            await connection.execute(v._filled(_CREATE_STEP, STEP=table.removeprefix(RECOMPUTE)))
+            await connection.execute(vt._filled(_CREATE_STEP, STEP=table.removeprefix(RECOMPUTE)))
 
 
 @functools.cache

@@ -15,31 +15,10 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: the library's Dialog is modal and traps focus, and the drawer's reason to
-	   exist is the case it cannot serve: a sheet that stays open while the page beside it is used
-	   (a mode's picks, built by pressing the page). The shield below is Sift's own floating layer. */
-	/*
-	 * A sheet from the edge of the window: the right edge, or the bottom on a narrow window.
-	 *
-	 * It MOVES in over `--dur-base` on `--ease` and goes back into its edge one pace quicker,
-	 * `--dur-fast` on `--ease-in`, the way every sheet from an edge leaves (`sheet-out` in
-	 * `app.css`), and it is held in the DOM while shut so the leaving is seen: a transform and a
-	 * `visibility` withheld by the same duration, the arrangement the filter bar's drawer uses.
-	 * Under reduced motion it does not travel at all: it fades in and out where it stands.
-	 *
-	 * Two ways to stand over the page, and the caller says which:
-	 *
-	 * - `beside`: false (the default) is a floating surface like any other. It stands on the clear
-	 *   `PageShield`, so a press outside closes it and reaches nothing underneath, and Escape
-	 *   closes it too.
-	 * - `beside`: true leaves the page live, because the page is what is being worked. A mode's
-	 *   drawer is this: every press on the wall picks something into the drawer, and a shield
-	 *   would take exactly those presses. It is closed only by what is in it.
-	 *
-	 * From the bottom, a finger drawn down its head puts it away as well, the way every phone's sheet
-	 * goes: the same stroke, read by the same rules, as the viewer's sideways step (`strokes` in
-	 * `player/swipe.ts`), so a quick straight stroke means one thing everywhere. Not on a drawer
-	 * beside the page, which only what is in it closes.
-	 */
+	exist is a sheet that stays open while the page beside it is used. */
+	/* A sheet from the right edge or the bottom, sliding in and back one pace quicker, fading under
+	 * reduced motion. `beside: false` stands on PageShield (a press outside or Escape closes it);
+	 * `beside: true` leaves the page live. From the bottom, a stroke down its head puts it away. */
 	import type { Snippet } from 'svelte';
 	import PageShield from './PageShield.svelte';
 	import Scroller from './Scroller.svelte';
@@ -72,12 +51,7 @@
 
 	let sheet = $state<HTMLElement | null>(null);
 
-	/*
-	 * The edge it comes from. A drawer beside the page at a phone's width comes from the BOTTOM,
-	 * whatever the caller asked for: from the right it takes 22rem of a 24rem screen off the page it
-	 * leaves live, and that page would reflow into a column one word wide. Decided here rather than
-	 * by each caller, because a caller is what would forget.
-	 */
+	/* A beside drawer comes from the bottom on a phone, or the page reflows to one word wide. */
 	const edge = $derived(beside && side === 'right' && phoneWidth.yes ? 'bottom' : side);
 
 	function close(): void {
@@ -86,10 +60,7 @@
 	}
 
 	/*
-	 * A drawer beside the page takes its room from the page rather than covering the right-hand side
-	 * of it: its measured width goes on the root as `--drawer-beside`, which the layout's main column
-	 * keeps clear, so a wall reflows beside it instead of hiding a column behind it. One measure,
-	 * read off the drawer itself, so the two cannot come to disagree about how wide it is.
+	 * A beside drawer's width goes on the root as `--drawer-beside`, so the page reflows beside it.
 	 */
 	$effect(() => {
 		if (!open || !beside || edge !== 'right' || !sheet) return;
@@ -157,11 +128,7 @@
 </aside>
 
 <style>
-	/*
-	 * Below the top bar, so the bar's own controls (the one that opened it among them) stay where
-	 * they are, and on the menu layer over its shield; a drawer beside the page sits on the popover
-	 * layer instead, under every menu and dialog the page it leaves live can still open.
-	 */
+	/* Below the top bar, on the menu layer over its shield; beside, on the popover layer. */
 	.drawer {
 		--drawer-top: calc(var(--window-chrome) + var(--topbar-height) + var(--safe-top));
 		position: fixed;
@@ -173,8 +140,7 @@
 		background: var(--sift-surface-2);
 		box-shadow: var(--elev-3);
 		visibility: hidden;
-		/* `visibility` transitioned over the same duration keeps the sheet visible for the whole of
-		   the slide out and shows it at the first frame of the slide in: no literal delay needed. */
+		/* `visibility` over the same duration holds it visible while sliding out. */
 		transition:
 			transform var(--dur-fast) var(--ease-in),
 			visibility var(--dur-fast) linear;
@@ -197,9 +163,7 @@
 		inset-inline: 0;
 		inset-block-end: 0;
 		block-size: min(var(--drawer-height), 100%);
-		/* Clear of a phone's home bar: the last row is never under it. Added to the inset every other
-		   side keeps, as a menu's sheet and a Settings section add it: in place of it, the last row
-		   would stand on the very edge of any screen with no home bar. */
+		/* Clear of a phone's home bar. */
 		padding-block-end: calc(var(--space-4) + var(--safe-bottom));
 		border-start-start-radius: var(--radius-xl);
 		border-start-end-radius: var(--radius-xl);
@@ -238,9 +202,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* A sheet from the bottom is put away by a finger drawn down its head, so the head is a finger's
-	   height and leaves that stroke to script: a stroke the browser took for a scroll of the page
-	   under it would be cancelled half way and never finish. */
+	/* The head is a finger's height and leaves the stroke to script. */
 	.drawer[data-side='bottom'] .head {
 		display: flex;
 		align-items: center;
@@ -256,10 +218,7 @@
 		min-block-size: 0;
 	}
 
-	/* A sheet's list scrolls on its own: at its end a finger's stroke stops there, rather than
-	   carrying on into the page under the shield (the page's rubber band, or a pull to refresh
-	   that reloads Sift under an open sheet). On the scroller's own box, since that is what the
-	   browser chains from; the sheet around it never scrolls. */
+	/* The list's scroll stops at its end rather than chaining into the page. */
 	.body :global([data-scroll-area-viewport]) {
 		overscroll-behavior: contain;
 	}

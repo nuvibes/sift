@@ -24,15 +24,8 @@ from sift.wiring.built import Storage
 
 
 def build_catalog(app: FastAPI, store: Storage) -> library_roots.LibraryService:
-    """The reads and writes over what is in the library: files, tags, People, sites, collections.
-
-    Each is handed the resolver rather than a database handle, because every row any of them puts
-    on a screen has to be resolved against the user asking for it.
-    """
-    # Adding and removing a root, and remembering what the scanner refused. It holds the access
-    # repository because removing a root has to drop the permissions naming its folders first:
-    # `acl_grants.object_id` carries no foreign key (the id beside it could belong to any of
-    # several tables), so nothing cascades them, and nothing else will do it.
+    """The reads and writes over what is in the library, each handed the resolver."""
+    # Removing a root drops the grants naming its folders first: nothing cascades them.
     library_service = library_roots.LibraryService(store.database, store.library, store.access)
     provide(app, library_roots.SERVICE, library_service)
 
@@ -51,17 +44,7 @@ def build_catalog(app: FastAPI, store: Storage) -> library_roots.LibraryService:
 
 
 class _Stills:
-    """What renders a still of one moment, for everything that wants one.
-
-    The seam's implementation, and the ONLY place in Sift that knows both which job type builds a
-    picture of a moment and who is asking for one. A mark asks when it is saved; a cover asks when
-    somebody picks a frame. Two features, one job, one cache key: see `StillSeam`.
-
-    Deduped, so a sweep and a fresh save asking for the same moment in the same instant queue one
-    job. The picture itself is filed under `(asset_id, kind, params)`, so a second one that did slip
-    through would rewrite the same row rather than making a second file. This saves the work; it
-    is not what makes it safe.
-    """
+    """What renders a still of one moment, deduped, for everything that wants one."""
 
     def __init__(self, queue: JobQueue) -> None:
         self._queue = queue
@@ -75,13 +58,7 @@ class _Stills:
 
 
 def build_loops(app: FastAPI, store: Storage, queue: JobQueue) -> loops.LoopService:
-    """Loops, which is the one catalog service that has to reach the queue.
-
-    Its own step rather than a line in `build_catalog`, because that step runs before there IS a
-    queue, and a mark asks for its own picture the moment it is saved. Which job type builds that
-    picture is media_jobs' business and which mark wants one is this slice's, so the composition
-    root is the only place that may know both: neither slice imports the other.
-    """
+    """Loops, the one catalog service that has to reach the queue, so its own step."""
 
     stills = _Stills(queue)
     provide(app, wiring.STILLS, stills)

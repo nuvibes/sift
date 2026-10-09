@@ -1,11 +1,4 @@
-/*
- * The three-dot button is the same menu by another door, and a data row answers both.
- *
- * A door built by hand on a screen would carry its own copy of the button's style rules and its
- * own rows written into markup. What is asserted
- * here is the property that makes one door safe: the rows come from the shared declaration, so a
- * verb cannot exist behind the dots and not on the row's right-click, or the other way round.
- */
+/* The three dots are the same menu by another door: the rows come from the shared declaration. */
 import { readFileSync } from 'node:fs';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -21,8 +14,7 @@ function takeDown() {
 	document.body.innerHTML = '';
 }
 
-/* At the top of render as well as in afterEach: a test that renders twice would otherwise leave the
-   first component mounted and answering, with only the second handle kept. */
+/* At the top of render too, so a second render leaves no first mounted. */
 type RowMenuProps = {
 	verbs: readonly Verb[];
 	ids: string[];
@@ -50,35 +42,24 @@ const VERBS: Verb[] = [
 
 describe('the three-dot button', () => {
 	it('says whose row it belongs to', () => {
-		// A list of twenty rows announced as twenty "More" buttons tells somebody using a screen
-		// reader nothing about which is which.
+		// A name saying whose row, not twenty "More"s.
 		render({ verbs: VERBS, ids: ['r1'], label: 'More for Photos' });
 		const button = host.querySelector('button');
 		expect(button?.getAttribute('aria-label')).toBe('More for Photos');
 	});
 
 	it('wears the one class the button is dressed by', () => {
-		// The dressing lives in this component. Copies on each screen would come apart: one
-		// dimming on hover while disabled and another not.
+		// The dressing lives in this component.
 		render({ verbs: VERBS, ids: ['r1'], label: 'More' });
 		expect(host.querySelector('button')?.className).toContain('more');
 	});
 
 	it('draws the CONTEXT menu rows inside a dropdown, which is the whole design', async () => {
-		/*
-		 * The claim this component rests on, proved rather than reasoned about.
-		 *
-		 * `VerbMenuItems` renders `ContextMenuItem`, which is `bits-ui`'s `ContextMenu.Item`. In
-		 * bits-ui 2.18 that is re-exported from the same `menu/` internals as `DropdownMenu.Item`:
-		 * only Root, Content and Trigger differ, which is the part about how a menu is OPENED. If
-		 * that ever stops being true, a third renderer is needed and this is what says so.
-		 */
+		/* VerbMenuItems' rows work inside a DropdownMenu, as bits-ui shares the menu internals. */
 		render({ verbs: VERBS, ids: ['r1'], label: 'More' });
 		host.querySelector('button')?.click();
 		await vi.waitFor(() => {
-			// The icon is a LIGATURE, so its glyph is a character of the row's own text: a private-use
-			// codepoint sitting in front of the words. `trim()` does not touch it, which is why a
-			// plain comparison against the label reads as the row being wrong when it is right.
+			// The icon ligature is a character of the row's text, which trim() keeps.
 			const rows = [...document.querySelectorAll('[role="menuitem"]')].map((row) =>
 				(row.textContent ?? '').replace(/[\uE000-\uF8FF]/g, '').trim()
 			);
@@ -94,8 +75,7 @@ describe('the three-dot button', () => {
 
 describe('the two doors cannot come apart', () => {
 	it('renders its rows through the shared renderer', () => {
-		// Not "it contains a menu item": that a DECLARATION is what becomes the rows is the property.
-		// A file that wrote its own rows here would pass any assertion about the rows existing.
+		// The declaration becomes the rows.
 		const source = readFileSync('src/lib/components/common/RowMenu.svelte', 'utf8');
 		expect(source).toContain('<VerbMenuItems');
 		expect(source).not.toMatch(/<DropdownMenu\.Item/);
@@ -110,16 +90,14 @@ describe('the two doors cannot come apart', () => {
 	});
 
 	it('leaves a row that declared no verbs exactly as it was', () => {
-		// Eight of the nine lists built out of DataRow have not declared any. None of them may grow
-		// a button or a wrapper because the capability was added.
+		// A list that declared no verbs grows no button or wrapper.
 		const source = readFileSync('src/lib/components/common/DataRow.svelte', 'utf8');
 		expect(source).toContain('const offered = $derived(verbs !== undefined && verbs.length > 0)');
 		expect(source).toContain('{#if offered}');
 	});
 
 	it('leaves no screen holding its own copy of the door', () => {
-		// No screen draws the trigger, the portal, the content and the rows by hand, and a
-		// screen that tries fails here.
+		// No screen draws a door by hand.
 		for (const path of [
 			'src/lib/settings-ui/Users.svelte',
 			'src/lib/library/LibraryScreen.svelte'
@@ -129,11 +107,7 @@ describe('the two doors cannot come apart', () => {
 	});
 
 	it('reaches both screens the same way, through the row', () => {
-		/*
-		 * A list whose rows carry verbs must grow them through `DataRow`, which grows both doors
-		 * (the right-click and the three dots) from one declaration. A hand-placed button grows
-		 * only one, and a hand-written row is invisible to a gate that counts shared ones.
-		 */
+		/* A list with verbs grows both doors through DataRow. */
 		for (const path of [
 			'src/lib/settings-ui/Users.svelte',
 			'src/lib/library/LibraryScreen.svelte'
@@ -153,14 +127,7 @@ describe('the two doors cannot come apart', () => {
 	});
 });
 
-/*
- * The worded trigger, for the one surface that is not a row.
- *
- * A file's own screen has one thing being looked at and no row for three dots to belong to. What is
- * asserted here is that saying so gets the SHARED button rather than a second one dressed to look
- * like it (the exact drift this whole component was written to end) and that it is still the
- * library's trigger, not a plain button that happens to carry the word.
- */
+/* The worded trigger gets the shared button, still the library's trigger. */
 describe('the worded trigger', () => {
 	it('carries the words instead of the glyph', () => {
 		render({ verbs: VERBS, ids: ['r1'], label: 'Options for this file', words: 'Options' });
@@ -170,9 +137,7 @@ describe('the worded trigger', () => {
 	});
 
 	it('is the shared button, not a copy of its dressing', () => {
-		// `btn` is what `Button` puts on every one of them. Without the `child` snippet handing the
-		// library's props to the real component, this is a bare element wearing `more` instead,
-		// which looks close enough to pass a glance and carries none of the button's own states.
+		// `btn` proves the `child` snippet hands the props to the real Button.
 		render({ verbs: VERBS, ids: ['r1'], label: 'Options for this file', words: 'Options' });
 		const button = host.querySelector('button');
 		expect(button?.className).toContain('btn');
@@ -180,8 +145,7 @@ describe('the worded trigger', () => {
 	});
 
 	it('is still the menu trigger, so the rows are reachable', () => {
-		// The `child` snippet is easy to get wrong in a way nothing else notices: drop `{...props}`
-		// and the button renders perfectly and opens nothing at all.
+		// Without `{...props}` the button renders and opens nothing.
 		render({ verbs: VERBS, ids: ['r1'], label: 'Options for this file', words: 'Options' });
 		const button = host.querySelector('button');
 		expect(button?.getAttribute('aria-haspopup')).toBe('menu');

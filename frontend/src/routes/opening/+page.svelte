@@ -1,10 +1,7 @@
 <script lang="ts">
-	/*
-	 * The desktop window's first frame, drawn from the shell's own copy of the client while the real
-	 * page loads beneath it (`desktop/src/opening.ts`): the sign-in card's outline in the saved
-	 * theme, inert, so the real sign-in takes its place with nothing moving. The theme arrives in
-	 * the address's fragment as the real page mirrored it, and is kept for the boot script here.
-	 */
+	/* The desktop window's first frame, drawn from the shell's own copy of the client while the
+	 * real page loads beneath it (`desktop/src/opening.ts`): the sign-in card's outline in the
+	 * saved theme, inert, so the real sign-in takes its place with nothing moving. */
 	import { Button, DoorCard, Field, PasswordInput, TextInput } from '$lib/components/common';
 
 	/* Always the desktop window, whose bar this frame draws as the real page does, though it has no

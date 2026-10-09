@@ -1,11 +1,4 @@
-/* Adding a folder, from either screen that offers it.
- *
- * The component is shared by Settings and the empty Browse wall, so what is held here is the part
- * both depend on: the desktop's one gesture hands the folder over AND adds it, with the reading
- * decided by the screen (`scan`), and a browser opens the picker instead. The `scan` case is the
- * one that matters most: a `false` passed for any other meaning is a folder added from Settings
- * and never read.
- */
+/* Adding a folder, from either screen that offers it. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';

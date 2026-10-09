@@ -1,11 +1,4 @@
-/* The update chain, and above all the check that makes it safe to run anything at all.
- *
- * `signatureIsGood` is the whole of the authenticity guarantee: everything downstream of it
- * (the version comparison, the hash comparison, the launch) is only meaningful because the
- * manifest was proved to be Sift's first. So it is tested by mutation rather than by one happy
- * path: a genuine signature is built here, and then each thing that could be wrong about it is
- * made wrong in turn.
- */
+/* The update chain, and above all the check that makes it safe to run anything at all. */
 
 import { generateKeyPairSync, sign as signWith } from 'node:crypto';
 
@@ -20,9 +13,8 @@ import {
 	signatureIsGood
 } from './update';
 
-/* A minisign key, in the published form: two bytes naming the algorithm, eight of key id, then the
- * raw Ed25519 key. Built here because the real key's private half is deliberately not anywhere a
- * test runs, which is the point of it, and would otherwise make this untestable. */
+/* A minisign key, in the published form: two bytes naming the algorithm, eight of key id, then
+ * the raw Ed25519 key. */
 function aKeyPair() {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const raw = publicKey.export({ format: 'der', type: 'spki' }).subarray(12);
@@ -69,9 +61,8 @@ describe('signatureIsGood', () => {
 		expect(signatureIsGood(CONTENT, signatureFile(CONTENT, theirs), mine.published)).toBe(false);
 	});
 
-	/* A PREHASHED minisign signature (algorithm "ED") signs a BLAKE2b digest of the file, not the
-	 * file. Verifying one as though it signed the bytes would accept a signature nobody made over
-	 * this content, so the algorithm bytes are checked rather than skipped over. */
+	/* A PREHASHED minisign signature (algorithm "ED") signs a BLAKE2b digest of the file, not
+	 * the file. */
 	it('refuses a prehashed signature', () => {
 		const pair = aKeyPair();
 		const prehashed = signatureFile(CONTENT, pair, { algorithm: 'ED' });
@@ -110,13 +101,7 @@ describe('signatureIsGood', () => {
 	/* The default is the shipped key. A refactor that made the parameter required, or defaulted it
 	 * to something else, would leave every call site passing nothing and verifying against nothing. */
 	it('defaults to the key compiled into the application', () => {
-		/* That the constant is a minisign public key, and not that it is a particular one.
-		 * Pinning its first characters would pin one key's identity (two are the algorithm, the
-		 * third falls out of the key id) and go red the first time the key is replaced.
-		 *
-		 * Forty-two bytes is the shape: two for the algorithm, eight for the key id, thirty-two
-		 * for the key itself.
-		 */
+		/* That the constant is a minisign public key, and not that it is a particular one. */
 		expect(PUBLIC_KEY_BASE64.startsWith('RW')).toBe(true);
 		expect(Buffer.from(PUBLIC_KEY_BASE64, 'base64')).toHaveLength(42);
 
@@ -174,8 +159,8 @@ describe('compareVersions', () => {
 });
 
 describe('the feed address', () => {
-	/* One address, the same on every installation, with nothing appended: the request the shell and
-	   the backend make says nothing about the machine making it. */
+	/* One address, the same on every installation, with nothing appended: the request the shell
+	   and the backend make says nothing about the machine making it. */
 	it('is fixed, https and carries nothing about this installation', () => {
 		const url = new URL(DEFAULT_FEED_URL);
 		expect(url.protocol).toBe('https:');
@@ -193,16 +178,7 @@ describe('the feed address', () => {
 	});
 });
 
-/* --- the whole chain -------------------------------------------------------------------------
- *
- * Feed, signed manifest, installer, launch. Driven end to end here rather than by hand against a
- * live release, because the private half of the real signing key is deliberately not on any machine
- * that builds. A generated key proves the mechanism; the shipped key is proved by the default
- * asserted above.
- *
- * The ORDER is what these are really about: nothing may reach `shell.openPath` that was not first
- * described by a manifest this key signed, newer than the copy that is running.
- */
+/* --- the whole chain ------------------------------------------------------------------------- */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -410,8 +386,8 @@ describe('applyUpdate', () => {
 		expect(openedPaths).toEqual([]);
 	});
 
-	/* The feed's tag is not signed. It has to say what the signed manifest says, or the version a
-	   person was shown is not the version that would install. */
+	/* The feed's tag is not signed. It has to say what the signed manifest says, or the version
+	   a person was shown is not the version that would install. */
 	it('launches nothing when the tag and the signed version disagree', async () => {
 		const pair = aKeyPair();
 		queue(INSTALLER, pair, { tag: 'v9.9.9' });
@@ -423,8 +399,7 @@ describe('applyUpdate', () => {
 		expect(openedPaths).toEqual([]);
 	});
 
-	/* A signature that is genuine over a manifest naming a DIFFERENT installer's hash. The signature
-	 * check passes and the file still must not run, which is why there are two checks and not one. */
+	/* A signature that is genuine over a manifest naming a DIFFERENT installer's hash. */
 	it('launches nothing, and keeps nothing, when the bytes do not match the hash', async () => {
 		const pair = aKeyPair();
 		queue(Buffer.from('something else entirely'), pair, {

@@ -1,17 +1,6 @@
 <script lang="ts">
-	/*
-	 * More: who is signed in, every section of Settings, and Sign out at the foot, as a list at its
-	 * own address.
-	 *
-	 * The phone's way into Settings. Each section opens over this list, so closing it or pressing
-	 * Back lands here again, where the next section is one press away. A tab that opened Settings
-	 * itself would put its first section up with nothing behind it, and every way back would lead
-	 * to that same section.
-	 *
-	 * The sections are the ones the Settings list itself draws, from the same declaration and in the
-	 * same groups, so the two lists cannot disagree about what Settings holds. A sub-page is one
-	 * press inside its section, as it is on a desktop.
-	 */
+	/* More: who is signed in, every section of Settings, and Sign out at the foot, as a list at
+	 * its own address. */
 	import SectionHeading from '$lib/components/common/SectionHeading.svelte';
 	import DestinationList, { type Destination } from '$lib/components/shell/DestinationList.svelte';
 	import TurboModeRow from '$lib/components/shell/TurboModeRow.svelte';
@@ -24,8 +13,8 @@
 	import { openSettingsInstead } from '$lib/settings-ui/settings-view';
 	import { signOut } from '$lib/shell/sign-out';
 
-	/* The groups a guest can open, for the reason the Settings list gives: the server refuses the
-	   rest, and a door that will not open is worse than none. */
+	/* The groups a guest can open, for the reason the Settings list gives: the server refuses
+	   the rest, and a door that will not open is worse than none. */
 	const groups = $derived(
 		SETTINGS_GROUPS.map((group) => ({
 			heading: group.heading,

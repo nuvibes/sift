@@ -1,9 +1,4 @@
-/* The second question: where does Sift keep its own two folders?
- *
- * The sentence about the OTHER files is what is really being guarded here. Somebody being asked
- * where Sift will "keep your library" reasonably fears their videos are about to be moved (they
- * are not, ever), and that sentence is the difference between finishing setup and cancelling it.
- */
+/* The second question: where does Sift keep its own two folders? */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -93,8 +88,7 @@ describe('in the desktop app', () => {
 	});
 
 	/* Nothing to say and nothing to do: somebody closed the picker, and the screen stays exactly
-	 * where it was, still offering the suggestion. A message here would report a failure that did
-	 * not happen. */
+	 * where it was, still offering the suggestion. */
 	it('says nothing when the picker was simply closed', async () => {
 		inTheApp(vi.fn().mockResolvedValue({ ok: false, refusal: null }));
 		const where = render();
@@ -129,8 +123,8 @@ describe('in the desktop app', () => {
 		expect(button(where, 'Choose this folder')).toBeUndefined();
 	});
 
-	/* Nothing may be settled before the suggestion has arrived, or the press would send an answer
-	   about a folder nobody has been shown. */
+	/* Nothing may be settled before the suggestion has arrived, or the press would send an
+	   answer about a folder nobody has been shown. */
 	it('and cannot be answered before the suggested folder has arrived', () => {
 		window.sift = {
 			chooseMode: vi.fn(),
@@ -143,17 +137,7 @@ describe('in the desktop app', () => {
 	});
 });
 
-/*
- * Going back to the mode question.
- *
- * Without a way back this screen is a dead end: somebody who chose Server Install by mistake could
- * only answer it or close the window, and closing the window on the second screen of setup leaves
- * an application that opens on the same screen for ever.
- *
- * It goes back through the SHELL rather than through browser history, and that is the property
- * worth holding: the answer that led here is still saved, so a history step would draw the mode
- * question with the mode already chosen and pressing it again would change nothing.
- */
+/* Going back to the mode question. */
 describe('going back', () => {
 	it('asks the shell to unsay the answer that led here', async () => {
 		inTheApp();
@@ -165,8 +149,7 @@ describe('going back', () => {
 		await vi.waitFor(() => expect(window.sift?.setupBack).toHaveBeenCalled());
 	});
 
-	/* The shell is the side that knows why, exactly as with the two answers. A refusal that went
-	 * nowhere would leave somebody pressing a button that does nothing and says nothing. */
+	/* The shell is the side that knows why, exactly as with the two answers. */
 	it('shows the shell own words when it will not go back', async () => {
 		inTheApp();
 		window.sift!.setupBack = vi
@@ -181,14 +164,8 @@ describe('going back', () => {
 	});
 });
 
-/*
- * The wait after a press.
- *
- * Taking a folder starts Sift there, and the first start creates the database, so the answer can
- * be many seconds away. A page that only greys its buttons for that long looks stuck, and somebody
- * cancels setup, so the press is answered immediately: the pressed button turns and a sentence says
- * what is being waited on.
- */
+/* The wait after a press. Taking a folder starts Sift there, and the first start creates the
+ * database, so the answer can be many seconds away. */
 describe('while a press is being answered', () => {
 	it('says it is still looking before the suggested folder has arrived', () => {
 		window.sift = {

@@ -63,58 +63,24 @@
 		type QueueSort
 	} from './queue.svelte';
 
-	/* The download queue: what Sift is fetching from the internet, and where you start a fetch.
-	 *
-	 * Admin-only, and this screen is not what makes that true: the list endpoint and the submit
-	 * both refuse a guest on their own. The nav item is hidden from a guest as a courtesy; typing
-	 * the address gets them this screen and an error, never a queue.
-	 *
-	 * ## Three regions, in the order somebody uses them
-	 *
-	 * The head says what screen this is, holds the two doors OUT of it (the cookies saved for
-	 * sites, and the settings), and the one verb about the queue as a whole, Pause. Add is the
-	 * box and the one button. The queue is the list, filtered by a tab and a search.
-	 *
-	 * ## No summary strip
-	 *
-	 * Every figure a summary line would carry is already said closer to where it belongs: the
-	 * counts by the state tabs and the rail, the speed and the time left by the running row, the
-	 * tunnel by the row's own detail and the tunnels table in Settings. A second place saying the
-	 * same number is a second thing to read and a second thing to disagree. The spoken milestone
-	 * (the one live region) is `announced` below, drawn for nobody.
-	 *
-	 * ## What is under the box, and what is not
-	 *
-	 * The page decides for THIS download; Settings decides the default for every download. So
-	 * what is under the box is only what a paste can choose for itself: its folder and its two
-	 * switches (`DownloadChoices`), each starting from the default and sent with the paste, never
-	 * written back, and one line saying which way the pasted Site goes out. Everything set once
-	 * lives in Settings, Downloads; the tunnels themselves in Settings, Sites. The one fact from
-	 * the tunnels worth having while watching a queue (that what is moving is using a tunnel's
-	 * IP rather than your own) is said on the row that is moving, in its detail.
-	 */
+	/* The download queue: what Sift is fetching from the internet, and where you start a fetch. */
 
 	const queue = new DownloadQueue();
 	const sounds = new Sounds();
 	const changes = new Changes();
 	const connections = new Connections();
 	const selection = new Selection();
-	/* Whether this window is too small for the wide arrangement. One fact, read once, handed to the
-	   pieces that draw differently for it. See `narrow.svelte.ts` for where the number lives. */
+	/* Whether this window is too small for the wide arrangement. */
 	const narrow = new Narrow();
-	/* And whether a row has room for its facts beside its name. A wider floor than the screen's
-	   own: the paste box fits long before the row's columns do. */
+	/* And whether a row has room for its facts beside its name. */
 	const stacked = new Narrow(FACTS_UNDER_THE_NAME);
 
 	type SupportedSite = components['schemas']['SupportedSite'];
 
 	let url = $state('');
-	/* Where the next download goes: '' for the default folder, else a folder id. Chosen under the box
-	   by the same chooser the Add button has, and sent with the submit exactly as Add sends its own:
-	   a choice about a download, not a setting. See `DownloadChoices`. */
+	/* Where the next download goes: '' for the default folder, else a folder id. */
 	let dest = $state('');
-	/* The paste's own answer, chosen beside the folder. Null until the default is read, which
-	   sends nothing and leaves it to its setting. See `PasteChoices`. */
+	/* The paste's own answer, chosen beside the folder. */
 	let remember = $state<boolean | null>(null);
 	/** Whether the page's Options menu is open: the paste box opens it when a paste has nowhere to go. */
 	let optionsOpen = $state(false);
@@ -128,19 +94,14 @@
 	/** Which row is open, so only one detail is expanded at a time. */
 	let expanded = $state<string | null>(null);
 
-	/* The queue's pause, which the head's Pause button draws. The two switches and the folder are
-	   `DownloadChoices`'s, read and written there: each setting has one reader on this screen, and
-	   it is the component that draws it. */
+	/* The queue's pause, which the head's Pause button draws. */
 	const PAUSED_KEY = 'download.paused';
 	let paused = $state(false);
 
-	/* The cookies sheet, and which Site it opens on. Null is the whole list (the head's door),
-	   and a Site name is a row asking for that one. */
+	/* The cookies sheet, and which Site it opens on. */
 	let cookiesOpen = $state(false);
 	let cookiesSite = $state<string | null>(null);
-	/* And which download is waiting on them, when the sheet was opened from a row. The sheet says
-	   so on its button and tries that download again after the save: somebody who came here from
-	   a stopped download wants that download, not a saved setting. */
+	/* And which download is waiting on them, when the sheet was opened from a row. */
 	let cookiesRetry = $state<string | null>(null);
 
 	/** Asking before several downloads are stopped together. One row asks for itself. */
@@ -171,9 +132,7 @@
 	});
 
 	// A sound belongs to a transition, never to a state: the list is re-read whenever the queue
-	// moves, and anything keyed on "is finished" would chirp for every one of those. The message a
-	// finished download says is the toaster's, on every screen and under its own setting
-	// (`toasts-downloads.svelte.ts`); the sound stays here, where the audio is made.
+	// moves, and anything keyed on "is finished" would chirp for every one of those.
 	$effect(() => {
 		for (const landing of changes.since(queue.items)) sounds.play(landing.kind);
 	});
@@ -200,13 +159,7 @@
 		}
 	}
 
-	/* WHAT IS SAID OUT LOUD about the queue as a whole, at milestones.
-	 *
-	 * A progress bar is not announced as it changes, and wrapping each row in a live region would
-	 * read every percent of every row aloud. So there is ONE live region on this screen and it
-	 * speaks when the counts move, never as the throughput ticks. Only a changed sentence is
-	 * written, so the region is not re-announced every second something is running.
-	 */
+	/* WHAT IS SAID OUT LOUD about the queue as a whole, at milestones. */
 	let announced = $state('');
 	$effect(() => {
 		const running = queue.summary?.running ?? 0;
@@ -223,14 +176,7 @@
 		}
 	}
 
-	/*
-	 * Addresses that hold a set of things rather than one thing.
-	 *
-	 * A playlist, a channel, a user's page. Pressing Download on one of these would queue a single
-	 * job that fetches all of it, which is a decision somebody should get to see the size of first.
-	 * So the ask happens on submit, inline under the box, and what is queued is only what has
-	 * been agreed to.
-	 */
+	/* Addresses that hold a set of things rather than one thing. */
 	const A_SET_OF_THINGS =
 		/[?&]list=|\/playlist\b|\/channel\/|\/c\/|\/@[^/]+\/?$|\/user\/|\/users\/|\/profile\/|\/videos\/?$/i;
 
@@ -242,10 +188,7 @@
 			const answer = await queue.submitMany(pasted, choices);
 			if (answer) {
 				landedIn();
-				// What is left in the box is what still needs doing, and nothing else. Leaving the
-				// whole paste there would be a trap: fixing one bad line and pressing Download again
-				// would queue all the good ones a SECOND time, and the box is where somebody would
-				// naturally go to fix it.
+				// What is left in the box is what still needs doing, and nothing else.
 				url = [...answer.refused.map((one) => one.url), ...answer.left_over].join('\n');
 				found = null;
 			}
@@ -254,9 +197,7 @@
 		const link = url.trim();
 		if (!link) return;
 		if (A_SET_OF_THINGS.test(link) && found === null) {
-			// Asking fetches no media and queues nothing. If the site cannot say, the answer is null
-			// and the ordinary submit below happens on this same press: a gallery Site's album or
-			// profile is taken whole by that one download, which is what the server's refusal says.
+			// Asking fetches no media and queues nothing.
 			found = (await queue.preview(link, choices)) ?? null;
 			if (found) return;
 		}
@@ -273,9 +214,8 @@
 		found = null;
 	}
 
-	/* A download that NAMED a folder is remembered as that folder's use, which is what puts it at
-	   the top of the chooser next time, here and in Add, which read the same record. One that took
-	   the default names none, and remembering it would put a row nobody picked at the top. */
+	/* A download that NAMED a folder is remembered as that folder's use, which is what puts it
+	   at the top of the chooser next time, here and in Add, which read the same record. */
 	function landedIn() {
 		noteFolderUse(dest);
 	}
@@ -284,30 +224,19 @@
 	async function takeThemAll() {
 		const link = url.trim();
 		if (!link) return;
-		// The refusal is shown by the queue, not put there from here. Assigning it at the call site
-		// is the wrong shape: a caller that forgot to do it would show nothing.
+		// The refusal is shown by the queue, not put there from here.
 		if (await queue.queueAll(link, choices)) return;
 		landedIn();
 		url = '';
 		found = null;
 	}
 
-	/*
-	 * How many Sites are asking for something.
-	 *
-	 * Two halves, and both are about the same act. A saved cookie that has expired is a download
-	 * that will fail the next time somebody pastes a link from that Site; a blocked row is one that
-	 * already has. The number on the door is what would be fixed by walking through it.
-	 *
-	 * `state` is the SERVER's word, computed once there, rather than this screen working out what
-	 * an expiry date means. Two readers of the same dates would disagree the first time one of them
-	 * learned about a site that ends a session early.
-	 */
+	/* How many Sites are asking for something. Two halves, and both are about the same act. */
 	const expiredCookies = $derived(
 		connections.items.filter((one) => one.state === 'expired').length
 	);
-	/* Over the whole queue, from the server's counts: the page holds fifty of however many, and a
-	   blocked row on page three is still a Site waiting on somebody. */
+	/* Over the whole queue, from the server's counts: the page holds fifty of however many, and
+	   a blocked row on page three is still a Site waiting on somebody. */
 	const waitingOnCookies = $derived(
 		queue.summary?.by_state?.blocked ?? queue.items.filter((one) => one.status === 'blocked').length
 	);
@@ -330,30 +259,20 @@
 
 	/* What is picked, as rows rather than as ids: every verb below asks what the rows can take. */
 	const picked = $derived(queue.items.filter((item) => selection.has(item.id)));
-	/* THE BAR OFFERS ONLY WHAT EVERY PICKED ROW CAN TAKE.
-	 *
-	 * The alternative (offer everything and quietly skip the rows it does not apply to) is the
-	 * shape that makes a bulk verb untrustworthy: "Try again" over eight rows, four of which are
-	 * finished, does four things and says it did eight. */
+	/* THE BAR OFFERS ONLY WHAT EVERY PICKED ROW CAN TAKE. */
 	const everyFirst = $derived(picked.length > 0 && picked.every(canGoFirst));
 	const everyCancel = $derived(picked.length > 0 && picked.every(canCancel));
 	const everyRemove = $derived(picked.length > 0 && picked.every(canRemove));
 	const everyRetry = $derived(picked.length > 0 && picked.every(canRetry));
-	/* Held and resumed over a pick, on the same rule as every other verb here: offered only where
-	   every picked row can take it. A Pause over eight rows, three of them finished, would do five
-	   things and say it did eight. */
+	/* Held and resumed over a pick, on the same rule as every other verb here: offered only
+	   where every picked row can take it. */
 	const everyPause = $derived(picked.length > 0 && picked.every(canPause));
 	const everyResume = $derived(picked.length > 0 && picked.every(canResume));
-	/* Whether stopping these throws bytes away. A waiting row has fetched nothing, so asking about
-	   it would be a dialog whose answer is always yes. */
+	/* Whether stopping these throws bytes away. A waiting row has fetched nothing, so asking
+	   about it would be a dialog whose answer is always yes. */
 	const anyRunning = $derived(picked.some((item) => item.status === 'running'));
 
-	/* THE BAR'S VERBS, AS ONE LIST THE SHARED SPLIT DIVIDES.
-	 *
-	 * Each is the same verb the row offers, under the same word and glyph, and `barShape` decides
-	 * which sit in the strip and which go behind More. This page decides nothing about that. A
-	 * bar built out of its own buttons is the drift `bar-and-menu.test.ts` exists to refuse: a
-	 * verb added to the row and not to the bar, or worded differently in the two places. */
+	/* THE BAR'S VERBS, AS ONE LIST THE SHARED SPLIT DIVIDES. */
 	const barVerbs = $derived.by((): Verb[] => {
 		const built: Verb[] = [];
 		if (everyPause) {
@@ -427,11 +346,9 @@
 		for (const id of ids) await act(id);
 	}
 
-	/*
-	 * Taking rows off the list: the act, the sentence and the way back are one thing in the queue,
-	 * because the row's own verb and the bar below both end there, and two copies of the sentence
-	 * would be two sentences for one act.
-	 */
+	/* Taking rows off the list: the act, the sentence and the way back are one thing in the
+	 * queue, because the row's own verb and the bar below both end there, and two copies of the
+	 * sentence would be two sentences for one act. */
 	async function removeOne(id: string) {
 		await queue.removeRows([id]);
 	}
@@ -443,18 +360,14 @@
 		await queue.removeRows(ids);
 	}
 
-	/*
-	 * Escape, one layer at a time.
-	 *
-	 * What Escape means is "put back the last thing I filtered", and the layers are in the order
-	 * they were put on: the pick, then the chip, then the search. One press that cleared all three
-	 * would take away two things somebody did not ask to lose.
-	 */
+	/* Escape, one layer at a time. What Escape means is "put back the last thing I filtered",
+	 * and the layers are in the order they were put on: the pick, then the chip, then the
+	 * search. */
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key !== 'Escape') return;
-		/* A panel or menu of the bar's is open: this Escape is ITS (it shuts the Filter panel
-		   or the order menu), and taking a layer off the list as well would be one press doing
-		   two things. */
+		/* A panel or menu of the bar's is open: this Escape is ITS (it shuts the Filter panel or
+		   the order menu), and taking a layer off the list as well would be one press doing two
+		   things. */
 		if (screenBar.open !== null || event.defaultPrevented) return;
 		if (!selection.isEmpty) selection.clear();
 		else if (queue.filter !== 'all') void goto(addressFor({ show: 'all' }), QUIETLY);
@@ -463,13 +376,8 @@
 		event.preventDefault();
 	}
 
-	/*
-	 * A PASTE ANYWHERE ON THIS SCREEN.
-	 *
-	 * It fills the box and puts the cursor in it, and it QUEUES NOTHING: pasting is not agreeing.
-	 * The three rules that decide whether a paste is this screen's at all are in `paste.ts`, where
-	 * each of them can be put in front of a test; what is left here is the wiring.
-	 */
+	/* A PASTE ANYWHERE ON THIS SCREEN. It fills the box and puts the cursor in it, and it QUEUES
+	 * NOTHING: pasting is not agreeing. */
 	let box = $state<{ focus: () => void } | undefined>();
 
 	function onPaste(event: ClipboardEvent) {
@@ -482,24 +390,12 @@
 		box?.focus();
 	}
 
-	/*
-	 * BEING SENT HERE TO LOOK AT ONE ROW.
-	 *
-	 * `?row=<id>` is how everything else in the application points at a download (the Activity
-	 * screen's rows, a History line, a message), and what it means is "this one", not "only this
-	 * one": the chip goes back to All so the row is certainly in the list, it is picked so the eye
-	 * lands on it and the verbs for it are already in the bar, and the list is scrolled to it.
-	 *
-	 * Watched rather than read once. The address can change while the screen is open (a second
-	 * press on a second pointer), and a read on mount alone would take the first one and ignore
-	 * every one after it. Acting only on a CHANGE is what keeps it from fighting somebody who then
-	 * picks a different row: `pointedAt` remembers what has been honoured.
-	 */
+	/* BEING SENT HERE TO LOOK AT ONE ROW. */
 	let pointedAt: string | null = null;
 
 	$effect(() => {
-		// `?row=` names the download; `?job=` names the job that runs it, which is what the Activity
-		// screen knows. Either lands on the same row.
+		// `?row=` names the download; `?job=` names the job that runs it, which is what the
+		// Activity screen knows.
 		const wanted = page.url.searchParams.get('row') ?? page.url.searchParams.get('job');
 		if (!wanted || wanted === pointedAt) return;
 		pointedAt = wanted;
@@ -509,12 +405,10 @@
 	async function showRow(pointer: string) {
 		const isIt = (item: { id: string; job_id: string | null }) =>
 			item.id === pointer || item.job_id === pointer;
-		/* Everything that could hide the row is put back BEFORE the read, and in the queue itself
-		   rather than by way of the address: the address effect below runs after this one, so a
-		   read asked here with the old tab still set would be answered for the wrong tab. The
-		   address carries no `show` while it carries a `row`, so the effect then finds nothing to do.
-		   Only the first page is read, so a row older than fifty others is not found: the pointer
-		   then lands on the list without picking anything. */
+		/* Everything that could hide the row is put back BEFORE the read, and in the queue
+		   itself rather than by way of the address: the address effect below runs after this
+		   one, so a read asked here with the old tab still set would be answered for the wrong
+		   tab. */
 		if (
 			!queue.items.some(isIt) ||
 			queue.filter !== 'all' ||
@@ -544,18 +438,7 @@
 		}
 	}
 
-	/*
-	 * THE TAB, THE SITES AND THE ORDER LIVE IN THE ADDRESS.
-	 *
-	 * So a reload, a Back and a link somebody was handed all land on the same part of the queue:
-	 * the tab strip is the one every entity page and Organize draw, and on each of those the tab
-	 * showing is an address. The search is not in it: it is typed, a letter at a time, and an address
-	 * rewritten per keystroke is a history nobody can go Back through.
-	 *
-	 * Read here and handed to the queue, rather than the queue reading the address itself, because
-	 * the queue is also driven by the connection's announcements and has no business knowing what
-	 * screen it is on.
-	 */
+	/* THE TAB, THE SITES AND THE ORDER LIVE IN THE ADDRESS. */
 	const QUIETLY = { replaceState: true, keepFocus: true, noScroll: true } as const;
 
 	function readShow(value: string | null): QueueFilter {
@@ -563,9 +446,8 @@
 	}
 
 	const wantedShow = $derived(readShow(page.url.searchParams.get('show')));
-	/* Every `site` in the address, because the filter panel's Site column writes one per tick and
-	   the server reads them as either. A derived STRING beside the list, so the effect below wakes
-	   when the Sites change and not on every address change that leaves them where they were. */
+	/* Every `site` in the address, because the filter panel's Site column writes one per tick
+	   and the server reads them as either. */
 	const wantedSites = $derived(
 		page.url.searchParams.getAll('site').filter((one) => one.trim() !== '')
 	);
@@ -588,8 +470,7 @@
 		return text ? `/downloads?${text}` : '/downloads';
 	}
 
-	/* The address moved: filter the queue to what it says. Only on a real change, so the queue's own
-	   reads (once a second while something runs) are not doubled by this. */
+	/* The address moved: filter the queue to what it says. */
 	$effect(() => {
 		const show = wantedShow;
 		const sites: string[] = JSON.parse(wantedSitesKey);
@@ -608,20 +489,7 @@
 	/** One tab per state, each a real address carrying the Sites and the order across. */
 	const tabs = $derived(queue.tabs.map((tab) => ({ ...tab, href: addressFor({ show: tab.id }) })));
 
-	/*
-	 * THE SITE AND THE ORDER ARE THE BAR'S, like every other wall's.
-	 *
-	 * A wall's filters and its order live on the bar across the top: the funnel and the sort
-	 * glyph. So this screen SAYS what it can do, the way Tags and People do, and the bar draws it:
-	 * the Site is a column of the filter panel, counted by the server inside the open tab, and each
-	 * ticked Site is a chip on the bar that can be taken off; the order is the bar's order menu.
-	 * Both write the address, which is what this screen already reads.
-	 *
-	 * The STATE stays the tab strip and is not a column: two controls for one filter would be
-	 * two answers to "which state is showing". The search stays on the screen, because the bar's
-	 * search box searches the LIBRARY (it goes to the library wall with the words), and a
-	 * download is not a file in it until it has landed.
-	 */
+	/* THE SITE AND THE ORDER ARE THE BAR'S, like every other wall's. */
 	const barOwner = Symbol('downloads');
 
 	$effect(() => {
@@ -637,8 +505,8 @@
 
 	$effect(() => () => screenBar.release(barOwner));
 
-	/* The search, sent a moment after the typing stops rather than per letter: each read is a query
-	   over the whole ledger, and a word typed at speed is eight of them for one answer. */
+	/* The search, sent a moment after the typing stops rather than per letter: each read is a
+	   query over the whole ledger, and a word typed at speed is eight of them for one answer. */
 	let typed = $state('');
 	let typing: ReturnType<typeof setTimeout> | undefined;
 	function searchFor(text: string) {
@@ -758,8 +626,7 @@
 	{:else if queue.shown.length === 0}
 		<Empty icon="history" scope="block">{nothingMatches}</Empty>
 	{:else}
-		<!-- The list declares its columns once and every row obeys them. Keyed on the arrangement,
-		     because a list reads its declaration when it is made. -->
+		<!-- The list declares its columns once and every row obeys them. -->
 		{#key `${stacked.yes}:${narrow.yes}`}
 			<DataRows
 				items={queue.shown}
@@ -858,8 +725,7 @@
 	}
 
 	/* A class from the one phone-width reader, never a media query: this screen follows a width
-	   declared in script (`narrow.svelte.ts`), and a width written here would be a second copy.
-	   At a phone's width the two presses take the line under the title, from its start. */
+	   declared in script (`narrow.svelte.ts`), and a width written here would be a second copy. */
 	.head-acts.phone {
 		display: flex;
 		flex-wrap: wrap;
@@ -871,8 +737,8 @@
 		display: contents;
 	}
 
-	/* Read aloud, never looked at. Not `display: none`, which would take it out of the accessibility
-	   tree along with everything it is meant to announce. */
+	/* Read aloud, never looked at. Not `display: none`, which would take it out of the
+	   accessibility tree along with everything it is meant to announce. */
 	.announcer {
 		position: absolute;
 		inline-size: 1px;
@@ -884,14 +750,7 @@
 		white-space: nowrap;
 	}
 
-	/* The tabs and the search, and what gives way when there is no room for both.
-	 *
-	 * The search wraps under the tabs rather than the tabs scrolling sideways: there are five
-	 * tabs and each carries a COUNT, so a strip that scrolls hides a number somebody cannot then
-	 * know is there, and the counts are the half of this row worth reading at a glance. The
-	 * tabs fold on to a second line themselves when they must, which is `Tabs`'s own
-	 * arrangement.
-	 */
+	/* The tabs and the search, and what gives way when there is no room for both. */
 	.narrowing {
 		display: flex;
 		align-items: center;
@@ -901,14 +760,7 @@
 		margin-block: var(--space-4) var(--space-3);
 	}
 
-	/* How wide this one may grow, and nothing else. The height, the padding, the edge, the
-	   corner, the ground, the ink, the face and the focus ring are all `NarrowBox`'s, which is
-	   the whole reason that component exists. `:global`, because the box is its element,
-	   compiled in that file's scope.
-
-	   A child of the row itself, not of a wrapper beside the tabs: a percentage inside a box
-	   sized by its own content resolves against nothing. Against the row, `100%` is a real width
-	   and the box ends at the right gutter with the rows under it. */
+	/* How wide this one may grow, and nothing else. */
 	.narrowing :global(.find) {
 		inline-size: min(220px, 100%);
 	}

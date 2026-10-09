@@ -194,6 +194,39 @@ describe('the Insights screen', () => {
 		expect(pressed).toHaveBeenCalledTimes(1);
 	});
 
+	it("marks a tile's figures with what they count, held on a press", async () => {
+		const answer = page();
+		const theater = answer.blocks.find((one) => one.id === 'theater')!;
+		const counted = (label: string, defines: string) => ({
+			label,
+			value: 60_000,
+			unit: 'ms' as const,
+			said: '1 min',
+			hidden_said: '',
+			hidden_part: 0,
+			caption: [],
+			trend: [],
+			defines: defines ? [plain(defines)] : []
+		});
+		theater.figures = [counted('In Theater', 'Time a wall played.'), counted('Sessions', '')];
+		answer.blocks.find((one) => one.id === 'arrived')!.figures = [counted('Imported', '')];
+		mocks.insights.mockResolvedValue(answer);
+		const screen = await open({ period: 'month', at: null });
+		expect(words(tile(screen, 'imported'))).toContain('Imported');
+		expect(tile(screen, 'imported')?.querySelector('button[aria-label="What counts"]')).toBeNull();
+		const marks = screen.querySelectorAll('.board button[aria-label="What counts"]');
+		expect(marks).toHaveLength(1);
+		const mark = tile(screen, 'theater')?.querySelector<HTMLButtonElement>(
+			'button[aria-label="What counts"]'
+		);
+		mark?.click();
+		flushSync();
+		mark?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+		mark?.dispatchEvent(new FocusEvent('blur'));
+		flushSync();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
 	it('has no learning paths of its own: they are under Settings, in Get to know Sift', async () => {
 		mocks.insights.mockResolvedValue(page());
 		const screen = await open({ period: 'month', at: null });

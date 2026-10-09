@@ -55,7 +55,7 @@ async def test_reset_sets_a_new_password_and_a_new_key(
 
     # The new password now works, the old one does not.
     assert (await service.login("kate", PASSWORD_TWO)).role == "admin"
-    from sift.slices.auth.service import InvalidCredentials
+    from sift.slices.auth.errors import InvalidCredentials
 
     with pytest.raises(InvalidCredentials):
         await service.login("kate", PASSWORD)
@@ -72,7 +72,7 @@ async def test_reset_re_enables_a_disabled_account(service: AuthService, auth_db
     """Recovery restores access, not only the password. A disabled user who has also forgotten
     its password would otherwise reset the password and still be shut out, with nothing left to try
     from the console, which the single admin must never be."""
-    from sift.slices.auth.service import InvalidCredentials
+    from sift.slices.auth.errors import InvalidCredentials
 
     await service.create_first_admin("kate", PASSWORD)
     await auth_db.execute("UPDATE users SET disabled = 1 WHERE username = 'kate'")

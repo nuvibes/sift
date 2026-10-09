@@ -26,18 +26,8 @@ async function readBoth(view: Maintenance) {
 	await readCopies(view);
 }
 
-/* Duplicate-finding, as the two cards see it.
- *
- * The interesting behaviour here is what the store refuses to do quietly. A queue that failed to
- * load looks exactly like a queue with nothing in it, and one of those means "nothing to review"
- * while the other means nothing at all. Same for reclaim, where an empty list reads as "no wasted
- * space", which is a reassuring thing to say when it is not true.
- *
- * The keeper RULE is not tested here and is not here to test: it is the server's, because a rule
- * that decides a whole library has to be applied where the library is. What
- * is left on this side is which file is MARKED (the server's mark, or somebody's override of it),
- * and that is what the press sends.
- */
+/* Duplicate-finding, as the two cards see it. The interesting behaviour here is what the store
+ * refuses to do quietly. */
 
 function file(id: string, over: Partial<GroupFile> = {}): GroupFile {
 	return {
@@ -162,9 +152,7 @@ describe('loading both lists', () => {
 	});
 
 	it('does not claim it loaded when it did not', async () => {
-		/* The distinction the screen leans on. `loaded` false is what stops it going on to say
-		 * "nothing to review" and "no file is stored twice": two reassuring statements about a
-		 * library that nobody managed to read. */
+		/* The distinction the screen leans on. */
 		answers({ ok: false, status: 403 });
 
 		const view = new Maintenance();
@@ -202,9 +190,7 @@ describe('loading both lists', () => {
 
 	it('reads a page of groups in ONE request, facts and all', async () => {
 		/* Asking for every file on its own would make a page of a hundred pairs two hundred
-		 * requests, each a recursive permission walk on a self-hosted box. The facts arriving with
-		 * the group is the whole reason the page is one request, so the count is what is asserted
-		 * rather than merely the contents. */
+		 * requests, each a recursive permission walk on a self-hosted box. */
 		answers({ ok: true, body: queue() });
 
 		const view = new Maintenance();
@@ -261,9 +247,8 @@ describe('marking a keeper, and pressing a page', () => {
 	});
 
 	it('ignores an override naming a file that is not in the group', () => {
-		/* One reader for the tick on screen and the file the press sends, so the two can never be
-		   two different answers. A stale override (the page reloaded and the group changed shape)
-		   must fall back to the mark rather than sending a file that is not there. */
+		/* One reader for the tick on screen and the file the press sends, so the two can never
+		   be two different answers. */
 		const view = new Maintenance();
 		view.groups = [group()];
 		view.chosen = { 'asset-a': 'asset-gone' };
@@ -272,10 +257,8 @@ describe('marking a keeper, and pressing a page', () => {
 	});
 
 	it('tells two groups apart when they share their smallest file', () => {
-		/* A GIF is fingerprinted by `videohash` and by `video_phash`, so the same two files are a
-		   group under each, and the two groups have the same smallest file. Keyed on the file
-		   alone, an override on one would mark the other, and the screen's `{#each}` would throw on
-		   the duplicate key and draw nothing at all. */
+		/* A GIF is fingerprinted by `videohash` and by `video_phash`, so the same two files are
+		   a group under each, and the two groups have the same smallest file. */
 		const view = new Maintenance();
 		const byFrames = group({ method: 'videohash', keeper: 'asset-a' });
 		const byVideo = group({ method: 'video_phash', keeper: 'asset-a' });
@@ -297,8 +280,7 @@ describe('marking a keeper, and pressing a page', () => {
 	});
 
 	it('never counts a chain as marked, however it was answered', () => {
-		/* A component past the cap is a chain of pairs whose ends may look nothing alike. It is
-		   never pre-marked on the server, and it must not become pressable by being overridden. */
+		/* A component past the cap is a chain of pairs whose ends may look nothing alike. */
 		const view = new Maintenance();
 		view.groups = [group({ too_big: true, keeper: null })];
 		view.choose(view.groups[0], 'asset-b');
@@ -319,8 +301,8 @@ describe('marking a keeper, and pressing a page', () => {
 
 	it('sends one request for the whole page, naming each group and its keeper', async () => {
 		/* One request rather than one per group: a page is one press and one decision, and
-		   twenty-four requests would leave a half-settled page behind if the connection dropped in
-		   the middle. */
+		   twenty-four requests would leave a half-settled page behind if the connection dropped
+		   in the middle. */
 		answers(
 			{ ok: true, body: { settled: 1, removed: 1, refused: 0, unknown: 0 } },
 			{
@@ -342,9 +324,9 @@ describe('marking a keeper, and pressing a page', () => {
 	});
 
 	it("reads nothing back itself: which page comes next is the panel's paging to ask", async () => {
-		/* Read back from the front here, by offset, beside a panel holding its own offset, the two
-		   would disagree about where the page was, and a single group dismissed on page three would
-		   send the list to page one under a pager still saying three. */
+		/* Read back from the front here, by offset, beside a panel holding its own offset, the
+		   two would disagree about where the page was, and a single group dismissed on page
+		   three would send the list to page one under a pager still saying three. */
 		answers({ ok: true, body: { settled: 1, removed: 1, refused: 0, unknown: 0 } });
 		const view = new Maintenance();
 		view.groups = [group()];
@@ -397,8 +379,7 @@ describe('marking a keeper, and pressing a page', () => {
 	});
 
 	it('forgets the overrides when a page is replaced', async () => {
-		/* A mark belongs to the group in front of somebody. Carrying one across a page turn would
-		   put a keeper on a group they have not seen, which the next press would act on. */
+		/* A mark belongs to the group in front of somebody. */
 		answers({ ok: true, body: queue() });
 		const view = new Maintenance();
 		view.chosen = { 'asset-a': 'asset-b' };
@@ -411,8 +392,7 @@ describe('marking a keeper, and pressing a page', () => {
 
 describe('letting go of one copy', () => {
 	it('names the copy, not the file', async () => {
-		/* The whole point: the asset survives in its other places. A request that named only the
-		 * asset would be asking for the file itself to go. */
+		/* The whole point: the asset survives in its other places. */
 		answers({ ok: true, body: {} });
 
 		const view = new Maintenance();
@@ -448,10 +428,9 @@ describe('how the numbers are written', () => {
 
 describe('saying how alike a group is', () => {
 	it('uses ONE vocabulary, whatever measured it', () => {
-		/* A phrase per scale (a photograph "Nearly identical", a video "Almost certainly the same",
-		   a GIF "26 of 30 frames match") has no order anybody can see between them, and some are a
-		   sentence about confidence rather than about likeness. A person reading a page of these is
-		   asking one question, so the answer has to mean the same thing on every card. */
+		/* A phrase per scale (a photograph "Nearly identical", a video "Almost certainly the
+		   same", a GIF "26 of 30 frames match") has no order anybody can see between them, and
+		   some are a sentence about confidence rather than about likeness. */
 		const rungs = ['Identical', 'Almost identical', 'Very similar', 'Similar'];
 		for (const method of ['phash', 'video_phash', 'videohash']) {
 			for (let distance = 0; distance < 12; distance += 1) {
@@ -467,16 +446,8 @@ describe('saying how alike a group is', () => {
 	});
 
 	it('turns over exactly where the closeness dial does', () => {
-		/* The dial has four positions and the server gives each a figure per fingerprint: 0,
-		   2, 4 and the widest. The rungs turn over at the same figures, so a queue read at High
-		   shows nothing worse than "Almost identical" and the dial's own words said so before it
-		   moved. That is what makes them trustworthy rather than decorative.
-
-		   !! THREE IS NOT DECORATION. With every figure a BOUNDARY and none between two, moving
-		   the middle edge from 2 to 3 would change the answer for three alone and every other
-		   assertion here would still pass. A rung's EDGES being right is not the same claim as
-		   its WIDTH being right, and only the second one is what somebody reading the queue
-		   relies on. */
+		/* The dial has four positions and the server gives each a figure per fingerprint: 0, 2,
+		   4 and the widest. */
 		for (const method of ['phash', 'video_phash', 'videohash']) {
 			expect(describeCloseness(alike(method, 0))).toBe('Identical');
 			expect(describeCloseness(alike(method, 2))).toBe('Almost identical');
@@ -492,16 +463,7 @@ describe('saying how alike a group is', () => {
 	});
 });
 
-/* The reclaim list is a PAGE, and the number over it is the whole library.
- *
- * The route does not hand back every redundant asset in the library on every read: thousands of
- * them, with every path under each, polled on a timer by a mark that only wants to know whether
- * the count has grown.
- *
- * The two must stay apart. A screen that decided "nothing to reclaim" from the length of a page
- * would say it over a library with thousands of duplicates in it the moment the page
- * came back empty for any other reason.
- */
+/* The reclaim list is a PAGE, and the number over it is the whole library. */
 
 function redundancy(id: string) {
 	return {
@@ -548,8 +510,8 @@ describe('a page of the copies, and the whole library over it', () => {
 	});
 
 	it('turns a page rather than appending, so both tabs move the same way', async () => {
-		/* One way to move through one job: a pager, as the near-duplicate tab beside it has,
-		   not a *Show more* on one tab and a pager on the other. */
+		/* One way to move through one job: a pager, as the near-duplicate tab beside it has, not
+		   a *Show more* on one tab and a pager on the other. */
 		answers(
 			{ ok: true, body: { assets: [redundancy('a-1')], total: 2, total_reclaimable_bytes: 20 } },
 			{
@@ -570,10 +532,9 @@ describe('a page of the copies, and the whole library over it', () => {
 	});
 
 	it('stays on the page it was on after letting a copy go', async () => {
-		/* Unlike a confirm over a whole page of groups, which empties the page it was on, releasing
-		   one copy leaves the rest of the page where it was, so going back to the start would
-		   throw away the position of somebody working down a long list. The panel reads it back
-		   through the same paging, which is still where it was. */
+		/* Unlike a confirm over a whole page of groups, which empties the page it was on,
+		   releasing one copy leaves the rest of the page where it was, so going back to the
+		   start would throw away the position of somebody working down a long list. */
 		answers(
 			{
 				ok: true,
@@ -598,8 +559,7 @@ describe('a page of the copies, and the whole library over it', () => {
 	});
 
 	it('says how many of the page the vault is hiding', async () => {
-		/* An empty page and an empty library draw the same screen. This is what lets the sentence
-		   over the list say which one it is looking at. */
+		/* An empty page and an empty library draw the same screen. */
 		answers({
 			ok: true,
 			body: { assets: [], total: 4, total_reclaimable_bytes: 40, concealed: 4 }
@@ -614,8 +574,7 @@ describe('a page of the copies, and the whole library over it', () => {
 
 	it('asks for nothing but the release when letting a copy go', async () => {
 		/* The review queue is a different card, and the page of copies is read back by the panel
-		   through its paging. A read here would be a second copy of "which page", beside the
-		   paging's. */
+		   through its paging. */
 		answers(
 			{ ok: true, body: { assets: [redundancy('a-1')], total: 1, total_reclaimable_bytes: 10 } },
 			{ ok: true, body: {} }

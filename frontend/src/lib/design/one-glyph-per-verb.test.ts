@@ -3,44 +3,12 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/*
- * One verb, one glyph, wherever the verb is offered.
- *
- * ## What goes wrong
- *
- * Enrich is declared in three places: the file's own verb list, the entity verb list the walls
- * share, and each of the two entity pages, which hand-build their Options menu rather than take the
- * shared list. Two glyphs across those (a backlight in one, a magnifying glass in another)
- * would make the same word on the Browse context menu and on a person's own page two different
- * pictures, with nothing to fail: both are real glyphs, both compile, and the two menus are never
- * on screen at the same time.
- *
- * A glyph is how a row is found by shape before its word is read; a verb drawn two ways is a verb
- * nobody can find that way at all, and a magnifying glass would be worse than merely different
- * because it already means search everywhere else in the app.
- *
- * ## Why the check is this narrow
- *
- * Only VERB literals are read: `{ id, label, icon }`, which is the shape every menu row, bar
- * button and Options item is declared in. That is deliberate and it is what keeps the rule from
- * collecting exemptions: a settings section and a facet dimension are also `{ label, icon }` pairs,
- * and "Accounts" legitimately means the settings section in one and the address a file came from in
- * the other. Those are two things sharing a word, which is a different question from one verb
- * wearing two pictures.
- *
- * Test doubles are skipped for the same reason `vocabulary.test.ts` skips them: a fixture's menu is
- * not a menu anybody reads, and one of them names "Scan now" with the wrong glyph on purpose.
- */
+/* One verb, one glyph, wherever the verb is offered. */
 
 /** The whole of `src`, resolved from this file: the runner is started from more than one place. */
 const SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/**
- * A verb literal: an id, the word on it, and the glyph beside that word.
- *
- * `as const` is allowed between the label and the comma because the two entity pages write it:
- * their `options` list is typed `Verb[]` through a `$derived`, which widens a bare string.
- */
+/** A verb literal: an id, the word on it, and the glyph beside that word. */
 const VERB =
 	/id:\s*'[^']+'\s*,\s*label:\s*'([^']{1,40})'\s*(?:as\s+const\s*)?,\s*icon:\s*'([a-z0-9_]+)'/g;
 
@@ -80,8 +48,7 @@ describe('a verb wears the same glyph everywhere it is offered', () => {
 	});
 
 	it('reads the shape it claims to read, proved against a known pair', () => {
-		/* A known positive, because silence and success are the same thing to a sweep. This is a
-		   declaration in the shape the entity pages write, `as const` and all. */
+		/* A known positive, because silence and success are the same thing to a sweep. */
 		expect(
 			verbsIn(`{ id: 'enrich', label: 'Enrich', icon: 'search' as const, run: open }`)
 		).toEqual([{ label: 'Enrich', icon: 'search', line: 1 }]);

@@ -1,32 +1,4 @@
-/* Usernames, and who they belong to.
- *
- * ## What a username is, and what it is not
- *
- * A username is one identity on one site: the name somebody posts under there, the name that
- * site shows beside it, its page there, the Site's own number for it when one is known, and the
- * files posted under it. A Person is a human. One human holds several usernames, and a username
- * can outlive whoever was behind it, which is why collapsing the two would lose something neither
- * could express on its own. One word for it everywhere: two words for one thing read as two
- * things, and "account" is what Sift's own sign-ins are called.
- *
- * ## Stored, and not a place
- *
- * A username has no page of its own (an old `/accounts/<id>` link lands on the Files wall
- * filtered to it: `routes/accounts/[id]/+page.ts`). The row stays (it is what files a
- * download under a Site, what a Site's sharing reaches files through, and what the Site's own
- * number lives on), but it is drawn where somebody already is. A person's Sites tab lists their
- * usernames under each Site, a Site's People tab lists each person's usernames on it, the
- * Organize queue answers "who is this" on the card itself, and "see the files" is the Files wall
- * filtered with `?username=`. Nothing links to a username as if it were a thing to visit, so
- * there is no per-username read or cover write here: an exported call nothing makes is a surface
- * nobody owns.
- *
- * ## Nothing is worked out here
- *
- * Counts are the server's and are scoped to whoever is asking, so they are never recomputed in
- * the client: a count taken over the rows this session happens to hold is a different number for
- * anybody but an admin.
- */
+/* Usernames, and who they belong to. */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -73,28 +45,14 @@ function params(query: UsernameQuery): Record<string, string> {
 /** The route's own ceiling on one page (`kernel/paging.py MAX_PAGE_SIZE`). */
 const EVERY_PAGE = 200;
 
-/**
- * Whether a username is worth a line under a card: it holds files, or the Site's own number for it
- * is known.
- *
- * The rest are PROFILE LINKS, and on an enriched library they are nearly the whole table: a stash-box
- * record lists a performer's pages on thirty sites and each one becomes a row with nothing under
- * it. Those are the person's Links, drawn in the record already; listed here as usernames they
- * would bury the few that files were actually posted under.
- */
+/** Whether a username is worth a line under a card: it holds files, or the Site's own number for
+ * it is known. */
 export function holdsSomething(one: Username): boolean {
 	return one.asset_count > 0 || Boolean(one.number);
 }
 
-/**
- * The usernames that hold something, filed by one of their own columns: the Site for a person's
- * Sites tab, the person for a Site's People tab. A username with no value there is left out: a Site
- * row deleted from under a filing, or a username nobody has said who is behind.
- *
- * And a username with NO NAME is never listed: it is the Site's "poster unknown" row, how a file is
- * filed under a Site alone. Its files stay filed (the Site's Files tab counts them); as a line
- * under a card it would be a blank chip that is nobody's name.
- */
+/** The usernames that hold something, filed by one of their own columns: the Site for a person's
+ * Sites tab, the person for a Site's People tab. */
 export function usernamesBy(
 	all: readonly Username[],
 	key: 'site_id' | 'person_id'
@@ -116,16 +74,7 @@ class Usernames {
 		return await api.get<UsernamePage>('/usernames', { query: params(query) });
 	}
 
-	/**
-	 * What it is shown as, where its page is, and its ID. A field left out is left alone, never
-	 * blanked.
-	 *
-	 * `number` fills a blank; `replaceNumber` beside it replaces one the username already has, and
-	 * is only sent after the person was asked ("Change the Instagram ID?"). The server answers 409
-	 * with a sentence for the person (`ApiError.detail`) where the username already has a different
-	 * ID and replacing was not asked, or where ANOTHER username on the Site has this one ("These
-	 * may be the same person, renamed").
-	 */
+	/** What it is shown as, where its page is, and its ID. */
 	async save(
 		id: string,
 		changes: Partial<Pick<Username, 'display_name' | 'url' | 'number'>> & {
@@ -138,12 +87,7 @@ class Usernames {
 		});
 	}
 
-	/**
-	 * Say who a username belongs to: somebody who already exists, or somebody new.
-	 *
-	 * Its own call rather than a field on `save`, because one branch creates a person. The server
-	 * refuses both and neither, so the branch with the larger consequence has to be asked for.
-	 */
+	/** Say who a username belongs to: somebody who already exists, or somebody new. */
 	async attach(
 		id: string,
 		who: { personId: string; asAlias?: boolean } | { newPersonName: string; asAlias?: boolean }
@@ -160,22 +104,15 @@ class Usernames {
 		await api.del(`/usernames/${id}/person`);
 	}
 
-	/**
-	 * EVERY username one person holds, or every username on one Site, however many pages that is.
-	 *
-	 * A person's Sites tab and a Site's People tab each draw usernames beside cards the server
-	 * pages on its own terms, so the usernames have to be the whole set rather than the first page
-	 * of it: a card whose username sat on page two would read as a person with no username on that
-	 * Site. Read in pages of the route's own ceiling until the total is reached: a handful of
-	 * requests for a large Site, one for nearly every person.
-	 */
+	/** EVERY username one person holds, or every username on one Site, however many pages that
+	 * is. */
 	async allOf(query: Pick<UsernameQuery, 'personId' | 'siteId'>): Promise<Username[]> {
 		const held: Username[] = [];
 		for (;;) {
 			const page = await this.list({ ...query, limit: EVERY_PAGE, offset: held.length });
 			held.push(...page.items);
-			/* An empty page ends it whatever the total says, so a total that moved while this read
-			   cannot turn into a loop that never stops asking. */
+			/* An empty page ends it whatever the total says, so a total that moved while this
+			   read cannot turn into a loop that never stops asking. */
 			if (page.items.length === 0 || held.length >= page.total) return held;
 		}
 	}
@@ -183,17 +120,9 @@ class Usernames {
 
 export const usernames = new Usernames();
 
-/**
- * The usernames a wall of cards draws under each card, read once for the whole page and filed by
+/** The usernames a wall of cards draws under each card, read once for the whole page and filed by
  * the card they belong under: the Site for a person's Sites tab (`site_id`), the person for a
- * Site's People tab (`person_id`).
- *
- * One read of every username rather than one per card: the wall pages its cards on its own terms, and
- * a request per card is a request per card per page. A slower answer for a page somebody has
- * already left cannot land over the one they are on (the rising counter). A failed read leaves
- * nothing under the cards rather than failing the wall: the cards are still the truth, and a line
- * missing is a smaller wrong than a wall replaced by an error.
- */
+ * Site's People tab (`person_id`). */
 export class UsernamesByCard {
 	#filed = $state<Map<string, Username[]>>(new Map());
 	#asked = 0;

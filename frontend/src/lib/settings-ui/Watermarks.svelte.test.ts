@@ -1,9 +1,4 @@
-/* The Watermarks pane, on the one Recognition layout.
- *
- * Two promises, each one somebody relies on without reading it: where reading stands is one line
- * whose every number is the server's, and reading the library is the watermark task's own When
- * row, not a button here starting a second walk of the library for this feature alone.
- */
+/* The Watermarks pane, on the one Recognition layout. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';

@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Turning a face in a frame into the square a recognizer was trained on, and storing it.
-
-Alignment is the step nothing downstream can check. Hand a recognizer a face that is rotated or
-off-centre and it does not fail: it returns numbers that are quietly worse, and the only symptom
-is matching that is not as good as it should be. So the properties are asserted here: the landmarks
-land where the template says, a rotated face comes out upright, and a mirrored fit is never chosen.
-"""
+"""Turning a face in a frame into the aligned square and storing it; alignment fails quietly, so
+its properties are asserted: landmarks land on the template, rotation comes out, no mirroring."""
 
 from __future__ import annotations
 
@@ -125,13 +120,7 @@ def test_a_face_in_the_middle_of_the_frame_is_wholly_real() -> None:
 
 
 def test_a_face_running_off_the_side_reports_how_much_of_it_was_invented() -> None:
-    """The number a smeared crop turns on.
-
-    Cut at the side of a shot, part of the square is one edge pixel repeated, and afterwards
-    nothing can tell that band from a flat background, which is why it has to be counted here.
-    Placed so the eyes sit at the very left edge: roughly the left third of the square comes from
-    outside the frame.
-    """
+    """The number a smeared crop turns on: eyes at the left edge, a third of the square outside."""
     frame = np.full((200, 200, 3), 190, dtype=np.uint8)
     landmarks = ((-30.0, 40.0), (30.0, 40.0), (0.0, 66.0), (-20.0, 92.0), (20.0, 92.0))
 
@@ -157,17 +146,7 @@ def test_an_index_past_the_edge_folds_back_without_repeating_the_edge_itself() -
 
 
 def test_the_part_of_a_square_that_fell_outside_is_texture_rather_than_a_smear() -> None:
-    """What somebody actually complains about, and it is not the measurement.
-
-    Filling the outside by repeating the edge pixel makes every row of that band the same pixel
-    stretched sideways: a streak no photograph contains. It is handed to the recognizer AND drawn
-    on the screen, where it reads as a fault in Sift. Reflecting puts the hair or wall that was
-    beside the edge back, mirrored: not what the camera saw, but plausible texture in place of a
-    streak.
-
-    Asserted by variation down the band rather than by comparing pictures: a repeated column is
-    constant along every row of it, and a reflected one is not.
-    """
+    """Outside the frame is mirrored, not streaked: a repeated column is constant along its rows."""
     frame = noisy_frame(200, 200, seed=11)
     # Placed so the square reaches well past the left-hand edge.
     landmarks = ((-40.0, 90.0), (20.0, 90.0), (-10.0, 116.0), (-30.0, 142.0), (10.0, 142.0))
@@ -182,12 +161,7 @@ def test_the_part_of_a_square_that_fell_outside_is_texture_rather_than_a_smear()
 def whole_square_containment(
     frame: np.ndarray, landmarks: tuple[tuple[float, float], ...]
 ) -> float:
-    """The measure this replaced: the same count taken over all of the square instead of the face.
-
-    Written out here rather than kept behind a flag in the code, because its only remaining job is
-    to be the thing a test can show a face passing and the old one refusing. Without it the two
-    assertions above would agree on every face and prove nothing.
-    """
+    """The measure this replaced, over the whole square, kept so a test shows the difference."""
     matrix = cropping.similarity_transform(np.array(landmarks, dtype=np.float64), TEMPLATE)
     rows, columns = np.mgrid[:CHIP_SIZE, :CHIP_SIZE]
     grid = np.stack([columns.ravel(), rows.ravel(), np.ones(CHIP_SIZE**2)], axis=-1)
@@ -203,18 +177,8 @@ def whole_square_containment(
 
 
 def test_a_head_at_the_top_of_the_picture_is_not_scored_on_its_missing_hair() -> None:
-    """The reason this is measured over the face rather than over the whole square.
-
-    The square is not a crop: it is the arrangement the recognizer was trained on, with the eyes
-    a little above the middle and a broad band of forehead and hair above them. Somebody
-    photographing themselves puts their head near the top of the frame, so that band is exactly
-    what falls outside it, and scored over the whole square a sharp, straight-on face over 160
-    pixels across would be refused for how much of its hair was invented.
-
-    The eyes, nose and mouth here are all comfortably inside the frame. Only the margin above them
-    is not, and there is enough of it missing that the square AS A WHOLE falls below the floor,
-    which is what makes this worth asserting rather than merely true.
-    """
+    """Measured over the face: a selfie's missing hairline is not a missing face, though the
+    square as a whole falls below the floor."""
     frame = noisy_frame(400, 400, seed=7)
     landmarks = ((170.0, 44.0), (230.0, 44.0), (200.0, 70.0), (180.0, 96.0), (220.0, 96.0))
 
@@ -229,11 +193,7 @@ def test_a_head_at_the_top_of_the_picture_is_not_scored_on_its_missing_hair() ->
 
 
 def test_a_face_cut_through_its_features_is_still_caught() -> None:
-    """The other half of the same change, and the one that would make it a loosening if it failed.
-
-    Narrowing what containment covers must not stop it noticing the case it was added for. A face
-    at the SIDE of a shot loses the features themselves, not the margin, and has to score badly.
-    """
+    """A face at the side of a shot loses its features and still scores badly."""
     frame = noisy_frame(400, 400, seed=8)
     landmarks = ((-10.0, 120.0), (50.0, 120.0), (20.0, 146.0), (0.0, 172.0), (40.0, 172.0))
 
@@ -294,14 +254,9 @@ async def test_a_partial_answer_is_refused_rather_than_paired_up_wrongly(
 async def test_a_stored_picture_reads_back_as_the_square_it_was_made_from(
     settings: Settings,
 ) -> None:
-    """What measuring the library again with a different model reads instead of the media. The
-    square goes out through the encoder and comes back through the decoder in the same colour
-    order, close enough that the description taken from it is the description of the same face:
-    the encoder's own note puts the loss at four tenths of a percent of a vector, and a square
-    that came back with its colours swapped would be off by far more than this floor allows."""
-    # Smooth pictures, deliberately: pure noise is the one thing the stored format cannot keep,
-    # and a face is not noise. Each channel runs a different way, so a square that came back with
-    # its colours in the wrong order would be far off.
+    """A square round-trips the encoder and decoder close enough to describe the same face, in
+    the same colour order."""
+    # Smooth pictures, each channel running a different way, so swapped colours would show.
     across = np.linspace(20, 235, CHIP_SIZE).astype(np.uint8)
     squares = []
     for down_first in (False, True):
@@ -344,9 +299,6 @@ def test_the_same_picture_has_the_same_identity_and_a_different_one_does_not() -
 
 
 # --- the picture a person looks at, which is not the one the recognizer reads ---------------------
-#
-# The aligned square above is 112 pixels, framed on the eyes, nose and mouth. The People wall draws
-# a cover at about 230 across and a person's own page larger still, so a cover is cut separately.
 
 
 def test_a_cover_is_cut_larger_than_the_square_the_recognizer_reads() -> None:
@@ -400,8 +352,7 @@ def test_a_cover_is_reduced_by_the_encoder_and_never_enlarged_by_it() -> None:
 
 @pytest.mark.integration
 async def test_a_cover_is_stored_as_a_picture(tmp_path: Path) -> None:
-    """The encoder is a real process, so this is the only place the arguments above are proved to
-    be arguments it accepts rather than arguments that read correctly."""
+    """The encoder is a real process: the only proof these arguments are accepted."""
     frame = noisy_frame(400, 400, seed=15)
     draw_face(frame, x=100, y=100, size=200)
 

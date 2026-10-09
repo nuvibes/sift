@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What the two maintenance screens are sent.
-
-Both are admin-only surfaces, so these carry ids plainly rather than concealing anything: there
-is nobody to conceal them from by the time a response is being built. The gate is at the route.
-"""
+"""What the two admin-only maintenance screens are sent."""
 
 from __future__ import annotations
 
@@ -13,22 +9,14 @@ from sift.kernel.wire import Wire
 
 
 class FileView(Wire):
-    """One file of a group, and everything needed to tell it from the others beside it.
-
-    The facts arrive WITH the group rather than being fetched per file, and that is not a
-    micro-optimisation: asked per file, a page of a hundred pairs is two hundred requests, and every
-    one of them a permission walk on a self-hosted server that is often a small box.
-    """
+    """One file of a group, with the facts that tell it from the others, sent with the group."""
 
     id: str
     media_type: str
-    #: True when this user may not be shown the file itself. The tile is a locked placeholder,
-    #: nothing about it is printed, and no rule may keep or delete it. See the route.
+    #: The tile is a locked placeholder; no rule may keep or delete it.
     concealed: bool = False
     original_filename: str | None = None
-    #: Where the file is, said the one way every screen says a place (`kernel.where`). Regularly the
-    #: ONLY thing that tells two files in a group apart, because the pictures are the same picture.
-    #: Null when no copy is anywhere Sift can currently see.
+    #: Often the only thing telling two files apart; null when no copy is visible.
     where: str | None = None
     size_bytes: int | None = None
     width: int | None = None
@@ -36,17 +24,14 @@ class FileView(Wire):
     duration_ms: int | None = None
     container: str | None = None
     added_at: int | None = None
-    #: The token on the end of the still's address, so the browser may keep the picture instead of
-    #: asking again on every visit. Minted by the access layer with every other file's (see
-    #: `kernel.serving.art_version`); None for a concealed file and for one with no recorded picture,
-    #: whose address is then left bare and re-checked on every use: slower, never wrong.
+    #: The still's cache token (`kernel.serving.art_version`); None leaves the address bare.
     art: str | None = None
 
 
 class GroupView(Wire):
     """One question: these files, and the one a rule would keep."""
 
-    #: The files, smallest id first. Stable, so a group keeps its shape between two reads.
+    #: Smallest id first, so a group keeps its shape between reads.
     files: list[FileView]
     method: str = Field(
         description=(
@@ -76,30 +61,17 @@ class GroupView(Wire):
 
 
 class ChoiceView(Wire):
-    """One value a dial may be set to, and what it is called on screen.
-
-    One record for both dials rather than one each: a stored value is a word like `higher_res` or
-    `medium` and the reader is shown "Higher resolution" or "Medium - re-encoded", and both mappings
-    are declared in the settings registry. A screen holding either of them as its own list is a list
-    that drifts the first time a choice is added and nobody edits both.
-    """
+    """One value a dial may be set to, and its on-screen label, both from the settings registry."""
 
     key: str
     label: str
 
 
 class GroupList(Wire):
-    """A page of groups, and everything needed to read it honestly.
-
-    The numbers beside the list are not decoration. A near-duplicate screen showing nothing has
-    several completely different meanings (there are none, the dial is hiding them, half the
-    library has never been fingerprinted) and they read identically without these.
-    """
+    """A page of groups, with the counts that tell an empty page's causes apart."""
 
     groups: list[GroupView]
-    #: How many groups these settings make, across the whole library. What the page is a part of.
     total: int
-    #: Where this page starts, counting from zero. Echoed back so a pager cannot drift from it.
     offset: int
     needs_you: int = Field(
         description=(
@@ -172,13 +144,7 @@ class GroupList(Wire):
 
 
 class GroupChoice(Wire):
-    """One group, and which of its files to keep.
-
-    The whole group is named rather than a group id, because a group has no id: it is computed from
-    the pair table at the dials in force, so the only durable name for one is the set of files in
-    it. The server clusters again and refuses anything that is not one of its own groups, which
-    is what stops a request naming an arbitrary set of files and having them deleted together.
-    """
+    """One group by its files, since a group has no id, and which of them to keep."""
 
     ids: list[str]
     keep: str | None = Field(
@@ -197,18 +163,12 @@ class GroupSettleRequest(Wire):
 
 
 class GroupSettleResult(Wire):
-    """What the press actually did, which is not always what it was asked to do.
-
-    A folder Sift was never given write access to refuses one file and says nothing about the rest,
-    so the counts are reported rather than assumed. `refused` is how a screen can say "twenty-two
-    done, two could not be deleted" instead of claiming a success it did not have.
-    """
+    """What the press did, with refusals counted rather than assumed."""
 
     settled: int = Field(description="Groups that were acted on.")
     removed: int = Field(description="Files deleted from the disk.")
     refused: int = Field(description="Files the disk would not let go of. Still in the queue.")
-    #: Groups the server would not act on: not one of its own groups any more, or holding a file
-    #: this session may not be shown. A dial moved under the screen is the ordinary cause.
+    #: Not one of the server's groups any more, or holding a hidden file.
     unknown: int = 0
 
 
@@ -220,9 +180,7 @@ class CopyView(Wire):
     rel_path: str
     filename: str
     size_bytes: int | None
-    #: Where the copy is, said the one way every screen says a place (`kernel.where`): the full
-    #: path, with a folder Hidden hides as "...". `rel_path` alone is the half that is usually the
-    #: SAME on both copies of a file, so alone it cannot answer the one question this screen asks.
+    #: The full path: `rel_path` alone is usually the same on both copies.
     path: str | None = None
 
 
@@ -232,19 +190,11 @@ class RedundancyView(Wire):
     asset_id: str
     media_type: str
     copies: list[CopyView]
-    #: What the tile prints under the picture, the same three facts a near-duplicate tile does.
-    #:
-    #: On the ASSET rather than on each copy, because every copy is the same bytes (that is what
-    #: makes them exact duplicates), so a shape and a length per copy would be the same number
-    #: printed twice with a suggestion that it might not be. What differs between copies is where
-    #: each one is and what the disk says it takes, and both of those are on `CopyView`.
+    #: On the asset, since every copy is the same bytes.
     width: int | None = None
     height: int | None = None
     duration_ms: int | None = None
-    #: The token on the end of the still's address, so the browser may keep the picture instead of
-    #: asking again on every visit. Minted by the access layer with every other file's (see
-    #: `kernel.serving.art_version`); None for a concealed file and for one with no recorded picture,
-    #: whose address is then left bare and re-checked on every use: slower, never wrong.
+    #: The still's cache token (`kernel.serving.art_version`); None leaves the address bare.
     art: str | None = None
     reclaimable_bytes: int = Field(
         description=(
@@ -255,20 +205,13 @@ class RedundancyView(Wire):
 
 
 class ReclaimView(Wire):
-    """One page of the assets stored more than once, and what the whole of it comes to.
-
-    Three numbers over two populations, kept apart on purpose. `assets` is this page, held to the
-    vault. `total` and `total_reclaimable_bytes` are the whole library and are not: they describe
-    how many and how much, never which. `concealed` is how many of THIS page were dropped for the
-    vault, so a page that comes back short says why rather than looking like the end of the list.
-    """
+    """One page of assets stored more than once; the totals are whole-library and not vault-held."""
 
     assets: list[RedundancyView]
     total: int
     total_reclaimable_bytes: int
     concealed: int = 0
-    #: Where this page begins. What the request asked for, except when it asked by a row (`from`):
-    #: only the answer knows where that row is, and the page's own pager counts from here.
+    #: Where this page begins; only the answer knows where a `from` row is.
     offset: int = 0
 
 
@@ -286,37 +229,27 @@ class ReleaseOne(Wire):
 
 
 class ReleaseMany(Wire):
-    """Let go of these copies, one press for a page: the same act `ReleaseRequest` is, over
-    the copies the screen marked as not the keeper of each file."""
+    """Let go of these copies in one press, as `ReleaseRequest` does for one."""
 
     releases: list[ReleaseOne]
 
 
 class Released(Wire):
-    """What a page release did. A copy that could not go (its file already gone, the last
-    copy of something) is counted rather than failing the rest."""
+    """What a page release did; a copy that could not go is counted, not fatal."""
 
     released: int
     refused: int
 
 
 class CarryResult(Wire):
-    """What a carry did.
+    """What a carry did; `files` counts files, the grain receipts are written at."""
 
-    `files` counts FILES and not rows, because a file that gained two attributions is one file that
-    changed and one thing to take back: the same grain the receipts are written at.
-    """
-
-    #: Groups that were acted on.
     carried: int
-    #: Files that gained an attribution.
     files: int
 
 
 class CarryTotals(Wire):
-    """How much there is to carry across the whole library, counted before anything is offered."""
+    """How much there is to carry across the whole library."""
 
-    #: Groups of copies where one file knows something the others do not.
     groups: int
-    #: Files that would gain an attribution.
     files: int

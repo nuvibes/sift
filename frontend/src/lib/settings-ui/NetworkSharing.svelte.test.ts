@@ -1,17 +1,4 @@
-/* Whether this library answers the rest of the network.
- *
- * This is Sift's exposure surface, and the claim the file itself calls the one thing this screen
- * must not get wrong is drawn in the markup and nowhere else: when the switch and what is actually
- * listening DISAGREE, the screen has to say so in BOTH directions. The "off" half is the one that
- * matters: somebody turns sharing off, is told nothing, and their library goes on answering the
- * whole network exactly as before.
- *
- * The other two here are the same kind of thing. The firewall command is a thing somebody COPIES,
- * so every part of it is literal except the port, which comes from the shell that bound the socket;
- * a command assembled from several variables is one that will eventually be assembled wrong. And
- * the block is absent altogether where it could say nothing true: a browser, or a client pointed
- * at somebody else's library.
- */
+/* Whether this library answers the rest of the network. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
@@ -61,9 +48,7 @@ afterEach(() => {
 	vi.clearAllMocks();
 });
 
-/** What the pane says, with the markup's own line breaks taken out.
- *  A sentence written across two lines of a template is one string on screen and two in
- *  `textContent`, so an assertion on the words as somebody reads them has to normalise. */
+/** What the pane says, with the markup's own line breaks taken out. */
 function said(): string {
 	return (host.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -93,7 +78,7 @@ it('draws nothing on a client pointed at somebody else s library', async () => {
 });
 
 /* What turning it on sets off is said BEFORE the press: the restart, and Windows' own prompt for
-   the port. Once it is on, the firewall lines below say the rest, so the Note goes. */
+   the port. */
 it('says what Windows will ask before sharing is turned on, and only then', async () => {
 	sharing.mockResolvedValue(state({ enabled: false, live: false, address: null }));
 	await draw();
@@ -117,13 +102,7 @@ it('shows the address to type on the other computer once it is being shared', as
 });
 
 it('covers the machine part of it until somebody asks, and shows the scheme either way', async () => {
-	/* The address of the machine holding the library, on a pane that stays open. It is covered the
-	   way a tunnel's exit address is (the same component, so the two cannot drift), and the way
-	   to USE it is the Copy button beside it, which never needs it on the screen.
-
-	   Pressed state rather than the painted ground: what a `color: transparent` looks like is
-	   `app.css`'s business and jsdom computes no styles anyway. What this holds is that the control
-	   exists, starts un-pressed, and names what it would reveal. */
+	/* The address of the machine holding the library, on a pane that stays open. */
 	await draw();
 
 	const reveal = host.querySelector('button[aria-pressed]');
@@ -171,9 +150,7 @@ it('does not ask Windows about the firewall while nothing is being shared', asyn
 });
 
 /* Windows files a new network as Public unless somebody says otherwise, and a rule on private
- * networks only opens nothing there. The rule alone must not make the screen say "letting your
- * other computers through" while the block holds.
- */
+ * networks only opens nothing there. */
 it('says the network is public when the rule does not reach it, and offers the wider rule', async () => {
 	firewall.mockResolvedValue({ state: 'open', networks: ['Public'], scope: 'private' });
 	openFirewall.mockResolvedValue({ state: 'open', networks: ['Public'], scope: 'any' });

@@ -102,8 +102,7 @@ describe('the search box reading a path backwards', () => {
 		expect(grouped(INDEX, SECTIONS, 'Settings > Nowhere > Folders')).toEqual([]);
 	});
 
-	/* A path as somebody writes it from memory: shortened, with or without the
-	   root. It lands on the row it means, ringed, as picking that row from a typed search would. */
+	/* A path as somebody writes it from memory: shortened, with or without the root. */
 	it('lands a shortened path on the row it means, through the crumbs above it', () => {
 		const sections: SettingsSection[] = [
 			{ id: 'playback', label: 'Playback', icon: 'video_settings' }

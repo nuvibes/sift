@@ -2,17 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sayDuration as theOneSet } from '$lib/shell/duration';
 import { canCancel, canRetry, offeredWhileViewing, sayDuration, startsIn } from './labels';
 
-/* The three small answers every row on the queue screen is drawn from.
- *
- * What a job is CALLED is not here: the name is declared beside the handler that does the work
- * and arrives on the row with the job: a map here would know a few of the types and show the
- * internal word for the rest. What is here is the part that really does belong to the screen.
- *
- * `startsIn` is worth pinning for a reason that is not about formatting: the queue's clock is
- * `time.time()` and its timestamps are SECONDS. Read as milliseconds every job in the library is
- * dated 1970, which looks like a broken column rather than a unit mistake. And its words come
- * from the one ladder in `$lib/shell/when`, so a scheduled job reads like every other moment on screen.
- */
+/* The three small answers every row on the queue screen is drawn from. */
 
 const MINUTE = 60;
 const HOUR = 60 * MINUTE;
@@ -53,16 +43,7 @@ describe('what can still be done to a job', () => {
 		expect(canCancel('succeeded')).toBe(false);
 	});
 
-	/* A held job, and the reason this screen offers it nothing at all.
-	 *
-	 * Not a retry: it has not stopped, it is held, and the way back from a hold is Resume. Not a
-	 * cancel either, and that one is a fact about the queue rather than a view about what somebody
-	 * ought to be offered: the kernel's cancel walks the tree with its states written into the
-	 * statement (queued, running, blocked), so a paused job handed to it is not cancelled and
-	 * nothing says so. A button that reports success and does nothing is worse than no button.
-	 *
-	 * The pair that DOES act on one lives on the Downloads page, which owns both halves: Resume
-	 * puts it back in the queue, and Cancel there stops the download and drops its bytes. */
+	/* A held job, and the reason this screen offers it nothing at all. */
 	it('offers a held job neither, because the queue cannot honour either here', () => {
 		expect(canRetry('paused')).toBe(false);
 		expect(canCancel('paused')).toBe(false);
@@ -124,8 +105,7 @@ describe('which bulk actions belong on screen', () => {
 
 describe('sayDuration', () => {
 	it('is the one set of duration words, handed on rather than written again', () => {
-		/* How long a finished run took, beside it on Activity. The words themselves are
-		   `$lib/shell/duration`'s and tested there; this holds the Activity rows to the same function. */
+		/* How long a finished run took, beside it on Activity. */
 		expect(sayDuration).toBe(theOneSet);
 		expect(sayDuration(30)).toBe('under a minute');
 		expect(sayDuration(45 * 60)).toBe('45 min');

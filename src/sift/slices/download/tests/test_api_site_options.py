@@ -555,8 +555,7 @@ def test_every_site_has_an_example_in_its_own_shape() -> None:
     preview as something it is not. And a Site that fills `{id}` has an ID to show for it."""
     from sift.slices.download.sources.sites.catalog import SITES, words_filled
 
-    # By module path: the package's `router` attribute is the APIRouter, not this module.
-    router = importlib.import_module("sift.slices.download.router")
+    router = importlib.import_module("sift.slices.download.router_site_options")
 
     assert set(router._EXAMPLES) == {record.key for record in SITES}
     for record in SITES:

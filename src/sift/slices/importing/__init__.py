@@ -1,19 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What happens to a file when it arrives, and what a person can turn off.
+"""What happens to a file when it arrives: scan, generate, identify, and what a person can turn off.
 
-Three groups over one moment. A file lands, and Sift **scans** it to find out what it is,
-**generates** the pictures it is drawn with, and **identifies** what is in it. The first is the
-floor (everything else reads what it wrote) and the other two are choices, because they are what
-a library is waiting on before it can be used.
-
-**Off means later, not never.** Every switch here is read as each file arrives, so turning one off
-skips only what lands while it is off. Each group carries a way to go back over what was missed:
-the Build is one pass that reads each file once for everything it lacks among the
-products ticked on its sheet: without it a rescan would never fill the gaps in, because a scan
-skips any file whose path, size and mtime are unchanged.
-
-**A folder may answer differently.** An override is stored per library root, in this feature's own
-table, and an absent row means the folder follows the library. See `schema`.
+Off means later, not never: the Build goes back over what was missed.
 """
 
 from __future__ import annotations
@@ -45,57 +33,22 @@ from sift.slices.importing.store import ROOT_PREFS, RootPreferences
 
 SECTION = "Importing"
 
-#: Whether Sift reads your folders by itself: the walk, the whole-library pass, and the catch-up
-#: that finds what moved while Sift was closed.
-#:
-#: **The third master.** A file that was never probed has no dimensions and cannot be laid out on a
-#: wall, but probing is not what this switches. Off, nothing walks a folder looking for new files;
-#: a file already taken in is still probed, and a file pasted or downloaded is still imported,
-#: because those are not the walk.
-#:
-#: On out of the box, and it has to be: it is how a library gets its files. The switch is for
-#: somebody who wants their folders left alone for a while (a disk being reorganised, a share that
-#: is about to go away) and it is the one of the three masters that cannot sensibly start off.
+#: Whether Sift reads your folders by itself; on out of the box, since it is how a library fills.
 SCAN_KEY = "importing.scan"
-#
-# RETIRED INTO THE SCAN TASK'S WHEN (`tasks.scan.when`), with the other two below. The key is kept
-# as a name because a folder's own answer is stored under it and the import gates ask it by this
-# name; it is READ through the When ("anything but Only when I press it"). See
-# `settings_registry.retire_setting` and the composition root, which retires it. What the switch
-# said is one of three answers: as files arrive, in quiet hours, or only when pressed.
+# !! RETIRED into `tasks.scan.when`; kept as a name because folder answers are stored under it.
 
 
-#: Whether the pictures a file is drawn with are built as it arrives.
-#:
-#: **On out of the box: a new library is usable without pressing anything.** Hover previews,
-#: scrubber strips and fingerprints are made as files arrive, and work somebody presses is queued
-#: ahead of them. The thumbnail is not under this at all: every file gets one as it arrives,
-#: because without it a file cannot be drawn on a wall.
-#:
-#: A MASTER OVER FOUR SWITCHES RATHER THAN A READING OF THEM. It answers a different question:
-#: does this group run at all, so it is a real answer with no mixed state, and the four settings
-#: under it keep their own meanings and their own stored values.
+#: Whether the pictures a file is drawn with are built as it arrives: a master over four switches.
 GENERATE_KEY = "importing.generate"
-# !! RETIRED into `tasks.generate.when`. See SCAN_KEY above. The Generate task starts on "As
-# files arrive".
+# !! RETIRED into `tasks.generate.when`. See SCAN_KEY above.
 
 
-#: Whether Sift works out what is in a file as it arrives.
-#:
-#: Faces, Smart Search and watermarks each keep their own switch, off out of the box: each
-#: downloads models and is the most expensive work Sift does per file. Their Whens start on "As
-#: files arrive", so turning one on is the only answer needed.
-#:
-#: It does not turn recognition or Smart Search on. Each of those has its own switch on its own
-#: screen, answering whether the feature exists at all; this answers when it runs.
+#: Whether Sift works out what is in a file as it arrives; each feature keeps its own switch.
 IDENTIFY_KEY = "importing.identify"
-# !! RETIRED into the Whens of the three tasks it was the master over (faces, Smart Search and
-# watermarks), read as on while any of them starts on its own. See SCAN_KEY above.
+# !! RETIRED into the Whens of faces, Smart Search and watermarks. See SCAN_KEY above.
 
 
-#: The Generate stage, on the Tasks screen and beside the stage on Importing. Its work is the
-#: pictures a file is drawn with, made as it arrives (which job types those are is the composition
-#: root's to say) or by a Generate run over the library, which is what its press starts.
+#: The Generate stage, on the Tasks screen and beside the stage on Importing.
 register_schedule(
     ScheduledTask(
         id="generate",
@@ -105,8 +58,7 @@ register_schedule(
         ),
         job_type=GENERATE,
         needs_starter=True,
-        # A value never written reads as this, so an install that chose "Only when I press it"
-        # keeps its stored answer; see `ScheduledTask.when_default`.
+        # A value never written reads as this (`ScheduledTask.when_default`).
         when_default=WHEN_WORK,
         set_in="importing",
         press="Generate now",
@@ -114,10 +66,7 @@ register_schedule(
     )
 )
 
-#: The Identify stage: faces, Smart Search and watermarks, three tasks with a When each. Its own
-#: When is a READING of theirs (their shared answer, or mixed), and an answer chosen for it is
-#: written to all three, so nothing is stored here that could disagree with them. Its press is an
-#: Identify run over the library for the three products, the run each of them starts alone.
+#: The Identify stage: its When is a reading of its three tasks' Whens, written to all three.
 IDENTIFY_READS: tuple[str, ...] = ("faces", "smart-search", "watermarks")
 register_schedule(
     ScheduledTask(

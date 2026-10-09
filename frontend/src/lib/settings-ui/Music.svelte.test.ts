@@ -1,9 +1,5 @@
-/* Settings > Music: two tasks, two rows. Making the fingerprints, and asking AcoustID about them.
- *
- * The lookup's row is the task's own row (`TaskWhen`), drawn while the lookup is on, with how many
- * files are waiting for it and where its presses are: Tasks. The pane itself has no press that
- * sends anything; the fingerprints' row is drawn whatever the lookup says.
- */
+/* Settings > Music: two tasks, two rows. Making the fingerprints, and asking AcoustID about
+ * them. */
 
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type { TaskView, TasksView } from '$lib/jobs/tasks.svelte';

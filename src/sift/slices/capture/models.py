@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What the capture endpoints send and receive.
-
-A request here carries a link, some bytes, or both, and always a destination expressed as a folder
-id, never a path. What comes back is an id to watch: a job that is importing a file, or a
-download row that is fetching a link. Neither ever carries a path back; where a root sits on the
-server's disk is not something an interface is told.
-"""
+"""What the capture endpoints send and receive: a destination by folder id, never a path."""
 
 from __future__ import annotations
 
@@ -13,10 +7,7 @@ from pydantic import Field
 
 from sift.kernel.wire import Wire
 
-#: The same bound the download slice puts on a submitted link. Without it this route (which takes
-#: whatever was pasted or dragged) would accept a string of any size at all and carry it as far as
-#: the resolver. Real URLs are far below this; the number exists to stop a paste being
-#: a way to hand the server an arbitrary amount of text.
+#: The same bound the download slice puts on a submitted link.
 MAX_URL = 4096
 
 
@@ -41,11 +32,7 @@ class DownloadAccepted(Wire):
 
 
 class CaptureAccepted(Wire):
-    """A clipboard item was taken in one of two ways, and exactly one id says which.
-
-    A usable link becomes a download; anything else becomes an import of the pasted bytes. The
-    client watches whichever id came back.
-    """
+    """A clipboard item taken as a download or an import; exactly one id says which."""
 
     job_id: str | None = None
     download_id: str | None = None

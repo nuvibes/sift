@@ -4,20 +4,7 @@
 import type { components } from '$lib/api/schema';
 import { fetchSettings } from '$lib/settings-ui/settings';
 
-/* A short sound when something finishes, if somebody asked for one.
- *
- * Off by default and off for everyone else. A downloader that chirps unasked on a machine somebody
- * else is sitting at is a bug, not a feature, so this is a per-account preference rather than an
- * instance-wide one: the sound happens in one person's browser and belongs to that person.
- *
- * **A sound never carries meaning on its own.** A browser refuses to play audio until the page has
- * been interacted with, so a page left open untouched after a reload swallows the first one and
- * nothing anywhere says it did. The badge is the signal; this accompanies it.
- *
- * Nothing is fetched. The tones are generated in the browser from a few numbers, which is a handful
- * of lines against bundling audio files, and it keeps the offline promise without anybody having
- * to remember it: there is no file to accidentally reference from somewhere else.
- */
+/* A short sound when something finishes, if somebody asked for one. */
 
 /** What can make a noise. All of them, once sounds are on at all: a per-event list nobody
  *  ever filters is four more controls for nothing, and turning the lot off is one click. */
@@ -30,12 +17,7 @@ const EVENTS = {
 
 type SoundEvent = keyof typeof EVENTS;
 
-/** The shape of each tone: how high, how long, and whether it rises or falls.
- *
- * Two notes rather than one, because a single beep is ambiguous and two carry a direction: up for
- * something finishing, down for something going wrong. Deliberately quiet and short: this is a
- * notification, not an alert, and there is no way to be subtle about a long one.
- */
+/** The shape of each tone: how high, how long, and whether it rises or falls. */
 const TONES: Record<SoundEvent, { from: number; to: number; seconds: number }> = {
 	done: { from: 660, to: 880, seconds: 0.12 },
 	failed: { from: 440, to: 300, seconds: 0.18 },
@@ -73,12 +55,7 @@ export class Sounds {
 		}
 	}
 
-	/** Make the noise for one event, if that event is meant to make one.
-	 *
-	 *  Never throws. A browser that will not play audio (because nothing has been clicked yet, or
-	 *  because the page is in the background) is an ordinary situation, not a failure, and it must
-	 *  not reach the code that was reporting a finished download.
-	 */
+	/** Make the noise for one event, if that event is meant to make one. */
 	play(event: SoundEvent): void {
 		if (!this.on) return;
 		try {
@@ -113,45 +90,23 @@ export class Sounds {
 	}
 }
 
-/** One download settling, as the screen hears about it.
- *
- * The sound needs only the KIND; the message that goes with it needs the file, because a finished
- * download is the one event on this screen with somewhere to go afterwards: the file itself. So
- * what a look reports is a landing rather than a bare event, and the two readers take the halves
- * they need from the same answer instead of the screen walking the list a second time to find out
- * which row it was.
- */
+/** One download settling, as the screen hears about it. */
 export interface Landing {
 	kind: SoundEvent;
 	/** How many settled this way in the same look. */
 	count: number;
-	/**
-	 * The file it produced, and what it is called, for a landing that is ONE download.
-	 *
-	 * Null for several at the same time, deliberately: twenty files finishing in the same second
-	 * have no single thing to open, and an Open that quietly picked one of them would be a door to
-	 * a file nobody chose.
-	 */
+	/** The file it produced, and what it is called, for a landing that is ONE download. */
 	assetId: string | null;
 	filename: string | null;
 }
 
-/** What a look needs to know about a row.
- *
- *  A `Pick<>` of the server's own shape rather than four fields written out again: the four columns
- *  this rule reads are declared here, so a change to any of the others cannot reach it, and a change
- *  to one of these fails where it is read instead of going quietly wrong. */
+/** What a look needs to know about a row. */
 type Settling = Pick<
 	components['schemas']['DownloadItem'],
 	'id' | 'status' | 'asset_id' | 'filename'
 >;
 
-/** Watches a list of downloads and says what just changed, so a caller can make a noise about it.
- *
- * Kept apart from the sounds themselves because it is the part with a rule in it: a sound belongs to
- * a TRANSITION, and a list that is polled once a second would otherwise announce the same finished
- * download sixty times a minute. It reports only what moved since the last look.
- */
+/** Watches a list of downloads and says what just changed, so a caller can make a noise about it. */
 export class Changes {
 	#seen = new Map<string, string>();
 	#started = false;
@@ -182,8 +137,7 @@ export class Changes {
 		}
 
 		// The queue emptying is its own event and the one most worth hearing: it is the moment
-		// somebody can walk away. Only when something was actually running before, so opening a
-		// screen with nothing on it is silent.
+		// somebody can walk away.
 		const busyNow = items.some((item) => active.has(item.status));
 		if (this.#started && !busyNow && this.#wasBusy && landed.size > 0) landed.set('empty', []);
 		this.#wasBusy = busyNow;

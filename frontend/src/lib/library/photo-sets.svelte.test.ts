@@ -1,12 +1,4 @@
-/* The photo-set list the FILE side reads, and the two writes a file's verbs make against it.
- *
- * Narrower than the collection store beside it: the Photo Sets wall reads its own page with its
- * own paging, sorting and filters, and this is not trying to replace that. What is here is the
- * question the verbs ask: what sets are there, make one, put these pictures in it.
- *
- * Pinned here because an end-to-end suite alone is exactly the shape a store stops paging in
- * without anybody noticing.
- */
+/* The photo-set list the FILE side reads, and the two writes a file's verbs make against it. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -49,8 +41,8 @@ beforeEach(() => {
 
 describe('the list the verbs choose from', () => {
 	it('comes back in name order whatever order the server sent', async () => {
-		/* The pick sheet filters what is already loaded rather than re-asking as somebody types, so
-		   the order it is drawn in is the order this puts it in and nothing else. */
+		/* The pick sheet filters what is already loaded rather than re-asking as somebody types,
+		   so the order it is drawn in is the order this puts it in and nothing else. */
 		mocked.get.mockResolvedValue(
 			page([aSet({ id: 's2', name: 'Zoetrope' }), aSet({ id: 's1', name: 'Ada' })])
 		);
@@ -83,8 +75,7 @@ describe('the list the verbs choose from', () => {
 	});
 
 	it('lets a slow answer be overtaken rather than letting it overwrite a newer one', async () => {
-		/* The rising counter every list store in this client carries. Without it the answer to the
-		   first question lands last and the screen shows the list from before. */
+		/* The rising counter every list store in this client carries. */
 		let settleFirst: (value: unknown) => void = () => {};
 		mocked.get.mockImplementationOnce(
 			() =>
@@ -114,9 +105,7 @@ describe('the list the verbs choose from', () => {
 	});
 
 	it('a page already in the air is discarded by a forget', async () => {
-		/* What `forget` is FOR: the vault. What is concealed never arrives, so a list held from
-		   while it was open still holds it afterwards, and a page that was in flight when the
-		   vault closed would put it straight back. */
+		/* What `forget` is FOR: the vault. */
 		let settle: (value: unknown) => void = () => {};
 		mocked.get.mockImplementation(
 			() =>
@@ -149,12 +138,8 @@ describe('the two writes', () => {
 
 	it('hands back the WHOLE answer, not just the count off the front of it', async () => {
 		/* A picture already in the set is not written twice, so `changed` and "how many I asked
-		   about" differ whenever a selection overlaps what is there, and the sentence on
-		   screen is built from the first.
-
-		   The whole answer comes back, not that number alone: the server says how many it
-		   skipped and why, and a store reading one field would throw the other three away,
-		   which is how a picture left behind by a locked vault would become invisible. */
+		   about" differ whenever a selection overlaps what is there, and the sentence on screen
+		   is built from the first. */
 		mocked.post.mockResolvedValue({
 			changed: 2,
 			skipped: 1,
@@ -174,8 +159,7 @@ describe('the two writes', () => {
 
 	it('escapes the id it puts in the address', async () => {
 		/* WITH SOMETHING TO SEND. `overChunks` slices the ids into batches, so an EMPTY list
-		   means no batches and no call. A test asking for nothing and asserting a request
-		   could only ever fail. */
+		   means no batches and no call. */
 		mocked.post.mockResolvedValue({ changed: 1, skipped: 0, reason: null, vault_locked: false });
 
 		await photoSets.add('a/b c', ['a1']);

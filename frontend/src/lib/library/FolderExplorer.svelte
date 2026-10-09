@@ -2,16 +2,7 @@
 	import { Button, Empty, Pressable, Skeleton, TextInput } from '$lib/components/common';
 	import { onRecord } from '$lib/shell/when';
 	import Scroller from '$lib/components/common/Scroller.svelte';
-	/*
-	 * The file explorer: Browse, taken out of tiles and into folders.
-	 *
-	 * A MODE of Browse, with where you are in the address (linkable, reloadable, Back walks up). It
-	 * browses the real folders, but only inside the library: the tree arrives scoped by the server
-	 * to whoever asks, and walking the disk stays in Settings, an admin's. For an admin with a
-	 * read-write library it makes, renames and moves folders, keeping each folder's id and so its
-	 * sharing and attribution, which a move outside Sift loses. A list, columns or pictures, in an
-	 * order that never shifts as covers arrive.
-	 */
+	/* The file explorer: Browse, taken out of tiles and into folders. */
 	import { onMount } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { api } from '$lib/api/client';
@@ -46,10 +37,9 @@
 	import type { Folder } from '$lib/library/tree';
 	import type { components } from '$lib/api/schema';
 
-	/**
-	 * The three ways of looking at a folder's folders: `list`, one name per line; `columns`, flowed
-	 * down then across, using a wide window; `thumbs`, a picture each, when the name is not known.
-	 */
+	/** The three ways of looking at a folder's folders: `list`, one name per line; `columns`,
+	 * flowed down then across, using a wide window; `thumbs`, a picture each, when the name is
+	 * not known. */
 	export type FolderView = 'list' | 'columns' | 'thumbs';
 
 	interface Props {
@@ -59,31 +49,21 @@
 		onmove?: (folderId: string | null) => void;
 		/** The way back up, as far as the rows can say it, so the screen can draw it above its title. */
 		ontrail?: (steps: { id: string; name: string }[]) => void;
-		/**
-		 * A list of names, or a wall of pictures: owned by the SCREEN, whose toolbar holds every "how
-		 * should this look" control, so this mode looks like the wall it belongs to.
-		 */
+		/** A list of names, or a wall of pictures: owned by the SCREEN, whose toolbar holds every
+		 * "how should this look" control, so this mode looks like the wall it belongs to. */
 		view?: FolderView;
-		/**
-		 * Whether this is the WHOLE screen rather than a band above a wall: at the top of the tree
-		 * there are no loose files, so the list takes no scrolling box of its own (the frame scrolls)
-		 * and no half-window cap.
-		 */
+		/** Whether this is the WHOLE screen rather than a band above a wall: at the top of the
+		 * tree there are no loose files, so the list takes no scrolling box of its own (the
+		 * frame scrolls) and no half-window cap. */
 		whole?: boolean;
-		/**
-		 * How many folders are on screen, for a screen that draws the number elsewhere: at the top,
-		 * with no wall, it comes from the very list drawn (as `AssetGrid.oncount`).
-		 */
+		/** How many folders are on screen, for a screen that draws the number elsewhere: at the
+		 * top, with no wall, it comes from the very list drawn (as `AssetGrid.oncount`). */
 		oncount?: (total: number) => void;
-		/**
-		 * WHICH folders are directly inside this one, for the screen's EMPTY STATE, which tells "nothing
-		 * loose here" from "nothing at all". Not for filtering (`$lib/library/direct`). Ids only.
-		 */
+		/** WHICH folders are directly inside this one, for the screen's EMPTY STATE, which tells
+		 * "nothing loose here" from "nothing at all". */
 		onlisted?: (folderIds: string[]) => void;
-		/**
-		 * Which order the folders are in (`FOLDER_ORDERS`), owned by the SCREEN like the view: the
-		 * control is the bar's order menu. Alphabetical by default.
-		 */
+		/** Which order the folders are in (`FOLDER_ORDERS`), owned by the SCREEN like the view:
+		 * the control is the bar's order menu. */
 		sort?: string;
 	}
 
@@ -102,11 +82,7 @@
 		onmove?.(folderId);
 	}
 
-	/*
-	 * Which shape a folder is drawn as: a row in both list views, a tile in the picture one. Worked
-	 * out here, not in the Pressable's `class={}`, where a `'thumbs'` ternary would read to the
-	 * handed-class gate as a class handed to a component (`.thumbs` is this file's own `<ul>`).
-	 */
+	/* Which shape a folder is drawn as: a row in both list views, a tile in the picture one. */
 	const shape = $derived(view === 'thumbs' ? 'tile' : 'row');
 
 	/* How tall a folder's picture is: the wall's own row height, so ONE slider moves both; null
@@ -116,9 +92,7 @@
 	let folders = $state<Folder[]>([]);
 	let loaded = $state(false);
 	let failed = $state(false);
-	/* One cover per folder, for the picture view, fetched as a folder is drawn. A `SvelteMap`, since
-	 * a plain Map in `$state` is not deeply reactive. `asked` is deliberately NOT reactive, or the
-	 * effect would depend on what its own fetch writes. */
+	/* One cover per folder, for the picture view, fetched as a folder is drawn. */
 	const covers = new SvelteMap<string, string | null>();
 	const asked = new Set<string>();
 
@@ -148,10 +122,8 @@
 	const byId = $derived(new Map(folders.map((folder) => [folder.id, folder])));
 	const current = $derived(here === null ? null : (byId.get(here) ?? null));
 
-	/*
-	 * What is directly inside where we are, sorted HERE so the order does not depend on how the
-	 * rows arrived and cannot change under the pointer when a cover lands.
-	 */
+	/* What is directly inside where we are, sorted HERE so the order does not depend on how the
+	 * rows arrived and cannot change under the pointer when a cover lands. */
 	const children = $derived(
 		folders
 			.filter((folder) => {
@@ -166,18 +138,14 @@
 			.sort(inOrder)
 	);
 
-	/*
-	 * The order, applied HERE: the whole tree arrives in one answer, so nothing is paged.
-	 * `sensitivity: 'base'` sorts `Archive` with `archive`, as a file manager does.
-	 */
+	/* The order, applied HERE: the whole tree arrives in one answer, so nothing is paged. */
 	function inOrder(one: Folder, other: Folder): number {
 		const byName = one.name.localeCompare(other.name, undefined, { sensitivity: 'base' });
 		if (sort === 'name_za') return -byName;
 		if (sort === 'name_az') return byName;
 
-		/* The four orders that need the second request: name order breaks ties and holds the list
-		 * steady until the facts land. An empty folder has no newest file and sorts last both ways,
-		 * rather than at an invented date. */
+		/* The four orders that need the second request: name order breaks ties and holds the
+		 * list steady until the facts land. */
 		const mine = ordering.get(one.id);
 		const theirs = ordering.get(other.id);
 		if (sort === 'largest' || sort === 'smallest') {
@@ -194,12 +162,9 @@
 		return byName;
 	}
 
-	/*
-	 * WHAT AN ORDER NEEDS, ASKED FOR ONLY WHEN AN ORDER NEEDS IT: the tree carries no counts
-	 * (`_VISIBLE_FOLDERS`), so size and time orders come from their own request, keyed by the folder
-	 * looked at. A guest is refused it, and the empty map falls back to name order. Not called
-	 * `facts`, which is the imported formatter's name.
-	 */
+	/* WHAT AN ORDER NEEDS, ASKED FOR ONLY WHEN AN ORDER NEEDS IT: the tree carries no counts
+	 * (`_VISIBLE_FOLDERS`), so size and time orders come from their own request, keyed by the
+	 * folder looked at. */
 	let ordering = $state(new SvelteMap<string, components['schemas']['FolderFacts']>());
 
 	$effect(() => {
@@ -250,8 +215,7 @@
 		if (loaded) onlisted?.(children.map((folder) => folder.id));
 	});
 
-	/** What names this folder to the rest of the application: its id. A path is relative to its
-	 * library folder, so two "2024"s would share it; an id names exactly one (`in:` takes either). */
+	/** What names this folder to the rest of the application: its id. */
 	function nameFor(folder: Folder): string {
 		return folder.id;
 	}
@@ -284,12 +248,8 @@
 	export const groundMarks = () =>
 		current && session.isAdmin ? folderMarks(current, () => void load()) : undefined;
 
-	/*
-	 * WHAT A FOLDER IS: the panel a file manager opens on right-click, from one request
-	 * (`/library/folders/{id}/properties`) so count and size describe one moment. The physical
-	 * figures are an admin's; a guest is shown only whether it is shared and whether they hid it,
-	 * a line the server draws.
-	 */
+	/* WHAT A FOLDER IS: the panel a file manager opens on right-click, from one request
+	 * (`/library/folders/{id}/properties`) so count and size describe one moment. */
 	/* `onDisk`, not `facts`, which is the imported formatter's name. */
 	let about = $state<Folder | null>(null);
 	let onDisk = $state<components['schemas']['FolderProperties'] | null>(null);
@@ -320,11 +280,8 @@
 		return said;
 	}
 
-	/*
-	 * WHAT IS UNDER A FOLDER, ON THE WAY PAST: the status-bar count, from the properties route, asked
-	 * once per folder when a pointer first crosses it, never up front. An admin's, like the panel.
-	 * `talliesAsked` is NOT reactive, as `asked` is not.
-	 */
+	/* WHAT IS UNDER A FOLDER, ON THE WAY PAST: the status-bar count, from the properties route,
+	 * asked once per folder when a pointer first crosses it, never up front. */
 	const tallies = new SvelteMap<string, components['schemas']['FolderProperties'] | null>();
 	const talliesAsked = new Set<string>();
 
@@ -430,10 +387,8 @@
 		for (const folder of children) void coverFor(folder);
 	});
 
-	/*
-	 * Making a folder, renaming one and moving one: the server decides whether Sift may change files
-	 * here, and its refusal is a sentence drawn in the dialog where the name was typed.
-	 */
+	/* Making a folder, renaming one and moving one: the server decides whether Sift may change
+	 * files here, and its refusal is a sentence drawn in the dialog where the name was typed. */
 	const library = new Library();
 	let asking = $state<'make' | 'rename' | null>(null);
 	let subject = $state<Folder | null>(null);
@@ -496,11 +451,8 @@
 					.map((one) => ({ id: one.id, name: one.rel_path || one.name }))
 	);
 
-	/*
-	 * DELETING A FOLDER: the one thing on this screen that removes bytes, asked with the count in the
-	 * question ("and the 1,954 files in it?") from the tally cache, said as not known where it is
-	 * missing; the server counts again regardless. Never offered on a library folder.
-	 */
+	/* DELETING A FOLDER: the one thing on this screen that removes bytes, asked with the count
+	 * in the question ("and the 1,954 files in it?") */
 	let deleting = $state<Folder | null>(null);
 	/* Bound to the dialog; `deleting` stays while the sheet fades, so the name does not vanish. */
 	let deleteOpen = $state(false);
@@ -549,10 +501,8 @@
 </script>
 
 <!--
-	THE FOLDERS IN THIS ONE, as a band directly above the wall of files, which is the real
-	`AssetGrid` (clickable, previewing, sized by the slider). The band is the frame's furniture
-	(`AssetGrid.above`), capped and scrolling inside itself, so four hundred folders never push the
-	open one's files off the window.
+	THE FOLDERS IN THIS ONE, as a band directly above the wall of files, which is the real `AssetGrid`
+	(clickable, previewing, sized by the slider).
 -->
 <ContextMenu
 	triggerClass="band-wrap {whole ? 'as-screen' : 'as-band'}"
@@ -564,8 +514,7 @@
 		{:else if !loaded}
 			<Skeleton lines={3} />
 		{:else if children.length === 0 && here === null}
-			<!-- Only at the TOP is an empty answer worth a sentence: no folders at all. Inside one, the
-			     wall below is the answer. -->
+			<!-- Only at the TOP is an empty answer worth a sentence: no folders at all. -->
 			<Empty scope="block">No folders yet. Add one in Settings and it will appear here.</Empty>
 		{:else if children.length > 0}
 			<!-- As a BAND it caps itself and scrolls inside; as the WHOLE screen the frame scrolls, and a
@@ -621,10 +570,7 @@
 				{/snippet}
 				<ContextMenu triggerClass="menu-wrap" label={folder.name}>
 					<!--
-						HOW MUCH IS IN IT, on the way past: two figures and their glyphs, a label. Only for an
-						admin, whom the route answers; a guest would see "Reading..." for ever. Asked on
-						`pointermove`, as `Tooltip` does, since a row appearing under a still pointer fires
-						enter.
+						HOW MUCH IS IN IT, on the way past: two figures and their glyphs, a label.
 					-->
 					{#if session.isAdmin}
 						<Tooltip
@@ -684,7 +630,6 @@
 
 <!--
 	What can be done to a folder from here, in the parts every menu has, the delete last and alone.
-	Sharing, hiding and the writes are an admin's; a guest gets the one row that is theirs.
 -->
 {#snippet folderMenu(folder: Folder)}
 	{#if session.isAdmin}
@@ -710,10 +655,7 @@
 			</ContextMenuGroup>
 		{/if}
 		<!--
-			ADD TO, the door every file menu and the selection bar open, from the one declaration. Person
-			and Site NAME the folder; the other four write to every file under it (`overFolder`). On a
-			library folder too, since filing writes nothing to disk. `menu([])`, since the door is about
-			no file in particular.
+			ADD TO, the door every file menu and the selection bar open, from the one declaration.
 		-->
 		<FileVerbs items={[]} around={{ selection: nothingPicked }}>
 			{#snippet children(verbs)}
@@ -779,10 +721,7 @@
 <FolderSheets bind:this={sheets} />
 <BatchRename bind:open={renameFilesOpen} folderId={renamingFiles} />
 
-<!--
-	One dialog for both: what should this folder be called; the heading says which. `scrolls={false}`:
-	one field and two buttons cannot outgrow the screen, and the default region would only clip.
--->
+<!-- One dialog for both: what should this folder be called; the heading says which. -->
 <Modal
 	open={asking !== null}
 	onOpenChange={(open) => {
@@ -845,11 +784,9 @@
 />
 
 <style>
-	/*
-	 * The wrapper the context menu puts around a row is EXACTLY AS WIDE AS THE ROW, or the strip beside
-	 * a name would answer for that folder and the ground's New folder could not be reached. A TILE
-	 * keeps the stretch: its whole column is pressed.
-	 */
+	/* The wrapper the context menu puts around a row is EXACTLY AS WIDE AS THE ROW, or the strip
+	 * beside a name would answer for that folder and the ground's New folder could not be
+	 * reached. */
 	.band :global(.menu-wrap) {
 		min-inline-size: 0;
 	}
@@ -859,18 +796,15 @@
 	}
 
 	/* The band's own wrapper, which the background menu hangs on, filling the band; as the WHOLE
-	   screen it claims the rest of a filled body (`PageFrame.fillBody`). Inert anywhere else. */
+	   screen it claims the rest of a filled body (`PageFrame.fillBody`). */
 	:global(.band-wrap) {
 		display: block;
 		flex: 1;
 	}
 
-	/*
-	 * AS A BAND, the ground swallows the frame's own gap under the header (`AssetGrid.beneath`), or the
-	 * last 16px above the first tile belonged to nobody: a negative margin hands it back, padding takes
-	 * it in, nothing moves. On `.band-wrap`, since a bottom margin one level down would collapse
-	 * through it.
-	 */
+	/* AS A BAND, the ground swallows the frame's own gap under the header (`AssetGrid.beneath`),
+	 * or the last 16px above the first tile belonged to nobody: a negative margin hands it back,
+	 * padding takes it in, nothing moves. */
 	:global(.band-wrap.as-band) {
 		margin-block-end: calc(var(--page-gap) * -1);
 		padding-block-end: var(--page-gap);
@@ -881,8 +815,8 @@
 		grid-template-rows: minmax(0, auto);
 		/* PADDING, not a margin, so the gap below the folders is inside the menu's trigger. */
 		padding-block-end: var(--space-3);
-		/* Pulled back by a row's own padding, so a folder's glyph lines up with the title's and the
-		   wall's first tile. Here, outside the scrolling box, which would clip the hover wash. */
+		/* Pulled back by a row's own padding, so a folder's glyph lines up with the title's and
+		   the wall's first tile. */
 		margin-inline-start: calc(var(--space-2) * -1);
 	}
 
@@ -914,11 +848,9 @@
 		gap: var(--space-2);
 	}
 
-	/*
-	 * THE SAME NAMES, FLOWED DOWN AND THEN ACROSS: what a file manager calls List, filling a wide
-	 * window in reading order (an `auto-fill` grid would read across and zig-zag the alphabet). A row
-	 * never breaks across columns.
-	 */
+	/* THE SAME NAMES, FLOWED DOWN AND THEN ACROSS: what a file manager calls List, filling a
+	 * wide window in reading order (an `auto-fill` grid would read across and zig-zag the
+	 * alphabet). */
 	.columns {
 		columns: 240px;
 		column-gap: var(--space-6);
@@ -928,11 +860,11 @@
 		break-inside: avoid;
 	}
 
-	/* The picture size follows the wall's own row height (one slider), in `minmax` columns that fill
-	   the row as the wall's tiles do. */
+	/* The picture size follows the wall's own row height (one slider), in `minmax` columns that
+	   fill the row as the wall's tiles do. */
 	.thumbs {
-		/* The default, here: `style:--folder-art` is dropped when nothing is chosen, and the token
-		   gate needs the property defined somewhere other than inline. */
+		/* The default, here: `style:--folder-art` is dropped when nothing is chosen, and the
+		   token gate needs the property defined somewhere other than inline. */
 		--folder-art: 180px;
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(var(--folder-art), 1fr));
@@ -957,11 +889,8 @@
 		text-align: start;
 	}
 
-	/*
-	 * A ROW IS AS WIDE AS ITS NAME, as the rail's rows are, so its hover wash and its sharing mark stay
-	 * with the name; a long name ellipsises. A TILE is as wide as its column, since `Pressable`'s
-	 * button shrinks to fit and would size tiles with and without covers differently.
-	 */
+	/* A ROW IS AS WIDE AS ITS NAME, as the rail's rows are, so its hover wash and its sharing
+	 * mark stay with the name; a long name ellipsises. */
 	.band :global(.row) {
 		inline-size: fit-content;
 		max-inline-size: 100%;
@@ -992,8 +921,8 @@
 		object-fit: cover;
 	}
 
-	/* The name and its marks: the body line is taller than the 16px marks, so a foot with marks is as
-	   tall as one without and every hover wash is one size. */
+	/* The name and its marks: the body line is taller than the 16px marks, so a foot with marks
+	   is as tall as one without and every hover wash is one size. */
 	.foot {
 		display: flex;
 		align-items: center;
@@ -1009,14 +938,14 @@
 		white-space: nowrap;
 	}
 
-	/* Wider than a sheet's default, for a full path and a size written twice, which would otherwise
-	   wrap under their labels. `:global`: the class is handed to `Modal`. */
+	/* Wider than a sheet's default, for a full path and a size written twice, which would
+	   otherwise wrap under their labels. */
 	:global(.folder-facts) {
 		--sheet-inline: 34rem;
 	}
 
-	/* One figure in the hover label: a snippet carries the scope of the file it is written in, so
-	   this reaches the portalled bubble. `--text-data` for numbers to compare. */
+	/* One figure in the hover label: a snippet carries the scope of the file it is written in,
+	   so this reaches the portalled bubble. */
 	.tally {
 		display: inline-flex;
 		align-items: center;

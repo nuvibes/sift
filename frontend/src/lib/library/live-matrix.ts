@@ -1,11 +1,4 @@
-/* What every screen draws, and so which bells it has to hear: the live matrix.
- *
- * A screen keeps what it read, so each thing it draws needs the bell the server rings when that
- * thing moves (`changes.svelte.ts`). `scripts/check_live_matrix.js` holds every route and every
- * Settings section to a row here, and each row to hearing those bells in its own code or the
- * modules it imports. `owes` names a thing drawn whose bell is not heard yet; the check prints it on
- * every run. The two literals below are read as data by that script: plain values only.
- */
+/* What every screen draws, and so which bells it has to hear: the live matrix. */
 
 export type Bell =
 	| 'libraryChanges'

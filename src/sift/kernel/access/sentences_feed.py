@@ -314,22 +314,35 @@ def _template(
     alias = alias if alias and "{" not in alias else None
     if verb == "removed" and first_kind == "person" and not has_object and alias:
         return f"{{by}} removed the alias {alias} from {{subjects}}"
-    if verb in ("linked", "unlinked"):
-        pair = (
-            _LINKED_USERNAME
-            if object_kind == "person" and first_kind == "username"
-            else _LINKED.get(object_kind or "")
-        )
-        if pair is not None and object_is_page and object_kind == "tag":
-            pair = _LINKED_TAG_PAGE
-        if pair is not None and object_is_page and object_kind == "song":
-            pair = _LINKED_SONG_PAGE
-        if pair is not None and has_object:
-            return pair[0] if verb == "linked" else pair[1]
+    if verb in ("linked", "unlinked") and (
+        linked := _linked_template(verb, object_kind, first_kind, has_object, object_is_page)
+    ):
+        return linked
     act = FEED.get(verb)
     if act is None:
         return _SOMETHING
     return act.line if has_object or act.alone is None else act.alone
+
+
+def _linked_template(
+    verb: str,
+    object_kind: str | None,
+    first_kind: str | None,
+    has_object: bool,
+    object_is_page: bool,
+) -> str | None:
+    pair = (
+        _LINKED_USERNAME
+        if object_kind == "person" and first_kind == "username"
+        else _LINKED.get(object_kind or "")
+    )
+    if pair is not None and object_is_page and object_kind == "tag":
+        pair = _LINKED_TAG_PAGE
+    if pair is not None and object_is_page and object_kind == "song":
+        pair = _LINKED_SONG_PAGE
+    if pair is not None and has_object:
+        return pair[0] if verb == "linked" else pair[1]
+    return None
 
 
 def payload_of(stored: str | None) -> Mapping[str, object]:

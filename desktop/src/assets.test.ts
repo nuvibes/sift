@@ -1,10 +1,4 @@
-/* Getting at an asset's file, and above all what happens when the library is somewhere else.
- *
- * The behaviour worth pinning down here is not "does it download". It is the three things that
- * would each be a real fault and would each look like nothing at all: a name from another machine
- * used unsanitised as a filename, a half-arrived file left behind where the next drag would hand it
- * over as complete, and a fetch that keeps running after its window has gone.
- */
+/* Getting at an asset's file, and above all what happens when the library is somewhere else. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -108,9 +102,7 @@ describe('localFile', () => {
 		expect(answered?.path).toBe('D:\\Media\\a.mp4');
 	});
 
-	/* Every failure is the same answer. A server that has gone away, a signed-out session, an asset
-	 * this viewer may not see: none of them is worth an exception crossing into the drag handler,
-	 * and all of them mean the same thing: there is nothing to drag. */
+	/* Every failure is the same answer. */
 	it('answers nothing when the server refuses', async () => {
 		fetchAnswers.push(reply(null, { ok: false }));
 		expect(await localFile(ORIGIN, AN_ASSET)).toBeNull();
@@ -121,9 +113,8 @@ describe('localFile', () => {
 		expect(await localFile(ORIGIN, AN_ASSET)).toBeNull();
 	});
 
-	/* An answer is checked, not cast: one with no `path` would otherwise reach the native drag as
-	 * a path of `undefined`, and `undefined !== null` reads as "a local file".
-	 */
+	/* An answer is checked, not cast: one with no `path` would otherwise reach the native drag
+	 * as a path of `undefined`, and `undefined !== null` reads as "a local file". */
 	it('answers nothing for an answer of the wrong shape', async () => {
 		for (const wrong of [
 			'data',
@@ -150,9 +141,7 @@ describe('localFile', () => {
 describe('fetchToTemp', () => {
 	const remote = { path: null, filename: 'clip.mp4', size_bytes: 5 };
 
-	/* The transfer itself is tested in transfer.test.ts, where it lives. What is left here is the
-	 * part this module still decides: where the file goes, and whether it has to be fetched at all.
-	 */
+	/* The transfer itself is tested in transfer.test.ts, where it lives. */
 
 	it('names the file under the temporary folder, from the asset and the sanitised name', async () => {
 		await fetchToTemp(ORIGIN, AN_ASSET, remote, () => {});
@@ -242,14 +231,7 @@ function remoteFile() {
 	return { path: null, filename: 'clip.mp4', size_bytes: 5 };
 }
 
-/* The file on a share both machines can see.
- *
- * This is the path that makes a drag on a second computer cost nothing, so the tests worth having
- * are the ones about NOT taking it: a share this machine cannot reach, and (the serious one) a
- * share that answers with a DIFFERENT file. A share can be mounted from another server under the
- * same name, and a confident drag of the wrong video into a chat window is the worst thing this
- * feature could do.
- */
+/* The file on a share both machines can see. */
 describe('reachedHere', () => {
 	function shared(over: Partial<Parameters<typeof reachedHere>[0]> = {}) {
 		return { path: null, shared_path: null, filename: 'clip.mp4', size_bytes: 5, ...over };

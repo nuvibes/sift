@@ -1,11 +1,4 @@
-/* The explorer's own drawing: the folders in a folder, and what it says when it cannot read one.
- *
- * What is asserted here is the handful it can get wrong in a way nobody would report. Where you
- * are is owned by the ADDRESS, so this component asks to move rather than moving itself. Get
- * that wrong and the back button walks out of the explorer instead of up a folder. A failed read
- * is not an empty folder. And a folder whose parent the viewer cannot see still has to be
- * reachable, or a share silently did nothing.
- */
+/* The explorer's own drawing: the folders in a folder, and what it says when it cannot read one. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -95,12 +88,8 @@ describe('the folder explorer', () => {
 		expect(shown()).toContain('Archive');
 	});
 
-	/*
-	 * One hover box for every tile: a folder's marks sit on its name's line, the tile's foot, and
-	 * never on a line of their own. Stacked, a shared folder's tile would grow a third row and its
-	 * hover wash come out taller than its neighbours'. The layout itself is the browser's; what is pinned
-	 * is that the marks have no row of their own.
-	 */
+	/* One hover box for every tile: a folder's marks sit on its name's line, the tile's foot,
+	 * and never on a line of their own. */
 	it("puts a tile's marks on its name's line, so every tile is one height", async () => {
 		serving({
 			folders: {
@@ -149,15 +138,7 @@ describe('the folder explorer', () => {
 	});
 
 	it('does not call a folder list it could not read an empty one', async () => {
-		/*
-		 * THE SAME INVARIANT, ABOUT THE READ THIS COMPONENT MAKES.
-		 *
-		 * The files are the real wall (`AssetGrid`, scoped to the folder), so this component
-		 * does not ask for them at all. What is left is the folder tree it does read, and the fault
-		 * is identical in shape: a folder tree that could not be fetched must not be reported as a
-		 * folder with nothing in it. Somebody told their folders are empty stops looking; somebody
-		 * told Sift could not be asked tries again.
-		 */
+		/* THE SAME INVARIANT, ABOUT THE READ THIS COMPONENT MAKES. */
 		serving({ folders: 'refuse' });
 		mounted = mount(FolderExplorer, { target: host, props: { here: 'inner-1' } });
 		await settle();
@@ -169,10 +150,9 @@ describe('the folder explorer', () => {
 	});
 
 	it('names the folders inside this one, so the wall below can leave them out', async () => {
-		/* `in:` means a folder's whole SUBTREE to the server, so the wall under a folder would draw
-		 * every file beneath it: a folder holding only folders would come up as a wall of its
-		 * grandchildren's tiles. Filtering it to what is IN the folder means naming the children to exclude, and
-		 * they are these rows: this component has already read the tree and the screen has not. */
+		/* `in:` means a folder's whole SUBTREE to the server, so the wall under a folder would
+		 * draw every file beneath it: a folder holding only folders would come up as a wall of
+		 * its grandchildren's tiles. */
 		serving();
 		const onlisted = vi.fn();
 		mounted = mount(FolderExplorer, { target: host, props: { here: 'top-1', onlisted } });
@@ -183,8 +163,7 @@ describe('the folder explorer', () => {
 	});
 
 	it('says nothing about the children until the tree has landed', async () => {
-		/* Before the read, "no folders" is not an answer: it is the absence of one. Acted on, the
-		 * wall would ask for the whole subtree once and for the folder again a moment later. */
+		/* Before the read, "no folders" is not an answer: it is the absence of one. */
 		serving({ folders: 'refuse' });
 		const onlisted = vi.fn();
 		mounted = mount(FolderExplorer, { target: host, props: { here: 'inner-1', onlisted } });
@@ -194,10 +173,9 @@ describe('the folder explorer', () => {
 	});
 
 	it('shows a folder whose parent the viewer cannot see', async () => {
-		/* Restrict a folder, share one folder inside it, and the inner one is in the answer while its
-		 * parent is not: nearest-wins working as intended, and the whole reason restrict is worth
-		 * having. Filtered only on "my parent is where you are", it would be in the answer and
-		 * reachable from nowhere, so the share would silently do nothing. */
+		/* Restrict a folder, share one folder inside it, and the inner one is in the answer
+		 * while its parent is not: nearest-wins working as intended, and the whole reason
+		 * restrict is worth having. */
 		serving({
 			folders: {
 				folders: [
@@ -220,7 +198,7 @@ describe('the folder explorer', () => {
 });
 
 /* jsdom has no pointer capture and the menu primitives release it on the way down; absent, the
-   handler throws and no menu ever opens. A gap in the test environment, not in the app. */
+   handler throws and no menu ever opens. */
 for (const name of ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture'] as const) {
 	if (!(name in Element.prototype)) {
 		Object.defineProperty(Element.prototype, name, { value: () => false, writable: true });
@@ -245,12 +223,9 @@ describe("a folder's own menu", () => {
 		document.body.innerHTML = '';
 	});
 
-	/*
-	 * Add to, the door a file's menu and the selection bar open, with its six rows opening out, and
-	 * no naming questions of its own: one way to put things on a person or a Site, on
-	 * every screen. The rows are the declaration's (`grid/verbs.ts`), so the words asserted here are
-	 * the ones every other Add to draws.
-	 */
+	/* Add to, the door a file's menu and the selection bar open, with its six rows opening out,
+	 * and no naming questions of its own: one way to put things on a person or a Site, on every
+	 * screen. */
 	it('offers Add to with the same rows as every other door, and no naming questions', async () => {
 		serving();
 		mounted = mount(FolderExplorer, { target: host, props: { here: 'top-1' } });
@@ -285,10 +260,8 @@ describe("a folder's own menu", () => {
 		);
 	});
 
-	/*
-	 * Who sees it, the rows every folder menu draws (`folderVerbs`): Visibility opens the same report
-	 * the entity pages open, asked about THIS folder.
-	 */
+	/* Who sees it, the rows every folder menu draws (`folderVerbs`): Visibility opens the same
+	 * report the entity pages open, asked about THIS folder. */
 	it('offers Hide, Share and Visibility, and Visibility opens the report on this folder', async () => {
 		const asked = serving();
 		mounted = mount(FolderExplorer, { target: host, props: { here: 'top-1' } });

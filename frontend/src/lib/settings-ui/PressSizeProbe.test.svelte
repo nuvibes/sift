@@ -1,6 +1,6 @@
 <script lang="ts">
-	/* The holders a settings press stands in, each with a press named by what it is, for the press
-	   size test. */
+	/* The holders a settings press stands in, each with a press named by what it is, for the
+	   press size test. */
 	import Button from '$lib/components/common/Button.svelte';
 	import ChooseFile from '$lib/components/common/ChooseFile.svelte';
 	import FormCard from '$lib/components/common/FormCard.svelte';

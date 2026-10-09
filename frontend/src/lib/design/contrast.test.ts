@@ -1,20 +1,4 @@
-/**
- * Every colour pair the interface actually draws, measured, in every theme it can be drawn in.
- *
- * A contrast figure in a comment next to the value it describes is true when written and silently
- * false the moment anybody changes the value, moves the token to another surface, or adds a second
- * base for it to be measured against. So the rule is arithmetic instead of intention: this reads
- * `app.css`, resolves every custom property for each of the base-by-accent combinations
- * exactly as the cascade would, and refuses a pair that falls under its floor. The floors are the
- * design system's: body text 4.5:1, elements and meaningful graphics 3:1.
- *
- * WHY A DECLARED LIST OF PAIRS rather than every token against every other. Because the cross
- * product is not the truth: the app does not put the caption ink on a chip, and asserting that it
- * could would force the palette to satisfy a combination nobody draws. The list below is the set of
- * pairs the components genuinely produce (extracted by reading every rule block that sets both a
- * background and a colour) plus the ones the token layer itself composes. A pair that stops being
- * drawn should come off this list; a new one has to go on it, and that is the point.
- */
+/** Every colour pair the interface actually draws, measured, in every theme it can be drawn in. */
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -27,9 +11,7 @@ import { composite, contrastRatio, parseColour, type Rgba } from './colour';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const APP_CSS = resolve(HERE, '..', '..', 'app.css');
 
-/** The bases and accents the app offers. Kept here as the gate's own idea of the truth: if a theme
- *  is added to the stylesheet and not to this list, the new one simply goes unmeasured, so the
- *  last test in this file checks the two lists against each other. */
+/** The bases and accents the app offers. */
 const BASES = ['obsidian', 'midnight', 'graphite', 'chrome'] as const;
 const ACCENTS = ['blue', 'magenta', 'red', 'gold', 'green', 'cyan'] as const;
 
@@ -38,9 +20,7 @@ const ACCENTS = ['blue', 'magenta', 'red', 'gold', 'green', 'cyan'] as const;
 type Block = { selector: string; declarations: Map<string, string> };
 
 /** The block that puts the card's and the page's light out for forced colours and for less
- *  transparency. Its selectors are the theme's own, so read as a plain block it would replace the
- *  light with the flat tones in every theme this gate measures; the flat tones are measured
- *  already, as the surfaces they are, and `the light on a card` below checks the block is there. */
+ * transparency. */
 const FLAT_FALLBACK =
 	/@media[^{]*(?:forced-colors|prefers-reduced-transparency)[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g;
 
@@ -60,17 +40,9 @@ function blocks(): Block[] {
 	return found;
 }
 
-/** The custom properties in force for one base and one accent.
- *
- * Applied in source order, which is the cascade here: every selector involved is a single pseudo-
- * class or one or two attributes, so the later block wins among equals and the two-attribute block
- * outranks the one-attribute block it follows anyway. Selectors for another theme are skipped.
- */
+/** The custom properties in force for one base and one accent. */
 function variablesFor(base: string, accent: string): Map<string, string> {
-	// A grouped selector matches if ANY of its branches does, the same as in a browser. And the
-	// defaults are written as `:root, [data-base='midnight']` so the appearance pane can paint a
-	// swatch in a theme the page is not wearing. Reading only the whole string would make that block
-	// look like it belonged to one base.
+	// A grouped selector matches if ANY of its branches does, the same as in a browser.
 	const matches = (branch: string): boolean => {
 		const one = branch.trim();
 		if (one === ':root') return true;
@@ -89,11 +61,7 @@ function variablesFor(base: string, accent: string): Map<string, string> {
 	return merged;
 }
 
-/** Resolve a value to a literal colour, following `var()` as far as it goes.
- *
- * Substitution rather than evaluation: `rgba(var(--p-veil), 0.6)` becomes `rgba(6, 7, 10, 0.6)`
- * first and is parsed second, which is what the browser does and is why the veil can be one token
- * three scrims are mixed from. */
+/** Resolve a value to a literal colour, following `var()` as far as it goes. */
 function resolve_(name: string, variables: Map<string, string>): string {
 	let value = variables.get(name);
 	if (value === undefined) throw new Error(`no such token: ${name}`);
@@ -127,11 +95,7 @@ type Pair = {
 const TEXT = 4.5;
 const ELEMENT = 3;
 
-/** The label a filled button carries, and the brightest thing that can be behind a scrim.
- *
- * Both are the same colour and both are read from the token layer rather than written here. A
- * literal would be a second copy of a value the stylesheet already holds: the exact thing the
- * colour gate refuses in a component, and no more defensible in the gate that enforces it. */
+/** The label a filled button carries, and the brightest thing that can be behind a scrim. */
 const LABEL_ON_A_FILL = '--primary-foreground';
 const BRIGHTEST_FRAME = '--primary-foreground';
 
@@ -162,7 +126,7 @@ const PAIRS: Pair[] = [
 	},
 
 	// Caption ink. Deliberately NOT allowed as far as the chip surface: a badge there wears the
-	// secondary ink. If it appears there again, put the pair back and the palette will refuse it.
+	// secondary ink.
 	{ front: '--sift-ink-3', back: '--sift-bg', floor: TEXT, why: 'a caption on the canvas' },
 	{ front: '--sift-ink-3', back: '--sift-surface-2', floor: TEXT, why: 'a caption on a card' },
 	{
@@ -219,10 +183,7 @@ const PAIRS: Pair[] = [
 		floor: TEXT,
 		why: 'a selected filter token'
 	},
-	/* The focus ring's own line, which has to be findable on every surface it can land on. It has a
-	   role of its own rather than borrowing the text one: the text role is solved for 9:1 on the
-	   canvas, which at these hues is a pastel, and as a hairline against an input it would read as
-	   white instead of as the accent. This one is the most saturated version that still clears the floor. */
+	/* The focus ring's own line, which has to be findable on every surface it can land on. */
 	{
 		front: '--sift-accent-ring-line',
 		back: '--sift-surface-4',
@@ -248,8 +209,7 @@ const PAIRS: Pair[] = [
 		why: 'the focus ring on the canvas'
 	},
 
-	// The four states, each as a word on its own tint and as a word on a card. "In progress" has a
-	// colour of its own rather than the accent.
+	// The four states, each as a word on its own tint and as a word on a card.
 	{
 		front: '--sift-progress',
 		back: '--sift-progress-bg',
@@ -267,8 +227,7 @@ const PAIRS: Pair[] = [
 	{ front: '--sift-warn', back: '--sift-warn-bg', floor: TEXT, why: 'a warning on its tint' },
 	{ front: '--sift-warn', back: '--sift-surface-2', floor: TEXT, why: 'a warning on a card' },
 	/* `Panel tone="caution"` stands on the warning's tint and carries the app's ORDINARY ink,
-	   which is the whole of its design: the box says caution and the words stay words. So the
-	   two inks a sentence in one is drawn in are pairs this list holds. */
+	   which is the whole of its design: the box says caution and the words stay words. */
 	{
 		front: '--sift-ink',
 		back: '--sift-warn-bg',
@@ -290,9 +249,7 @@ const PAIRS: Pair[] = [
 	},
 	{
 		/* NOT `LABEL_ON_A_FILL`. Every other filled control carries white; this one carries the
-		   canvas colour, because white on the red the palette was given is 3.29:1. Read from the
-		   token the button actually uses, so that changing what it carries changes what is checked:
-		   a literal here, or the wrong token, would keep passing while the button went dark. */
+		   canvas colour, because white on the red the palette was given is 3.29:1. */
 		front: '--destructive-foreground',
 		back: '--sift-bad',
 		floor: TEXT,
@@ -311,9 +268,7 @@ const PAIRS: Pair[] = [
 		why: 'dark text on a warning fill'
 	},
 	/* The three below come from sweeping the components for a semantic fill that carries a
-	   colour, rather than from reading this list, which is the point. The list is
-	   hand-written, so it says what somebody remembered: white on the red fill at 3.29:1 and
-	   white on the green at 2.09:1 are the kind of pairing it can miss. */
+	   colour, rather than from reading this list, which is the point. */
 	{
 		front: '--sift-bg',
 		back: '--sift-ok',
@@ -321,14 +276,7 @@ const PAIRS: Pair[] = [
 		why: 'the tick on a filled "learned" mark'
 	},
 	{
-		/* A BORDER on the tint, at the element floor, and the floor is the whole of this
-		   entry. No word can ever appear here: `interaction.test.ts` sweeps every component for
-		   `color: var(--sift-bad)` and fails on one, saying in as many words that the fill "does
-		   not clear the contrast floor for words on its own tint. Use --sift-bad-text". So
-		   holding this pair at the TEXT floor would hold the palette to a floor for a pairing
-		   another gate forbids; the two things it names (the excluded checkbox, the quiet
-		   danger button on hover) are both `border-color`, checked at the floor a border
-		   actually has. */
+		/* A BORDER on the tint, at the element floor, and the floor is the whole of this entry. */
 		front: '--sift-bad',
 		back: '--sift-bad-bg',
 		floor: ELEMENT,
@@ -367,8 +315,7 @@ const PAIRS: Pair[] = [
 		why: 'the search wave, warm end'
 	},
 	/* The same two ends again, on a CARD: the marks that say a file was enriched are drawn on a
-	   hover card, on an entity header and down a facet column. A pairing checked only on the
-	   ground it was first used on is a pairing that stops being measured the moment it moves. */
+	   hover card, on an entity header and down a facet column. */
 	{
 		front: '--sift-wave-1',
 		back: '--sift-surface-2',
@@ -395,9 +342,7 @@ const PAIRS: Pair[] = [
 		why: "an enrichment mark on an entity's page"
 	},
 
-	// The scrims, over the worst picture there is. A control over media has no idea what is behind
-	// it, so the only honest backdrop to measure against is white: the frame that takes the most
-	// contrast away from a light glyph.
+	// The scrims, over the worst picture there is.
 	{
 		front: '--sift-ink',
 		back: '--sift-scrim',
@@ -421,30 +366,7 @@ const PAIRS: Pair[] = [
 	},
 
 	/* An entity page's top band, which stands on its own cover blurred past recognition, so
-	 * every word in it is a word over a picture. Same treatment as the scrims above and the same
-	 * worst case: white, the frame that takes the most contrast away.
-	 *
-	 * The thin end of the gradient is what is measured, because it is the only end that can fail:
-	 * the other end is the page's ground at full opacity and is already covered by the first rows
-	 * of this list. And only the BRIGHT frame is measured, which is not an omission: every
-	 * base's ink is light, so a dark picture under the same scrim raises the ratio rather than
-	 * lowering it.
-	 *
-	 * TWO INKS, AND THE CAPTION GREY IS DELIBERATELY NOT ONE OF THEM. Solving the scrim for
-	 * `--sift-ink-3` would leave the cover a tenth of its light and the band could not be seen at
-	 * all. The frame lifts that token for every row standing on the picture (`PageFrame`'s
-	 * `.frame.on-a-picture`), so the grey is not drawn on the scrim anywhere (not by this
-	 * file's own rules, not by `Breadcrumbs`, `Tabs`, `RecordView`, `RecordSummary`,
-	 * `TagChip`, `PageHeader` or `RecognitionStrength`), and a pair that stops being drawn comes
-	 * off this list. The secondary ink is what sets the strength, and it sets it at 0.84.
-	 *
-	 * THE LIFT IS A RULE IN A COMPONENT AND THIS GATE READS ONLY `app.css`, so nothing here can
-	 * see it and nothing here can catch its removal. That is the one soft edge in this block:
-	 * delete the line in `PageFrame` and every caption over the picture silently returns to
-	 * 3.77:1 on midnight with this file still green. It is why `--band-scrim` carries the same
-	 * fact in its own comment, and why the ink is redefined in ONE place rather than component by
-	 * component: one line to find is a line somebody can find.
-	 */
+	 * every word in it is a word over a picture. */
 	{
 		front: '--sift-ink',
 		back: '--band-scrim',
@@ -460,8 +382,7 @@ const PAIRS: Pair[] = [
 		why: 'the summary beside it and every caption on the band, over the same'
 	},
 	/* A chart's three series, the accent's own hue at three lightness steps, drawn on the canvas
-	   and on a card. Graphics, so the element floor: a bar is found by its shape and read by the
-	   words in the table beside it. */
+	   and on a card. */
 	{ front: '--sift-series-1', back: '--sift-bg', floor: ELEMENT, why: 'the lightest series bar' },
 	{ front: '--sift-series-2', back: '--sift-bg', floor: ELEMENT, why: 'the middle series bar' },
 	{ front: '--sift-series-3', back: '--sift-bg', floor: ELEMENT, why: 'the deepest series bar' },
@@ -499,10 +420,7 @@ describe('the contrast of every pair the interface draws', () => {
 					let back = colourOf(pair.back, variables);
 					if (pair.under) back = composite(back, colourOf(pair.under, variables));
 
-					// No tolerance. The tightest pair in any of the twelve combinations clears its
-					// floor by 0.070, so a rounding allowance would be slack a gate does not need:
-					// slack that lets a real 4.496 through one day and cannot be argued about
-					// afterwards.
+					// No tolerance.
 					const ratio = contrastRatio(composite(front, back), back);
 					if (ratio < pair.floor) {
 						failures.push(
@@ -517,8 +435,7 @@ describe('the contrast of every pair the interface draws', () => {
 	}
 
 	it('would notice a colour that stopped being legible', () => {
-		// A gate that has only ever passed says nothing about whether it can fail. The primary ink,
-		// moved to the canvas it is meant to contrast with, must be caught.
+		// A gate that has only ever passed says nothing about whether it can fail.
 		const variables = variablesFor('midnight', 'blue');
 		const canvas = colourOf('--sift-bg', variables);
 		expect(contrastRatio(canvas, canvas)).toBeCloseTo(1, 5);
@@ -526,13 +443,8 @@ describe('the contrast of every pair the interface draws', () => {
 	});
 
 	it('gives every theme the same shape, not just the same names', () => {
-		/* A theme changes VALUES. It must never change what a token MEANS, or the app becomes two
-		 * apps. And the way that happens is not by renaming anything, it is by a second base simply
-		 * FORGETTING one. A primitive a theme does not override silently keeps the default's value,
-		 * which is a real colour, so nothing is undefined, nothing warns, and the token gate is happy.
-		 * The result is one theme wearing a piece of another, in whichever corner nobody opened.
-		 *
-		 * So the sets are compared rather than the values. The one deliberate omission is named. */
+		/* A theme changes VALUES. It must never change what a token MEANS, or the app becomes
+		 * two apps. */
 		const named = new Map<string, Set<string>>();
 		for (const block of blocks()) {
 			named.set(block.selector.replace(/\s+/g, ' '), new Set(block.declarations.keys()));
@@ -578,10 +490,8 @@ describe('the contrast of every pair the interface draws', () => {
 		}
 
 		/* The faces are two attributes with one property each, so the shape question splits in
-		 * two: every family has to declare the display half on the display attribute and the body
-		 * half on the body one. A family that quietly set both on one side would leave the other
-		 * attribute doing nothing, which looks exactly like a font choice that did not take.
-		 */
+		 * two: every family has to declare the display half on the display attribute and the
+		 * body half on the body one. */
 		const display = keysOf(":root, [data-face-display='archivo']");
 		const body = keysOf(":root, [data-face-body='instrument-sans']");
 		for (const face of ['space-grotesk', 'geist-mono', 'manrope', 'jetbrains-mono']) {
@@ -600,13 +510,7 @@ describe('the contrast of every pair the interface draws', () => {
 
 	it('paints a running job in its own colour rather than in the brand', () => {
 		/* A STATE is not a brand decision: the In progress chip must not follow the accent, or a
-		 * library set to gold draws a running job in gold. Every other state on that badge reads
-		 * its own semantic name.
-		 *
-		 * Read out of the stylesheet rather than measured, because what goes wrong is the MAPPING
-		 * and not the colour: the accent blue and the progress blue are the same value, so a
-		 * contrast reading of the two is identical and would pass throughout.
-		 */
+		 * library set to gold draws a running job in gold. */
 		const running = blocks().find((block) => block.selector.includes('.state-running'));
 		expect(running, 'no .state-running block').toBeDefined();
 		const reads = [...running!.declarations.values()].join(' ');
@@ -615,9 +519,7 @@ describe('the contrast of every pair the interface draws', () => {
 	});
 
 	it('measures every theme the stylesheet actually offers', () => {
-		// The list at the top of this file is the gate's own idea of what exists. If a base or an
-		// accent is added to `app.css` and not here, it would go unmeasured. And a theme nobody
-		// measured is exactly the thing this gate was written to make impossible.
+		// The list at the top of this file is the gate's own idea of what exists.
 		const css = readFileSync(APP_CSS, 'utf8');
 		const declaredBases = new Set([...css.matchAll(/\[data-base='([^']+)'\]/g)].map((m) => m[1]));
 		const declaredAccents = new Set(
@@ -625,30 +527,15 @@ describe('the contrast of every pair the interface draws', () => {
 		);
 
 		// Every base and every accent is named in the file, including the defaults, which are
-		// written as `:root, [data-base='midnight']` so a swatch can be painted in them. So the two
-		// lists must match exactly: a theme in the stylesheet and not here is a theme nobody measures.
+		// written as `:root, [data-base='midnight']` so a swatch can be painted in them.
 		expect([...declaredBases].sort()).toEqual([...BASES].sort());
 		expect([...declaredAccents].sort()).toEqual([...ACCENTS].sort());
 	});
 
 	it('keeps the caption grey off the rows standing on a picture, which is what the scrim is solved for', () => {
-		/* The one pair above that is true because of a rule in a COMPONENT rather than because of
-		 * a value in the stylesheet, so it is the one pair this file could not otherwise notice
-		 * losing.
-		 *
-		 * `--band-scrim` is 0.84: the least that holds `--sift-ink-2` at 4.5:1 over a white
-		 * picture. At that strength `--sift-ink-3` reads 3.77:1 on midnight, so a caption drawn
-		 * in the grey anywhere over the backdrop is under the floor. Nothing draws it there only
-		 * because `PageFrame` redefines the token for the three rows above the body, and deleting
-		 * that one line would take every caption on every entity page under the floor with this
-		 * gate green.
-		 *
-		 * READ FROM `PageFrame`, because the picture reaches the breadcrumbs and the tab strip,
-		 * and both of those are the frame's furniture drawn in the caption grey.
-		 *
-		 * Read as text rather than measured, deliberately: what would go wrong is the MAPPING,
-		 * and the value it maps to is already measured by the pair above.
-		 */
+		/* The one pair above that is true because of a rule in a COMPONENT rather than because
+		 * of a value in the stylesheet, so it is the one pair this file could not otherwise
+		 * notice losing. */
 		const frame = readFileSync(
 			resolve(HERE, '..', 'components', 'shell', 'PageFrame.svelte'),
 			'utf8'
@@ -658,8 +545,8 @@ describe('the contrast of every pair the interface draws', () => {
 		expect(lift![1]).toContain('--sift-ink-3: var(--sift-ink-2);');
 
 		// And on every row that stands on it, not merely on one of them: the trail is above the
-		// header and the tab strip is below it, and a lift naming only the middle one would leave the
-		// other two in the grey.
+		// header and the tab strip is below it, and a lift naming only the middle one would leave
+		// the other two in the grey.
 		const selector = frame.match(/\n(\t\.frame\.on-a-picture[^{]*)\{/)![1];
 		for (const row of ['.frame-trail', '.frame-header', '.frame-tools'])
 			expect(selector, `the lift does not reach ${row}`).toContain(row);
@@ -688,11 +575,7 @@ const apart = (one: Rgba, other: Rgba): number => {
 	return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]);
 };
 
-/** THE DISTANCE A SERIES KEEPS FROM A MEANING. The failure red's own two values (the fill and the
- *  word) stand 0.057 apart and are one colour to anybody reading them, so a shade closer than
- *  0.08 to any of the four is inside that colour's range: a chart would say failed, done or
- *  wants attention about a bar of viewing. A red accent's deep shade or a green accent's middle
- *  one can land within 0.04 of the failure red's word or the done green. */
+/** THE DISTANCE A SERIES KEEPS FROM A MEANING. */
 /** `color-mix(in oklch, <colour> N%, black | white)` as the browser works it out: the achromatic
  *  side has no hue, so the accent's hue is kept and lightness and chroma move by the share. */
 function mixed(value: string, variables: Map<string, string>): Rgba {
@@ -813,18 +696,9 @@ describe("a chart's series never wear a colour that means something", () => {
 	});
 });
 
-/** The decoration-only ink stays decoration.
- *
- * `--sift-ink-4` is 3:1 on the canvas and less than that on every surface above it. It exists for
- * things that are not read (an unfilled star, a control that cannot be pressed), and the moment
- * it carries a sentence that sentence is under the floor with nothing to say so.
- *
- * Disabled text is the one exception, and it is the standard's, not a convenience: WCAG exempts a
- * control that cannot be operated, because the whole point of how it looks is that it is not
- * available. So the rule is narrow: the ink may be a colour only in a rule about being disabled.
- */
-/** Every component in the tree, with its source. Two gates below read it, so it is here rather than
- *  copied into each: the copies are what come to disagree about which directories to skip. */
+/** The decoration-only ink stays decoration. `--sift-ink-4` is 3:1 on the canvas and less than
+ * that on every surface above it. */
+/** Every component in the tree, with its source. */
 const componentSources = (): { path: string; text: string }[] => {
 	const root = resolve(HERE, '..', '..');
 	const found: { path: string; text: string }[] = [];
@@ -841,32 +715,7 @@ const componentSources = (): { path: string; text: string }[] => {
 	return found;
 };
 
-/*
- * THE LIST ABOVE IS HAND-WRITTEN, AND THIS IS WHAT STOPS IT GOING ONE SHORT.
- *
- * Its header says the pairs were "extracted by reading every rule block that sets both a background
- * and a colour": a claim about the whole tree that nothing keeps true. A sweep of the same kind
- * finds what the list misses: white on the destructive fill at 3.29:1 on a share control, white on
- * the "learned" tick at 2.09:1 at 20px, the caption ink on a chip at 3.31:1 on a badge whose whole
- * job is to be read.
- *
- * So this measures rather than cross-references. A pair that is drawn is resolved through the token
- * layer and put against the floor directly, which means there is no second list to keep in step and
- * nothing to remember when a component is written.
- *
- * WHAT IT SKIPS, and why each one is a skip rather than a hole:
- *
- *   - a property the token layer does not define. `--state-ink`, `--hover-surface` and their like
- *     are set by a class on an ancestor, so what they resolve to depends on which class, and the
- *     values they take are already in the list above. Guessing here would be inventing a pair.
- *   - a translucent background. A scrim has to be composited over what is behind it, which a rule
- *     block does not say; the entries above express that with `under` and this cannot infer it.
- *
- * The floor is TEXT for everything, and that is deliberate friction rather than an oversight. A
- * rule setting `color` is colouring something somebody is meant to see; if a genuinely graphic-only
- * pair ever needs the 3:1 floor, that is a decision to make out loud in the list above rather than
- * a default this quietly grants.
- */
+/* THE LIST ABOVE IS HAND-WRITTEN, AND THIS IS WHAT STOPS IT GOING ONE SHORT. */
 describe('every colour pair the components actually draw', () => {
 	type Drawn = { front: string; back: string; where: string };
 
@@ -914,18 +763,7 @@ describe('every colour pair the components actually draw', () => {
 		}
 	);
 
-	/*
-	 * A WASH IS READ AS TRANSLUCENT, AND THEREFORE SKIPPED.
-	 *
-	 * `--sift-accent-wash` is `color-mix(in srgb, <accent> 26%, transparent)`. A parser that knows
-	 * only hexes and `rgb()` throws on anything else, on the principle that a colour it cannot read
-	 * must not pass silently, which is right, and without the wash case the first component to
-	 * put text on a wash would produce eighteen thrown cases, one per base and accent, rather than
-	 * a skip.
-	 *
-	 * Asserted here rather than left to the sweep above, because the sweep is green either way: a
-	 * pair it skips and a pair it never saw look exactly the same from the outside.
-	 */
+	/* A WASH IS READ AS TRANSLUCENT, AND THEREFORE SKIPPED. */
 	it('reads a wash as the colour at its own alpha, so the sweep skips it', () => {
 		const variables = variablesFor(BASES[0], ACCENTS[0]);
 		const wash = colourOf('--sift-accent-wash', variables);
@@ -939,8 +777,6 @@ describe('every colour pair the components actually draw', () => {
 
 	it('still refuses a colour it cannot work out', () => {
 		// The other half of the same principle: reading one known form is not licence to guess.
-		// Written in `rgb()` rather than as hexes: the token gate refuses a colour literal in the
-		// tree, and it is right to: even in a string that exists to be rejected.
 		expect(() => parseColour('color-mix(in srgb, rgb(255 255 255) 40%, rgb(0 0 0))')).toThrow(
 			/not a colour/
 		);
@@ -1003,12 +839,7 @@ function fromOklab([L, a, b]: [number, number, number]): Rgba {
 }
 
 /** `color-mix(in oklab, <one> N%, <other>)` as the browser works it out, for two opaque colours:
- *  each of the three coordinates moved by the share.
- *
- *  OKLAB AND NOTHING ELSE, and a mix written in OKLCH is refused rather than worked out. Chromium
- *  reads a grey as faint as midnight's card (chroma under about 0.02) as having no hue, so the same
- *  mix in OKLCH comes out with chroma and no hue, which it paints at hue zero: the card would turn
- *  red on screen while arithmetic like this one said it was blue. */
+ * each of the three coordinates moved by the share. */
 function mixedTwo(value: string): Rgba {
 	const found = value.match(/^color-mix\(\s*in\s+oklab\s*,\s*(\S+)\s+([\d.]+)%\s*,\s*(\S+)\s*\)$/);
 	if (!found) throw new Error(`not a mix of two colours in oklab: ${value}`);
@@ -1082,12 +913,12 @@ describe('the light on a card, and on the page', () => {
 			const [lit, shade] = ends('--sift-card-fill', variables).map(lightness);
 			const [pageLit, pageShade] = ends('--sift-page-fill', variables).map(lightness);
 
-			// Lighter at the top-left and darker at the bottom-right of the card tone, so the middle
-			// of a card is still the card tone and the surface steps keep their meaning.
+			// Lighter at the top-left and darker at the bottom-right of the card tone, so the
+			// middle of a card is still the card tone and the surface steps keep their meaning.
 			expect(lit).toBeGreaterThan(tone);
 			expect(shade).toBeLessThan(tone);
 			// The reference's spread: about 0.034 of OKLCH lightness end to end, seven or eight
-			// levels of 255. Under 0.02 nobody sees it; past 0.05 it reads as a sheen.
+			// levels of 255.
 			expect(lit - shade).toBeGreaterThan(0.02);
 			expect(lit - shade).toBeLessThan(0.05);
 			// The card's darkest corner still stands off the page.
@@ -1155,8 +986,8 @@ function layerStops(name: string, variables: Map<string, string>): Rgba[] {
 	expect(declared!.startsWith('linear-gradient('), `${name} is a picture over the light`).toBe(
 		true
 	);
-	/* The gradient's arguments, split at its own commas (a mix inside one has commas of its own),
-	   the direction left out. Each stop is a surface step or a mix of two, worked out in OKLab. */
+	/* The gradient's arguments, split at its own commas (a mix inside one has commas of its
+	   own), the direction left out. */
 	const inside = declared!.slice('linear-gradient('.length, -1);
 	const parts: string[] = [];
 	let depth = 0;
@@ -1203,9 +1034,7 @@ describe('a card under the pointer', () => {
 				if (chroma(shade) < chroma(restShade) - 0.001)
 					failures.push(`the shaded end lost its hue (${chroma(shade).toFixed(4)})`);
 
-				// Everything a card carries still reads on it, under the pointer and under a press. Save
-				// one: a card that opens on a press holds no field, so no field's error stands on it,
-				// and the error red is held to the element floor here, as it is on the input step.
+				// Everything a card carries still reads on it, under the pointer and under a press.
 				const grounds = [lit, shade, ...layerStops('--sift-card-press-layer', variables)];
 				for (const pair of PAIRS.filter((one) => one.back === '--sift-surface-2' && !one.under)) {
 					const front = colourOf(pair.front, variables);

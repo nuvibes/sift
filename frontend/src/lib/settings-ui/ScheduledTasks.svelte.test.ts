@@ -1,24 +1,14 @@
 /* The Tasks pane: quiet hours as one row at the top, Import tasks, every other task folded under
- * them, Activity under that, and every setting filed here drawn.
- *
- * ## What is worth pinning here
- *
- * The row itself is `TaskWhen` and is proved beside it. What this file owns is the arrangement the
- * whole model rests on: quiet hours come first as one row whose page holds the two times (a link to
- * either still lands, because the row's page opens for it), the stages come before everything else,
- * every task gets its row with its own When key as its address (Activity's "Run in Tasks" rings
- * those), a task's own settings sit under its row, and a setting filed in this section that no task
- * claims is still drawn rather than silently on no screen.
- */
+ * them, Activity under that, and every setting filed here drawn. */
 
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 
 import type { SettingEntry, SettingSection } from '$lib/settings-ui/settings';
 import type { TaskView, TasksView } from '$lib/jobs/tasks.svelte';
 
-/* Svelte itself is imported AFTER each test resets the module registry, beside the component: the
-   store is the app's one copy, so every test needs a fresh one, and a component compiled against
-   one copy of the runtime cannot be mounted by another (`effect_orphan`). */
+/* Svelte itself is imported AFTER each test resets the module registry, beside the component:
+   the store is the app's one copy, so every test needs a fresh one, and a component compiled
+   against one copy of the runtime cannot be mounted by another (`effect_orphan`). */
 let svelte: typeof import('svelte');
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), fetchSettings: vi.fn() }));
@@ -100,8 +90,7 @@ function entry(key: string, over: Partial<SettingEntry> = {}): SettingEntry {
 }
 
 /* The first import of the component compiles its whole graph, which can cost more than one
-   test's time limit. Paid once here, so no test is timed on the compiler; each test still
-   evaluates a fresh copy after the reset below. */
+   test's time limit. */
 beforeAll(async () => {
 	await import('./ScheduledTasks.svelte');
 }, 60_000);
@@ -272,8 +261,8 @@ it("draws a task's own settings under its row, and nothing a task claims twice",
 });
 
 it('draws only the settings the server says mean something under the When', async () => {
-	/* During quiet hours the range's opening is the time, so the backup's Time of day is not drawn;
-	   and a row the task claims but does not draw never falls through to Other settings. */
+	/* During quiet hours the range's opening is the time, so the backup's Time of day is not
+	   drawn; and a row the task claims but does not draw never falls through to Other settings. */
 	await draw(
 		tasks(
 			task('backup', {
@@ -318,8 +307,8 @@ it('says it could not read the tasks rather than that nothing runs', async () =>
 });
 
 it("never draws a task's When as a plain row, for upkeep the list leaves out", async () => {
-	/* The server leaves the prunes and the update check out of the list and keeps their Whens filed
-	   here. Drawn under Other settings they would be the control the list does not offer. */
+	/* The server leaves the prunes and the update check out of the list and keeps their Whens
+	   filed here. */
 	await draw(tasks(task('scan')), [
 		{
 			name: SECTION,
@@ -352,8 +341,8 @@ it('draws nothing under Other settings until the list of tasks has come back', a
 });
 
 it('opens Other tasks and rings the row for a link that arrives before the list does', async () => {
-	/* A cold load of /settings/schedule#tasks.faces.when: the settings answer first, the list after.
-	   The hunt must wait for the task's own row, inside the fold, and open the fold for it. */
+	/* A cold load of /settings/schedule#tasks.faces.when: the settings answer first, the list
+	   after. */
 	const scrolled = vi.fn();
 	Element.prototype.scrollIntoView = scrolled;
 	let answer: (value: TasksView) => void = () => {};

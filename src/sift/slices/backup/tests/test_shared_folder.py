@@ -16,14 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from sift.slices.backup.service import (
-    FOLDER_KEY,
-    KEEP_KEY,
-    LIBRARY_MARK_FILENAME,
-    BackupService,
-    filename_for,
-    mark_of_library,
-)
+from sift.slices.backup.naming import LIBRARY_MARK_FILENAME, filename_for, mark_of_library
+from sift.slices.backup.service import FOLDER_KEY, KEEP_KEY, BackupService
 from sift.slices.settings_hub import SettingsService
 from sift.testing.fixtures import Actors, FakeClock
 

@@ -1,10 +1,4 @@
-/*
- * An empty Browse says what the person reading it can do about it. An admin adds files; a guest
- * adds nothing and sees what has been shared with them, so "Add some files" would tell a guest to
- * do something Sift gives them no way to do.
- *
- * Read from the source, because mounting Browse is mounting the whole wall (see first-read.test).
- */
+/* An empty Browse says what the person reading it can do about it. */
 import { expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 

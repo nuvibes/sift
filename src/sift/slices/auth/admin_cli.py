@@ -1,16 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The host-console tool for resetting a forgotten password.
+"""The host-console tool for resetting a forgotten password; shell access is its security.
 
-There is no email and no security question, on purpose: a user that cannot be correlated with
-an address is one less thing an install leaks. The cost is that a forgotten password is recovered
-from the machine itself, by someone with shell access to it, which an attacker on the internet
-does not have. That requirement is the recovery story's security, not a gap in it.
-
-The one thing this cannot do is keep the saved site logins. They are locked with a key wrapped by
-the old password, and without the old password that key cannot be opened. So the reset mints a new
-one and discards the old locked logins. Everything else (tags, ratings, people, collections, the
-media itself) is untouched. The tool says so, in plain words, before it does anything.
-"""
+The saved site logins are lost: their key is wrapped by the old password."""
 
 from __future__ import annotations
 
@@ -31,9 +22,7 @@ from sift.slices.auth.passwords import PasswordPolicyError, validate_password
 
 _FIND_ADMINS = "SELECT id, username FROM users WHERE role = 'admin' ORDER BY id"
 _USER_BY_USERNAME = "SELECT id, username FROM users WHERE username = ?"
-# `disabled = 0` as well: this is the recovery path, and recovery restores *access*, not only the
-# password. A user who was locked out and has forgotten its password would otherwise reset the
-# password and still be unable to sign in, with nothing else to turn to from the console.
+# `disabled = 0` too: recovery restores access, not only the password.
 _UPDATE = """
 UPDATE users
    SET password_hash = ?, mk_wrapped = ?, mk_nonce = ?, mk_kdf_salt = ?, disabled = 0
@@ -48,15 +37,7 @@ class ResetError(Exception):
 
 
 async def reset_password(database: Database, username: str, new_password: str) -> str:
-    """Give a user a new password and a fresh master key. Returns the user id.
-
-    The new master key means the old saved logins can no longer be decrypted: they are discarded
-    here rather than left as undecryptable rows. Every session the user had is revoked, so a
-    stolen cookie from before the reset is dead. Nothing else is touched.
-
-    Uses fixed hashing parameters rather than probing the hardware: this runs as a short-lived
-    command, not the server, and the floor is strong on any machine.
-    """
+    """Give a user a new password and master key; drop the unopenable logins and every session."""
     validate_password(new_password)
 
     row = await database.fetch_one(_USER_BY_USERNAME, (username,))
@@ -74,9 +55,7 @@ async def reset_password(database: Database, username: str, new_password: str) -
             (password_hash, wrapped.ciphertext, wrapped.nonce, wrapped.salt, user_id),
         )
         await connection.execute(_DELETE_SESSIONS, (user_id,))
-        # The saved logins were locked with the old key. Discard them rather than leave rows nothing
-        # can open. The table only exists once the download feature has been used; guard on it so
-        # this works on an install that never has.
+        # The table exists only once the download feature has been used.
         has_secrets = await connection.execute_fetchall(_SECRETS_TABLE)
         if has_secrets:
             await connection.execute("DELETE FROM secrets")
@@ -97,8 +76,7 @@ async def _resolve_username(database: Database, requested: str | None) -> str:
 
 
 def _confirm(who: str) -> bool:
-    """Warn, in plain words, and read the confirmation. Blocking terminal I/O, kept off the event
-    loop by the caller."""
+    """Warn in plain words and read the confirmation; blocking, so the caller threads it."""
     sys.stdout.write(
         f"\nThis resets the password for {who!r}.\n\n"
         "Your saved site logins will be lost: they are locked with your old password, which\n"
@@ -118,14 +96,11 @@ def _prompt_new_password() -> str:
 
 async def _run(username: str | None) -> None:
     settings = get_settings()
-    # Quiet: this is a console tool, and a line about the database is not what
-    # somebody resetting a password came here to read.
     check_sqlite_capabilities(announce=False)
     database = Database.for_data_dir(settings.data_dir)
     await database.connect()
     try:
         who = await _resolve_username(database, username)
-        # The prompts block on the terminal, so they run in a thread rather than stalling the loop.
         if not await asyncio.to_thread(_confirm, who):
             sys.stdout.write("Canceled. Nothing changed.\n")
             return
@@ -146,13 +121,10 @@ def main() -> None:
     reset.add_argument("--username", help="the user to reset (needed only if there are several)")
     args = parser.parse_args()
 
-    # No dispatch on the subcommand: there is one, and it is required, so argparse has already
-    # refused anything else before this line runs. A branch here would be one nothing can reach.
     try:
         asyncio.run(_run(args.username))
     except (ResetError, PasswordPolicyError) as exc:
-        # What reaches the shell is the sentence, not a traceback. The person running this has lost
-        # their password; a stack trace tells them nothing they can act on.
+        # The sentence reaches the shell, not a traceback.
         raise SystemExit(f"\n{exc}\n") from None
 
 

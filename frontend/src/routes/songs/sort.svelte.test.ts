@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Music wall's order, and the one property it exists for: it OUTLIVES the screen.
- *
- * Picking `Fewest files`, paging on, opening a song and coming back must keep `Fewest files`. A
- * check that only set the value and read it back would pass against an order held in component
- * state, so what is asserted here is the screen being built AGAIN: a fresh import with the store
- * as a browser that has been to this wall before.
- */
+/* The Music wall's order, and the one property it exists for: it OUTLIVES the screen. */
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,10 +11,7 @@ async function opened() {
 	return { sort: songsSort, fallback: SONGS_DEFAULT_SORT };
 }
 
-/* The module graph compiled once, before any test is timed. Every test imports the module afresh
-   (see `resetModules` below), and the first to do so otherwise pays the whole compile inside its
-   own time limit, which a busy run pushes past it. The fresh evaluation each test asserts on is
-   unchanged: only the compile is shared. */
+/* The module graph compiled once, before any test is timed. */
 beforeAll(async () => {
 	await import('./sort.svelte');
 }, 30_000);
@@ -61,8 +52,7 @@ describe('the order the Music wall is in', () => {
 	});
 
 	it('reads a stale stored key as the default', async () => {
-		// An older build's key, or a hand-edited store. The wall draws rather than refusing, and the
-		// server would refuse the key anyway.
+		// An older build's key, or a hand-edited store.
 		localStorage.setItem(KEY, 'longest');
 		const { sort, fallback } = await opened();
 		expect(sort.value).toBe(fallback);

@@ -1,13 +1,6 @@
 <script lang="ts">
-	/*
-	 * The whole of an entity's PAGE, taking a dropped link and filing what comes back under it.
-	 *
-	 * Drawn as a sibling, not a wrapper, and it lays out nothing: one fixed layer, drawn only while
-	 * something is held over the window. Why, and why it publishes a named question rather than a
-	 * hook into somebody else's handler, is written in `aimed-page`.
-	 *
-	 * What it draws is `DropOffer`, the same offer the window makes, with this page's name in it.
-	 */
+	/* An entity's whole page taking a dropped link and filing it under it: a fixed layer drawn only
+	 * while something is held over the window (see `aimed-page`), showing DropOffer. */
 	import { onMount } from 'svelte';
 	import DropOffer from '$lib/components/common/DropOffer.svelte';
 	import { carriesALink, overADropZone, readLink } from '$lib/components/common/drag-assign.svelte';
@@ -26,31 +19,21 @@
 
 	let { kind, id, name }: Props = $props();
 
-	/* Say what this screen is about, for as long as it is on screen. Cleared on the way out, which
-	   is what stops the next screen's drop being aimed at whoever was on this one. A fetch is an
-	   admin's, so a guest's drop is left to the window, which says so. */
+	/* Say what this screen is about while it is up; a guest's drop is left to the window. */
 	$effect(() => {
 		if (!session.isAdmin) return;
 		aimPageAt({ kind, id, name });
 		return () => aimPageAt(null);
 	});
 
-	/* Counted rather than flagged, and split into the same two questions the window-wide offer
-	   splits into, for the same reason, written up there in full. `depth` counts EVERY enter
-	   against EVERY leave, so the pair cancels; `taking` is whether this page would take what is
-	   being carried, re-asked from the latest event. Counting only the enters it liked would make
-	   the offer flash. */
+	/*
+	 * Every enter counted against every leave, and `taking` re-asked, so the offer does not flash.
+	 */
 	let depth = $state(0);
 	let taking = $state(false);
 	const over = $derived(depth > 0 && taking);
 
-	/* A card inside this page is a SMALLER aim at a NAMED thing, and it wins.
-	 *
-	 * A person's page carries walls of collections, tags and photo sets, and every one of those
-	 * cards takes a link of its own. Without this the page's wash would sit over the card that was
-	 * lit up underneath it, and on a drop both of them would file the same link: one under the
-	 * page, one under the card. The question is `overADropZone`'s, and the window's offer stands
-	 * down over this page for exactly the same reason. */
+	/* A card inside the page is a smaller aim and wins, or one drop would file the link twice. */
 	function wouldTakeIt(event: DragEvent): boolean {
 		return session.isAdmin && carriesALink(event) && !overADropZone(event);
 	}
@@ -72,10 +55,7 @@
 		if (event.dataTransfer) event.dataTransfer.dropEffect = 'link';
 	}
 
-	/* `dragend` as well as `drop`, and the counter is RESET rather than counted down: a drag that
-	   finishes outside the window fires no matching `dragleave`, and the offer would sit over the
-	   page with nothing in flight and no way to dismiss it. The same guard the window's own offer
-	   carries, for the same reason. */
+	/* Reset on dragend too: a drag ending outside fires no matching dragleave. */
 	function ended() {
 		depth = 0;
 		taking = false;
@@ -83,8 +63,7 @@
 
 	function dropped(event: DragEvent) {
 		const mine = over && wouldTakeIt(event);
-		// Always, even for a drop that belongs to something else: this is the one place the counter
-		// is cleared, so leaving early before it would strand the offer open.
+		// Always: this is the one place the counter clears.
 		ended();
 		if (!mine) return;
 		const url = readLink(event);
@@ -93,14 +72,7 @@
 		void fetchOnto(url, kind, id, name);
 	}
 
-	/* A late mount is still a mount. The listeners go on the window because a page is not a box
-	   (see `aimed-page`) and they come off with the component.
-	 *
-	 * In the CAPTURE phase, and it matters: a card inside this page calls `stopPropagation` on a
-	 * link it takes, which is exactly what stops a bubbling listener on the window. A bubbling
-	 * `drop` that clears this counter would therefore never run for a drop onto a card, and the
-	 * page's wash would sit there afterwards with nothing in flight. Capture runs on the way
-	 * down and nothing on the page can prevent it. See `DropOverlay`, which says the same. */
+	/* On the window in the capture phase, since a card stops a link's drop from bubbling. */
 	onMount(() => {
 		window.addEventListener('dragenter', enter, true);
 		window.addEventListener('dragleave', leave, true);
@@ -117,6 +89,5 @@
 	});
 </script>
 
-<!-- The sentence is `dropOffer`'s, shared with the card's own smaller one; the drawing is the one
-     every whole-window offer shares. -->
+<!-- The sentence is `dropOffer`'s; the drawing every whole-window offer shares. -->
 <DropOffer shown={over} words={dropOffer(kind, name)} />

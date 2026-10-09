@@ -187,6 +187,10 @@ class GuestSession(_Receiving, _Live):
         # The answer may never have reached the host; it takes the first it hears. So with this
         # side's offer and its done, in a swap that sends and receives.
         await self.say_again(conn)
+        self._reopen_streams()
+
+    def _reopen_streams(self) -> None:
+        """Dial again every stream a cut stopped, in each direction still carrying files."""
         if self.transferring and not self.received_all:
             for number in range(self.ladder.streams):
                 running = self.streams.get(number)
@@ -276,6 +280,10 @@ class GuestSession(_Receiving, _Live):
         self.spawn(self.listen(conn), "listen")
         await self.became_connected(peer.device, conn)
         self.code = code_of(self.secret, peer.device, device.id, peer.nonce, nonce)
+        await self._carry_files()
+
+    async def _carry_files(self) -> None:
+        """Receive, and send too in a swap both ways, ending the session once all is done."""
         sending = self.sending_half()
         if sending is None:
             if await self.take_and_receive():
@@ -317,13 +325,7 @@ class GuestSession(_Receiving, _Live):
         left to send."""
         sending = self.sending_half() if back else None
         failures = 0
-
-        def carrying() -> bool:
-            if sending is not None:
-                return not sending.resolved
-            return not self.received_all
-
-        while not self.ended.is_set() and carrying() and self.cut_at is None:
+        while not self.ended.is_set() and self._carrying(sending) and self.cut_at is None:
             try:
                 conn = await self._dial()
             except lock.LockFailed:
@@ -370,10 +372,20 @@ class GuestSession(_Receiving, _Live):
                     await self.cut()
                     return
             finally:
-                conn.close()
-                self.conns.discard(conn)
-                if sending is not None and task is not None:
-                    sending.stream_tasks.discard(task)
+                self._let_go(conn, sending, task)
+
+    def _carrying(self, sending: _BackSending | None) -> bool:
+        if sending is not None:
+            return not sending.resolved
+        return not self.received_all
+
+    def _let_go(
+        self, conn: Conn, sending: _BackSending | None, task: asyncio.Task[Any] | None
+    ) -> None:
+        conn.close()
+        self.conns.discard(conn)
+        if sending is not None and task is not None:
+            sending.stream_tasks.discard(task)
 
     async def teardown(self) -> None:
         await super().teardown()

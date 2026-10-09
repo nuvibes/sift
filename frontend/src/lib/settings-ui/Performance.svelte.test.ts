@@ -12,8 +12,7 @@ import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import paneSource from './SettingsPane.svelte?raw';
 
 /* The Performance screen: the device, the benchmark, whether Sift is keeping up, and the figures
- * for a bug report. Its own settings are Concurrency's page and the step back;
- * the other settings it reads are what the device readout says each feature runs on. */
+ * for a bug report. */
 
 const fetchSettings = vi.fn<() => Promise<SettingSection[]>>();
 const saveSettings = vi.fn<(values: Record<string, unknown>) => Promise<void>>();
@@ -25,8 +24,8 @@ vi.mock('$lib/settings-ui/settings', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/settings-ui/settings')>()),
 	fetchSettings: () => fetchSettings(),
 	saveSettings: (values: Record<string, unknown>) => saveSettings(values),
-	// A rating is drawn wherever this reaches, and the rating scale registers its watcher at
-	// module scope. A partial mock without this fails the suite at import.
+	// A rating is drawn wherever this reaches, and the rating scale registers its watcher at module
+	// scope.
 	onSettingsSaved: vi.fn()
 }));
 
@@ -34,20 +33,16 @@ vi.mock('$lib/shell/health', () => ({
 	fetchHealth: () => fetchHealth()
 }));
 
-/* The machine probe, which is its own admin-only route rather than part of the settings. Only
-   `get` is replaced: everything else in the client, `ApiError` included, stays real. */
+/* The machine probe, which is its own admin-only route rather than part of the settings. */
 const machine = vi.fn<(url?: string) => Promise<unknown>>();
 vi.mock('$lib/api/client', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/api/client')>();
 	return { ...actual, api: { ...actual.api, get: (url: string) => machine(url) } };
 });
 
-/* The shell, which is the only thing that can say what computer this window is on. Answers null by
-   default: the machine running the library, where there is nothing to add. */
+/* The shell, which is the only thing that can say what computer this window is on. */
 const localHardware = vi.hoisted(() => vi.fn(async () => null as unknown));
-/* Whether this page is inside the desktop application at all. `localHardware` answering null is
-   true both on the machine running the library and in a browser, and those two want different
-   words: a browser is not a machine. */
+/* Whether this page is inside the desktop application at all. */
 const isDesktop = vi.hoisted(() => vi.fn(() => true));
 
 vi.mock('$lib/bridge', () => ({
@@ -119,9 +114,7 @@ const MACHINE = {
 	warnings: []
 };
 
-/* THE TWO DEVICE SETTINGS LIVE IN OTHER SECTIONS, and that is the whole point of these fixtures.
-   The readout is on the Performance screen; the settings behind it belong to Smart Search and to
-   Identify. Reading them out of the Performance section is exactly the bug these catch. */
+/* THE TWO DEVICE SETTINGS LIVE IN OTHER SECTIONS, and that is the whole point of these fixtures. */
 const SMART_SEARCH: SettingSection = {
 	name: 'Smart Search',
 	settings: [
@@ -141,27 +134,25 @@ async function render(sections: SettingSection[] = [PERFORMANCE]) {
 	host = document.createElement('div');
 	document.body.append(host);
 	mount(Performance, { target: host });
-	/* The sub-page is mounted beside the pane, exactly as the settings shell mounts it: what Sift
-	   builds ahead is a `PresetGroup`, and its rows are drawn by the SHELL rather than by the pane.
-	   See `DrilldownPage`. */
+	/* The sub-page is mounted beside the pane, exactly as the settings shell mounts it: what
+	   Sift builds ahead is a `PresetGroup`, and its rows are drawn by the SHELL rather than by
+	   the pane. */
 	mount(DrilldownPage, { target: host, props: { behind: 'Performance' } });
-	/* onMount kicks off an async load: let the settings read land and the DOM settle. A task, not
-	   a microtask, so every answer already resolved has been handed on. */
+	/* onMount kicks off an async load: let the settings read land and the DOM settle. */
 	await vi.waitFor(() => expect(fetchSettings).toHaveBeenCalled());
 	await new Promise((settled) => setTimeout(settled, 0));
 	flushSync();
 }
 
 /* A machine that will not describe itself, which is the ordinary case for every test here but
-   the two about the readout. The component treats a failed check as "say nothing about the
-   machine", so this leaves the rest of the screen exactly as it was. */
+   the two about the readout. */
 beforeEach(() => {
 	machine.mockRejectedValue(new Error('nothing is answering'));
 });
 
 afterEach(() => {
-	/* The open sub-page is MODULE state, so it outlives the host it was drawn in and the next test
-	   would start with the last one's page already up. */
+	/* The open sub-page is MODULE state, so it outlives the host it was drawn in and the next
+	   test would start with the last one's page already up. */
 	drilldown.close();
 	machine.mockReset();
 	fetchSettings.mockReset();
@@ -174,8 +165,8 @@ afterEach(() => {
 
 describe('the performance screen', () => {
 	it('draws how much Sift does at the same time as one row, its numbers on a page behind its Edit', async () => {
-		/* Concurrency is beside the step back that lowers it, not beside the stages on Importing.
-		   The pane itself draws no number: they are on the page its Edit opens. */
+		/* Concurrency is beside the step back that lowers it, not beside the stages on
+		   Importing. */
 		await render();
 
 		const row = host.querySelector('[id="performance.concurrency"]');
@@ -227,8 +218,7 @@ describe('the performance screen', () => {
 	});
 
 	it('draws the one setting it owns: stepping back while the computer is in use', async () => {
-		/* Filed under Performance by the registry and drawn here, on by default. Turning it off
-		   is written immediately, like every row on a settings pane. */
+		/* Filed under Performance by the registry and drawn here, on by default. */
 		const stepBack: SettingSection = {
 			name: 'Performance',
 			settings: [
@@ -282,17 +272,9 @@ describe('the performance screen', () => {
 	});
 
 	it('reads what each feature runs on from ITS OWN SECTION, not from this one', async () => {
-		/*
-		 * THE FAULT THIS GUARDS, in one sentence: the table saying "CPU" on a machine set to use
-		 * the card, because the two settings were looked up in the Performance section and they are
-		 * not in it.
-		 *
-		 * `faces.device` belongs to Identify and `semantic.device` to Smart Search. Both lookups
-		 * would miss, both fall to the "not nvidia" side of the test, and the readout report the
-		 * processor with complete confidence, to whoever had just changed the setting, a change
-		 * that had not saved. So the fixture puts them in other sections and gives them DIFFERENT
-		 * values: one right answer cannot cover for the other.
-		 */
+		/* THE FAULT THIS GUARDS, in one sentence: the table saying "CPU" on a machine set to use
+		 * the card, because the two settings were looked up in the Performance section and they
+		 * are not in it. */
 		machine.mockResolvedValue(MACHINE);
 		await render([PERFORMANCE, SMART_SEARCH, IDENTIFY]);
 
@@ -334,10 +316,7 @@ describe('the performance screen', () => {
 	});
 
 	it('says nothing at all about a feature whose setting it cannot see', async () => {
-		/* A missing key must not come back as "CPU" just because it is not the string `nvidia`.
-		   A section this account may not see, a request that half-failed, a key renamed: every
-		   one of them would be a confident, wrong reading of the machine. A row that is not
-		   drawn is honest; a row that is wrong is not. */
+		/* A missing key must not come back as "CPU" just because it is not the string `nvidia`. */
 		machine.mockResolvedValue(MACHINE);
 		await render([PERFORMANCE]);
 
@@ -351,13 +330,7 @@ describe('the performance screen', () => {
 	});
 });
 
-/* IS SIFT KEEPING UP: one sentence, and the four instruments behind Details.
- *
- * What these prove: the sentence says the present before the past; it names the reading that was
- * slow in that reading's own words; a quiet machine reads as yes; a reading an older server does
- * not send is left out rather than drawn as zero; and the two diagnosis tables are behind the
- * fold with a Copy button, in the order the server ranked them.
- */
+/* IS SIFT KEEPING UP: one sentence, and the four instruments behind Details. */
 
 const QUIET: ServerHealth = {
 	loop: { worstLagSeconds: 0.04, heldCount: 0 },
@@ -399,8 +372,8 @@ function row(kind: string): HTMLElement | null {
 
 describe('is Sift keeping up', () => {
 	it('is absent for anyone the server does not answer', async () => {
-		// A guest gets no reading at all, so there is nothing to draw, not a zero, which would
-		// read as "measured, and fine".
+		// A guest gets no reading at all, so there is nothing to draw, not a zero, which would read
+		// as "measured, and fine".
 		await show(null);
 
 		expect(block()).toBeNull();
@@ -527,9 +500,7 @@ describe('is Sift keeping up', () => {
 	});
 });
 
-/* Measuring the machine. The panel is the only place in Sift that produces a number rather than
- * taking one, so what matters here is that it never quietly becomes a number-writer: a
- * recommendation is shown, and applying it is a thing somebody does. */
+/* Measuring the machine. */
 
 const MEASURED: SelfTest = {
 	running: false,
@@ -582,14 +553,7 @@ describe('testing this machine', () => {
 		flushSync();
 	}
 
-	/*
-	 * The apply button, found by what it SAYS rather than by a class.
-	 *
-	 * The control is the shared `Button`, which brings its own look and deliberately does not take
-	 * a caller's class for styling. Reading the label is the better test anyway: it is what a
-	 * person looks for, so this fails if the button stops being findable rather than only if its
-	 * markup changes.
-	 */
+	/* The apply button, found by what it SAYS rather than by a class. */
 	function applyButton(): HTMLButtonElement | null {
 		const buttons = [...(panel()?.querySelectorAll('button') ?? [])] as HTMLButtonElement[];
 		return buttons.find((one) => /Apply th|Applying/.test(one.textContent ?? '')) ?? null;
@@ -633,14 +597,8 @@ describe('testing this machine', () => {
 		).toContain('Run the benchmark');
 	});
 
-	/*
-	 * THE TEST NEVER RUNS UNASKED, so the pane has to say what is waiting on it, and has to stop
-	 * saying it the moment there are rates on file.
-	 *
-	 * `measured` and not `finished`: rates are stored, so a machine measured in an earlier session
-	 * comes back with no run in this process, and a sentence keyed on `finished` would tell it
-	 * every time that the quicker read is still waiting.
-	 */
+	/* THE TEST NEVER RUNS UNASKED, so the pane has to say what is waiting on it, and has to stop
+	 * saying it the moment there are rates on file. */
 	it('says what is waiting on the test while this machine has never been measured', async () => {
 		await withTest({
 			running: false,
@@ -696,8 +654,7 @@ describe('testing this machine', () => {
 	});
 
 	it('picks up a run that was already going before the screen was opened', async () => {
-		// The run belongs to the server, not to this tab. Offering to start one while another is in
-		// flight is how somebody ends up measuring two tests against each other.
+		// The run belongs to the server, not to this tab.
 		await withTest({
 			running: true,
 			rounds: 5,
@@ -724,13 +681,7 @@ describe('testing this machine', () => {
 		expect(panel()?.querySelector('button.measure')).toBeNull();
 	});
 
-	/*
-	 * A RUN IN FLIGHT HAS TO LOOK LIKE ONE, for all of its two to four minutes.
-	 *
-	 * One static sentence while the processor is pinned is indistinguishable from a test that
-	 * started and died, so people press the button again, which the server correctly ignores,
-	 * which looks like it is broken twice.
-	 */
+	/* A RUN IN FLIGHT HAS TO LOOK LIKE ONE, for all of its two to four minutes. */
 	it('and says how far through it is, from what the server has already measured', async () => {
 		await withTest({
 			running: true,
@@ -765,8 +716,8 @@ describe('testing this machine', () => {
 
 		const said = panel()?.querySelector('[data-testid="self-test-rounds"]')?.textContent ?? '';
 		expect(said).toContain('Round 3 of up to 5');
-		/* And a bar, because a sentence that changes every twenty seconds is easy to miss and a bar
-		   that moves is not. */
+		/* And a bar, because a sentence that changes every twenty seconds is easy to miss and a
+		   bar that moves is not. */
 		const bar = panel()?.querySelector(
 			'[role="progressbar"][aria-label="Benchmarking this device"]'
 		);
@@ -774,8 +725,8 @@ describe('testing this machine', () => {
 		expect(bar?.getAttribute('aria-valuemax')).toBe('5');
 	});
 
-	/* Before the first level lands there is nothing measured, and the count still has to be honest:
-	   round one, of up to five. */
+	/* Before the first level lands there is nothing measured, and the count still has to be
+	   honest: round one, of up to five. */
 	it('and reads as the first round before anything has been measured', async () => {
 		await withTest({
 			running: true,
@@ -804,13 +755,7 @@ describe('testing this machine', () => {
 		);
 	});
 
-	/*
-	 * THE BOUNDARY: never a sixth round of up to five.
-	 *
-	 * The ladder has five reachable rungs on this machine and all five have reported, while the run
-	 * carries on through the decoder and the shares. Naming the rung about to start would say six
-	 * of five, when no rung is about to start.
-	 */
+	/* THE BOUNDARY: never a sixth round of up to five. */
 	const rung = (at_once: number, responsive = true) => ({
 		at_once,
 		seconds: 20,
@@ -965,8 +910,8 @@ describe('testing this machine', () => {
 		expect(panel()?.textContent).toContain('It takes up to 5 min and keeps this device busy');
 	});
 
-	/* Right after a press the run is queued or pausing work: no rung of it is measured yet, and the
-	   last result stays on screen under the same press, never its rungs read as this run's. */
+	/* Right after a press the run is queued or pausing work: no rung of it is measured yet, and
+	   the last result stays on screen under the same press, never its rungs read as this run's. */
 	it('starts a pressed run at round one and keeps the last result under it', async () => {
 		await withTest({ ...MEASURED, running: true });
 
@@ -1061,8 +1006,7 @@ describe('testing this machine', () => {
 
 	it('takes the apply button away once the settings match', async () => {
 		/* A button left after applying would still offer to make a change that had already been
-		   made. The server compares against the CURRENT settings, so reading the run back is what
-		   makes the screen go quiet. */
+		   made. */
 		fetchSelfTest.mockResolvedValueOnce(MEASURED).mockResolvedValue({
 			...MEASURED,
 			recommendations: [{ ...MEASURED.recommendations[0], current: 2, changes_anything: false }]
@@ -1193,11 +1137,7 @@ describe('testing this machine', () => {
 	});
 
 	/* A share, and the three facts somebody on one needs beside its curve: what was measured,
-	 * what Sift is reading at, and where the share stopped delivering more.
-	 *
-	 * `share_reads_now` is the SERVER'S number: the setting holds 0 for automatic, and the rule
-	 * that turns that into the real figure belongs to `kernel/lanes`.
-	 */
+	 * what Sift is reading at, and where the share stopped delivering more. */
 	const ON_A_SHARE = {
 		...MEASURED,
 		share_reads_now: 2,
@@ -1432,14 +1372,7 @@ describe('the figures for a bug report', () => {
 	});
 });
 
-/* The memory row, which reads one of two numbers.
- *
- * What the operating system reports as physical memory is what it can ADDRESS: the installed
- * total less whatever the firmware and the hardware reserve, a few gigabytes. Shown, it would
- * stand beside a Windows dialog naming the installed figure and read as Sift being unable to
- * count. Both are kept: the addressable figure is what any sizing is done against, and the
- * installed figure is what a person recognises as their computer.
- */
+/* The memory row, which reads one of two numbers. */
 describe('the memory row', () => {
 	async function memoryRow(over: Record<string, unknown>): Promise<string | undefined> {
 		machine.mockResolvedValue({ ...MACHINE, ...over });
@@ -1451,9 +1384,7 @@ describe('the memory row', () => {
 	}
 
 	it('says what the machine has, and only that', async () => {
-		/* The addressable figure is deliberately NOT shown beside it. It is what every sizing
-		   decision is made against, but a description of somebody's computer should say what is in
-		   it: two numbers in one row would invite the question rather than answer it. */
+		/* The addressable figure is deliberately NOT shown beside it. */
 		const said = await memoryRow({
 			installed_ram_bytes: 34_359_738_368,
 			total_ram_bytes: 33_285_996_544
@@ -1462,8 +1393,8 @@ describe('the memory row', () => {
 		expect(said).toBe('32 GB');
 	});
 
-	/* Linux has no equivalent that is not a guess, so nothing is answered there and the row falls
-	   back to the addressable figure rather than to "Unknown". */
+	/* Linux has no equivalent that is not a guess, so nothing is answered there and the row
+	   falls back to the addressable figure rather than to "Unknown". */
 	it('falls back to the addressable figure where nothing will say what is installed', async () => {
 		const said = await memoryRow({ installed_ram_bytes: null });
 
@@ -1471,12 +1402,7 @@ describe('the memory row', () => {
 	});
 });
 
-/* The two computers.
- *
- * Everything Sift does with a machine happens where the library is, so the hardware block
- * describes the SERVER, and in client mode that is a computer somewhere else, which a heading
- * saying "This machine" would name wrongly.
- */
+/* The two computers. */
 describe('the machine blocks', () => {
 	async function drawn(local: unknown, desktop = true) {
 		isDesktop.mockReturnValue(desktop);
@@ -1512,9 +1438,7 @@ describe('the machine blocks', () => {
 		expect(shown.querySelector('[data-testid="local-hardware"]')).toBeNull();
 	});
 
-	/* A BROWSER IS NOT A MACHINE. There is no second computer to describe, so the block that would
-	   have said "This machine" is about a server reached over a network, and saying "this" about it
-	   names the wrong thing twice over. */
+	/* A BROWSER IS NOT A MACHINE. */
 	it('does not call the server "this machine" when read in a browser', async () => {
 		const shown = await drawn(null, false);
 
@@ -1523,8 +1447,8 @@ describe('the machine blocks', () => {
 		expect(shown.querySelector('[data-testid="local-hardware"]')).toBeNull();
 	});
 
-	/* THREADS, not cores. An eight-core chip with two threads each reports 16, and a row labelled
-	   "Cores" over that number is simply wrong. */
+	/* THREADS, not cores. An eight-core chip with two threads each reports 16, and a row
+	   labelled "Cores" over that number is simply wrong. */
 	it('calls the count what it is', async () => {
 		const shown = await drawn(null);
 
@@ -1536,12 +1460,8 @@ describe('the machine blocks', () => {
 	});
 });
 
-/* Every card, not just the first.
- *
- * A machine can have more than one, and a description of somebody's computer that names half of it
- * is quietly wrong. The first is still the one that does the work (it is the device CUDA uses
- * unless it is told otherwise), so it is the one that says so.
- */
+/* Every card, not just the first. A machine can have more than one, and a description of
+ * somebody's computer that names half of it is quietly wrong. */
 describe('the graphics cards', () => {
 	async function cardRows(cards: unknown) {
 		machine.mockResolvedValue({ ...MACHINE, gpu_cards: cards });
@@ -1590,8 +1510,7 @@ describe('the graphics cards', () => {
 		expect(rows[1][1]).toContain('Sift uses this one');
 	});
 
-	/* A driver that reports a device but will not name it. The row is still drawn, because "there
-	   is a card here" is worth saying and is not the same as "there is none". */
+	/* A driver that reports a device but will not name it. */
 	it('still draws a row for a card that will not say what it is', async () => {
 		const rows = await cardRows([{ name: null, vram_bytes: null }]);
 

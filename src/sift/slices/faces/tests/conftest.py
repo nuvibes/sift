@@ -1,20 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Standing in for the models, so the feature can be tested without any.
 
-**No model file ships with Sift**, so there is nothing to load in a test and nothing to download in
-CI. What is tested here is everything around the models: which frames are read, which faces survive
-the quality bar, how many are described, how runs are joined, who gets attributed, what a pack
-refuses. The models themselves are two functions (picture in, boxes out; face in, numbers out),
-and standing in for them is what makes the rest observable.
-
-The stand-ins **count what they were asked to do**, which is the point. Several of the guarantees
-this feature makes are about work NOT happening: a poor face is never described, adding a person
-opens no file, nothing at all runs while the feature is off. Those cannot be tested by looking at
-the result: only by asking the expensive thing whether it was called.
-
-Faces are drawn into a picture as plain grey squares with darker marks for eyes, nose and mouth.
-Nothing here is trying to be a face: the detector is a stand-in, and what a test needs is a picture
-where a known thing is at a known place.
+The stand-ins count what they were asked to do, since several guarantees are about work not
+happening; faces are grey squares with darker marks at known places.
 """
 
 from __future__ import annotations
@@ -78,11 +66,7 @@ def landmarks_for(box: Box) -> tuple[tuple[float, float], ...]:
 
 
 def turned_away(box: Box) -> tuple[tuple[float, float], ...]:
-    """The same five points with the nose swung right out to where a full profile puts it.
-
-    `frontality` reads this as 0.0: the nose's offset from the midpoint of the eyes reaches the
-    whole of what the measure's scale allows, which is half the eye-to-mouth drop.
-    """
+    """The same five points with the nose swung out to a full profile: `frontality` 0.0."""
     points = list(landmarks_for(box))
     drop = box.height * (0.75 - 0.38)
     nose_x, nose_y = points[2]
@@ -101,12 +85,7 @@ def noisy_frame(width: int, height: int, seed: int = 0) -> np.ndarray:
 
 @dataclass
 class FakeDetector:
-    """Reports whatever the test placed, and counts how often it was asked.
-
-    `refine` is separate from `detect` and counted separately, because one of the design claims is
-    that the second, closer look happens only for faces about to be described, never for every
-    detection.
-    """
+    """Reports whatever the test placed, counting `detect` and `refine` apart."""
 
     placed: dict[int, list[tuple[Box, float]]] = field(default_factory=dict)
     detect_calls: int = 0
@@ -132,16 +111,10 @@ class FakeDetector:
             for box, score in self.placed.get(timestamp_ms, [])
         ]
 
-    #: The closer look hands back landmarks that are wrong rather than absent (the eyes apart, the
-    #: nose out past one), which `frontality` reads as zero, as a failed refinement produces on a
-    #: real file; fully collapsed landmarks `align` refuses outright.
+    #: The closer look hands back wrong landmarks, which `frontality` reads as zero.
     ruin_refine: bool = False
 
-    #: Make the FIRST look report landmarks that are wrong and the closer one correct them, which
-    #: is the ordinary case rather than a fault. The coarse points are pinned to the grid of a frame
-    #: reduced to a 640-pixel square, and `refine` exists precisely because they are not good enough
-    #: to judge a face by. A face is placed as though turned right away from the camera and comes
-    #: back front-on.
+    #: The first look's landmarks are wrong and the closer one corrects them, the ordinary case.
     coarse_first_look: bool = False
 
     def refine(self, frame: np.ndarray, detection: Detection, *, margin: float = 0.8) -> Detection:
@@ -156,15 +129,7 @@ class FakeDetector:
 
 @dataclass
 class FakeRecognizer:
-    """Turns a face into numbers by where it is, and counts every single call.
-
-    The count is what several tests are actually about: describing a face is the expensive step,
-    and the guarantees are about it happening a small fixed number of times rather than once per
-    frame.
-
-    Which numbers come back is decided by a rule the test sets, so two faces can be made to look
-    like the same person or like different ones deliberately.
-    """
+    """Turns a face into numbers by a rule the test sets, counting every call."""
 
     rule: Any = None
     calls: int = 0
@@ -184,12 +149,7 @@ class FakeRecognizer:
     term, scores exactly as before. A test that is about the ramp sets one."""
 
     def embed_many(self, chips: Any) -> list[Description]:
-        """A file's faces in one run, which is what the real one does.
-
-        `many_calls` counts the runs that went through this door and `calls` counts the faces, so a
-        test can hold the per-file path to one ask however many faces the file happens to have:
-        a fixture with one face each would make the two counts equal and prove nothing.
-        """
+        """A file's faces in one run: `many_calls` counts runs, `calls` counts faces."""
         self.many_calls += 1
         return [self._describe(chip) for chip in chips]
 
@@ -201,8 +161,7 @@ class FakeRecognizer:
         strength = 1.0 if self.strength_rule is None else float(self.strength_rule(chip))
         if self.rule is not None:
             return Description(vector=unit(self.rule(chip)), strength=strength)
-        # Without a rule, describe by the average brightness of the picture, so two crops of the
-        # same drawn face agree and two of different shades do not.
+        # Without a rule, by average brightness, so two crops of one drawn face agree.
         shade = float(chip.mean()) / 255.0
         return Description(
             vector=unit([shade, 1 - shade, *([0.0] * (DIMENSION - 2))]), strength=strength
@@ -220,12 +179,7 @@ def unit(values: list[float] | tuple[float, ...]) -> Vector:
 
 
 def person_vector(index: int, variant: int = 0) -> Vector:
-    """A description that is close to itself and far from every other index.
-
-    One strong direction per person plus a small nudge per variant, so two faces of one person sit
-    near each other and two of different people sit nearly at right angles, which is how real
-    descriptions behave, and what the thresholds are set against.
-    """
+    """A description close to itself and nearly at right angles to every other index."""
     values = [0.0] * DIMENSION
     values[index % DIMENSION] = 1.0
     values[(index + 1) % DIMENSION] = 0.12 * variant
@@ -253,15 +207,7 @@ class FakePreferences:
 
 
 class RecordingReindexer:
-    """The search-index seam, standing still and writing down what it was told.
-
-    A stand-in rather than the real one for the reason every other seam here is stood in for: this
-    slice may not import the one that owns the index, and what is worth asserting is that it was
-    told at all. `touched` names one file whose text changed; `touched_many` names a set. The
-    distinction is kept rather than flattened, because the real one is two different amounts of
-    work and a test that could not tell them apart would not notice a library-wide sweep being run
-    one file at a time.
-    """
+    """The search-index seam, writing down what it was told, `touched` and `touched_many` apart."""
 
     def __init__(self) -> None:
         self.touched_ids: list[str] = []
@@ -291,8 +237,7 @@ def reindexer() -> RecordingReindexer:
 
 @pytest.fixture
 def preferences() -> FakePreferences:
-    """Switched ON. Every test that is about the switch turns it back off itself, so the rest do
-    not each have to remember to turn it on."""
+    """Switched on; tests about the switch turn it off themselves."""
     return FakePreferences({face_settings.ENABLED_KEY: True})
 
 
@@ -339,11 +284,7 @@ async def service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> FaceService:
     """The real service, with the two models stood in for."""
-    # The catalog says the accurate family's recognizer IS the fake standing in for it. Every
-    # description a scan stores is stamped with the loaded model's revision, and every read that
-    # compares descriptions keeps to the CONFIGURED family's: one value on a real install, and
-    # this is what keeps them one value here. Left apart, every scanned file would read as
-    # described by another model and matching and grouping would see nothing at all.
+    # The accurate family's recognizer is the fake, so stored and configured stamps agree.
     real_pairing = weights.pairing
     accurate_detector, accurate_recognizer = real_pairing("accurate")
     as_the_fake = (
@@ -364,8 +305,7 @@ async def service(
         hardware=hardware,
         reindexer=reindexer,
     )
-    # Put in place directly: the loader's job is to find a model file, and there is no model
-    # file. What the loader does is tested on its own, next door.
+    # Put in place directly: there is no model file to find.
     built._detector = detector  # type: ignore[assignment]
     built._recognizer = recognizer  # type: ignore[assignment]
     built._loaded_family = "accurate"
@@ -405,12 +345,7 @@ def face_root(settings: Settings) -> Iterator[Path]:
 
 @pytest.fixture(autouse=True)
 def models_in_this_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The runtime in this process, where the stubs these tests install can reach it.
-
-    The service runs models in a child process; a stub `InferenceSession` set on this process's
-    `onnxruntime` never reaches one. The child itself is proved by the kernel's own test, against
-    a real model, once.
-    """
+    """The runtime in this process, where these tests' stubs reach it."""
     monkeypatch.setattr(service_weights, "ChildRunner", faces_runner.Runner)
     monkeypatch.setattr(runtime, "loader", session)
     monkeypatch.setattr(ml_child, "DEVICES", ml_child.DeviceQuestion(session.providers))

@@ -1,7 +1,6 @@
 /* No way out of the dialog after Sift has stopped touches a library: every button, then every
  * answer of the two setup questions, over real folders holding stand-in libraries, with the real
- * folder checks and library functions. Only the backend, the archive maker and Windows' drive
- * question are doubled (`test/main-scene.ts`). */
+ * folder checks and library functions. */
 
 import * as fs from "node:fs";
 import * as os from "node:os";

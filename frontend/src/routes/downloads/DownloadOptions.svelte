@@ -1,41 +1,6 @@
 <script lang="ts">
-	/*
-	 * The Downloads page's Options: the door every entity page wears in its header, holding what
-	 * this page offers besides pasting a link.
-	 *
-	 * ## One door, not six controls
-	 *
-	 * The page's three doors (Edit cookies, Open settings, Start or join a swap) and the paste's
-	 * two choices (the switch and Download folder) would stand as five controls between the title
-	 * and the list, most of them pressed rarely. They are rows behind one press, the shape a
-	 * person's or a Site's page has, so the paste box and the queue start right under the title.
-	 * The rows are the menu's own (`MenuButton` and `ContextMenuItem`, the door and the rows every
-	 * Options menu is made of), never a panel dressed to look like one.
-	 *
-	 * ## The switch is a row that holds its value
-	 *
-	 * A checkable row, the way the menu holds an on or off answer everywhere (the Jobs screen's
-	 * Compact rows): the tick says which way it is set, and pressing the row flips it and leaves
-	 * the menu open, so the tick is seen to move. `aria-checked` carries the state.
-	 *
-	 * ## The page decides for THIS paste; Settings decides the default for every paste
-	 *
-	 * The switch starts from the setting of the same name, a flip changes only what is sent with
-	 * the next paste (`PasteChoices` in `queue.svelte.ts`), and the stored default is changed in
-	 * Settings, Downloads, and nowhere else. Nothing here writes a setting. Otherwise turning the
-	 * skip off to fetch one link again would turn it off for every later download too.
-	 *
-	 * The words are the server's own label for the setting, read from the answer Settings draws
-	 * from: two wordings of one question would be two questions to a reader.
-	 *
-	 * A switch nobody has touched FOLLOWS its default: a change made in Settings while this page is
-	 * open is picked up on the next read. One somebody flipped is theirs until they leave the page.
-	 *
-	 * ## Download folder opens onto the Add button's list
-	 *
-	 * The same folders from `$lib/library/destinations.svelte` that Add offers, the default named at
-	 * the top. A folder picked here becomes the default, as it does in Add.
-	 */
+	/* The Downloads page's Options: the door every entity page wears in its header, holding what
+	 * this page offers besides pasting a link. */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ContextMenuGroup, ContextMenuItem, MenuButton } from '$lib/components/common';
@@ -52,8 +17,7 @@
 	interface Props {
 		/** The folder being made the default while that save is out, else '' (the default). */
 		dest?: string;
-		/** Whether the next paste skips a link already downloaded. Null until the default is read,
-		 *  which sends nothing and leaves the answer to the setting. Bound, for the same reason. */
+		/** Whether the next paste skips a link already downloaded. */
 		remember?: boolean | null;
 		/** Whether the menu is open. Bound, so the paste box can open it when it asks for a folder. */
 		open?: boolean;
@@ -71,8 +35,7 @@
 		oncookies
 	}: Props = $props();
 
-	/** The setting as the server describes it: the label, and the default the switch starts
-	 *  from. Absent until the read lands. */
+	/** The setting as the server describes it: the label, and the default the switch starts from. */
 	let entry = $state<SettingEntry | null>(null);
 
 	/** Whether somebody flipped the switch on this page. Then it stops following the default. */
@@ -100,8 +63,7 @@
 		void recallInterfaceState();
 	});
 
-	/* One read of the settings, the same one Settings, Downloads draws from. The label and the
-	   starting value both come from it, so neither is a copy kept here. */
+	/* One read of the settings, the same one Settings, Downloads draws from. */
 	async function readSettings() {
 		try {
 			const every = (await fetchSettings()).flatMap((section) => section.settings ?? []);
@@ -135,9 +97,7 @@
 	);
 </script>
 
-<!-- The door every entity page wears, worded as theirs is. How many Sites are asking for cookies
-     is said on the Edit cookies row, and on the rail's Downloads item, which is where it is seen
-     from every screen. -->
+<!-- The door every entity page wears, worded as theirs is. -->
 <MenuButton label="Options for Downloads" words="Options" bind:open>
 	<ContextMenuGroup>
 		<ContextMenuItem label="Edit cookies" icon="edit" note={asking} onselect={oncookies} />

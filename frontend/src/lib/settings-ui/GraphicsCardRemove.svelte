@@ -1,7 +1,6 @@
 <script lang="ts">
 	/* Deleting GPU support: the way out, as the pane's last group, the place every settings pane
-	 * keeps the one act that takes something away. It reads the same state as the block that
-	 * describes the card, so the two cannot disagree about whether there is anything to delete. */
+	 * keeps the one act that takes something away. */
 	import ActionRow from './ActionRow.svelte';
 	import SettingGroup from './SettingGroup.svelte';
 	import { COPY } from './GraphicsCard.search';
@@ -12,8 +11,8 @@
 
 	let { card }: { card: GraphicsCardState } = $props();
 
-	/* Drawn only while GPU support is downloaded: a link landing on it otherwise rings the card's
-	   own block, which says whether there is any. */
+	/* Drawn only while GPU support is downloaded: a link landing on it otherwise rings the
+	   card's own block, which says whether there is any. */
 	$effect(() =>
 		explainAbsentRows((key) =>
 			key === 'performance.gpu-remove' && card.accel !== null && !card.removable

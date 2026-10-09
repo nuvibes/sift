@@ -22,24 +22,12 @@
 <script lang="ts">
 	import { counted } from '$lib/entity/entity-counts';
 	/* DRESSED BY: .item, .arrow, .ui-menu. `ContextMenuItem` and `ContextMenu` own the row, its
-	   chevron and the surface this opens onto, and those rules are `:global` there precisely so a
-	   second flyout can wear them. Only the parts this file adds (the box at the top, the two
-	   arrows, the region they scroll) are dressed here. */
+	chevron and the surface; only this file's own parts are dressed here. */
 	/* WHY NOT BITS-UI, MORE OF IT: everything that behaves IS the library. The row that opens out,
-	   the flyout, the keyboard, the hover delay and the flip to the other side are
-	   `ContextMenu.Sub`; every choice is a `ContextMenu.Item`; the box is `NarrowBox` and the
-	   scrolling region is `Scroller`. What is written here is which of those go where, and the one
-	   thing no library has an opinion about: an arrow that scrolls while it is held. */
+	the flyout and the keyboard are `ContextMenu.Sub`; here is only which go where. */
 
-	/*
-	 * Putting a file on something, without leaving the menu.
-	 *
-	 * The row opens out into the list and one pick writes immediately, by the host's `pick` and its
-	 * toast; the action bar's sheet stays the tool for forty files. What this account picked lately
-	 * goes in front (`$lib/search/frequent`), the rest alphabetically from a server page filtered
-	 * by what is typed (`PickAsk`), with `more` said as the last line in words, never a silent
-	 * ceiling. The arrows are `Scroller`'s.
-	 */
+	/* Putting a file on something without leaving the menu: one pick writes immediately; recent picks
+	 * first, the rest a server page filtered by what is typed, `more` said in words. */
 	import { untrack, type Snippet } from 'svelte';
 	import { ContextMenu } from 'bits-ui';
 	import Icon from '$lib/components/Icon.svelte';
@@ -74,55 +62,26 @@
 		/** What the row says: the OBJECT, as the verb list declares it: "Collection", "Person". */
 		label: string;
 		icon: IconName;
-		/** Draw the glyph solid. For the ones whose outline is mostly empty space. */
 		filled?: boolean;
 		/** Which record of past picks orders this list. */
 		kind: FrequentKind;
 		/** The plural word for what is in it: "collections", "people", "Sites". */
 		plural: string;
-		/**
-		 * One page of what can be picked, filtered by what is typed: asked when the flyout opens and on
-		 * each pause of typing (`PickAsk`).
-		 */
+		/** One page of choices, asked on opening and each pause of typing. */
 		ask: PickAsk;
-		/**
-		 * Draw the list without the row that opens out into it, for a caller that IS the menu (a
-		 * person's or a site's Tag button), so it takes one gesture rather than two.
-		 */
+		/** The list without the row opening into it, for a caller that is the menu. */
 		inline?: boolean;
-		/**
-		 * Put the files on this one: the whole write and its words, answering what LANDED, which puts
-		 * a refused tick back (`PickLanded`, `choose`). `void` reads as landed, for the pickers that do
-		 * not answer yet (naming a face, joining a username).
-		 */
+		/** Put the files on this one, answering what landed; `void` reads as landed. */
 		onpick: (choice: PickChoice) => PickReply;
-		/**
-		 * Take the files off this one. Absent leaves every row adding only; a tick is drawn only where
-		 * this and `already` both arrived, or it could not be cleared.
-		 */
+		/** Take the files off; a tick is drawn only where this and `already` arrived. */
 		onunpick?: (choice: PickChoice) => PickReply;
-		/**
-		 * Which of this list the files are ALREADY on, asked when the flyout opens: a question about the
-		 * set (`OnAlready`), anything unnamed `none`. Absent draws no marks (the header's Tag button
-		 * opens on a person, not on files).
-		 */
+		/** Which of this list the files are already on, asked on opening. */
 		already?: () => Promise<Record<string, OnAlready>>;
-		/**
-		 * Create one under this name and pick it, where the caller allows, so filing a clip under a new
-		 * collection needs no detour.
-		 */
+		/** Create one under this name and pick it, where allowed. */
 		oncreate?: (name: string) => Promise<PickChoice | null>;
-		/**
-		 * Which end the box somebody types in sits at. The top unless a caller says otherwise: a menu
-		 * opening UPWARDS (the faces bar at the window's foot) wants the box by the trigger. One prop,
-		 * not a second picker, and the markup keeps reading order, so eye and screen reader agree.
-		 */
+		/** Which end the box sits at; the bottom for a menu opening upwards. */
 		filterAt?: 'top' | 'bottom';
-		/**
-		 * Something quiet at the end of a row, about that choice: the faces screen's reference-photo
-		 * count, which decides between two names that read alike. A snippet the caller fills, drawn
-		 * after the name and before the membership mark.
-		 */
+		/** A quiet note at the end of a row about that choice. */
 		hint?: Snippet<[PickChoice]>;
 	}
 
@@ -150,35 +109,19 @@
 	let loading = $state(false);
 	/** Whether an answer has landed at all yet, so "nothing here" is never said over a blank. */
 	let answered = $state(false);
-	/**
-	 * What the files are already on, by id, and whether it was ever asked: empty until the answer lands,
-	 * so no tick appears then clears. `marking` is its own flag, since the request may fail and the
-	 * flyout must still add.
-	 */
+	/** What the files are already on, empty until the answer lands. */
 	let onAlready = $state<Record<string, OnAlready>>({});
 	const marking = $derived(already !== undefined && onunpick !== undefined);
-	/*
-	 * WHAT HAS BEEN PICKED SINCE THIS FLYOUT OPENED, which is the only state a plain row can show, so a
-	 * right-press run of picks is visible. Not announced: a plain row is a `menuitem`, with no checked
-	 * state, and making every row a checkbox would announce "unchecked" on a list with no such state;
-	 * a caller with memberships passes `already` and gets them announced.
-	 */
+	/* Picked since this flyout opened: the only state a plain row shows; not announced. */
 	let picked = $state<string[]>([]);
 
-	/*
-	 * The flyout's layer and dressing are those `ContextMenuItem` gives its own, from the owning menu:
-	 * without the portal it would be clipped inside the parent's scrolling box.
-	 */
+	/* The flyout's layer and dressing, from the owning menu. */
 	const menu = theMenu();
 
-	/*
-	 * Held here so Escape in the box closes this flyout and nothing above it (the library would shut
-	 * every level).
-	 */
+	/* Held so Escape in the box closes only this flyout. */
 	let flyoutOpen = $state(false);
 
-	/* A pointer resting on a neighbouring row is answered by that row even while this flyout is
-	   open, as for every row that opens out. See `menu-resting.svelte.ts`. */
+	/* A resting pointer on a neighbour is answered by it (menu-resting.svelte.ts). */
 	let flyoutTrigger = $state<HTMLElement | null>(null);
 	givesWayToARestingPointer({
 		open: () => flyoutOpen,
@@ -186,25 +129,15 @@
 		trigger: () => flyoutTrigger
 	});
 
-	/*
-	 * One request per pause, as `SuggestInput` asks, and a generation counter so a slow answer for
-	 * "nor" never lands under "northl". Opening does not wait: it is one event, and an empty flyout
-	 * reads as slow.
-	 */
+	/* One request per pause, a generation counter dropping stale answers. */
 	let generation = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const DEBOUNCE_MS = 120;
 
-	/*
-	 * The order, taken once per opening and then held still, since `$lib/search/frequent` re-ranks on
-	 * every pick and the list would move under the pointer while the flyout stays open.
-	 */
+	/* The order, taken once per opening, so rows do not move under the pointer. */
 	let order = $state<readonly Named[]>([]);
 
-	/*
-	 * A counter of its own for the marks, asked once per open, or a slow membership answer would be
-	 * discarded as stale after the first keystroke.
-	 */
+	/* The marks' own counter, asked once per open. */
 	let opening = 0;
 
 	async function fetchPage(wanted: string): Promise<void> {
@@ -232,10 +165,7 @@
 		timer = setTimeout(() => void fetchPage(wanted), DEBOUNCE_MS);
 	}
 
-	/**
-	 * What the files are already on, asked once each time the flyout opens. Not after a pick, whose
-	 * row this file already knows, except a write that landed only PARTLY (`settle`).
-	 */
+	/** What the files are on, asked once per opening, and again after a partial write. */
 	async function recallAlready(mine: number): Promise<void> {
 		if (!already) return;
 		try {
@@ -264,8 +194,7 @@
 		void recallPicks().then(() => {
 			if (mine !== opening) return;
 			order = remembered(kind);
-			/* What each remembered row is called NOW, asked beside the page: the record keeps the
-			   id, and its copy of the name is not what is drawn (see `recent`). */
+			/* What each remembered row is called now. */
 			void askNames(
 				kind,
 				order.map((one) => one.id)
@@ -280,9 +209,7 @@
 		begin();
 	}
 
-	/* The inline form exists only while its menu is open, so mounting IS opening. UNTRACKED, as in
-	   `PickDialog`: `begin` reads `remembered(kind)`, which a press writes, so a tracked effect would
-	   empty the box and refetch on every press. */
+	/* Mounting is opening for the inline form; untracked, as in PickDialog. */
 	$effect(() => {
 		if (!inline) return;
 		untrack(begin);
@@ -291,11 +218,7 @@
 
 	const needle = $derived(typed.trim().toLowerCase());
 
-	/*
-	 * The rows this account has picked before, in front of everything else: filtered here (`includes`),
-	 * since the record is per account, kept by ID and drawn under the name the thing has NOW (the
-	 * page's row, or `$lib/entity/names-now`). A row the server does not name is not drawn.
-	 */
+	/* Recent picks first, by id, under the name each has now. */
 	const recent = $derived.by(() => {
 		const onPage = new Map(page.map((one) => [one.id, one]));
 		const rows: PickChoice[] = [];
@@ -310,10 +233,7 @@
 		return rows;
 	});
 
-	/**
-	 * The page, less anything already drawn above it, in the server's `name_az` order: a window onto
-	 * the whole list's order, which a local sort could only contradict.
-	 */
+	/** The page less the rows above it, in the server's `name_az` order. */
 	const rest = $derived.by(() => {
 		const already = new Set(recent.map((one) => one.id));
 		return page.filter((one) => !already.has(one.id));
@@ -323,25 +243,17 @@
 	/** The ids in front because they were picked lately, for the mark each such row wears. */
 	const recentIds = $derived(new Set(recent.map((one) => one.id)));
 
-	/* The row that makes one: where allowed, once something is typed, and only where no drawn name is
-   exactly that (the page is filtered by it), or there would be two Holidays. */
+	/* Create only where no drawn name is exactly what was typed. */
 	const canMake = $derived(
 		oncreate !== undefined &&
 			typed.trim() !== '' &&
 			!shown.some((one) => one.name.toLowerCase() === needle)
 	);
 
-	/*
-	 * How many times each row has been pressed in this opening, so a slow answer settles only the
-	 * row's LAST press. Not reactive: nothing is drawn from it.
-	 */
+	/* Presses per row this opening, so only the last press's answer settles it. */
 	const pressed = new Map<string, number>();
 
-	/**
-	 * Picking a row, which means toggling it: a full tick comes off, anything else (a half tick too) goes
-	 * on. The mark moves immediately and the write's answer settles it (`settle`). The pick is
-	 * recorded for the ordering only once it landed or partly landed (`verbs.landedOf`).
-	 */
+	/** Picking toggles a row: the mark moves immediately and the write's answer settles it. */
 	function choose(choice: PickChoice): void {
 		const before = onAlready[choice.id] ?? 'none';
 		const wasPicked = picked.includes(choice.id);
@@ -352,8 +264,7 @@
 		pressed.set(choice.id, turn);
 		const mine = opening;
 		const reply = off ? onunpick?.(choice) : onpick(choice);
-		/* A caller that says nothing (`void`) is read as landed. See `onpick`. A write that throws
-		   rather than answering is refused: nothing it promised can be counted on. */
+		/* `void` is landed; a throw is refused. */
 		void Promise.resolve(reply).then(
 			(landed) => {
 				const said = typeof landed === 'string' ? landed : 'landed';
@@ -364,11 +275,7 @@
 		);
 	}
 
-	/**
-	 * Put a row's mark where the write's answer says it is: `landed` keeps it, `refused` puts back what
-	 * was there, `partly` asks the host again (the one exact answer; a plain row keeps its pick). An
-	 * answer for an earlier opening or press does nothing.
-	 */
+	/** Put a row's mark where the answer says: kept, put back, or asked again when partly. */
 	function settle(
 		id: string,
 		landed: PickLanded,
@@ -384,21 +291,14 @@
 		if (marking) void recallAlready(opening);
 	}
 
-	/*
-	 * Two gestures: a left press (or Enter) acts and closes, as a menu row does; a right press acts and
-	 * keeps the flyout open for more. `preventDefault` on contextmenu keeps the browser's menu away and
-	 * stops the library's handlers.
-	 */
+	/* A left press acts and closes; a right press acts and stays open. */
 	function pickAndStay(event: Event, choice: PickChoice): void {
 		event.preventDefault();
 		event.stopPropagation();
 		choose(choice);
 	}
 
-	/**
-	 * Shift and a left press: a right press for a trackpad, caught in the capture phase on the list
-	 * before the row's handler selects and closes.
-	 */
+	/** Shift and a left press, a right press for a trackpad. */
 	function stayingClick(event: MouseEvent): void {
 		if (!event.shiftKey) return;
 		const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-choice-id]');
@@ -418,10 +318,7 @@
 		}
 	}
 
-	/**
-	 * Which keys belong to the box, and which belong to the menu around it: text is stopped (the menu's
-	 * typeahead), navigation passes except Escape, which closes only this flyout.
-	 */
+	/** The box keeps text keys; navigation passes, Escape closes only this flyout. */
 	const NAVIGATION = new Set([
 		'Escape',
 		'Tab',
@@ -435,10 +332,7 @@
 		'PageDown'
 	]);
 
-	/*
-	 * Walk the highlight down into the rows by handing the menu its OWN key, so "the first row" is the
-	 * menu's answer, never a second copy of it. Where the menu does not take it, nothing moves.
-	 */
+	/* Into the rows by handing the menu its own key. */
 	function intoTheRows(from: EventTarget | null): void {
 		if (!(from instanceof HTMLElement)) return;
 		/* Towards the rows, which is UP when the box is under them. */
@@ -456,12 +350,7 @@
 		if (NAVIGATION.has(event.key)) return;
 		event.stopPropagation();
 		if (event.key !== 'Enter') return;
-		/*
-		 * Enter acts only where there is exactly one answer, never guessing (a wrong row files a clip
-		 * under the wrong person). It creates only where nothing came back, preferring an existing
-		 * thing. Otherwise it moves the highlight onto the rows. It keeps the flyout up: whoever is
-		 * still typing filters to the next one.
-		 */
+		/* Enter acts only on a single answer and creates only where nothing came back. */
 		event.preventDefault();
 		if (shown.length === 1 && more === 0) {
 			choose(shown[0]);
@@ -475,16 +364,13 @@
 	}
 </script>
 
-<!-- The list itself, written once for a row's flyout and for a menu whose whole content it is. -->
 <!-- Everything inside one row, written once for both kinds of row (with or without a state). -->
 {#snippet body(choice: PickChoice)}
-	<!-- A tag filed under the row above it is drawn a step in per level, so a branch reads as one
-	     group under its parent. -->
+	<!-- A tag a step in per level. -->
 	{#if choice.depth}
 		<span class="step-in" style:--depth={choice.depth} aria-hidden="true"></span>
 	{/if}
-	<!-- A face, a cover, a mark, or the kind's glyph (a tag's), read before the name; a row with no
-	     cover still fills the column. The address comes with the choice; nothing fetches per row. -->
+	<!-- The picture before the name; nothing fetches per row. -->
 	{#if choice.picture}
 		<span class="face">
 			<Avatar
@@ -500,13 +386,11 @@
 	{/if}
 	<span class="name"><MarkedText text={choice.name} {typed} /></span>
 	{#if choice.within}
-		<!-- What it is filed under, where that is not the row above it: a tag found by typing still
-		     says which branch it is on. -->
+		<!-- Its branch, where that is not the row above. -->
 		<span class="within"><span class="unseen">in </span>{choice.within}</span>
 	{/if}
 	{#if recentIds.has(choice.id)}
-		<!-- Why this row is in front: it was picked lately. The mark says so on hover, so the order
-		     reads as a rule rather than the list being out of order. -->
+		<!-- Picked lately, said on hover. -->
 		<Tooltip label="Chosen recently">
 			<span class="recent" role="img" aria-label="Chosen recently"
 				><Icon name="history" size={14} /></span
@@ -515,10 +399,7 @@
 	{/if}
 	<!-- Whatever the caller knows about this choice that the name does not say. See `hint`. -->
 	{@render hint?.(choice)}
-	<!-- What this selection is already on, in a column held on every row so names do not shift. Only
-	     the half tick has a tooltip, on a row-height cell around the tiny bar. A plain row fills it for
-	     what this opening picked (`picked`). The bare `Checkbox`: a bordered square would read as a
-	     second control. -->
+	<!-- The membership mark, a column held on every row; the bare Checkbox. -->
 	{#if marking}
 		{@const on = onAlready[choice.id] ?? 'none'}
 		{#if on === 'some'}
@@ -563,8 +444,7 @@
 				{:else}
 					{#each shown as choice (choice.id)}
 						{#if marking}
-							<!-- A checkbox row, with `aria-checked` true, false or mixed from the library; a
-							     left press and Enter close the menu (`pickAndStay` for the right press). -->
+							<!-- A checkbox row; left press and Enter close. -->
 							<ContextMenu.CheckboxItem
 								class="item"
 								checked={(onAlready[choice.id] ?? 'none') === 'all'}
@@ -577,8 +457,7 @@
 								{@render body(choice)}
 							</ContextMenu.CheckboxItem>
 						{:else}
-							<!-- A PLAIN row where there is no set to compare against (the header pickers):
-							     no "unchecked" on a list without that state. The same two gestures. -->
+							<!-- A plain row where there is no set to compare against. -->
 							<ContextMenu.Item
 								class="item"
 								onSelect={() => choose(choice)}
@@ -619,8 +498,7 @@
 
 		{#if filterAt === 'bottom'}{@render narrowing()}{/if}
 
-		<!-- WHAT THE SECOND GESTURE IS, said once at the foot, with the keyboard's form: an affordance
-		     nothing mentions is one nobody has. Outside the scroll, text not a row, as `.rest`. -->
+		<!-- The second gesture, said once at the foot. -->
 		<p class="hint">Right-click or Shift+click to select more than one</p>
 	</div>
 {/snippet}
@@ -630,22 +508,18 @@
 {:else}
 	<ContextMenu.Sub bind:open={flyoutOpen} onOpenChange={opened}>
 		<ContextMenu.SubTrigger class="item" bind:ref={flyoutTrigger}>
-			<!-- Only when there is one, as `ContextMenuItem` draws its rows: an empty glyph box put this
-			     row's words a glyph's width in from every row beside it. -->
+			<!-- The glyph only when there is one. -->
 			{#if icon}<Icon name={icon} {filled} />{/if}
 			<span>{label}</span>
-			<!-- The chevron that says this row opens out: `ContextMenuItem`'s, the same one its own
-			     rows that open out wear. -->
+			<!-- ContextMenuItem's chevron. -->
 			<span class="arrow"><Icon name="chevron_right" size={16} /></span>
 		</ContextMenu.SubTrigger>
 
 		<ContextMenu.Portal to={menu.where() ?? undefined}>
 			{#if phoneWidth.yes}
-				<!-- AT A PHONE'S WIDTH THE ROWS IT OPENS ONTO ARE A SHEET TOO, over the sheet it came from:
-			     a flyout beside a sheet the width of the screen opens past the screen's edge. Headed with
-			     the row that opened it; a finger drawn down the head puts it back.
-			     DRESSED BY: .menu-sheet (ContextMenu styles the sheet every menu is at a phone width)
-			     DRESSED BY: .menu-sheet-head (ContextMenu styles the sheet's head beside the sheet) -->
+				<!-- At a phone's width its rows are a sheet over the sheet, put back by a stroke down its head.
+				DRESSED BY: .menu-sheet (ContextMenu styles the sheet every menu is at a phone width)
+				DRESSED BY: .menu-sheet-head (ContextMenu styles the sheet's head beside the sheet) -->
 				<ContextMenu.SubContentStatic class="ui-menu menu-sheet">
 					<p
 						class="menu-sheet-head"
@@ -681,8 +555,7 @@
 		padding-block-end: var(--space-1);
 	}
 
-	/* The same gap, on the other side of it. The box is between the rows and the edge of the surface
-	   either way round, so the spacing follows the box rather than being written per end. */
+	/* The same gap on the other side. */
 	.narrowing.under {
 		padding-block: var(--space-1) 0;
 	}
@@ -703,11 +576,7 @@
 		padding: var(--menu-row-padding);
 	}
 
-	/*
-	 * The picture at the head of a row, one box whatever is in it: a circle, as a person is drawn,
-	 * smaller than `--control-height-sm` so no row grows; the radius is here, since `Avatar` fills
-	 * whatever clips it.
-	 */
+	/* The picture, a circle smaller than a small control so no row grows. */
 	.face {
 		display: block;
 		flex: none;
@@ -717,18 +586,14 @@
 		overflow: hidden;
 	}
 
-	/* A row whose thing has no cover chosen. The glyph sits in the same box so the names line up,
-	   and it wears the quieter ink because it says what KIND a row is rather than which one. */
+	/* No cover: the kind's glyph in the same box, quieter. */
 	.glyph {
 		display: grid;
 		place-items: center;
 		color: var(--sift-ink-3);
 	}
 
-	/*
-	 * The last line, which says what is not on the list, in the quiet ink and the row's inset, so it
-	 * reads as about the list rather than a row to pick.
-	 */
+	/* What is not on the list, quiet. */
 	.rest {
 		margin: 0;
 		padding: var(--menu-row-padding);
@@ -744,18 +609,14 @@
 		font: var(--text-body-sm);
 	}
 
-	/* Not on a phone: a finger has no right press and no Shift, so the line names two gestures the
-	   screen cannot make. */
+	/* Not on a phone, which has no right press or Shift. */
 	@media (max-width: 767px) {
 		.hint {
 			display: none;
 		}
 	}
 
-	/*
-	 * What this selection is already on, drawn by the bare `Checkbox`, in a row-height cell so the
-	 * tiny bar can be pointed at. `.name` takes the slack, since the tooltip's wrapper is the flex item.
-	 */
+	/* The membership mark in a row-height cell, so the tiny bar can be pointed at. */
 	.on-cell {
 		display: grid;
 		place-items: center;
@@ -764,8 +625,7 @@
 		block-size: var(--space-5);
 	}
 
-	/* A long name is cut rather than widen the flyout, and takes the slack so what follows sits at the
-	   end; `min-inline-size: 0` lets it shrink below its content. */
+	/* A long name is cut, taking the slack. */
 	.name {
 		flex: 1 1 auto;
 		min-inline-size: 0;
@@ -773,8 +633,7 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
-	/* One step in per level of the tree: the width of the picture column, so a child's picture sits
-	   under its parent's name. */
+	/* One step in per level: the picture column's width. */
 	.step-in {
 		flex: none;
 		inline-size: calc(var(--depth) * var(--space-5));

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /* The watermark models' download, once it ends: the sentence the Watermarks pane keeps after the
-   bar goes. The watching itself is `jobs/watch-download`'s and is tested there. */
+   bar goes. */
 
 const asked = vi.hoisted(() => ({ status: vi.fn() }));
 vi.mock('$lib/api/client', () => ({

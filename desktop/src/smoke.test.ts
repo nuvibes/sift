@@ -1,9 +1,4 @@
-/* What a smoke run has to do, and the ways it could look like it worked without working.
- *
- * The check in scripts/release.py reads the marker out of this module's source, so the string is
- * declared once. What a test can hold is the behaviour: the flag is answered only when it is asked
- * for, and the line is written before the caller is told to stop.
- */
+/* What a smoke run has to do, and the ways it could look like it worked without working. */
 
 import { describe, expect, it } from 'vitest';
 
@@ -40,8 +35,7 @@ describe('a smoke run', () => {
 	});
 
 	it('does nothing at all to an ordinary launch', () => {
-		/* The whole application is behind the `else` of this call. A flag misread as present would
-		 * quit Sift on somebody's desktop the moment they opened it. */
+		/* The whole application is behind the `else` of this call. */
 		const written: string[] = [];
 
 		const stopped: number[] = [];
@@ -72,11 +66,7 @@ describe('a smoke run', () => {
 	});
 
 	it('ends the marker with a newline, which is what makes it findable in a stream', () => {
-		/* The release reads standard output as text and looks for this line. Electron writes a
-		 * newline of its own before anything the application prints, so the check searches rather
-		 * than compares, and an unterminated marker would be indistinguishable from a truncated
-		 * one.
-		 */
+		/* The release reads standard output as text and looks for this line. */
 		const written: string[] = [];
 
 		answerSmokeRun(

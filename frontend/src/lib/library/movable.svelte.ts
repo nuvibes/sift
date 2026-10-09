@@ -1,16 +1,4 @@
-/* Where files can be moved to.
- *
- * Moving is offered only where it could succeed. Most libraries are indexed read-only (Sift is
- * pointed at somebody's existing folders and told not to touch them), and on those installs a
- * Move that is always refused is an invitation to a dead end, repeated on every file. So the
- * destinations are the folders inside a root that was handed over read-write, and a library with
- * none of those does not offer the verb at all.
- *
- * A module singleton, loaded once and reused: the answer is a property of the library rather than
- * of a screen, and every grid asking for itself would be the same request several times over.
- * Nothing here is a control. The server refuses a move into a folder it was not given, with a
- * sentence saying so, whatever this list happens to hold.
- */
+/* Where files can be moved to. Moving is offered only where it could succeed. */
 
 import { api, ApiError } from '$lib/api/client';
 import { libraryChanges } from '$lib/library/changes.svelte';
@@ -42,10 +30,7 @@ class Movable {
 		return this.folders.length > 0;
 	}
 
-	/**
-	 * Ask once; a second ask waits for the read under way. The root list is an admin's, so a
-	 * refusal is a list read with nothing in it, and any other failure is a failed read.
-	 */
+	/** Ask once; a second ask waits for the read under way. */
 	ensure(): Promise<void> {
 		if (this.loaded) return Promise.resolve();
 		this.#pending ??= this.#ask().finally(() => (this.#pending = null));
@@ -68,8 +53,8 @@ class Movable {
 				.map((folder) => ({
 					id: folder.id,
 					name: folder.name,
-					// The root's name in front of the path within it, because a path on its own says
-					// nothing about which of somebody's libraries it is in.
+					// The root's name in front of the path within it, because a path on its own
+					// says nothing about which of somebody's libraries it is in.
 					path: [named.get(folder.root_id), folder.rel_path].filter(Boolean).join('/')
 				}))
 				.sort((one, other) => one.path.localeCompare(other.path));
@@ -92,8 +77,7 @@ class Movable {
 
 export const movable = new Movable();
 
-/* A folder added, removed or handed over is said on the library bell. The list is the session's,
-   so one lasting listener: a list already read is read again, one never read asks nothing. */
+/* A folder added, removed or handed over is said on the library bell. */
 libraryChanges.subscribe(() => {
 	if (!movable.loaded) return;
 	// Not `forget`: the list on screen stays until the new one lands, rather than flashing empty.

@@ -1,12 +1,5 @@
-/*
- * A settings row at a phone's width: the control goes under the name and its help, the whole width
- * of the row. Beside the fixed control column the name would be squeezed to a word a line next to
- * a column that was mostly empty.
- *
- * The unit environment answers only a plain `screen` media rule, so the phone-width rule is read
- * twice: as written, where it must leave a desktop row alone, and with its condition swapped for
- * `screen`, which is the stylesheet a 390-wide window applies.
- */
+/* A settings row at a phone's width: the control goes under the name and its help, the whole
+ * width of the row. */
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 

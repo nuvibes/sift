@@ -518,9 +518,7 @@ async def get_asset(
     waiting: Annotated[DisagreementSeam, Depends(_disagreement_seam)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> AssetDetail:
-    """One asset. A concealed one comes back as the placeholder, not as its contents,
-    unless this viewer has the vault open, in which case it is exactly as visible as anything
-    else on their Hidden screen."""
+    """One asset; a concealed one is the placeholder unless this viewer's vault is open."""
     record = await access.file_record(viewer, asset_id)
     if record is None:
         raise _missing()
@@ -530,7 +528,6 @@ async def get_asset(
 
     states = await service.state_for(viewer, [view.asset.id])
     state = states.get(view.asset.id)
-    # The same marks the grid draws, so the screen showing ONE file can say what the tiles say.
     mark = (await _marks(access, viewer, [view.asset.id])).get(view.asset.id)
     music_source, music_from, music_undo, song_id = await _music_named(
         database, access, viewer, view.asset.id, view.asset.music
@@ -542,7 +539,6 @@ async def get_asset(
         download_url=view.asset.download_url,
         release_date=view.asset.release_date,
         unreachable=view.unreachable,
-        # The History tab's mark; its number is the History read's own `total`.
         disagreements=(marked := await waiting.disagreement_mark(viewer, "asset", asset_id))[0],
         disagreement_boxes=marked[1],
         details=view.asset.details,
@@ -572,20 +568,16 @@ async def get_asset(
         filename=record.name_on_disk,
         where=await _where_on_disk(request, viewer, record.locations),
         added_at=view.asset.added_at,
-        # What to put on the end of this file's picture addresses.
         art=view.art_version,
-        # Whether its still and hover clip are built, as the tile says.
         thumb=view.has_thumb,
         preview=view.has_preview,
         favorite=state.favorite if state else False,
         rating=state.rating if state else None,
-        # One name for the tally, `views`, set here and nowhere else.
         views=state.view_count if state else 0,
         o_count=state.o_count if state else 0,
         last_viewed_at=state.last_viewed_at if state else None,
         sprite=_sheet_layout(await service.sprite_of(viewer, record), view.asset.duration_ms),
         playback_repair=await _repair_state(request, access, viewer, view.asset),
-        # Why this file has none of the four numbers other files are compared by.
         fingerprint_verdict=_standing(
             await content.verdict_of(view.asset.id, VerdictProduct.FINGERPRINTS)
         ),

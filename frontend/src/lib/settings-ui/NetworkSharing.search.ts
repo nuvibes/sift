@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* Sharing the library on the local network. It is drawn on General and it is not a plain setting:
- * the address it hands out is worked out at the moment it is switched on. Its key keeps the id it
- * had under Privacy, so an old link still lands on it. */
+/* Sharing the library on the local network. It is drawn on General and it is not a plain
+ * setting: the address it hands out is worked out at the moment it is switched on. */
 import type { Searchable } from './search';
 
 /** The switch, by the words on the pane and in a search result alike. */

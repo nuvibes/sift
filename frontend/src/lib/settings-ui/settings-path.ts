@@ -1,20 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Where a setting is, written the way a person reads it: `Settings > Privacy > Auto-lock > Lock
- * Hidden when you switch away`.
- *
- * ONE writer and ONE reader. The writer is what "Copy settings path" puts on the clipboard; the
- * reader is what the settings search does with the same words pasted back (`landing` in
- * `search.ts`). Both use the section names from `sections.ts` and the names drawn on the pane, so
- * a path somebody copied is a path the search can follow.
- *
- * ## Where the crumbs come from
- *
- * Each level of a pane says its own name to what it holds, through Svelte context: the pane says
- * the section, a sub-page says its title and the press that opened it, a group says its heading.
- * A row adds its own name at the end. Nothing is written twice: the words are the ones already on
- * screen, so a renamed heading renames every path under it in the same edit.
- */
+/* Where a setting is, written the way a person reads it: `Settings > Privacy > Auto-lock > Lock
+ * Hidden when you switch away`. */
 
 import { getContext, setContext } from 'svelte';
 
@@ -40,16 +26,7 @@ export function pathOf(crumbs: readonly (string | undefined)[]): string {
 	return [PATH_ROOT, ...said].join(PATH_JOIN);
 }
 
-/**
- * The crumbs after `Settings` in something typed or pasted, or null when it is not a path.
- *
- * Forgiving about what a copy picks up on the way: code ticks or quotes around it, any spacing
- * around the separators, the single angle quote some editors turn `>` into, a trailing separator.
- * The leading `Settings` may be left off (`Playback > Theater > Default`): somebody writing a path
- * down from memory starts at the section, and the separator is what says it is a path. Without the
- * root it names at least two crumbs, so a word with a stray `>` after it stays a search. What an
- * ordinary search never has is the separator, so it is never read as a path.
- */
+/** The crumbs after `Settings` in something typed or pasted, or null when it is not a path. */
 export function crumbsOf(text: string): string[] | null {
 	const bare = text.trim().replace(/^[`'"]+|[`'"]+$/g, '');
 	if (!/[>\u203a]/.test(bare)) return null;

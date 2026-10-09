@@ -1,11 +1,4 @@
-/* The Playback pane, and Theater's rows on it.
- *
- * Theater is not a section: its rows are a group of their own on this pane, under their own
- * heading, and an address naming Theater lands here (see `MOVED_TO`). What a test here can say:
- * the group is drawn under its heading with every one of Theater's rows (including "When a
- * preview comes up", registered into Theater, which a search result must open a pane containing),
- * and a pane whose settings will not load says so.
- */
+/* The Playback pane, and Theater's rows on it. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';

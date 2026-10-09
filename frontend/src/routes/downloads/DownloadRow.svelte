@@ -1,26 +1,15 @@
 <script lang="ts" module>
 	import type { Column } from '$lib/components/common/DataRows.svelte';
 
-	/*
-	 * THE QUEUE'S COLUMNS, declared once for the list and obeyed by every row (`DataRows`).
-	 *
-	 * Left to right: the tick, the Site's mark, the name, then the three facts a download manager
-	 * reads down a column (its state, its size, its moment), then the one thing to do about it,
-	 * standing against the row's actions. Every track is a length, so what a row holds never moves
-	 * a column. Below `FACTS_UNDER_THE_NAME` the three facts and the fix go on a line under the
-	 * name instead.
-	 */
+	/* THE QUEUE'S COLUMNS, declared once for the list and obeyed by every row (`DataRows`). */
 	const PICK: Column = { id: 'pick', width: '20px' };
 	const MARK: Column = { id: 'mark', width: '28px' };
 	const NAME: Column = { id: 'name', width: 'minmax(0, 1fr)' };
 	/* The three every arrangement opens with. */
 	const LEAD: readonly Column[] = [PICK, MARK, NAME];
 
-	/*
-	 * Where the detail under a row starts: the name's grid line, so the opened card stands under
-	 * the words it is about and runs to the row's end. Placed by the row, because a cell in a
-	 * subgrid takes one track unless it says otherwise, and the pick track is 20px wide.
-	 */
+	/* Where the detail under a row starts: the name's grid line, so the opened card stands under
+	 * the words it is about and runs to the row's end. */
 	export const DETAIL_FROM = LEAD.indexOf(NAME) + 1;
 
 	/** The columns the list declares, wide or narrow. */
@@ -39,45 +28,13 @@
 	export const DOWNLOAD_ACTIONS =
 		'calc(2 * var(--control-height) + 2 * var(--control-height-sm) + 3 * var(--space-1))';
 
-	/*
-	 * The actions track on a phone: the three dots and the arrow.
-	 *
-	 * The two glyphs are the same verbs the three dots list, and on a phone there is no hover to
-	 * reveal them with, so they would stand there on every row taking the width the name needs.
-	 * Without them the name keeps about half the row on a phone instead of a third.
-	 */
+	/* The actions track on a phone: the three dots and the arrow. */
 	export const PHONE_ACTIONS = 'calc(2 * var(--control-height-sm) + var(--space-1))';
 </script>
 
 <script lang="ts">
 	import { counted } from '$lib/entity/entity-counts';
-	/* One download, as a row of a download manager.
-	 *
-	 * Read left to right it is: is this one picked, which Site it came from, WHAT IT IS, and how
-	 * far along. The name comes first because the name is what somebody is looking for: a row
-	 * that led with the Site would read as a list of sites rather than a list of downloads.
-	 *
-	 * The state, the size and the moment are three columns the list declares, each the one place
-	 * its fact is drawn, in tabular figures so a column of them does not jitter as they tick.
-	 *
-	 * The bar has a floor. A four hundred kilobyte image finishes in under a second, and a bar
-	 * that flashes for one frame reads as noise rather than as information, so it is drawn only
-	 * for something big enough or slow enough to be worth watching. A running download with no
-	 * numbers at all gets the sweep instead: nothing has moved yet, and a bar at zero would say
-	 * it had.
-	 *
-	 * And it is deliberately NOT a live region. `role="progressbar"` is not announced as it
-	 * changes, so the instinct is to wrap it in one, which then announces every percent of
-	 * every row and is unusable. Announcing is done once, above the whole list, at milestones.
-	 *
-	 * ## The verbs are declared once
-	 *
-	 * Every act this row offers is in `verbs` below, and the three surfaces (the glyph buttons
-	 * on hover, the right-click menu and the three dots) all read that one list, so the buttons
-	 * cannot offer something the menu does not. The one exception is the PRIMARY text button,
-	 * which is the same verb drawn a second way rather than a second verb: it is picked out of
-	 * the list by id.
-	 */
+	/* One download, as a row of a download manager. */
 	import { exactly, sayWhen, sayWindow } from '$lib/shell/when';
 	import {
 		AssetLink,
@@ -107,22 +64,10 @@
 		now: number;
 		/** Whether this row is ticked. */
 		selected?: boolean;
-		/**
-		 * Ticked or unticked.
-		 *
-		 * The event is handed on as a third argument so a list can answer Shift-click the way every
-		 * wall in Sift already does (Shift-click picks a range) rather than this row
-		 * inventing a second meaning for the gesture. A caller that declares two parameters is
-		 * unaffected, which is why it is an addition rather than a change.
-		 */
+		/** Ticked or unticked. */
 		onselect?: (id: string, on: boolean, event?: MouseEvent) => void;
-		/**
-		 * Whether ANYTHING in the list is ticked.
-		 *
-		 * The tick is revealed by hover or focus, and once a selection exists every row's tick stays
-		 * out. Otherwise the boxes a person is working through vanish as the pointer leaves them.
-		 * A row cannot know this about the list, so the list says.
-		 */
+		/** Whether ANYTHING in the list is ticked. The tick is revealed by hover or focus, and
+		 * once a selection exists every row's tick stays out. */
 		anySelected?: boolean;
 		/** Whether the detail under this row is open. Held by the list, so only one need be. */
 		expanded?: boolean;
@@ -141,12 +86,7 @@
 		onremove?: (id: string) => void;
 		/** Show the file it produced, over this page. See `DownloadDetail` for the rule. */
 		onopen?: (assetId: string) => void;
-		/**
-		 * Whether the window is under `FACTS_UNDER_THE_NAME`. The facts and the fix then go under
-		 * the name rather than beside it, and the list declares the narrow columns to match: a
-		 * decision about the arrangement the page makes once and hands down, never a width this
-		 * row keeps a copy of.
-		 */
+		/** Whether the window is under `FACTS_UNDER_THE_NAME`. */
 		narrow?: boolean;
 		/** Whether the window is a phone's (`NARROW_DOWNLOADS`): the row's glyphs are left to the
 		 *  three dots, which list the same verbs. See `PHONE_ACTIONS`. */
@@ -175,16 +115,12 @@
 	}: Props = $props();
 
 	/* The failure sentence, chosen from `error_code` on the server so every screen says one
-	 * thing. `item.error` is the fallback.
-	 */
+	 * thing. */
 	const sentence = $derived(item.sentence ?? item.error ?? null);
 
-	// The status the ledger and its job settle on, said the one way the whole app says it. Skipped is
-	// grey and unalarming (the link was already in the library, nothing went wrong), and blocked is
-	// amber and asks for cookies rather than reporting a failure.
-	/* What the badge is told: the state, and the two things a screen may know better than the state
-	   does. Named rather than written inline on the function, because the switch below returns it in
-	   nine places and a widened field would have to be added to all nine. */
+	// The status the ledger and its job settle on, said the one way the whole app says it.
+	/* What the badge is told: the state, and the two things a screen may know better than the
+	   state does. */
 	interface Mark {
 		state: BadgeState;
 		label?: string;
@@ -197,11 +133,7 @@
 	function badgeOf(status: string): Mark {
 		switch (status) {
 			/* A download is only ever blocked on COOKIES, so it says so and draws the waiting
-			   glyph rather than the general stop a job would. The colour is still blocked's.
-
-			   "Waiting for cookies", not "Waiting for login": Sift never signs in to anything
-			   and holds no account (it is handed an export of a browser's cookies), so
-			   "login" names a thing this surface does not have. */
+			   glyph rather than the general stop a job would. */
 			case 'blocked':
 				return {
 					state: 'blocked',
@@ -209,8 +141,8 @@
 					icon: 'chronic',
 					iconFilled: true
 				};
-			/* Neither of these is really a cancellation, which is why each carries its own mark over
-			   the grey that state gives it: one is a step past, and one is a repeat. */
+			/* Neither of these is really a cancellation, which is why each carries its own mark
+			   over the grey that state gives it: one is a step past, and one is a repeat. */
 			case 'skipped':
 				return { state: 'canceled', label: 'Skipped', icon: 'skip_next' };
 			case 'duplicate':
@@ -220,14 +152,9 @@
 					icon: 'toll',
 					iconFilled: true
 				};
-			// Amber, not red. The download worked and the file was quarantined on the way in, so this
-			// is not something to try again: the same bytes would arrive and be quarantined again.
-			//
-			// The WORD is `Badge`'s, which is why this case sits with the ones that pass straight
-			// through. An override is for a screen that knows more than the state does, and this
-			// screen knows nothing about the quarantine that the jobs list does not, so a word of
-			// its own could only ever be the same fact spelled differently, which is how two screens
-			// end up naming one thing two ways.
+			// Amber, not red. The download worked and the file was quarantined on the way in, so
+			// this is not something to try again: the same bytes would arrive and be quarantined
+			// again.
 			/* Nothing is overridden for a held row: "Paused" is the word the Jobs list says for the
 			   same state, and a second wording of it here would be the drift `Badge` exists to stop. */
 			case 'paused':
@@ -243,28 +170,10 @@
 		}
 	}
 
-	/*
-	 * What to call where this came from, best answer first.
-	 *
-	 * The ledger's own site is only written when a download SUCCEEDS, so a queued, running or
-	 * failed row would have no name at all, while the address has said which site it was since
-	 * the moment it was pasted. The server names the ones Sift recognizes.
-	 *
-	 * A site Sift has no record of still has a DOMAIN, and that is the answer for it: "Link" says
-	 * nothing about a failed row, which is exactly the row somebody is looking at. It is only
-	 * reached by a row with no readable address at all.
-	 */
+	/* What to call where this came from, best answer first. */
 	const where = $derived(item.site ?? item.site_name ?? domainOf(item.url) ?? 'Link');
 
-	/**
-	 * The host, for an address the server could not name at all.
-	 *
-	 * Deliberately dumb, and deliberately last. The server names every address it can parse (from
-	 * the catalog where there is a record, and from the domain where there is not), and that is the
-	 * same name the tunnel routing lists the site under, so the two screens cannot come to call one
-	 * site two things. A cleverer rule here would be a second copy of that one, disagreeing with it
-	 * the first time either was edited.
-	 */
+	/** The host, for an address the server could not name at all. */
 	function domainOf(address: string | null | undefined): string | null {
 		if (!address) return null;
 		try {
@@ -275,37 +184,14 @@
 	}
 	const whose = $derived(item.username ? `@${item.username}` : '');
 
-	/*
-	 * A download whose file has since been deleted.
-	 *
-	 * The row stays (it is history, and history of a file that is gone is still history), but
-	 * nothing on it may pretend to lead anywhere: the site, the account and the name are struck
-	 * through and are plain text, and no verb offers to open it, because there is no longer a file
-	 * at the end of any of them. The ledger remembers what it produced, so the name survives.
-	 */
+	/* A download whose file has since been deleted. */
 	const settled = $derived(['done', 'duplicate'].includes(item.status));
 	const gone = $derived(settled && !item.asset_id && Boolean(item.remembered_filename));
 
-	/* What the address SAYS, which is not always what it points at.
-	 *
-	 * Some sites hand out a signed link: the file, plus an expiry and a signature regenerated
-	 * every time somebody loads the page it is on. Eighty characters of hex that says nothing, and
-	 * pushes the filename off the end of the row. The server works out the short form and sends it
-	 * beside the real one; the link still points at the real one, because the host answers 404 to
-	 * the short one. */
+	/* What the address SAYS, which is not always what it points at. */
 	const shownUrl = $derived(item.shown_url ?? item.url ?? '');
 
-	/*
-	 * THE NAME, and it is the first thing on the row.
-	 *
-	 * Best answer first: what the file is called, then what a gallery is going to become, then the
-	 * address it was pasted from. A row that leads with its Site is a list of sites; the Site is on
-	 * the second line, where it belongs beside the handle.
-	 *
-	 * "N files" rather than "N pictures", and that is a limit of the wire rather than a choice: a
-	 * gallery reports files and nothing on `DownloadProgress` says what KIND they are, so calling
-	 * them pictures would be the row guessing about a mixed album.
-	 */
+	/* THE NAME, and it is the first thing on the row. */
 	const named = $derived.by(() => {
 		const name = item.filename ?? item.remembered_filename;
 		if (name) return name;
@@ -314,17 +200,7 @@
 		return shownUrl;
 	});
 
-	/*
-	 * Cut in the MIDDLE, so the extension survives.
-	 *
-	 * CSS can only cut at an end. `text-overflow: ellipsis` takes the tail, which is exactly the
-	 * part that says what kind of file this is, and a row of forty names all ending in the same
-	 * cut is a column nobody can tell apart. The RTL trick that fakes a leading ellipsis reverses
-	 * punctuation as well, so a name with a bracket in it comes out backwards.
-	 *
-	 * So the cut is made here, in text, and the whole name is in the detail under the row for
-	 * anybody who needs all of it.
-	 */
+	/* Cut in the MIDDLE, so the extension survives. */
 	const NAME_CEILING = 46;
 	const NAME_TAIL = 14;
 
@@ -336,8 +212,7 @@
 	const shownName = $derived(shorten(named));
 
 	// Anything under ten seconds of work does not want a bar; anything under a megabyte will not be
-	// on screen long enough to have one. Both floors, because either one alone lets through the case
-	// the other catches: a huge file on a fast connection, and a tiny one on a slow one.
+	// on screen long enough to have one.
 	const worthABar = $derived(
 		item.progress != null &&
 			((item.progress.total_bytes ?? 0) > 1_000_000 ||
@@ -349,17 +224,15 @@
 	/** Held by somebody, with its bytes still on disk. Not moving, and not over either. */
 	const held = $derived(item.status === 'paused');
 
-	/* A bar only while it is running: a finished row's progress is its status, and a bar left under
-	   one is a stale number that reads as authoritative. The sweep is for the silence before the
-	   first byte (the page is being fetched, a challenge answered, the formats listed), where a
-	   bar at zero would claim the transfer had started and stalled. */
+	/* A bar only while it is running: a finished row's progress is its status, and a bar left
+	   under one is a stale number that reads as authoritative. */
 	const barValue = $derived(
 		item.progress?.total_bytes ? (item.progress.done_bytes / item.progress.total_bytes) * 100 : null
 	);
 
-	/* A held row keeps its bar and only its bar: no sweep, because nothing is moving, and nothing at
-	   all where there is no figure to hold: an empty grey track would be a claim that nought was
-	   fetched rather than that the size is unknown. */
+	/* A held row keeps its bar and only its bar: no sweep, because nothing is moving, and
+	   nothing at all where there is no figure to hold: an empty grey track would be a claim that
+	   nought was fetched rather than that the size is unknown. */
 	const showBar = $derived(
 		(running && (worthABar || item.progress == null)) || (held && barValue !== null)
 	);
@@ -391,11 +264,7 @@
 			return `${going.done_files} of ${counted(going.total_files)} files`;
 		}
 		if (going.total_bytes) {
-			/* A video served in fragments has no declared size. The tool works one out from the
-			   bitrate it has seen so far and revises it as it goes, so the "final size" moves
-			   every few seconds, which reads as a fault. The number is honest; printing it as
-			   though the site had stated it was not. Rounded to whole megabytes as well, because a
-			   tenth of a megabyte on a guess is precision nobody has. */
+			/* A video served in fragments has no declared size. */
 			const total = going.total_is_estimated
 				? `about ${roughly(going.total_bytes)}`
 				: size(going.total_bytes);
@@ -404,24 +273,16 @@
 		return size(going.done_bytes);
 	});
 
-	/**
-	 * WHERE IN THE QUEUE a waiting row is, in the words somebody would use for it.
-	 *
-	 * The server counts the position. One ahead is named rather than counted: "next in line" is
-	 * what a person would say, and "1 ahead" is the same fact in the machine's voice. Nothing at
-	 * all for a row with no position, which is what an older server sends and what a row that is
-	 * not waiting has.
-	 */
+	/** WHERE IN THE QUEUE a waiting row is, in the words somebody would use for it. */
 	const place = $derived.by(() => {
 		const at = item.position ?? null;
 		if (at === null || at < 1) return '';
 		return at === 1 ? 'next in line' : `${at - 1} ahead`;
 	});
 
-	/*
-	 * THE SIZE COLUMN: how much has come while it runs, how much a pause KEPT (the whole question a
-	 * pause raises, so "kept" rather than "done"), and how big it was once it has landed.
-	 */
+	/* THE SIZE COLUMN: how much has come while it runs, how much a pause KEPT (the whole
+	 * question a pause raises, so "kept" rather than "done"), and how big it was once it has
+	 * landed. */
 	const sizeSaid = $derived.by(() => {
 		if (running) return amount;
 		if (held) return amount ? `${amount} kept` : '';
@@ -429,11 +290,9 @@
 		return '';
 	});
 
-	/*
-	 * THE MOMENT COLUMN, and each state says the thing it leaves unanswered: a running row how
-	 * long is left (or how fast, before it can say), a waiting one where in the queue, everything
-	 * else when.
-	 */
+	/* THE MOMENT COLUMN, and each state says the thing it leaves unanswered: a running row how
+	 * long is left (or how fast, before it can say), a waiting one where in the queue,
+	 * everything else when. */
 	const when = $derived.by(() => {
 		const going = item.progress;
 		if (running && going) {
@@ -445,8 +304,8 @@
 		return sayWhen(item.finished_at ?? item.created_at, now);
 	});
 
-	/* The exact moment for the column's hover (`$lib/shell/when`); null where it says a speed or a
-	   place in the queue. */
+	/* The exact moment for the column's hover (`$lib/shell/when`); null where it says a speed or
+	   a place in the queue. */
 	const whenAt = $derived.by((): number | null => {
 		if (running && item.progress) return null;
 		if (item.status === 'queued') return null;
@@ -472,8 +331,7 @@
 		return `through ${item.via}`;
 	});
 
-	/* The whole of the failure, small, under the sentence in the detail. Built from what the wire
-	   actually carries (the code and the tier) rather than from an HTTP status nobody sends. */
+	/* The whole of the failure, small, under the sentence in the detail. */
 	const rawFailure = $derived.by(() => {
 		const parts: string[] = [];
 		if (item.error_code) parts.push(item.error_code);
@@ -485,24 +343,22 @@
 
 	const failing = $derived(item.status === 'failed' || item.status === 'blocked');
 
-	/* Stopped only while on its way, by the store's rule (`canCancel`), which the selection bar's
-	   Cancel reads too, so the row and the bar cannot disagree. */
+	/* Stopped only while on its way, by the store's rule (`canCancel`), which the selection
+	   bar's Cancel reads too, so the row and the bar cannot disagree. */
 	const stoppable = $derived(canCancel(item));
-	/* Off the list, never off the disk: this page does not delete files. Only for a row that has
-	   stopped. Taking a running download off the list would leave it running with nothing on
-	   screen saying so. */
+	/* Off the list, never off the disk: this page does not delete files. */
 	const removable = $derived(
 		['done', 'failed', 'canceled', 'skipped', 'duplicate'].includes(item.status)
 	);
-	/* Open it, when there is something to open. A row whose file has since been deleted keeps the
-	   name and offers nothing that leads anywhere. */
+	/* Open it, when there is something to open. A row whose file has since been deleted keeps
+	   the name and offers nothing that leads anywhere. */
 	const openable = $derived(Boolean(item.asset_id) && !gone);
 
 	/** The file the name opens, or nothing: a row with no file, or whose file is gone, is text. */
 	const door = $derived(openable && onopen ? item.asset_id : null);
 
-	/* The pictures that may stand for the Site, best first (`linkMarks`); a host the pack lacks is
-	   asked once a page (`markOf`), and with none `Avatar` draws the Site's letter. */
+	/* The pictures that may stand for the Site, best first (`linkMarks`); a host the pack lacks
+	   is asked once a page (`markOf`), and with none `Avatar` draws the Site's letter. */
 	const marks = $derived(item.url ? linkMarks(item.url, item.site) : []);
 	const mark = $derived(markOf(marks[0]));
 
@@ -514,15 +370,7 @@
 		});
 	}
 
-	/*
-	 * Cancelling a download WITH BYTES ON DISK asks; cancelling one with none does not.
-	 *
-	 * The difference is whether anything is lost. A waiting download has fetched nothing, so
-	 * stopping it costs a click to start again, and the page says so with a toast that undoes.
-	 * A running one has bytes on disk that go with it, and so does a HELD one: pausing is the
-	 * promise that what was fetched is kept, and cancelling is what breaks that promise. Asking on
-	 * a running row and not on a paused one would make Cancel mean two things a press apart.
-	 */
+	/* Cancelling a download WITH BYTES ON DISK asks; cancelling one with none does not. */
 	const losesBytes = $derived(running || held);
 
 	function cancel() {
@@ -538,20 +386,20 @@
 			'Canceling drops it; Try again starts from nothing.'
 	);
 
-	/*
-	 * EVERY act this row offers, declared once.
-	 *
-	 * The glyph buttons, the right-click menu and the three dots all read this, so none of them can
-	 * offer something another does not (see the head of the file). A verb whose handler was not
-	 * given is not built at all, which is how the page says "this list does not do that" rather
-	 * than drawing a row that does nothing.
-	 */
+	/* EVERY act this row offers, declared once. The glyph buttons, the right-click menu and the
+	 * three dots all read this, so none of them can offer something another does not (see the
+	 * head of the file). */
 	const verbs = $derived.by<Verb[]>(() => {
 		const built: Verb[] = [];
+		pushChangeVerbs(built);
+		pushOtherVerbs(built);
+		return built;
+	});
 
+	/** The verbs that change the download: cookies, order, pause, resume, cancel, retry. */
+	function pushChangeVerbs(built: Verb[]): void {
 		// The Site the cookies are FOR is the one the address named: `site` is only filled in once
-		// a download lands, and a row waiting for cookies never has one. Without this there would
-		// be no Add cookies to press.
+		// a download lands, and a row waiting for cookies never has one.
 		if (item.status === 'blocked' && oncookies && (item.site_key ?? item.site)) {
 			built.push({
 				id: 'cookies',
@@ -571,7 +419,7 @@
 			});
 		}
 		/* Exactly one of these two can be built for any row: the states they answer to do not
-		   overlap. Where they sit on the row is `ON_ROW`'s, below, not this list's. */
+		   overlap. */
 		if (canPause(item) && onpause) {
 			built.push({
 				id: 'pause',
@@ -602,6 +450,10 @@
 				run: () => onretry?.(item.id)
 			});
 		}
+	}
+
+	/** The verbs that open, keep or remove the row. */
+	function pushOtherVerbs(built: Verb[]): void {
 		if (openable && onopen) {
 			built.push({
 				id: 'open',
@@ -612,8 +464,7 @@
 			});
 		}
 		if (item.status === 'quarantined') {
-			/* Where the quarantined files are kept, which is the Organize board's own queue. The row
-			   does not draw them itself: one screen holds that pile and this is a way into it. */
+			/* Where the quarantined files are kept, which is the Organize board's own queue. */
 			built.push({
 				id: 'quarantine',
 				label: 'Open quarantine',
@@ -642,9 +493,9 @@
 			});
 		}
 		if (removable && onremove) {
-			/* Destructive in the menu's sense (it takes something away and there is no second copy
-			   of a list), and deliberately not red-as-in-deletes-a-file: the words say "from the
-			   list" because that is all it does. The page offers the undo. */
+			/* Destructive in the menu's sense (it takes something away and there is no second
+			   copy of a list), and deliberately not red-as-in-deletes-a-file: the words say
+			   "from the list" because that is all it does. */
 			built.push({
 				id: 'remove',
 				label: 'Remove from the list',
@@ -653,19 +504,10 @@
 				run: () => onremove?.(item.id)
 			});
 		}
-		return built;
-	});
+	}
 
 	/* The one or two a person reaches for, drawn as glyphs on hover, in ADDITION to the menu,
-	   never instead of it, and they come off the same list. Two, because a row carrying five of
-	   them is a row whose name has nowhere to go.
-
-	   ORDER OF PREFERENCE, not the order the verbs were declared in: a live row has three
-	   candidates and only two places. The pair a live row wears is hold-or-let-go on the left
-	   and stop on the right, the same two in the same places whether it is running, waiting or
-	   held, which is what makes them findable by shape rather than by reading. Move to the
-	   front is what gives way; it is the rarer act, and the row says where in the queue it is in
-	   words, which is what makes it worth pressing. */
+	   never instead of it, and they come off the same list. */
 	const ON_ROW = ['pause', 'resume', 'cancel', 'first', 'link'];
 	const glyphs = $derived(
 		ON_ROW.map((id) => verbs.find((verb) => verb.id === id))
@@ -675,21 +517,15 @@
 			.slice(0, 2)
 	);
 
-	/*
-	 * The one verb with words on it: the fix, where there is a fix.
-	 *
-	 * Picked out of the same list rather than written again, so it cannot say something the menu
-	 * does not offer. One per row at most: two primary buttons is a row with no primary act.
-	 */
+	/* The one verb with words on it: the fix, where there is a fix. */
 	// Resume is the fix for a held row: the one act it is waiting on, in words, at rest, rather
 	// than a paused row wearing nothing but its badge until the pointer finds it.
 	/* Not Open: the NAME opens a finished download's file, so an Open button beside it would be
-	   one act with two controls. Open stays in the menu and on right-click, where the keyboard
-	   and the pointer both still find it by its word. */
+	   one act with two controls. */
 	const FIX_ORDER = ['cookies', 'resume', 'retry', 'anyway', 'quarantine'];
 
-	/* While the detail is open it says the failure and offers its fix, so the row does neither: it
-	   keeps its facts, and the act is offered once. */
+	/* While the detail is open it says the failure and offers its fix, so the row does neither:
+	   it keeps its facts, and the act is offered once. */
 	const inDetail = $derived(
 		expanded
 			? detailOffers(item, sentence, {
@@ -702,8 +538,8 @@
 
 	const fix = $derived.by(() => {
 		for (const id of FIX_ORDER) {
-			/* A duplicate's file is already in the library and its name opens it, so fetching it a
-			   second time is not the fix for it. That one is in the menu, as the design has it. */
+			/* A duplicate's file is already in the library and its name opens it, so fetching it
+			   a second time is not the fix for it. */
 			if (id === 'anyway' && item.status === 'duplicate') continue;
 			const found = verbs.find((verb) => verb.id === id);
 			if (found) return found;
@@ -711,23 +547,11 @@
 		return null;
 	});
 
-	/*
-	 * Delete, while the keyboard is anywhere in the row: stop it, or take it off the list.
-	 *
-	 * Handed to `DataRow` as its `onkeys`, which hears a key from the row's own tab stop and from
-	 * everything inside it: the tick, a glyph button, the Site link. On a child span it would
-	 * hear only keys typed while that child was focused: Tab lands on the row first, and a key
-	 * typed there never passes through a child of it.
-	 *
-	 * A key with Ctrl, Alt or the command key held is somebody else's (Ctrl+P is print), and is
-	 * left alone rather than pausing a download and swallowing the shortcut.
-	 */
+	/* Delete, while the keyboard is anywhere in the row: stop it, or take it off the list. */
 	function typed(event: KeyboardEvent) {
 		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		/* P holds it and lets it go again, which is one key because it is one question: the same
-		   key a media player has meant for this since before any of us. It is the verb's own rule
-		   that decides which way it goes, so a row that can do neither answers nothing at all
-		   rather than a press that quietly does the wrong one. */
+		   key a media player has meant for this since before any of us. */
 		if (event.key === 'p' || event.key === 'P') {
 			if (canPause(item) && onpause) {
 				event.preventDefault();
@@ -751,15 +575,11 @@
 	}
 </script>
 
-<!-- THE CELLS, one per declared column (`downloadColumns`). The row positions none of them: it
-     hands each to the list, which puts it in its track. -->
+<!-- THE CELLS, one per declared column (`downloadColumns`). -->
 {#snippet cellPick()}
 	<span class="tick" class:shown={selected || anySelected}>
 		{#if onselect}
-			<!-- Out of the way until it is wanted. A column of forty empty boxes is a form; the
-			     tick arrives on hover or focus, and stays out for every row once anything at
-			     all is picked, so the boxes somebody is working through do not vanish behind
-			     the pointer. -->
+			<!-- Out of the way until it is wanted. -->
 			<Checkbox
 				state={selected ? 'on' : 'off'}
 				label={`Select ${named}`}
@@ -770,18 +590,7 @@
 {/snippet}
 
 {#snippet cellMark()}
-	<!--
-		The SITE's mark, always, never the creator's.
-
-		A creator's picture belongs to the person and is shown wherever a person is; this column
-		answers a different question, which is where a download came from, and it has to answer
-		it the same way on every row. A wall of different faces is not a column of sites.
-
-		The pack's logo for the address's HOST first: the host is known the moment a link is
-		pasted, and a row still downloading would otherwise have no mark. Then the picture a
-		download fetched for the Site, then its letter. All from Sift itself: an image at a
-		remote address tells that site who is browsing.
-	-->
+	<!-- The SITE's mark, always, never the creator's. -->
 	<span class="mark">
 		<Avatar
 			src={mark}
@@ -808,13 +617,7 @@
 		</span>
 
 		{#if showBar}
-			<!--
-				While it is running, the bar stays on the row.
-
-				Everything else about a download is reference and lives behind the chevron, but a
-				transfer in flight is the one thing somebody is watching rather than looking up, and
-				a bar that has to be opened to be seen is not a bar.
-			-->
+			<!-- While it is running, the bar stays on the row. -->
 			<ProgressBar
 				value={barValue}
 				paused={held}
@@ -832,8 +635,7 @@
 				<span class="why">{sentence}</span>
 			{:else}
 				{#if item.site_id && !gone}
-					<!-- The Site, as a way in: its own page holds everything fetched from it. Only
-					     once a download has been filed under it, which is when there is a page. -->
+					<!-- The Site, as a way in: its own page holds everything fetched from it. -->
 					<a class="where" href={`/sites/${item.site_id}`}>{where}</a>
 				{:else}
 					<span class="where" class:gone>{where}</span>
@@ -993,9 +795,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* Revealed rather than removed, so nothing on the row moves sideways when it appears. A box
-	   that shifted the name every time the pointer crossed the list would be worse than one that
-	   was simply always there. The row it answers to is `DataRow`'s. */
+	/* Revealed rather than removed, so nothing on the row moves sideways when it appears. */
 	.tick {
 		display: inline-flex;
 		opacity: 0;
@@ -1015,10 +815,7 @@
 		}
 	}
 
-	/* The square the Site's mark stands in. `Avatar` fills whatever holds it. The logo is drawn
-	   BARE (no ground and no corner taken off it, the way a person's links draw theirs), so this
-	   clips nothing; the corner is handed down for the letter's tile alone, drawn where the Site
-	   has no picture. It fills its column (`MARK` declares the one width) and is as tall as wide. */
+	/* The square the Site's mark stands in. `Avatar` fills whatever holds it. */
 	.mark {
 		display: block;
 		inline-size: 100%;
@@ -1033,8 +830,7 @@
 		min-inline-size: 0;
 	}
 
-	/* The headline: the NAME, one line, and it is what gives way when there is not room. It has
-	   already been cut in the middle, so what is left of it still ends in the extension. */
+	/* The headline: the NAME, one line, and it is what gives way when there is not room. */
 	.what {
 		display: flex;
 		align-items: center;
@@ -1050,8 +846,7 @@
 	}
 
 	/* The name as the door wears the row's own ink, underlined under the pointer the way every
-	   other name on this row is. The accent on every finished row of a list would make the list a
-	   page of links; this is a name that also opens. */
+	   other name on this row is. */
 	.door :global(.asset-link) {
 		color: inherit;
 	}
@@ -1084,8 +879,8 @@
 		gap: var(--space-1) var(--space-3);
 	}
 
-	/* Under the name's own line the name may take two: an address has no spaces, so it breaks where
-	   it must, and only a third line is cut. One line would cut a link to its scheme. */
+	/* Under the name's own line the name may take two: an address has no spaces, so it breaks
+	   where it must, and only a third line is cut. */
 	.stacked .named {
 		display: -webkit-box;
 		-webkit-box-orient: vertical;
@@ -1095,8 +890,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* The fix follows the facts it answers, on their line. Pushed to the far end it would stand
-	   alone in the room the row's hidden actions keep, far from the words it is about. */
+	/* The fix follows the facts it answers, on their line. */
 	.facts .fix {
 		justify-content: flex-start;
 	}
@@ -1115,13 +909,7 @@
 		text-overflow: ellipsis;
 	}
 
-	/* Both names are links, and neither may look like one drawn by the browser.
-	 *
-	 * `color: inherit` rather than the accent, because a global anchor rule would give them the
-	 * default link colours (the site blue until opened and purple afterwards), making two rows
-	 * for the same site look like two different things. They wear the row's own ink and say they
-	 * are links by underlining under the pointer, which is what every other name in Sift does.
-	 */
+	/* Both names are links, and neither may look like one drawn by the browser. */
 	.where {
 		color: inherit;
 		text-decoration: none;
@@ -1160,7 +948,7 @@
 	}
 
 	/* The state, the size and the moment: one fact per column, in the data face, cut rather than
-	   wrapped where a track is too narrow for it. Tabular figures stop a ticking one jittering. */
+	   wrapped where a track is too narrow for it. */
 	.status {
 		display: flex;
 		min-inline-size: 0;

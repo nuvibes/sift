@@ -1,26 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Reading the moments of one file, at the size the model reads.
-
-Two decisions here are not obvious.
-
-**The decoder is launched from a thread, never from the event loop.** Starting a process out of a
-large Python process is not free, and the ordinary async way to do it runs the launch *on* the loop,
-which stops the whole application while it happens. One launch is a blink; a pass over a long video
-is thirty of them, several files at the same time, and together they can hold the loop for minutes with
-nothing reporting it but an application that has stopped answering. So every launch goes through the
-kernel's threaded helper, at background priority: whoever is watching something right now matters
-more than an index that will finish either way.
-
-**A seek to zero is skipped rather than passed.** A still picture is presented to the decoder as a
-video one frame long, and seeking to zero on it lands *on* that frame's moment rather than before
-it: the frame counts as already past, nothing is written, and the decoder exits reporting success.
-Every photo would get no description at all, with a green suite, because the version of the
-decoder a machine happens to have behaves differently from the one that ships.
-
-The frames are **squashed** to the square rather than cropped to it. That is what the model's own
-published preparation does, and matching it is not cosmetic: a model shown pictures framed
-differently from its training returns numbers that are confidently wrong rather than an error.
-"""
+"""Reading the moments of one file at the model's size, launched from a thread, never the loop."""
 
 from __future__ import annotations
 
@@ -38,12 +17,9 @@ from sift.slices.semantic.embed import FRAME_SIZE
 
 log = get_logger(__name__)
 
-#: How long one moment may take to read before it is abandoned. Generous: this is a guard against a
-#: decoder that has hung, not a budget for a slow disk.
+#: A guard against a hung decoder, not a budget for a slow disk.
 _FRAME_TIMEOUT = 60.0
 
-#: How long reading a whole GIF in one pass may take. A GIF cannot be seeked cheaply,
-#: so it is read once from end to end, which is more work in one call than a single seek.
 _WHOLE_FILE_TIMEOUT = 120.0
 
 
@@ -56,38 +32,22 @@ class Moment:
 
 
 def moments_for(duration_ms: int) -> tuple[int, ...]:
-    """Which moments of a file of this length to describe.
-
-    The kernel's ladder, unchanged and deliberately not a second one: a short clip gets a frame a
-    second, a long video gets thirty spread across it, and every feature that looks inside a video
-    asks the same question and gets the same answer. There is a guard test asserting only one
-    ladder exists in the tree.
-
-    Thirty frames on a two-hour video is one every four minutes, which is coarse for jumping to a
-    moment. That is a known limit of the shared ladder rather than something to fix privately here:
-    a rung for this feature is a change to the ladder, made with everything else that reads it.
-    """
+    """Which moments of a file of this length to describe: the kernel's one ladder."""
     return sampling.sample_frames(duration_ms)
 
 
-#: How a picture is shaped for the model: squashed to its square, bilinear. Named on the filter
-#: rather than as a global `-sws_flags`, so the one-moment command and the many-moment one say it
-#: the same way; the output is byte-identical to the global form.
 FRAME_FILTER = f"scale={FRAME_SIZE}:{FRAME_SIZE}:flags=bilinear"
 FRAME_PIXELS = "rgb24"
 _FRAME_BYTES = FRAME_SIZE * FRAME_SIZE * 3
 
 
 def moment_at(at_ms: int) -> media.Moment:
-    """Where a moment is taken from: a seek, or nothing at all at the beginning. Seeking to zero
-    is not a no-op: a still presented as a one-frame video loses its frame to it."""
+    """Where a moment is taken from; a seek to zero would lose a still's only frame."""
     return media.Moment(seek=() if at_ms <= 0 else ("-ss", media.seconds(at_ms)))
 
 
 async def frame_requests(facts: media.FileFacts) -> list[media.FrameRequest]:
-    """What describing this video would ask the kernel for, so a Build can read it once for
-    everything. The same ladder, filter and pixels `Reader._video` asks with; the test beside it
-    proves the two agree. Only a video: a still and a GIF are read their own way."""
+    """What describing this video would ask the kernel for, so a Build can read it once."""
     if facts.media_type != "video":
         return []
     return [
@@ -101,20 +61,14 @@ async def frame_requests(facts: media.FileFacts) -> list[media.FrameRequest]:
 
 
 def frame_args(path: Path, at_ms: int, *, settings: Settings) -> list[str]:
-    """One moment, squashed to the square the model reads. The one-moment form of what `_video`
-    reads thirty of through one process; built from the same pieces so the two cannot differ."""
+    """One moment, squashed to the square the model reads, built from `_video`'s pieces."""
     return media.raw_frame_args(
         path, moment_at(at_ms), filters=FRAME_FILTER, pixel_format=FRAME_PIXELS, settings=settings
     )
 
 
 def all_frames_args(path: Path, *, settings: Settings, stream: int = 0) -> list[str]:
-    """Every frame of a file, in order, from one read. For GIFs, which cannot be seeked.
-
-    `stream` is which video stream moves (`media.moving_stream_of`): an animated AVIF holds a
-    still cover first and its frames second, and ffmpeg's own choice is the cover, one frame.
-    The first stream is named by nothing, so a GIF's command is the plain one.
-    """
+    """Every frame of a file, in order, from one read, for GIFs, which cannot be seeked."""
     return [
         settings.ffmpeg_path,
         *media.background_flags(settings),
@@ -134,13 +88,7 @@ def all_frames_args(path: Path, *, settings: Settings, stream: int = 0) -> list[
 
 
 def split(raw: bytes) -> list[np.ndarray]:
-    """Cut a stream of raw colour bytes into whole pictures.
-
-    There are no markers between them and none are needed: every picture is exactly the same
-    number of bytes. A trailing part-picture is dropped rather than padded: a decoder killed at
-    its time limit leaves one, and half a picture described as a whole one is numbers about
-    nothing.
-    """
+    """Cut a stream of raw colour bytes into whole pictures, dropping a trailing part."""
     stride = FRAME_SIZE * FRAME_SIZE * 3
     whole = len(raw) // stride
     return [
@@ -152,11 +100,7 @@ def split(raw: bytes) -> list[np.ndarray]:
 
 
 def thin(count: int, wanted: int) -> list[int]:
-    """Which of a GIF's frames to keep, spread evenly across the whole of it.
-
-    Evenly spread rather than the first few: a GIF's opening frames are usually the same
-    moment, and its point is what happens later.
-    """
+    """Which of a GIF's frames to keep, spread evenly across the whole of it."""
     if count <= wanted:
         return list(range(count))
     step = (count - 1) / (wanted - 1) if wanted > 1 else 0
@@ -171,11 +115,7 @@ class Reader:
         self._priority = priority
 
     async def read(self, path: Path, *, media_type: str, duration_ms: int) -> list[Moment]:
-        """Every moment worth describing in one file.
-
-        A still is one picture. A GIF is read once from end to end, because seeking one is
-        more expensive than decoding all of it. A video is seeked to each moment of the ladder.
-        """
+        """Every moment worth describing in one file."""
         if media_type == "image":
             return [Moment(pixels=picture, at_ms=0) for picture in await self._single(path, 0)]
         if media_type == "gif":
@@ -183,14 +123,7 @@ class Reader:
         return await self._video(path, duration_ms)
 
     async def _video(self, path: Path, duration_ms: int) -> list[Moment]:
-        """Every moment of the ladder from ONE process, in order.
-
-        One process per moment would be thirty opens and seeks of the same file, which over a
-        network share is thirty round trips before a single picture is described. The kernel
-        takes every moment as its own seeked input and hands the pictures back in order; a moment
-        that read nothing is None in its place, and a chunk that came back short is read a moment
-        at a time so nothing is mislabelled with the wrong second.
-        """
+        """Every moment of the ladder from one process, in order, None where one read nothing."""
         wanted = moments_for(duration_ms)
         pictures = await media.raw_moments(
             path,
@@ -206,16 +139,11 @@ class Reader:
         previous: np.ndarray | None = None
         for at_ms, raw in zip(wanted, pictures, strict=True):
             if raw is None:
-                # One unreadable moment is not an unreadable file. A truncated tail is common and
-                # everything before it is perfectly good, so it is recorded and the pass carries on
-                # with what it has.
+                # One unreadable moment is not an unreadable file: the pass carries on.
                 log.warning("semantic.frame.unreadable", at_ms=at_ms)
                 continue
             for picture in split(raw):
-                # Two nearby moments in a file with few complete pictures decode to the very same
-                # picture. Compared exactly rather than approximately: these are the same bytes or
-                # they are not, and a "nearly the same" test would throw away a real cut between
-                # two static shots.
+                # Exact: a near test would lose a real cut between two static shots.
                 if previous is not None and np.array_equal(previous, picture):
                     continue
                 previous = picture
@@ -235,9 +163,7 @@ class Reader:
         if not pictures:
             return []
         wanted = max(1, len(moments_for(duration_ms)))
-        # A GIF carries no reliable per-frame timing here, and inventing one would put a
-        # made-up second on screen. The position in the sequence is the honest answer, and it is
-        # what a viewer would scrub to: the same choice the face pass makes for the same reason.
+        # Its position in the sequence, since a GIF carries no reliable per-frame timing here.
         return [
             Moment(pixels=pictures[index], at_ms=index) for index in thin(len(pictures), wanted)
         ]

@@ -1,32 +1,4 @@
-/* Where Sift keeps its own two folders, and moving them somewhere else.
- *
- * A library outgrows the disk it was started on (the ordinary case, not an edge one), so the
- * folders chosen at first run can be moved.
- *
- * ## The two folders are moved together
- *
- * They could be separated: the cache is rebuildable and the data is not. It is not offered
- * because it doubles every failure path (two moves, two rollbacks, four half-finished states)
- * for a choice almost nobody makes, and the shape below takes a second folder without changing if
- * it is ever wanted. What is offered is the question people ask, which is "this drive is full".
- *
- * ## What makes this safe
- *
- * Nothing here runs while the backend is up: the caller stops it first, and the database's files
- * are open until it does. Then, in order:
- *
- *   1. every refusal is decided BEFORE anything is touched, so a bad target costs nothing;
- *   2. a rename is tried first: on the same volume it is atomic and instant, and the old path
- *      simply stops existing;
- *   3. across volumes it is a copy, then a check that the copy is all there, and only then the
- *      delete. The old copy is what survives if anything goes wrong, because the old copy is the
- *      one with the library in it.
- *
- * The settings file is written LAST, after the bytes are in place. A crash before that leaves a
- * shell pointing at the old folder, which still exists in the copy case and has been renamed in
- * the other, so the one state that has to be impossible is "settings say the new place and the
- * files are in the old one", and writing last is what makes it impossible.
- */
+/* Where Sift keeps its own two folders, and moving them somewhere else. */
 
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
@@ -78,8 +50,8 @@ export async function sizeOf(dir: string): Promise<number> {
 			try {
 				total += (await fsp.stat(full)).size;
 			} catch {
-				/* A file that went between the listing and the stat is a file that is not there to
-				   count. The number is a size on screen, not an invariant. */
+				/* A file that went between the listing and the stat is a file that is not there
+				   to count. */
 			}
 		}
 	}
@@ -154,15 +126,10 @@ export async function describe(locations: DataLocations): Promise<StorageReport>
 	return { ...locations, ...(await measure(locations)), measuredAt: Date.now(), measuring: false };
 }
 
-/** How old a measurement may be before an ask walks again. Ten minutes: the folders grow by a
- *  pass's crops and thumbnails over minutes, and a walk reads every entry on the disk. */
+/** How old a measurement may be before an ask walks again. */
 export const SIZES_KEPT_MS = 10 * 60_000;
 
-/**
- * The storage sizes, answered immediately from the last walk. A walk starts when there is none for
- * these folders (a move names new ones) or it is older than `SIZES_KEPT_MS`, and never while one is
- * running: everybody who asks meanwhile shares it.
- */
+/** The storage sizes, answered immediately from the last walk. */
 export class StorageSizes {
 	private last: { key: string; dataBytes: number; cacheBytes: number; measuredAt: number } | null =
 		null;
@@ -204,23 +171,16 @@ export class StorageSizes {
 	}
 }
 
-/** Whether `inner` is `outer` or sits inside it, compared as paths rather than by asking the disk.
- *
- * Lexical on purpose. `fs.realpath` would follow a junction, and Windows makes junctions freely:
- * a target that resolves outside itself would then pass a check that is supposed to be about where
- * the files END UP. Case-insensitively, because Windows is. */
+/** Whether `inner` is `outer` or sits inside it, compared as paths rather than by asking the
+ * disk. */
 export function isInside(outer: string, inner: string): boolean {
 	const a = path.resolve(outer).toLowerCase();
 	const b = path.resolve(inner).toLowerCase();
 	return a === b || b.startsWith(a + path.sep);
 }
 
-/**
- * Why this folder cannot be used, or null.
- *
- * Every one of these is decided before anything is touched. A refusal after the backend has been
- * stopped is a Sift that is down for a reason the person could have been told a moment earlier.
- */
+/** Why this folder cannot be used, or null. Every one of these is decided before anything is
+ * touched. */
 export async function refuse(
 	current: DataLocations,
 	target: string,
@@ -265,18 +225,8 @@ export async function refuse(
 	return null;
 }
 
-/**
- * Copy a tree, reporting bytes as they land.
- *
- * A folder that cannot be listed throws rather than being stepped over. `sizeOf` reports an
- * unlistable folder as nought (rightly, for a size on screen), so a skipped folder would pass
- * the "is the copy all there" check with nought against nought, and the delete afterwards would
- * take the originals.
- *
- * The folder is known to exist: its parent listed it as a directory a moment ago. So a refusal here
- * is a real fault (a permission, a failing disk, a folder pulled out from under the move), and
- * every one of those is a reason to stop with the original still in place.
- */
+/** Copy a tree, reporting bytes as they land. A folder that cannot be listed throws rather than
+ * being stepped over. */
 async function copyTree(from: string, to: string, seen: (bytes: number) => void): Promise<void> {
 	await fsp.mkdir(to, { recursive: true });
 	const entries: fs.Dirent[] = await fsp.readdir(from, { withFileTypes: true });
@@ -289,8 +239,7 @@ async function copyTree(from: string, to: string, seen: (bytes: number) => void)
 			await fsp.copyFile(source, destination);
 			seen((await fsp.stat(destination)).size);
 		}
-		/* Anything else (a symlink, a socket) is skipped rather than followed. Sift puts none
-		   there, and following one would copy something from outside the folder being moved. */
+		/* Anything else (a symlink, a socket) is skipped rather than followed. */
 	}
 }
 
@@ -314,13 +263,7 @@ async function moveOne(
 	return 'copied';
 }
 
-/**
- * Move both folders under `target`, which becomes their new parent.
- *
- * The caller has stopped the backend and will start it again. On any failure the old folders are
- * left where they were and the settings are not written, so starting the backend again puts things
- * back exactly as they were.
- */
+/** Move both folders under `target`, which becomes their new parent. */
 export async function move(
 	current: DataLocations,
 	target: string,
@@ -331,7 +274,7 @@ export async function move(
 
 	/* The per-device model store and the other libraries sit beside the data folder, and a
 	   library moved without them arrives with no models (2.3 GB fetched again) and no way to
-	   open the libraries it had. They move with it, when they exist. */
+	   open the libraries it had. */
 	const beside = SIBLINGS.filter((name) =>
 		fs.existsSync(path.join(path.dirname(current.dataDir), name))
 	);
@@ -349,9 +292,7 @@ export async function move(
 	};
 	onProgress({ copied: 0, total });
 	try {
-		/* The CACHE first, and the order is the whole of the safety here. It is the rebuildable
-		   half: a failure part way through costs thumbnails, which Sift makes again. Moving the
-		   database first would put the irreplaceable half in the risky position for no reason. */
+		/* The CACHE first, and the order is the whole of the safety here. */
 		const cache = await moveOne(current.cacheDir, wanted.cacheDir, seen);
 		let allRenamed = cache === 'renamed';
 		for (const name of beside) {

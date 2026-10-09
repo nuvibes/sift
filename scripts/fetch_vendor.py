@@ -1,33 +1,10 @@
 #!/usr/bin/env python3
 """Fetch and verify the external binaries the Windows desktop application ships.
 
-Reads scripts/vendor_manifest.json, downloads each archive into
-vendor/_cache, checks its SHA-256 BEFORE unpacking anything, and lays the executables out in
-vendor/bin. Re-running is cheap: a cached archive whose hash still matches is not re-downloaded.
-The source archives of the libraries inside a wheel the release installs go to vendor/bin/sources
-the same way, and what this repository builds itself (a wheel in vendor/wheels, a program in
-vendor/bin) is checked against its pinned digest.
-
-WHY THIS IS NOT A "DOWNLOAD LATEST" SCRIPT
-------------------------------------------
-Falling back to a rolling `latest` tag when a pin has been pruned suits a container that is rebuilt
-constantly. An installer that quietly picks up a different, unverified ffmpeg ships that binary to
-whoever runs it: a supply-chain event, not an inconvenience. So there is NO fallback to another
-build: a pinned URL that is gone is asked for at the one other place the SAME archive is kept,
-under the same digest, and otherwise the script fails and says what to do.
-
-WHEN THE URL 404s
------------------
-BtbN keeps roughly the last three dozen autobuild releases and prunes the rest, so a dated pin
-eventually stops resolving. Three things protect a build:
-
-  1. `vendor/_cache/`: once an archive is here and verified, a prune upstream cannot stop a build.
-     Back it up with the signing key, for the same reason.
-  2. The mirror (`MIRROR`), a pre-release of this repository whose assets are the archives under
-     their cached names. The digest check is the same, so what unpacks is the pinned file or nothing.
-  3. With the cache empty AND both gone, the fix is deliberate: find the current build of the SAME
-     ffmpeg release line, verify what it is, and update the manifest's url + sha256 in one commit.
-     Never point this at `latest`.
+Each archive in scripts/vendor_manifest.json is downloaded to vendor/_cache and its SHA-256
+checked before anything is unpacked into vendor/bin. There is no fallback to a `latest` build: a
+pinned URL that is gone is asked for at the mirror (`MIRROR`) under the same digest, and otherwise
+the fetch fails. Keep vendor/_cache backed up, so a pruned upstream build cannot stop a release.
 
 Usage:  python scripts/fetch_vendor.py [--verify-only | --build-missing [--wheel-by-contents]]
 """
@@ -48,6 +25,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from sift.slices.download.sources.tuning import JS_RUNTIME
 
@@ -137,16 +115,7 @@ def _download(url: str, tmp: Path) -> None:
 
 
 def _members(archive: Path):
-    """The archive, whichever kind it is, as (names, open one by name).
-
-    THREE KINDS BECAUSE PUBLISHERS DIFFER, not because a choice was wanted: ffmpeg and libwebp ship
-    zips, a Go program's release is usually a gzipped tar, and gallery-dl and the JavaScript engine ship the bare
-    executable with no archive round it at all. Behind one shape here so `unpack` below (which is
-    where the path-safety rules live) has one copy rather than one per format.
-
-    A bare executable is an archive of ONE member named after the cached file, so the manifest names
-    it the same way it names any other member and the one-file rule in `unpack` still holds.
-    """
+    """The archive (a zip, a gzipped tar, or a bare executable) as (names, open one by name)."""
     if archive.suffix.lower() == ".exe":
         return contextlib.nullcontext(), [archive.name], lambda _name: archive.open("rb")
     if archive.name.endswith((".tar.gz", ".tgz")):
@@ -193,15 +162,7 @@ def refuse_while_in_use(*, checking_only: bool) -> None:
 
 
 def unpack(archive: Path, mapping: dict[str, str]) -> None:
-    """Pull named members out of the archive. Patterns are matched, never trusted paths.
-
-    A destination ending in `/` takes EVERY match into that directory, under each member's own
-    filename: the shared ffmpeg build is one executable and eight libraries whose names carry
-    their soversion (`avcodec-61.dll`), which would otherwise have to be in the manifest.
-
-    Every other destination is exactly one file and stays ambiguous-is-an-error, which is what keeps
-    a single-file pattern from quietly picking the first of several.
-    """
+    """Pull named members out by pattern; a destination ending in `/` takes every match."""
     bundle, names, open_member = _members(archive)
     with bundle:
         for dest_rel, pattern in mapping.items():
@@ -222,18 +183,7 @@ def unpack(archive: Path, mapping: dict[str, str]) -> None:
 
 
 def unpack_tree(archive: Path, mapping: dict[str, str]) -> None:
-    """Pull a whole FOLDER out of the archive, keeping the layout under it.
-
-    For a program that is a folder rather than a file: yt-dlp's one-folder build, whose
-    `yt-dlp.exe` loads everything it needs from an `_internal` folder beside it, by relative path.
-    `unpack` above flattens every member to its own filename on purpose; here the layout IS the
-    program, so it is kept, and so every part of every member's path is checked before anything
-    is written. An archive can name a member `_internal/../../anything`, and a joined path that
-    leaves the destination is exactly the write this refuses.
-
-    The destination is emptied first. A folder left from the previous pin would otherwise keep
-    every file the new release dropped, and the program would load a mixture of two releases.
-    """
+    """Pull a whole folder out, layout kept, every path checked, the destination emptied first."""
     bundle, names, open_member = _members(archive)
     with bundle:
         for dest_rel, prefix in mapping.items():
@@ -264,21 +214,10 @@ def unpack_tree(archive: Path, mapping: dict[str, str]) -> None:
 
 
 def check_ytdlp_finds_its_partners(ffmpeg_version: str | None) -> None:
-    """Ask the vendored yt-dlp which JavaScript engine and which ffmpeg it can see.
+    """Ask the vendored yt-dlp which JavaScript engine and ffmpeg it finds beside it.
 
-    yt-dlp on Windows finds `qjs.exe` by it sitting in the same folder, a rule of yt-dlp's, not of
-    Sift's, and the download command's `--js-runtimes quickjs` depends on it. A rename, a layout
-    change or a new yt-dlp that looks somewhere else would not fail anything: yt-dlp carries on
-    without an engine and says only "JS runtimes: none" in a debug line nobody reads. So the fetch
-    reads it. With no address given yt-dlp prints its debug header and stops with a usage error,
-    which is why the exit code is not the answer here and the header is.
-
-    The ffmpeg it finds matters the same way and fails more quietly still. yt-dlp joins a site's
-    separate picture and sound with ffmpeg; with none, it picks the best format that needs no
-    joining, which on YouTube is 360p: a download that works and is the wrong file. Nothing tells
-    yt-dlp where Sift's ffmpeg is: it finds it by the same same-folder rule, ahead of anything on
-    PATH, even on a machine with a different ffmpeg on PATH. So the version it reports has to be the
-    one the manifest pins.
+    Without either it carries on quietly: no engine, or 360p downloads from a site that splits
+    picture and sound. So the fetch reads its debug header, not its exit code.
     """
     exe = VENDOR / "bin" / "yt-dlp.exe"
     if sys.platform != "win32" or not exe.exists():
@@ -391,15 +330,8 @@ def check_wheel(
 ) -> None:
     """A wheel the release installs in place of the published one: there, pinned, and whole.
 
-    Built here by its recipe rather than downloaded, so there is nothing to fetch: a missing or
-    different file stops the release and says how to make it, or with `build_missing` the recipe
-    makes it. The DLLs in it are read as well as its digest, so a wheel rebuilt with the encoder
-    left in cannot be pinned by mistake.
-
-    `by_contents` holds the wheel to those DLLs alone. The digest holds only for the compiler the
-    release machine has, and a CI runner's is another release of it: there the recipe is proved to
-    build a wheel without the encoder, while the release goes on refusing any digest but the pinned
-    one, here and again when it installs the wheel.
+    `by_contents` holds it to its DLLs alone, for a CI compiler whose digest differs from the
+    release machine's.
     """
     path = VENDOR / str(wheel["file"])
     recipe = ROOT / str(wheel["recipe"])
@@ -466,13 +398,7 @@ def fetch_extras(extras: list[dict[str, str]], *, verify_only: bool) -> None:
 def check_built(
     program: dict[str, object], *, verify_only: bool, build_missing: bool = False
 ) -> None:
-    """A program built here from its pinned source: there, and the file its recipe makes.
-
-    Built by the recipe rather than downloaded, so there is nothing to fetch for the program itself:
-    a missing or different file stops the fetch and says how to make it, or with `build_missing`
-    the recipe makes it. The recipe installs only a file with the pinned digest, so a different one
-    here was put here some other way.
-    """
+    """A program built here from its pinned source: there, and the file its recipe makes."""
     path = VENDOR / str(program["file"])
     build = f"python {program['recipe']}"
     if not path.is_file() and build_missing and not verify_only:
@@ -524,32 +450,14 @@ def main() -> int:
     refuse_while_in_use(checking_only=args.verify_only)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     for tool in manifest["tools"]:
-        print(f"\n{tool['name']} {tool['version']}")
-        archive = CACHE / tool["archive"]
-        if args.verify_only:
-            if not archive.exists():
-                print(f"    MISSING from the cache: {archive.name}")
-                continue
-            got = digest(archive)
-            print("    " + ("hash OK" if got == tool["sha256"] else f"HASH MISMATCH ({got})"))
-        else:
-            fetch(tool["url"], archive, tool["sha256"])
-            unpack(archive, tool["extract"])
-            if "extract_tree" in tool:
-                unpack_tree(archive, tool["extract_tree"])
-            for extra in tool.get("extra_files", []):
-                dest = VENDOR / extra["dest"]
-                fetch(extra["url"], dest, extra["sha256"])
-        if tool["name"] == "ffmpeg" and not args.verify_only:
-            check_ffmpeg_configuration(tool["must_have_config"])
+        _one_tool(tool, verify_only=args.verify_only)
 
     # The programs built here: checked, never fetched, and their licence texts beside them.
     for program in manifest.get("built", []):
         print(f"\n{program['name']} {program['version']} (built here)")
         check_built(program, verify_only=args.verify_only, build_missing=args.build_missing)
 
-    # The libraries inside a wheel the release installs: nothing to unpack, only the source that
-    # travels with them.
+    # The libraries inside a wheel the release installs: only their source travels.
     for library in manifest.get("libraries", []):
         print(f"\n{library['name']} {library['version']} (source)")
         fetch_extras(library.get("extra_files", []), verify_only=args.verify_only)
@@ -568,6 +476,28 @@ def main() -> int:
 
     print(f"\nvendor/bin is ready at {VENDOR / 'bin'}")
     return 0
+
+
+def _one_tool(tool: dict[str, Any], *, verify_only: bool) -> None:
+    """One downloaded tool: fetched and unpacked, or with `verify_only` its archive checked."""
+    print(f"\n{tool['name']} {tool['version']}")
+    archive = CACHE / tool["archive"]
+    if verify_only:
+        if not archive.exists():
+            print(f"    MISSING from the cache: {archive.name}")
+            return
+        got = digest(archive)
+        print("    " + ("hash OK" if got == tool["sha256"] else f"HASH MISMATCH ({got})"))
+    else:
+        fetch(tool["url"], archive, tool["sha256"])
+        unpack(archive, tool["extract"])
+        if "extract_tree" in tool:
+            unpack_tree(archive, tool["extract_tree"])
+        for extra in tool.get("extra_files", []):
+            dest = VENDOR / extra["dest"]
+            fetch(extra["url"], dest, extra["sha256"])
+    if tool["name"] == "ffmpeg" and not verify_only:
+        check_ffmpeg_configuration(tool["must_have_config"])
 
 
 if __name__ == "__main__":

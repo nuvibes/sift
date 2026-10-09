@@ -21,9 +21,7 @@ const drawn = new Set(SETTINGS_SECTIONS.map((section) => section.id));
 
 describe('a settings address that moved', () => {
 	it('sends the old sign-ins address to Users', () => {
-		// The id followed its label, so `/settings/accounts` is an older address. A bookmark or an
-		// old link still holds it, and it must open the pane rather than a section nobody has heard
-		// of.
+		// The id followed its label, so `/settings/accounts` is an older address.
 		expect(isKnownSection('accounts')).toBe(true);
 		expect(settledSection('accounts')).toBe('users');
 		expect(labelFor('accounts')).toBe('User Management');
@@ -84,10 +82,8 @@ describe('a settings address that moved', () => {
 	});
 });
 
-/*
- * THE ONE RESOLVER, which every door goes through: a `SettingLink`, a search result, a bookmark and
- * a refresh. Each case below is an address somebody can really arrive on.
- */
+/* THE ONE RESOLVER, which every door goes through: a `SettingLink`, a search result, a bookmark
+ * and a refresh. */
 describe('the resolver behind every settings address', () => {
 	it('keeps an address that is already current exactly as it is', () => {
 		expect(resolveAddress('playback', 'playback.resume_enabled')).toEqual({
@@ -186,9 +182,7 @@ describe('the resolver behind every settings address', () => {
 
 /* The list: four groups, and the ids that are addresses. */
 describe('the sections and their groups', () => {
-	/* THE TREE, pinned whole. Each group is ordered by how often its sections are likely to be
-	   opened, most often first, never alphabetically, so a change to the order is a decision and
-	   shows up here as one. */
+	/* THE TREE, pinned whole. */
 	it('is the tree, in the order each group is opened', () => {
 		expect(
 			SETTINGS_GROUPS.map((group) => [group.heading, group.sections.map((one) => one.label)])
@@ -274,8 +268,8 @@ describe('the sections and their groups', () => {
 	});
 });
 
-/* The title above a pane is drawn by the frame from the section's ONE declaration (the same words
-   and the same icon the list on the left draws), so the two cannot disagree. */
+/* The title above a pane is drawn by the frame from the section's ONE declaration (the same
+   words and the same icon the list on the left draws), so the two cannot disagree. */
 describe('the title a section is drawn under', () => {
 	it('is the declaration the list draws, followed through a moved address', () => {
 		const users = SETTINGS_SECTIONS.find((section) => section.id === 'users');

@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* Where Sift keeps its own files, and where a file saved out of Sift lands: the words, and what
- * somebody can type to find them. Drawn on the Folders screen; neither is a value in the
- * registry.
- *
- * ONE COPY MODULE PER PANE. `StorageFolders.svelte` and the block it draws under them,
- * `SaveFolder.svelte`, draw every word they add from `COPY`, and the search entries are built
- * from the same object.
- */
+ * somebody can type to find them. */
 import type { Searchable } from './search';
 
 export const COPY = {

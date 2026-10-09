@@ -1,27 +1,8 @@
 <script lang="ts">
 	/* DRESSED BY: .name (LabelledRow styles the label its caller writes, as it does for SettingRow). */
 
-	/*
-	 * A field to fill in, drawn as a settings row: its name and help on the left, the box on the
-	 * right, and the press that saves it beside the box.
-	 *
-	 * The field form of `SettingRow`. A form on a settings pane (a new password, a PIN, a guest's
-	 * name, a stash-box's key) is the pane's own rows, so every field is a `LabelledRow`: the same
-	 * name column, the same packing to the pane's right edge, the same line between two rows and
-	 * the same "Copy settings path" beside its name that every other row has. A bare `Field` in a
-	 * pane would stack its label over its box and put the save under the box, on a line of its
-	 * own; `check_settings_fields.js` refuses one.
-	 *
-	 * The press stands BESIDE the box, level with it, on the row of the field it saves (the last
-	 * field of a form). What the box has to say about itself (the error, a strength meter) stands
-	 * under it, in the control column.
-	 *
-	 * A text area is pasted into and is long, so `stacked` puts it under its name, the row's whole
-	 * width.
-	 *
-	 * The wiring is `Field`'s: the control snippet is handed its id, what describes it and whether
-	 * it is refused, so a caller moving from `Field` changes the tag and nothing inside it.
-	 */
+	/* A field to fill in, drawn as a settings row: its name and help on the left, the box on the
+	 * right, and the press that saves it beside the box. */
 	import type { Snippet } from 'svelte';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 
@@ -98,8 +79,8 @@
 		align-items: flex-start;
 	}
 
-	/* The box takes what the press leaves. A control with a width of its own (the PIN's six cells)
-	   keeps it and ends at the column's edge, where every control ends. */
+	/* The box takes what the press leaves. A control with a width of its own (the PIN's six
+	   cells) keeps it and ends at the column's edge, where every control ends. */
 	.box {
 		display: flex;
 		justify-content: var(--row-pack, flex-end);

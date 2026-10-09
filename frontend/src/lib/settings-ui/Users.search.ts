@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* What somebody can find on the Users pane, declared beside the pane that draws it.
- *
- * None of this is in the settings registry: a user is a row in a table, not a preference, so
- * nothing about it reaches the search index by itself. See `search.ts` for why these live next to
- * the component rather than in one list somewhere else. */
+/* What somebody can find on the Users pane, declared beside the pane that draws it. */
 import type { Searchable } from './search';
 
 /** The list of guests, by the words on its heading and in a search result alike. */

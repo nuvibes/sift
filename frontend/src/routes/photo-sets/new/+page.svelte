@@ -1,10 +1,7 @@
 <script lang="ts">
-	/*
-	 * A Photo Set that does not exist yet.
-	 *
-	 * Its record is one field (the notes), written by a route of its own, so this is the same
-	 * two-step every other new screen runs and fails the same way. See `/people/new`.
-	 */
+	/* A Photo Set that does not exist yet. Its record is one field (the notes), written by a
+	 * route of its own, so this is the same two-step every other new screen runs and fails the
+	 * same way. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import { api } from '$lib/api/client';
@@ -27,9 +24,7 @@
 				await api.put<PhotoSet>(`/photo-sets/${made.id}/notes`, { body: { notes } });
 			}
 			// The picture LAST, because it goes on a row and the row was made by the line above:
-			// there is nothing to put a cover on until the create has answered. Inside this try with
-			// the rest of the record, so a picture the server refuses says what every other unfinished
-			// part of the record says and leaves the thing made.
+			// there is nothing to put a cover on until the create has answered.
 			if (cover) {
 				const form = new FormData();
 				form.set('file', cover);

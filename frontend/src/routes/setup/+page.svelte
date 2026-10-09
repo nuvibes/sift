@@ -1,11 +1,5 @@
 <script lang="ts">
-	/*
-	 * First run: create the one admin.
-	 *
-	 * Reachable only while there is no account. Once one exists this screen would be a way for
-	 * whoever reached it first to claim somebody else's instance, so it redirects, and the server
-	 * refuses a second setup regardless, which is what actually prevents it.
-	 */
+	/* First run: create the one admin. Reachable only while there is no account. */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { needsSetup } from '$lib/shell/session.svelte';

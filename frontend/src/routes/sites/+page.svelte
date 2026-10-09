@@ -6,10 +6,7 @@
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { facetParams } from '$lib/components/shell/facet-labels';
 	import { goto } from '$app/navigation';
-	/*
-	 * Sites: where media came from, on the same card and wall as People so the two stay alike.
-	 * Deleting a site takes its usernames with it and moves no file and no person.
-	 */
+	/* Sites: where media came from, on the same card and wall as People so the two stay alike. */
 	import { Selection, TileGesture, VerbMenuItems } from '$lib/components/common';
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
 	import EntitySelectionBar from '$lib/components/entity/EntitySelectionBar.svelte';
@@ -36,8 +33,8 @@
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { thing } from '$lib/components/common/toast-pieces';
 
-	/* Which page, at what size, was last asked for, so a settled screen does not ask for the same
-	   thing twice. See the People wall for why the guard is untracked. */
+	/* Which page, at what size, was last asked for, so a settled screen does not ask for the
+	   same thing twice. */
 	let askedFor = -1;
 	let askedSize = -1;
 	/** ...and under which filter, so a facet going on or off re-asks from the same place. */
@@ -45,15 +42,10 @@
 	/** ...and under which search, so a letter typed re-asks from the first page. */
 	let askedPrefix = '';
 
-	/* What has been typed into the search box, and what the wall was last asked for.
-	 *
-	 * SENT to the list route as its `prefix`, never applied to the rows in hand: this wall is a page
-	 * of a longer list, so filtering what has already arrived would quietly hide every site past the
-	 * page. The People wall's own note says the same about the same mistake.
-	 */
+	/* What has been typed into the search box, and what the wall was last asked for. */
 	let term = $state('');
 	/* The words the wall is searched by live in its address, so the chip on the bar, Back and a
-	   link all say the same thing as the box. See `WallWords`. */
+	   link all say the same thing as the box. */
 	const prefix = $derived(wordsIn(address.url));
 	const words = new WallWords();
 
@@ -68,21 +60,18 @@
 	});
 
 	/* What the bar has filtered this wall to, out of the address: only this noun's facets, never
-	   the order or the page position. A derived STRING beside it, because a derived only propagates
-	   when its value changes and the effect below must not wake on every address change. */
+	   the order or the page position. */
 	const narrowedBy = $derived(facetParams('site', address.url.searchParams));
 	const narrowedKey = $derived(JSON.stringify(narrowedBy));
 
 	/* Whole rows of the window, the same way every other wall pages (see `CardPaging`). */
 	const paging = new CardPaging(SITES_PER_PAGE, 'wall.sites');
 
-	/* The route this wall belongs to, captured once, so a page landing under a row somebody has just
-	   opened can be told from one landing on the wall itself. See `$lib/grid/anchor`. */
+	/* The route this wall belongs to, captured once, so a page landing under a row somebody has
+	   just opened can be told from one landing on the wall itself. */
 	const path = address.url.pathname;
 
-	/* True exactly once: the first settle, which is somebody arriving at a link. After that the
-	   anchor in the address is one WE wrote, for the question being asked at the time. So reading
-	   it again on a new question would start the new one at the old one's position. */
+	/* True exactly once: the first settle, which is somebody arriving at a link. */
 	let arriving = true;
 
 	/* Picking several, the same Selection and the same long press as the wall of files. */
@@ -92,8 +81,7 @@
 	);
 
 	function letGo(event: KeyboardEvent) {
-		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again. It touches no
-		// data and never reaches the server (see `TileGesture.undoKeys`).
+		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again.
 		if (gesture.undoKeys(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -108,12 +96,9 @@
 	});
 
 	$effect(() => {
-		/*
-		 * `loaded` is read, so `forget()` on a vault change fetches again; `loading` is not, since an
-		 * effect watching it would be triggered by its own fetch.
-		 */
-		/* Named so the effect re-runs when the page moves. The page SIZE is read too: a taller window
-		   holds more rows, so a resize is a reason to re-fetch. */
+		/* `loaded` is read, so `forget()` on a vault change fetches again; `loading` is not,
+		 * since an effect watching it would be triggered by its own fetch. */
+		/* Named so the effect re-runs when the page moves. */
 		const wanted = paging.offset;
 		const size = paging.size;
 		const narrowing = narrowedKey;
@@ -131,13 +116,12 @@
 			}
 			const narrowed = askedNarrowing !== narrowing || askedPrefix !== wantedPrefix;
 			if (!stale && !narrowed && askedFor === wanted && askedSize === size) return;
-			/* A different filter is a different list, so the page it was on means nothing in it.
-			   Not on the FIRST ask, where there is no previous filtering to have moved away from. */
+			/* A different filter is a different list, so the page it was on means nothing in it. */
 			const moved = narrowed && askedNarrowing !== '';
 			const at = moved ? 0 : wanted;
 			if (paging.offset !== at) paging.offset = at;
-			/* ...and the stale anchor comes OUT of the address with it, or a link copied from the bar
-			   would carry a position belonging to a question nobody is asking any more. */
+			/* ...and the stale anchor comes OUT of the address with it, or a link copied from
+			   the bar would carry a position belonging to a question nobody is asking any more. */
 			if (moved) {
 				paging.forget();
 				forgetAnchor(address.url, path);
@@ -149,8 +133,7 @@
 			void sites
 				.fill(paging, sites.sort, narrowedBy, wantedPrefix)
 				// Written after the page lands, because turning to an anchor knows the offset it is
-				// going to only once the answer arrives. The offset itself is landed inside `fill`,
-				// with the rows, and its re-run of this effect asks nothing (see `CardPaging.land`).
+				// going to only once the answer arrives.
 				.then(() => rememberAnchor(address.url, path, sites.items[0]?.id, paging.offset));
 		});
 	});
@@ -172,25 +155,15 @@
 	}
 
 	/* Two counts, and they answer different questions: how much of the library came from here,
-	 * and how many PEOPLE it is of. Each is said once. The files are the words under the name, as
-	 * on every wall; the people are the People figure in the row under them, which opens the tab
-	 * they are on, so a second count of people in the words would only repeat it. People rather than
-	 * usernames: a username is a name on a site and a person is who it belongs to, so somebody
-	 * with three here is one.
-	 */
+	 * and how many PEOPLE it is of. */
 	/* No mark of the Site's own in the corner of its card: the card carries the Site's NAME
 	   under the picture, so a logo over a cover somebody chose would say the same thing a second
-	   time.
-
-	   `EntityCard.sites` is for a card about something that is ON several sites (a person, a
-	   Photo Set), where the marks are the only place that fact appears. A Site's own card would
-	   be the one caller for which the prop meant "this thing is itself", which is not the
-	   question the prop asks. */
+	   time. */
 
 	const shown = $derived(sites.items);
 
 	/* What this wall offers the bar. A site is an entity rather than a file, so no funnel and no
-	   tiles to size: an order, and this wall's own sharing filter. See `screen-bar`. */
+	   tiles to size: an order, and this wall's own sharing filter. */
 	const mine = Symbol('sites-wall');
 
 	$effect(() => {
@@ -206,9 +179,9 @@
 			sorts: [...UNIVERSAL_SORTS, ...ENTITY_OPINION_SORTS],
 			sort: sites.sort,
 			onSort: (next) => {
-				/* A new order is a new list, so the page it was on means nothing in it, and neither
-				   does the anchor in the address, which names a row of the list that has just been
-				   replaced. Reset first, then fetch from the top. */
+				/* A new order is a new list, so the page it was on means nothing in it, and
+				   neither does the anchor in the address, which names a row of the list that has
+				   just been replaced. */
 				paging.offset = 0;
 				askedFor = 0;
 				forgetAnchor(address.url, path);
@@ -220,13 +193,7 @@
 
 	$effect(() => () => screenBar.release(mine));
 
-	/*
-	 * Every verb this wall offers, for the bar AND for each card's menu, from the one registry.
-	 *
-	 * No flow is written out here (a rename form, a delete, a share, a reach report, a hide, a
-	 * merge, a tag sheet): they are `wall-verbs.svelte.ts`'s, the same ones the walls on an
-	 * entity's tabs use. See the People wall for the rest.
-	 */
+	/* Every verb this wall offers, for the bar AND for each card's menu, from the one registry. */
 	$effect(() => {
 		if (session.isAdmin) loadEnrichBoxes();
 	});
@@ -267,16 +234,13 @@
 	   from, so the row pressed and the row greyed out cannot disagree. */
 	const enrichment = verbs.enrichment('site');
 
-	/* A selection of files dragged onto a site: they came from there. The same write the
-	   `Add to > Site` verb makes: one call, so a drag and a menu row cannot come to mean two
-	   different things. No file is moved; a username row on that site is what carries it. */
+	/* A selection of files dragged onto a site: they came from there. */
 	async function fileDropped(assetIds: string[], siteId: string) {
 		const site = sites.byId(siteId);
 		const named = site ? thing('site', siteId, site.name) : 'that Site';
 		try {
 			// The PEOPLE store holds this one. Filing a file under a site writes an account row on
-			// it, which is that store's territory. So the call lives there and this reads it
-			// rather than growing a second copy pointed at the same endpoint.
+			// it, which is that store's territory.
 			const done = await people.filedUnder(assetIds, [siteId]);
 			toasts.show(
 				done.changed === 0
@@ -290,8 +254,7 @@
 		}
 	}
 
-	/* And again whenever a share or a restrict moves. See the helper: this list is scoped, so what
-	   belongs in it changes with no import to announce it. */
+	/* And again whenever a share or a restrict moves. */
 	reloadOnLibraryChange(reread);
 </script>
 
@@ -315,15 +278,7 @@
 			: 'No Sites yet.'
 	)}
 >
-	<!--
-		The sentence sits IN the header, beside the title it describes.
-
-		Not a `<p>` in the page's own flow after the grid, which would be outside `PageFrame`
-		entirely: the frame is `block-size: 100%`, so a sibling under it makes the route taller than
-		the window by exactly that paragraph: the wall clipped mid-card, the pager above the fold,
-		and the sentence under the pager looking like something that has come loose. See the note on
-		the People wall for the rest of the reasoning.
-	-->
+	<!-- The sentence sits IN the header, beside the title it describes. -->
 
 	{#snippet pager()}
 		<Pager
@@ -340,9 +295,9 @@
 	{/snippet}
 
 	{#snippet controls()}
-		<!-- The order and the sharing filter are on the shared bar above, with every other
-		     screen's. What this page does is say what it offers; see the publish in the script.
-		     The box and the Add are `WallControls`'s, which is the one shape all five walls wear. -->
+		<!--
+			The order and the sharing filter are on the shared bar above, with every other screen's.
+		-->
 		<WallControls
 			noun="Site"
 			plural="Sites"
@@ -407,8 +362,7 @@
 				onrate={(next) => rate(site, next)}
 			>
 				{#snippet menu()}
-					<!-- The same declared verbs the bar draws, rendered as menu rows. Not written out
-				     again here, which is what stops the two from coming apart. -->
+					<!-- The same declared verbs the bar draws, rendered as menu rows. -->
 					<VerbMenuItems
 						ids={targetIds(site.id)}
 						subjectId={site.id}

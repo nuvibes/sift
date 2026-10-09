@@ -1,11 +1,7 @@
 <script lang="ts">
-	/*
-	 * Insights: which recaps Sift creates, a switch for each period, and the way to the two
-	 * settings Insights leans on that live elsewhere (the history it counts from, and the folder a
-	 * saved card goes to).
-	 *
-	 * The switches are registry rows, drawn from the server's declarations of them.
-	 */
+	/* Insights: which recaps Sift creates, a switch for each period, and the way to the two
+	 * settings Insights leans on that live elsewhere (the history it counts from, and the folder
+	 * a saved card goes to). */
 	import { onMount } from 'svelte';
 	import { LabelledRow, SettingLink } from '$lib/components/common';
 	import SettingGroup from './SettingGroup.svelte';

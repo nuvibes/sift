@@ -1,5 +1,5 @@
 /* Settings > Sites and Tunnels > Swap tunnels: the tunnel a join dials through, said by name and
-   opened on the swap screen. Whether a tunnel can host is said once, on its own row in Tunnels. */
+   opened on the swap screen. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import type { SettingSection } from '$lib/settings-ui/settings';

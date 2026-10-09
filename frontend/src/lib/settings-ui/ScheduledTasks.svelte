@@ -1,43 +1,6 @@
 <script lang="ts">
-	/*
-	 * Settings > Tasks and Activity > Tasks: WHEN every piece of work Sift does over the library runs.
-	 *
-	 * ## What is on it
-	 *
-	 * Quiet hours at the top: one row saying the range, the install's one clock, with its two
-	 * times and the keep-awake switch on its own page behind Edit. Then Import tasks (`Importing`:
-	 * Scan, Generate and Identify, each with its Edit, every other task folded under them as Other
-	 * tasks, then Folder-specific import settings), and Activity, which the screen hands in. Each
-	 * task is one row: its When (as files arrive or on a schedule, during quiet hours, or only when
-	 * pressed), its press, how its last run ended, when the next one is and how much is waiting.
-	 *
-	 * Presses live here and nowhere else in Settings: the panes that own a task draw its row
-	 * without one. Upkeep nobody times (the prunes, the update check) is not on the list at all.
-	 *
-	 * ## One row, two doors
-	 *
-	 * The row is `TaskWhen`, and the section that OWNS the task draws the very same component
-	 * beside the thing it does: Faces beside recognition, Music beside its lookup. The owning
-	 * section decides WHAT the task does; this is the overview of WHEN every task runs. One
-	 * setting, one component, two doors, so the two cannot disagree, because there is only one of
-	 * each.
-	 *
-	 * ## Every setting filed here is drawn here
-	 *
-	 * The pane reads its whole section and draws each entry exactly once: a task's When as that
-	 * task's row, a task's own settings under its row (how often the backup runs, how long
-	 * quarantined files are kept), quiet hours at the top, and anything else under "Other settings"
-	 * at the end. A setting filed here that nothing drew would be registered, stored, acted on and
-	 * on no screen anybody could open.
-	 *
-	 * A task's When is the one exception: it is drawn by its task's row or not at all. The server
-	 * leaves upkeep nobody times out of the list, and its When stays filed here; drawn as a plain
-	 * row it would be the control the list deliberately does not offer.
-	 *
-	 * No table of recent runs: History is the one screen that answers "what ran", and it keeps a
-	 * task's runs for longer than a job row's week. The row keeps the one fact that belongs beside
-	 * the choice: how the LAST run ended.
-	 */
+	/* Settings > Tasks and Activity > Tasks: WHEN every piece of work Sift does over the library
+	 * runs. */
 	import { onMount, type Snippet } from 'svelte';
 	import { Button, LabelledRow, Problem, Skeleton } from '$lib/components/common';
 	import { STAGES, quietRange, quietTime, taskList, type TaskView } from '$lib/jobs/tasks.svelte';
@@ -77,9 +40,8 @@
 			...taskList.tasks.flatMap((one) => [one.when_key, ...one.setting_keys])
 		])
 	);
-	/* A When (`tasks.<id>.when`, the one shape the server gives every task's When) is its row's to
-	   draw. And nothing is unclaimed until the list has come back: before it, every task's settings
-	   would be drawn here for a moment and a link to one would ring the row that then vanished. */
+	/* A When (`tasks.<id>.when`, the one shape the server gives every task's When) is its row's
+	   to draw. */
 	const WHEN_KEY = /^tasks\.[^.]+\.when$/;
 	const unclaimed = $derived(
 		taskList.view === null
@@ -87,8 +49,7 @@
 			: declared.filter((entry) => !claimed.has(entry.key) && !WHEN_KEY.test(entry.key))
 	);
 
-	/* The three stages are Import tasks; everything else is folded under them. Read from the list
-	   the server sends, so a task it leaves out is on neither. */
+	/* The three stages are Import tasks; everything else is folded under them. */
 	const others = $derived(
 		taskList.tasks.filter((one) => !(STAGES as readonly string[]).includes(one.id))
 	);
@@ -100,8 +61,7 @@
 		return quiet ? quietRange(quiet) : '';
 	});
 
-	/* The two times and the keep-awake switch are the quiet-hours row's own page. A link naming any
-	   of them opens it first, the way every sub-page answers a deep link. */
+	/* The two times and the keep-awake switch are the quiet-hours row's own page. */
 	function openQuiet(): void {
 		drilldown.open(COPY.quiet.heading, quietPage, COPY.quiet.editShort);
 	}
@@ -123,8 +83,7 @@
 		})
 	);
 
-	/* Where quiet hours stand this moment, in one sentence. The times are the two the setting
-	   holds, in the shape the row's range says them, so the row never says one time two ways. */
+	/* Where quiet hours stand this moment, in one sentence. */
 	const quietNow = $derived.by(() => {
 		const quiet = taskList.view?.quiet_hours;
 		if (!quiet) return null;
@@ -161,10 +120,7 @@
 	</SettingGroup>
 {/snippet}
 
-<!-- One task's row and the settings that decide what it does, each drawn once. Only those that
-     mean something under its When now, as the server says (`drawn_keys`): How often is nothing
-     while only a press runs the backup, and its time of day nothing during quiet hours. A row hidden
-     this way is still claimed above, so it never falls through to "Other settings". -->
+<!-- One task's row and the settings that decide what it does, each drawn once. -->
 {#snippet taskRows(task: TaskView)}
 	<TaskWhen task={task.id} />
 	{@render settingRows(task)}
@@ -179,8 +135,7 @@
 	{/each}
 {/snippet}
 
-<!-- Folded under the stages, which are what most people come here for. A deep link to a row in
-     here opens it, as it opens any closed disclosure. -->
+<!-- Folded under the stages, which are what most people come here for. -->
 {#snippet otherTasks()}
 	{#if others.length > 0}
 		<Fold summary={COPY.others.name} id="tasks.others">

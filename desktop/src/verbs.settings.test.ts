@@ -1,10 +1,6 @@
-/* The verbs about this copy's own settings and files: where a saved file lands, the backup, setting
- * the copy up, the shell's own log, the browser a link opens in, the two folders, closing and
- * starting with Windows, the libraries opened, client mode, and applying an update.
- *
- * The stand-ins below are the ones `verbs.test.ts` explains, one per module that would otherwise
- * reach the real machine.
- */
+/* The verbs about this copy's own settings and files: where a saved file lands, the backup,
+ * setting the copy up, the shell's own log, the browser a link opens in, the two folders,
+ * closing and starting with Windows, the libraries opened, client mode, and applying an update. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -166,12 +162,7 @@ afterEach(() => {
 	fs.rmSync(temp, { recursive: true, force: true });
 });
 
-/* Where a saved file lands.
- *
- * Two verbs and not one, because the screen draws what the folder currently IS on every visit and
- * only asks for the picker when somebody presses Change: a read that opened a dialog would be a
- * dialog nobody asked for.
- */
+/* Where a saved file lands. */
 describe('where a saved file lands', () => {
 	let chosen: string | null;
 
@@ -193,9 +184,8 @@ describe('where a saved file lands', () => {
 	beforeEach(armed);
 
 	it('says both where files land and whether that was chosen', async () => {
-		/* "Downloads" and "the folder I chose that happens to be Downloads" are different states and
-		   only one of them follows the machine if it is ever moved. The screen says which, so both
-		   have to come back. */
+		/* "Downloads" and "the folder I chose that happens to be Downloads" are different states
+		   and only one of them follows the machine if it is ever moved. */
 		expect(await ipcRenderer.invoke(GET_DOWNLOAD_DIR)).toEqual({
 			path: 'C:\\Users\\somebody\\Downloads',
 			chosen: false
@@ -203,9 +193,8 @@ describe('where a saved file lands', () => {
 	});
 
 	it('takes a folder only from the operating system-s own picker', async () => {
-		/* The security property, and the reason there is no verb that takes a path: a page naming a
-		   folder to write into would be a page choosing where this application writes. The dialog
-		   runs outside the page, and what comes back from it is the whole of the grant. */
+		/* The security property, and the reason there is no verb that takes a path: a page
+		   naming a folder to write into would be a page choosing where this application writes. */
 		folderAnswers.push(['D:\\Saved']);
 
 		expect(await ipcRenderer.invoke(SET_DOWNLOAD_DIR, true)).toEqual({
@@ -248,9 +237,8 @@ describe('where a saved file lands', () => {
 	});
 
 	it('answers nothing at all on a shell that has no folder to give', async () => {
-		/* Null where there is no shell to ask (the tests of everything else here, and any
-		   build where the setting is not wired). The page draws the server's own answer then,
-		   rather than a folder this machine has invented. */
+		/* Null where there is no shell to ask (the tests of everything else here, and any build
+		   where the setting is not wired). */
 		resetElectronStub();
 		registerVerbs(localAt(TRUSTED));
 
@@ -259,19 +247,9 @@ describe('where a saved file lands', () => {
 	});
 });
 
-/*
- * The two questions asked before a backend exists.
- *
- * What the shell does with an answer (write the setting, decide whether there is another
- * question, start the backend, load the library) belongs to `main`, for the reason moving the
- * storage folder does: only the process supervising the backend can carry that sequence out. What
- * is tested here is the door: the argument is checked, an untrusted page gets nothing, and a shell
- * with no setup wired answers rather than throwing.
- */
+/* The two questions asked before a backend exists. */
 /* The Backup pane's Show in folder: a backup Sift saved on this computer, shown in its folder in
- * the system's own file manager. A path crosses from the page, so the door is what is tested: only
- * a whole path to a Sift backup that is on this disk, only for this computer's own Sift, and only
- * ever shown, never opened. */
+ * the system's own file manager. */
 describe('showing a saved backup in its folder', () => {
 	const NAME = 'sift-backup-0123456789ab-20260720-141500-0400-1.2.3-saved.zip';
 
@@ -345,11 +323,8 @@ describe('setting this copy up', () => {
 		expect(mode).toHaveBeenCalledWith('client');
 	});
 
-	/*
-	 * The argument decides whether a backend is started on this machine at all, and it arrives from
-	 * a page. Checked against the two names rather than cast: anything else is not a third mode, it
-	 * is a value that should never have reached the shell.
-	 */
+	/* The argument decides whether a backend is started on this machine at all, and it arrives
+	 * from a page. */
 	it('and refuses anything that is not one of the two modes', async () => {
 		const { mode } = withSetup();
 
@@ -373,8 +348,8 @@ describe('setting this copy up', () => {
 		});
 	});
 
-	/* `pick` is what decides whether the machine's own folder dialog opens, so it has to arrive as
-	   a real boolean rather than as anything truthy a page happened to send. */
+	/* `pick` is what decides whether the machine's own folder dialog opens, so it has to arrive
+	   as a real boolean rather than as anything truthy a page happened to send. */
 	it('opens the machine own dialog only when asked to, and never on a stray value', async () => {
 		const { library } = withSetup();
 
@@ -419,9 +394,9 @@ describe('setting this copy up', () => {
 		expect(library).not.toHaveBeenCalled();
 	});
 
-	/* Registered on every shell, not only a fresh one: the window can be sent back to these screens
-	   by forgetting the mode, and a handler that appeared only on a first run would be one nothing
-	   ever exercises. Null setup answers rather than throwing. */
+	/* Registered on every shell, not only a fresh one: the window can be sent back to these
+	   screens by forgetting the mode, and a handler that appeared only on a first run would be
+	   one nothing ever exercises. */
 	it('and answers rather than throwing on a shell with no setup wired', async () => {
 		resetElectronStub();
 		registerVerbs(localAt(TRUSTED));
@@ -438,15 +413,9 @@ describe('setting this copy up', () => {
 	});
 });
 
-/*
- * The end of the shell's own log.
- *
- * A count in and nothing else (no path, no offset, no filter), so the whole of what a page can
- * influence is how many lines it is given. The clamp is what makes that safe to say: the file it
- * reads is decided by paths.ts, and a number from a page cannot turn a tail into a whole-file read.
- */
-/* The library's Detail setting, handed to the shell's own log. A true or false and nothing else,
-   and only from a page that is this machine's Sift. */
+/* The end of the shell's own log. A count in and nothing else (no path, no offset, no filter),
+ * so the whole of what a page can influence is how many lines it is given. */
+/* The library's Detail setting, handed to the shell's own log. */
 describe('the detail the shell own log writes', () => {
 	beforeEach(() => {
 		resetElectronStub();
@@ -533,14 +502,7 @@ describe('the end of the shell own log', () => {
 	});
 });
 
-/*
- * Which browser a link opens in.
- *
- * THE PAGE MAY ONLY NAME SOMETHING FROM THE LIST, and that is the whole of what makes this safe:
- * what is being chosen is a program this application will later START, so an id that is not one of
- * the machine's own installed browsers is refused rather than sanitised. There is nothing to
- * sanitise: either Windows knows it as a browser or it is not one.
- */
+/* Which browser a link opens in. */
 describe('which browser a link opens in', () => {
 	let chosen: string | null;
 
@@ -574,8 +536,8 @@ describe('which browser a link opens in', () => {
 		expect(chosen).toBe(BROWSERS[1]?.id);
 	});
 
-	/* The one that matters. A verb that took any string would be a verb for "run this executable",
-	   reachable by anything that got code onto the page. */
+	/* The one that matters. A verb that took any string would be a verb for "run this
+	   executable", reachable by anything that got code onto the page. */
 	it('refuses a path that is not one of the machine own browsers', async () => {
 		await ipcRenderer.invoke(SET_BROWSER, BROWSERS[0]?.id);
 
@@ -628,13 +590,7 @@ describe('which browser a link opens in', () => {
 	});
 });
 
-/*
- * Sift's own two folders, and moving them somewhere else.
- *
- * The path never crosses the bridge in that direction: a page naming a folder to move a library
- * INTO would be a page choosing where this application writes. Only the person's answer to the
- * operating system's own dialog does.
- */
+/* Sift's own two folders, and moving them somewhere else. */
 describe('where Sift keeps its own two folders', () => {
 	const report = {
 		dataDir: 'C:\\Sift\\data',
@@ -687,8 +643,8 @@ describe('where Sift keeps its own two folders', () => {
 		expect(moves).toEqual(['E:\\Sift']);
 	});
 
-	/* A copy across drives takes minutes, and a screen with nothing on it for minutes is a screen
-	   that looks stuck. The progress is sent as it goes rather than returned at the end. */
+	/* A copy across drives takes minutes, and a screen with nothing on it for minutes is a
+	   screen that looks stuck. */
 	it('tells the page how far along the copy is, as it goes', async () => {
 		folderAnswers.push(['E:\\Sift']);
 
@@ -711,8 +667,8 @@ describe('where Sift keeps its own two folders', () => {
 		expect(sentToPage).toEqual([]);
 	});
 
-	/* Closing the picker is not a failure and must not be reported as one: `reason` null leaves the
-	   screen exactly as it was, where a sentence would put an error on it. */
+	/* Closing the picker is not a failure and must not be reported as one: `reason` null leaves
+	   the screen exactly as it was, where a sentence would put an error on it. */
 	it('treats a closed picker as no answer rather than as a failure', async () => {
 		folderAnswers.push(null);
 
@@ -735,8 +691,7 @@ describe('where Sift keeps its own two folders', () => {
 		expect(folderAnswers.length).toBe(1);
 	});
 
-	/* Restart answers before it restarts: the page that asked goes down with the application. A page
-	   from another computer never gets it, and a shell with nothing to restart says so. */
+	/* Restart answers before it restarts: the page that asked goes down with the application. */
 	it('restarts for a local page, once, and says it will', async () => {
 		const restart = vi.fn(async () => {});
 		resetElectronStub();
@@ -759,8 +714,7 @@ describe('where Sift keeps its own two folders', () => {
 		expect(restart).not.toHaveBeenCalled();
 	});
 
-	/* Forgetting is a write and nothing else: no backend to stop, nothing to move. What it costs is
-	   the next launch asking the first-run question again, which is what it is for. */
+	/* Forgetting is a write and nothing else: no backend to stop, nothing to move. */
 	it('forgets which way this copy was set up, and says it did', async () => {
 		expect(await ipcRenderer.invoke(FORGET_MODE)).toBe(true);
 		expect(forget).toHaveBeenCalledOnce();
@@ -786,12 +740,7 @@ describe('where Sift keeps its own two folders', () => {
 	});
 });
 
-/*
- * Whether closing the window leaves Sift running.
- *
- * Null where there is no shell to ask (a browser, and every test of something else), and the
- * screen then draws nothing rather than a switch that lies about what the close button does.
- */
+/* Whether closing the window leaves Sift running. */
 describe('whether closing the window leaves Sift running', () => {
 	let keeping: boolean;
 
@@ -847,13 +796,7 @@ describe('whether closing the window leaves Sift running', () => {
 	});
 });
 
-/*
- * Whether Sift starts when this person signs in to Windows.
- *
- * What these are about is the VERB: who may call it, that only a literal yes turns it on, and that
- * the answer is the shell's read of Windows rather than the word that was sent. The registry itself
- * is startup.test.ts's business, so the switch here is a stand-in.
- */
+/* Whether Sift starts when this person signs in to Windows. */
 describe('whether Sift starts with Windows', () => {
 	let windowsSays: boolean | null;
 	let asked: boolean[];
@@ -884,8 +827,8 @@ describe('whether Sift starts with Windows', () => {
 		expect(asked).toEqual([true]);
 	});
 
-	/* Checked against `true` rather than cast: it adds a program to every sign-in, and it arrives
-	   from a page. */
+	/* Checked against `true` rather than cast: it adds a program to every sign-in, and it
+	   arrives from a page. */
 	it('adds nothing to sign-in for anything that is not yes', async () => {
 		await ipcRenderer.invoke(SET_START_WITH_WINDOWS, 'yes');
 		await ipcRenderer.invoke(SET_START_WITH_WINDOWS, 1);
@@ -917,14 +860,7 @@ describe('whether Sift starts with Windows', () => {
 	});
 });
 
-/*
- * The libraries this copy has opened, and switching between them.
- *
- * A FOLDER ALREADY ON THE LIST is the whole of what makes opening one safe to offer from a page:
- * the most that can be asked for is a library the person themselves granted through the picker at
- * some point. A verb that took an arbitrary path would be a verb for pointing this application's
- * backend at any folder on the machine.
- */
+/* The libraries this copy has opened, and switching between them. */
 describe('the libraries this copy has opened', () => {
 	const list = {
 		current: 'C:\\Sift\\data',
@@ -979,9 +915,8 @@ describe('the libraries this copy has opened', () => {
 		expect(book.open).toHaveBeenCalledWith('E:\\Spare\\data');
 	});
 
-	/* The shape is checked here; whether the folder is one this copy has opened is checked behind
-	   the door, where the list lives. Neither check is the other one, and an empty string reaching
-	   the backend as a data folder is the one that would be silent. */
+	/* The shape is checked here; whether the folder is one this copy has opened is checked
+	   behind the door, where the list lives. */
 	it('refuses anything that is not a folder name, and asks the book nothing', async () => {
 		expect(await ipcRenderer.invoke(OPEN_LIBRARY, '')).toEqual({
 			ok: false,
@@ -994,8 +929,8 @@ describe('the libraries this copy has opened', () => {
 		expect(book.open).not.toHaveBeenCalled();
 	});
 
-	/* Adding one takes no argument at all: the picker is the grant, so there is no path for a page
-	   to name. */
+	/* Adding one takes no argument at all: the picker is the grant, so there is no path for a
+	   page to name. */
 	it('adds one through the machine own picker, with nothing from the page', async () => {
 		expect(await ipcRenderer.invoke(ADD_LIBRARY, 'C:\\Windows')).toEqual({
 			ok: true,
@@ -1052,13 +987,7 @@ describe('the libraries this copy has opened', () => {
 	});
 });
 
-/*
- * The address client mode was told, and the sentence that comes back when it does not answer.
- *
- * A SENTENCE rather than a code, because the side that knows what went wrong is this one: it
- * normalised the address, tried to reach it, and saw what came back. A code would mean the screen
- * keeping its own list of failures in step with a list here: two lists that must agree.
- */
+/* The address client mode was told, and the sentence that comes back when it does not answer. */
 describe('the address client mode was told', () => {
 	const book = {
 		remember: vi.fn(async () => null),
@@ -1113,13 +1042,7 @@ describe('the address client mode was told', () => {
 	});
 });
 
-/*
- * Applying an update.
- *
- * NO ARGUMENTS, and that is the whole design of the verb. The page can say "go" and nothing else;
- * the shell reads the feed it was given, checks the signature and launches. A verb that took an
- * address would be a verb for "download this and run it".
- */
+/* Applying an update. NO ARGUMENTS, and that is the whole design of the verb. */
 describe('applying an update', () => {
 	const stopForUpdate = vi.fn(async () => {});
 
@@ -1162,9 +1085,8 @@ describe('applying an update', () => {
 		expect(vi.mocked(applyUpdate).mock.calls[0]?.[0]).toBe(DEFAULT_FEED_URL);
 	});
 
-	/* The backend has the library open, and an installer cannot replace files a running process is
-	   holding. Stopping it is the shell's own business and happens before the launch, never from
-	   the page. */
+	/* The backend has the library open, and an installer cannot replace files a running process
+	   is holding. */
 	it('stops the backend before the installer is launched', async () => {
 		armed(null);
 
@@ -1208,13 +1130,7 @@ describe('applying an update', () => {
 	});
 });
 
-/*
- * The way back through the first-run questions.
- *
- * There is no step counter and no history to pop: which screen shows is DERIVED from which answers
- * exist, so going back is a matter of removing the answer that led here. The verb is the same rule
- * as going forwards, which is why it cannot disagree with itself.
- */
+/* The way back through the first-run questions. */
 describe('the way back through the first-run questions', () => {
 	const back = vi.fn(async () => ({ ok: true, refusal: null }));
 

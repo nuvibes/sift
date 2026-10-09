@@ -1,27 +1,5 @@
 <script lang="ts">
-	/*
-	 * Adding a folder to the library: the button, and the dialog behind it.
-	 *
-	 * ONE component for every place a folder is added: the library panel in Settings, and the
-	 * empty Browse wall of an install that has no folders yet, which would otherwise land on
-	 * "Nothing here yet. Add some files" with no way to add any short of finding Settings. A second
-	 * copy of this flow would be two places where handing a folder over and adding it are kept in
-	 * step, and the grant half is the one a copy forgets.
-	 *
-	 * The instances are handed in rather than made here, because the screen drawing this owns them:
-	 * the library list has to show the folder the moment it is added (`library.load` runs inside
-	 * `addRoot`), and the Settings panel draws the granted list and the picker's state beside this.
-	 *
-	 * ONE gesture on the machine itself, two only where it has to be. On the desktop the operating
-	 * system's own dialog is the consent as well as the choice, so the folder is handed over and
-	 * added in one go. A browser cannot open that dialog (which is the whole security property of
-	 * it), so there the picker walks what the server may show, and the add is a second press.
-	 *
-	 * `scan` says whether the folder is read immediately. Settings reads it (somebody adding a
-	 * folder to a working library expects it to fill); the empty Browse wall does not, because what
-	 * follows there is the Scan Now offer with its warning about the hours a first read takes:
-	 * the same order first run keeps, see `NewRoot.scan` on the server.
-	 */
+	/* Adding a folder to the library: the button, and the dialog behind it. */
 	import { Button, Problem, Scroller } from '$lib/components/common';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import FolderPicker from '$lib/library/FolderPicker.svelte';
@@ -32,13 +10,8 @@
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 
-	/*
-	 * `offer` is where it stands. In Settings it is one row of a pane: the name and its sentence on
-	 * the left, the button at the far edge. On an empty wall it is the wall's one act, under the
-	 * glyph and the sentence that `Empty` centres, so it is one centred column too: the name, the
-	 * sentence, the button. A pane's two columns there stretch across the wall and put the button
-	 * a screen's width from the words it answers.
-	 */
+	/* `offer` is where it stands. In Settings it is one row of a pane: the name and its sentence
+	 * on the left, the button at the far edge. */
 	let {
 		library,
 		grants,
@@ -59,8 +32,7 @@
 	let addOpen = $state(false);
 	let addError = $state<string | undefined>(undefined);
 
-	/* Add pressed while the picker stands on a list rather than in a folder. The warning waits for
-	   that press: shown from the start it would read as a fault with a dialog nobody had used yet. */
+	/* Add pressed while the picker stands on a list rather than in a folder. */
 	let pressedAtTop = $state(false);
 	const warnAtTop = $derived(pressedAtTop && picker.atTopLevel);
 
@@ -87,13 +59,8 @@
 		addOpen = true;
 	}
 
-	/*
-	 * The desktop's one gesture.
-	 *
-	 * `scan` goes to `addRoot` as the screen decided it: `false` here is a folder added and NOT
-	 * read, so it must never be passed for any other meaning. The success sentence is `addRoot`'s
-	 * own: it knows which of the two happened.
-	 */
+	/* The desktop's one gesture. `scan` goes to `addRoot` as the screen decided it: `false` here
+	 * is a folder added and NOT read, so it must never be passed for any other meaning. */
 	async function addByDialog() {
 		const chosen = await bridge.chooseFolder();
 		// Closing the dialog without choosing is not an error and must not draw one.
@@ -123,23 +90,17 @@
 
 		/* A folder picked off the machine has never been handed over, so it is handed over here,
 		   silently, because the grant and the add read as one job to the person doing them, and
-		   `ensure` says nothing when the folder was already granted or sits inside one that was.
-		   Anything genuinely wrong with the folder is raised again by `addRoot` below, in a sentence
-		   about the thing they actually asked for. */
+		   `ensure` says nothing when the folder was already granted or sits inside one that was. */
 		if (picker.scope === 'machine') await grants.ensure(chosen.path);
 
 		const refusal = await library.addRoot(chosen.path, scan);
 		if (refusal) {
-			// Under the picker, not in a toast that slides away. Every refusal here is about the
-			// folder they just chose, and it is the thing they have to change.
+			// Under the picker, not in a toast that slides away.
 			addError = refusal;
 			return;
 		}
 		addOpen = false;
-		// Back to the top. The folder just added is now a library rather than somewhere to pick, and
-		// leaving the picker standing inside it invites adding it again, which is refused, in a
-		// sentence about overlapping folders that would be baffling to somebody who thought they
-		// were starting over.
+		// Back to the top.
 		await picker.open();
 	}
 </script>
@@ -164,17 +125,15 @@
 
 <Modal bind:open={addOpen} title="Add a folder" sheetClass="add-sheet" scrolls={false}>
 	<!--
-		The picker IS the dialog, rather than a box inside a form: the thing you came here to do
-		(point at a folder) is the largest part of the screen, not the smallest part under a name
-		field and two paragraphs.
+		The picker IS the dialog, rather than a box inside a form: the thing you came here to do (point
+		at a folder) is the largest part of the screen, not the smallest part under a name field and
+		two paragraphs.
 	-->
 	<form onsubmit={add} class="add">
 		<Scroller viewportClass="add-scroll">
 			<div class="add-body">
 				<div class="field">
-					<!-- What the list is, with the way to the other list beside it. The way across is
-					     for a browser only: in the application the machine's own dialog is right there
-					     and is the consent as well as the choice, so this dialog is never opened. -->
+					<!-- What the list is, with the way to the other list beside it. -->
 					<div class="list-head">
 						<span class="label" id="picker-label">{listName}</span>
 						{#if !grants.canAdd}
@@ -212,10 +171,10 @@
 					</p>
 				{/if}
 
-				<!-- Only where the folder cannot be written, and only as a fact: there is no switch to
-				     turn on. Handing Sift the folder is the permission; a delete or a move
-				     there asks at the moment and the filesystem answers. A folder Sift cannot write in
-				     is still a perfectly good library to read. -->
+				<!--
+					Only where the folder cannot be written, and only as a fact: there is no switch to
+					turn on.
+				-->
 				{#if picker.selected && !picker.writable}
 					<p class="quiet">
 						{picker.readOnlyMount
@@ -236,8 +195,8 @@
 </Modal>
 
 <style>
-	/* The wall's act: one column, centred under the sentence above it, the way `Empty` stacks its
-	   own glyph and sentence. The name a step up from the sentence, the button a step below it. */
+	/* The wall's act: one column, centred under the sentence above it, the way `Empty` stacks
+	   its own glyph and sentence. */
 	.offer {
 		display: flex;
 		flex-direction: column;
@@ -259,18 +218,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/*
-	 * One size, whatever is inside it.
-	 *
-	 * Three things in here change height as somebody clicks through folders: the list is shorter in
-	 * a folder holding three things than in one holding thirty, the warning about the top of the
-	 * media area comes and goes, and the line under the switch is one line or three depending on
-	 * what the folder allows. Sized by its content, the sheet would grow and shrink under the pointer
-	 * on every click. Held at one height instead, with anything that does not fit scrolling inside it.
-	 *
-	 * Global because `Modal` draws this element: a scoped rule carries a marker stamped onto what
-	 * THIS file renders, and would match nothing here.
-	 */
+	/* One size, whatever is inside it. */
 	:global(.add-sheet) {
 		display: flex;
 		flex-direction: column;
@@ -292,8 +240,7 @@
 		min-block-size: 0;
 	}
 
-	/* The same four parts a Field draws, for a widget a Field cannot label. Kept in step with it
-	   by using the same tokens rather than by copying its numbers. */
+	/* The same four parts a Field draws, for a widget a Field cannot label. */
 	.field {
 		display: flex;
 		flex-direction: column;
@@ -334,14 +281,10 @@
 	}
 
 	/* The picker's own list height is declared ONCE, by the picker itself: `.picker
-	   :global(.scroll-root)` in `FolderPicker.svelte`. Nothing here sets it: the picker renders
-	   `ul.entries` inside `.picker`, and a rule here aimed at anything else would match nothing.
-	   And Svelte cannot warn about a dead `:global()` selector. Said here so the next person
-	   looking for where the picker's height is set does not look in this file for it. */
+	   :global(.scroll-root)` in `FolderPicker.svelte`. */
 
 	/* The refusal that fires at the moment of picking, rather than prose standing above the
-	   picker that nobody reads until it is too late. Its own rule, so the one sentence in this
-	   dialog that says STOP is not in the same ink as the help text under the switch. */
+	   picker that nobody reads until it is too late. */
 	.warn {
 		margin: 0;
 		color: var(--sift-warn);
@@ -349,8 +292,8 @@
 	}
 
 	/* The row of answers at the foot of the add dialog: apart from the scrolling body above
-	   them, and against the far end so the primary is where it is in every other sheet, not
-	   two buttons hard against the left edge under an unseparated body. */
+	   them, and against the far end so the primary is where it is in every other sheet, not two
+	   buttons hard against the left edge under an unseparated body. */
 	.dialog-actions {
 		display: flex;
 		justify-content: flex-end;

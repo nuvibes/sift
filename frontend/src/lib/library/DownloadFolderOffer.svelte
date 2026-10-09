@@ -1,33 +1,6 @@
 <script lang="ts">
 	/* LIVE: nothing moves it (the stored default, read at the moment an offer is weighed and written back immediately) */
-	/*
-	 * Where downloads go, proposed the moment a library gains its first folder.
-	 *
-	 * ## Why here and not on the setup screen
-	 *
-	 * The setup screen runs before the library has any folder at all: a folder is added only by
-	 * somebody choosing one (`AddFolder`), and first run does not ask for one. So the one screen
-	 * that can propose "a Sift Downloads folder inside your library" is the one where there is first a
-	 * library to put it in: the empty Browse wall, just after its folder was added, and the Folders
-	 * screen in Settings, where a first folder can be added too. Proposing the
-	 * device's own Downloads folder on the setup screen instead would mean adding ALL of it to the
-	 * library, and take away the wall's offer to add a real one.
-	 *
-	 * ## It proposes and never picks
-	 *
-	 * With no download folder set, each download asks where it goes; that stays true until somebody
-	 * answers here or in Settings. Nothing is written until "Create this folder" is pressed.
-	 * "Choose another" goes to the one control for this setting, in Settings, Downloads. "Skip"
-	 * closes the offer and leaves it "Not set, so each download asks". It is shown once per first
-	 * folder: a library that already had a folder when the screen opened is not asked again.
-	 *
-	 * ## It writes the whole default row, and carries the two answers it did not change
-	 *
-	 * The folder is one of three answers stored in one row with the naming rule and the tool, and a
-	 * write that names one sends the others as empty. So the row is read at the moment of the write
-	 * and sent back whole: the rule `NamingTemplate.svelte`'s header records, and this is the
-	 * third writer of that row it lists.
-	 */
+	/* Where downloads go, proposed the moment a library gains its first folder. */
 	import { api, ApiError } from '$lib/api/client';
 	import { Button, Panel, Problem } from '$lib/components/common';
 	import PathText from '$lib/components/PathText.svelte';
@@ -42,8 +15,7 @@
 
 	/** The scope everything follows unless a Site is given its own. The server's word. */
 	const EVERYTHING = '*default*';
-	/** The folder proposed inside the library's first folder. Named for Sift, so it is never taken
-	 *  for the device's own Downloads folder. */
+	/** The folder proposed inside the library's first folder. */
 	const PROPOSED = 'Sift Downloads';
 
 	let { library }: { library: Library } = $props();
@@ -53,8 +25,8 @@
 	let busy = $state(false);
 	let problem = $state<string | null>(null);
 
-	/* Plain values rather than state: they record what has been SEEN, and reading them inside the
-	   effect below must not make it run again. */
+	/* Plain values rather than state: they record what has been SEEN, and reading them inside
+	   the effect below must not make it run again. */
 	let sawNoFolders = false;
 	let considered = false;
 

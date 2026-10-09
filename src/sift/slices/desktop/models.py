@@ -20,11 +20,7 @@ class ShellSharing(Wire):
 
 
 class DesktopView(Wire):
-    """The computer running Sift, as the desktop app there describes it.
-
-    `has_app` false is a backend no app started (run by hand, in a container): there is nothing to
-    ask, and every other field is null rather than a switch drawn off.
-    """
+    """The computer running Sift, as its desktop app describes it; all null with no app."""
 
     has_app: bool
     machine: str | None
@@ -59,20 +55,14 @@ class SharingChange(Wire):
 
 
 class ActTaken(Wire):
-    """What the app there said to an act that restarts Sift on that computer.
-
-    `ok` is taken on: the app answered first, and Sift restarts there a moment later, so the page
-    waits for a new run of the server. Otherwise `refusal` says why, in the app's own words, and
-    nothing stopped.
-    """
+    """What the app said to an act that restarts Sift there: `ok`, or the `refusal` in its words."""
 
     ok: bool
     refusal: str | None
 
 
 class StorageView(Wire):
-    """Where Sift keeps its two folders on the computer running it, and what the last move asked
-    from another computer came to (null: none was asked since the app started)."""
+    """Where Sift keeps its two folders there, and what the last move came to (null: none)."""
 
     data_dir: str
     cache_dir: str
@@ -91,8 +81,7 @@ class MoveStorage(Wire):
 
 
 class UpdateTaken(Wire):
-    """What the app there said to an update: the version whose installer it is opening THERE, or
-    the reason it installs nothing (`none` is no release newer than the one running)."""
+    """What the app said to an update: the version it is installing, or why it installs nothing."""
 
     ok: bool
     version: str | None

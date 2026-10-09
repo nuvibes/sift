@@ -1,15 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The import job: the background half of taking an upload or a paste in.
-
-A route stages the bytes and queues one of these; the handler resolves the staged file from the id
-in its payload and runs the shared import pipeline against it. The download feature does not queue
-this (it calls the same pipeline directly, in its own job) so there is one import path, reached
-two ways, and no second copy of it to drift.
-
-The staging directory is cleaned up whatever happens: a file that imported cleanly no longer needs
-its scratch copy, and one that was refused was already moved to quarantine by the gate, so all that
-is left to remove is the empty directory around it.
-"""
+"""The import job: the background half of taking an upload or a paste in."""
 
 from __future__ import annotations
 
@@ -34,8 +24,7 @@ log = get_logger(__name__)
 
 IMPORT = "import"
 
-#: The origins whose bytes Sift staged and this job imports. A scan or a watch indexes a file where
-#: it already lies and never comes through here; a download hands its file straight to the pipeline.
+#: Origins that Sift staged; scans and downloads never come through here.
 _STAGED_ORIGINS = frozenset({Origin.DROP, Origin.PASTE, Origin.UPLOAD})
 
 
@@ -44,13 +33,10 @@ class StagingGone(JobFailedPermanently):
 
 
 class ImportRefused(JobFailedPermanently):
-    """The gate refused the staged bytes. They are in quarantine with the reason, and no retry
-    changes what they are."""
+    """The gate refused the staged bytes; they are in quarantine and no retry changes them."""
 
 
-#: How long a staged file outlives its job before it is swept at start. The same span the queue
-#: keeps a settled job: a failed import can be retried from the Activity screen for as long as its
-#: row is there, and its bytes are kept exactly as long.
+#: Kept as long as a settled job, so a failed import can be retried from Activity.
 STAGING_KEEP_SECONDS = SETTLED_RETENTION_SECONDS
 
 
@@ -81,37 +67,20 @@ async def run_import(context: JobContext, *, settings: Settings, reindexer: Rein
             reindexer=reindexer,
         )
         if outcome.already_at is not None:
-            # Nothing landed: the file is already in the library. The job's note is the sentence
-            # the drop answers with (the client reads it when the import settles).
+            # Nothing landed: the note is the sentence the drop answers with.
             await context.set_note(f"Already here: {outcome.already_at}")
     except IngressRejected as refused:
-        # Refused for what the bytes are. Quarantined by the gate with the reason, so the scratch
-        # copy has nothing left to say, and no retry would read them differently.
         await _remove(staging_dir)
         raise ImportRefused(str(refused)) from refused
     except JobFailedPermanently:
         await _remove(staging_dir)
         raise
-    # A failure of any other kind (the destination's drive away, a copy that broke) leaves the
-    # staged file where it is. The queue tries again, and a retry with nothing to import is not a
-    # retry: clearing the scratch space on every way out would fail the second attempt on "the
-    # staged file is gone" and lose the bytes somebody dropped in.
+    # Any other failure keeps the staged file so the queue's retry still has it.
     await _remove(staging_dir)
 
 
 async def _named_after(source: Path, asset_id: str, context: JobContext) -> Path:
-    """A staged screenshot, renamed after the file it was taken of (`screenshot_name`).
-
-    Named here rather than by the route, because the route reads no content tables: the name of
-    the file on screen is a content fact, and reading one belongs to a job. A file that has gone
-    since, or has no name, leaves the screenshot under the name it arrived with. Renamed inside
-    its own staging folder, so a retry finds it under the new name and renames nothing.
-
-    The name is what the file is called NOW: its first present copy's name in its folder, the
-    name the screen shows (`names_on_disk` reads the same rule). The imported name is written once
-    and can be a download's long original, so a screenshot named after it would sit nowhere near
-    its source in a sorted folder. Only with no present copy does the imported name stand in.
-    """
+    """A staged screenshot, renamed after the present name of the file it was taken of."""
     asset = await context.content.get(asset_id)
     if asset is None:
         return source
@@ -136,12 +105,7 @@ async def _remove(staging_dir: Path) -> None:
 def sweep_staging(
     data_dir: Path, *, keep_seconds: float = STAGING_KEEP_SECONDS, now: float | None = None
 ) -> int:
-    """Remove staged files older than the queue keeps a job for. Blocking; how many went.
-
-    A staged file outlives its import when every attempt failed on something that passed (the
-    drive away for an afternoon) and nobody pressed Retry. At start, anything older than a
-    settled job is kept is cleared; anything younger may still be asked for.
-    """
+    """Remove staged files older than the queue keeps a job for. Blocking; how many went."""
     staging_root = data_dir / STAGING_DIR_NAME
     if not staging_root.is_dir():
         return 0
@@ -174,11 +138,7 @@ def _staged_origin(value: object) -> Origin:
 
 
 def _staged_file(staging_dir: Path) -> Path:
-    """The one file in a staging directory. Blocking.
-
-    A staging directory holds exactly the file the route wrote into it. If it is gone the import
-    was already run, or the scratch space was cleared: either way there is nothing to take in.
-    """
+    """The one file in a staging directory. Blocking."""
     if not staging_dir.is_dir():
         raise StagingGone(f"the staged file {staging_dir.name} is gone")
     for entry in sorted(staging_dir.iterdir()):

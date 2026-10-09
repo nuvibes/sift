@@ -1,12 +1,4 @@
-/*
- * A long run's last finished run, as a page that starts one says it.
- *
- * THE RECORD, NOT THE WATCH. `DownloadWatch` knows only a run it followed in this session, so a
- * page that said how its run went from the watch alone forgot after a reload. The record is what
- * the server keeps: a task's last run is its row on Tasks (`taskList`, the same answer the Tasks
- * screen draws), and a run that is not a task hands in the one its own read carries. The watch
- * only adds the live part while a run is going, and the record is read again when it ends.
- */
+/* A long run's last finished run, as a page that starts one says it. */
 
 import type { components } from '$lib/api/schema';
 import { exactly, sayAgo } from '$lib/shell/when';
@@ -40,8 +32,7 @@ export function sayRun(run: RunOnRecord, words: RunWords, now: number): string {
 	return words.ran(when);
 }
 
-/** Whether the run finished its work, so its own sentence says what it did. A failure's words are
- *  about the failure, and go on the hover beside the moment rather than on the line. */
+/** Whether the run finished its work, so its own sentence says what it did. */
 function finishedItsWork(run: RunOnRecord): boolean {
 	return !run.outcome || run.outcome === 'done';
 }

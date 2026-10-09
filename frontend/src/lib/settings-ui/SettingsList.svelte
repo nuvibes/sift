@@ -5,23 +5,11 @@
 	/** A block of settings drawn together: a heading, one sentence, and the keys in reading order. */
 	export interface SettingBlock {
 		heading?: string;
-		/**
-		 * One sentence for the whole block, where its rows differ only by which one they are.
-		 *
-		 * Given, the rows inside are drawn without their own help, which is the rule about
-		 * repetition, enforced in one place instead of remembered in thirteen.
-		 */
+		/** One sentence for the whole block, where its rows differ only by which one they are. */
 		help?: string;
 		keys: string[];
-		/**
-		 * Rows that mean nothing unless another setting is on: the row's key, and the key it hangs
-		 * off.
-		 *
-		 * Greyed out rather than hidden. A row that disappears takes the knowledge that it exists
-		 * with it: somebody who has turned a feature off cannot see what turning it back on would
-		 * give them, and a setting they configured once is simply gone. Left visible and inert, the
-		 * relationship between the two is on screen.
-		 */
+		/** Rows that mean nothing unless another setting is on: the row's key, and the key it
+		 * hangs off. */
 		dependsOn?: Record<string, string>;
 		/** The picture beside each answer of a menu row, by the row's key: see `SettingRow`'s `preview`. */
 		pictures?: Record<string, Snippet<[SelectOption]>>;
@@ -31,17 +19,7 @@
 </script>
 
 <script lang="ts">
-	/* A pane's settings, in the order somebody reads them.
-	 *
-	 * Names the keys and nothing else. What each row is called, what it says, whether it is a menu
-	 * or a number or a toggle, what its bounds are and what its options are called all come from the
-	 * setting's own declaration, so adding a setting to a pane is one key in one list here, and a
-	 * setting can never be drawn with a control that disagrees with what it holds.
-	 *
-	 * A key the server did not send is simply not drawn. That is how an instance-wide setting stays
-	 * out of a guest's view: the response leaves it out, and the pane shows one row fewer rather
-	 * than a second rule about who may see what.
-	 */
+	/* A pane's settings, in the order somebody reads them. */
 	import SettingGroup from './SettingGroup.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import type { SettingsPanel } from './panel.svelte';

@@ -359,23 +359,29 @@ class FilterCompiler:
                 if one.id in wanted
             }
         if field_name is Field.PHOTO_SETS:
-            named: dict[str, str] = {}
-            for key in wanted:
-                found = await self._access.visible_photo_set(viewer, key)
-                if found is not None:
-                    named[key] = found.name
-            return named
+            return await self._photo_set_names(viewer, wanted)
         if field_name is Field.SONGS:
-            sung: dict[str, str] = {}
-            for key in wanted:
-                song = await self._access.visible_song(viewer, key)
-                if song is not None:
-                    sung[key] = song.name
-            return sung
+            return await self._song_names(viewer, wanted)
         return {
             key: one.name
             for key, one in (await self._access.visible_folders_of(viewer, wanted)).items()
         }
+
+    async def _photo_set_names(self, viewer: Viewer, wanted: list[str]) -> dict[str, str]:
+        named: dict[str, str] = {}
+        for key in wanted:
+            found = await self._access.visible_photo_set(viewer, key)
+            if found is not None:
+                named[key] = found.name
+        return named
+
+    async def _song_names(self, viewer: Viewer, wanted: list[str]) -> dict[str, str]:
+        sung: dict[str, str] = {}
+        for key in wanted:
+            song = await self._access.visible_song(viewer, key)
+            if song is not None:
+                sung[key] = song.name
+        return sung
 
     async def _tags(self, viewer: Viewer, values: list[str]) -> dict[str, tuple[str, ...]]:
         """Tag names to tag ids."""

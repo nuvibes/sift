@@ -1,17 +1,10 @@
-/* The box a download starts in: what the button says it will do, and how much room it gives.
- *
- * The property worth guarding most is the COUNT on the button: "Download" over three links says
- * nothing about the third one. The line under the box is `DownloadChoices`, with tests of its
- * own; here it is only that it is drawn under it. The second is that the box and its button are
- * always one height, so a tall box never stands beside a short button.
- */
+/* The box a download starts in: what the button says it will do, and how much room it gives. */
 import { readFileSync } from 'node:fs';
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { words } from '$lib/design/testing.svelte';
 
-/* The settings under the box read the server when they are drawn. Refused here: what they say is
-   `DownloadChoices.svelte.test.ts`'s business, and these tests are about the box. */
+/* The settings under the box read the server when they are drawn. */
 vi.mock('$lib/api/client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/api/client')>()),
 	api: {
@@ -120,8 +113,7 @@ it('names no site for an address Sift has no record of', () => {
 });
 
 /* ONE HEIGHT: the box and the button read the same block-size token, and the row stretches the
-   button to the box. This environment does not lay out, so the rules are read from the file, the
-   way `head.test.ts` reads the page's. */
+   button to the box. */
 it('gives the box and its button one height, the control height, and stretches the button to it', () => {
 	const source = readFileSync('src/routes/downloads/PasteBox.svelte', 'utf8');
 	const style = source.slice(source.lastIndexOf('<style>'));
@@ -136,8 +128,8 @@ it('gives the box and its button one height, the control height, and stretches t
 	expect(host.querySelector('button[type="submit"]')?.classList.contains('send')).toBe(true);
 });
 
-/* The switches and the folder are the page's Options; the box keeps only the line saying
-   which way the paste goes out. */
+/* The switches and the folder are the page's Options; the box keeps only the line saying which
+   way the paste goes out. */
 it('draws the connection line under the box, and no settings panel', () => {
 	draw({});
 	expect(host.querySelector('.choices .way')).not.toBeNull();
@@ -179,8 +171,7 @@ it('says the cap the server sent, not a number of its own', () => {
 	expect(words(host.querySelector('.count'))).not.toContain('500');
 });
 
-/* The box and its button stack on a window too small to hold both. Not a wrap: a wrapped button
-   sits at the left of its own line, and every verb in this application sits on the right. */
+/* The box and its button stack on a window too small to hold both. */
 it('puts the button under the box on a narrow window', () => {
 	draw({ narrow: true });
 	expect(host.querySelector('.row')?.classList.contains('narrow')).toBe(true);
@@ -194,11 +185,8 @@ it('keeps them on one line on a window with room', () => {
 	expect(host.querySelector('button[type="submit"]')?.classList.contains('full')).toBe(false);
 });
 
-/* ---- With no download folder set, the first paste ASKS ------------------------------------------
- *
- * "Not set, so each download asks" is what the folder row says, so the box must keep it: a paste with
- * nowhere to land is not sent (the server would fetch the whole file and only then refuse it), the
- * box says why and the page opens its Options on Download folder. It never picks a folder itself. */
+/* ---- With no download folder set, the first paste ASKS
+ * ------------------------------------------ */
 
 /** What the server holds: the folders a download can go to, and which one is the default. */
 function holds(

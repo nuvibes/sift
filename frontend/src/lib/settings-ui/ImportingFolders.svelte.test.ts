@@ -1,10 +1,4 @@
-/* A folder's own answers, each row called by what it answers.
- *
- * The keys a folder may answer come from the server, and several are retired into the task Whens:
- * a folder's answer is still stored under the old key, and a retired key has no registered row,
- * so labelled off the rows the pane has loaded it would read as a raw key. The names come with
- * the list, and a retired key is called by the task it became.
- */
+/* A folder's own answers, each row called by what it answers. */
 
 import { words } from '$lib/design/testing.svelte';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -95,8 +89,7 @@ it('falls back to the key only when the list names nothing for it', async () => 
 
 it("draws the server's folder words for a key and the help under it", async () => {
 	/* The server names a retired key by what a folder's answer does (only what happens as a file
-	   ARRIVES there), declared where the key was retired, and sends the help with it. The page
-	   draws both as sent and keeps no words of its own. */
+	   ARRIVES there), declared where the key was retired, and sends the help with it. */
 	await open({
 		folders: [{ root_id: 'root-1', name: 'Holiday', answers: {} }],
 		keys: ['music.fingerprint'],

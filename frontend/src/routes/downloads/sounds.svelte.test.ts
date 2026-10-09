@@ -1,12 +1,4 @@
-/* What a look at the queue reports, and why it reports a landing rather than an event.
- *
- * The rule worth guarding is that a sound and a message belong to a TRANSITION. A list re-read
- * every time the queue moves would otherwise announce the same finished download over and over, and
- * the screen would chirp and toast for every one of those. The second half is the door: a single
- * download that finished carries the file it made, so the message can offer to open it, and several
- * at the same time carry none. An Open that quietly picked one of twenty would be a door to a file
- * nobody chose.
- */
+/* What a look at the queue reports, and why it reports a landing rather than an event. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Changes, Sounds } from './sounds.svelte';
@@ -40,8 +32,7 @@ describe('what settled since the last look', () => {
 		expect(landed).toEqual([{ kind: 'done', count: 1, assetId: 'asset-1', filename: 'clip.mp4' }]);
 	});
 
-	/* The same row read again is not a new landing. Without this the queue's once-a-second re-read
-	   would announce one finished download sixty times a minute. */
+	/* The same row read again is not a new landing. */
 	it('says nothing the second time it reads the same row', () => {
 		const changes = new Changes();
 		changes.since([row('a', 'running')]);
@@ -69,7 +60,7 @@ describe('what settled since the last look', () => {
 	});
 
 	/* The queue emptying is the moment somebody can walk away, and it is the one most worth
-	   hearing. Only when something was actually running before. */
+	   hearing. */
 	it('says the queue emptied once nothing is left to do', () => {
 		const changes = new Changes();
 		changes.since([row('a', 'running')]);
@@ -83,8 +74,8 @@ describe('what settled since the last look', () => {
 		expect(changes.since([row('a', 'done')]).map((one) => one.kind)).toEqual([]);
 	});
 
-	/* A file that has since been deleted leaves a landing with nowhere to go, and the message then
-	   names it without offering a door. */
+	/* A file that has since been deleted leaves a landing with nowhere to go, and the message
+	   then names it without offering a door. */
 	it('offers no file for a download that produced none', () => {
 		const changes = new Changes();
 		changes.since([row('a', 'running'), row('b', 'running')]);
@@ -97,9 +88,7 @@ describe('what settled since the last look', () => {
 	});
 });
 
-/* `Settings > Downloads`: whether a finished download makes a sound, and how loud. The tone is
- * built in the browser, so what is checked is the level the tone is faded up to, and that nothing
- * is built at all while the switch is off. */
+/* `Settings > Downloads`: whether a finished download makes a sound, and how loud. */
 describe('the sound a finished download makes', () => {
 	const levels: number[] = [];
 	let built = 0;

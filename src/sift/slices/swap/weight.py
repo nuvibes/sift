@@ -1,28 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What the picks would send before a swap starts, and what they leave out and why.
-
-## The figure is the offer's own read
-
-`offer.weigh` counts the files the offer would hold: the same scoped read, as the sender with
-Hidden open (`offer.swap_reader`), so the figure is what the offer will carry.
-
-## What is left out, by name where one thing explains it
-
-Two marks keep a file out of every swap: Kept local (`keep_local`, the "Don't enrich" switch, which
-keeps everything about a thing on this device) and "Don't swap" (`keep_from_swaps`). Each sits on a
-file, a person, a Site or a tag, and a file is under the mark of anything it is filed under. A pick
-that wears one of them sends nothing of its own, and the sender is told so by its name: "Ava
-Example is kept local: 1,200 files aren't offered."
-
-So the answer names every PICK that carries a mark on its own row, with how many of its files the
-mark keeps back, and then counts the rest: the files the picks reach that a mark ON SOMETHING ELSE
-keeps out (a tag above them, a Site, the file's own switch). Both are read through the same filters
-the offer reads (`offer.chosen_filters`) and the same scoped read, with Hidden open, so what a swap
-leaves out is told on the read that makes the offer, and a pick this viewer could not open is never named.
-
-A file whose format this device cannot strip (`transfer.NEVER_SENT_MIMES`, empty today) is neither
-offered nor counted here: no mark explains it.
-"""
+"""What the picks would send before a swap starts, and what they leave out and why."""
 
 from __future__ import annotations
 
@@ -38,14 +15,11 @@ from sift.kernel.seams import SavedFilterSeam
 from sift.slices.swap import offer, refusal
 from sift.slices.swap.models import Chosen
 
-#: Which mark keeps a thing back: Kept local, or "Don't swap".
 Mark = Literal["local", "swap"]
 
-#: Every file kept out of swaps by either mark, its own or anything it is filed under: the two
-#: refusals the offer narrows by (`offer.NOT_KEPT_LOCAL`, `offer.NOT_KEPT_FROM_SWAPS`), turned round.
+#: Every file either mark keeps out of swaps, the offer's two refusals turned round.
 REFUSED = AnyOf((Where("enrichment", ("local",)), Where("kept_from_swaps")))
 
-#: The kinds a pick can carry a mark on: the four the refusal covers.
 _MARKABLE: frozenset[str] = frozenset(refusal.KINDS)
 
 
@@ -62,8 +36,7 @@ class LeftOutBy:
 
 @dataclass(frozen=True, slots=True)
 class Weight:
-    """What the picks would offer, and what they leave out: by the picks that carry a mark, and the
-    rest of the files a mark on something else keeps back."""
+    """What the picks would offer, and what the marks leave out."""
 
     files: int = 0
     bytes: int = 0
@@ -106,8 +79,7 @@ async def left_out(
     viewer: Viewer,
     chosen: Sequence[Chosen],
 ) -> tuple[tuple[LeftOutBy, ...], int]:
-    """The picks that carry a mark, each with the files it keeps back, and how many more files the
-    picks reach that a mark on something else keeps out. See the module docstring."""
+    """The picks that carry a mark with what each keeps back, and what other marks keep out."""
     reader = await offer.swap_reader(access, viewer)
     if reader is None:
         return (), 0

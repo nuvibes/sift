@@ -23,7 +23,8 @@ from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.switchboard import Switchboard
 from sift.slices.media_jobs import pooled
-from sift.slices.media_jobs.router import KindOfWork, _families
+from sift.slices.media_jobs.activity_families import _families
+from sift.slices.media_jobs.router import KindOfWork
 
 DATA = Path(__file__).parent / "data"
 FAMILIES = {

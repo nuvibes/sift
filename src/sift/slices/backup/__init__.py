@@ -53,6 +53,7 @@ from sift.slices.backup.libraries import (
     sign_everyone_out,
 )
 from sift.slices.backup.libraries_router import router as libraries_router
+from sift.slices.backup.naming import filename_for, is_backup_filename
 from sift.slices.backup.router import router
 from sift.slices.backup.service import (
     AT_KEY,
@@ -76,8 +77,6 @@ from sift.slices.backup.service import (
     DestinationRefused,
     NotABackup,
     Workers,
-    filename_for,
-    is_backup_filename,
 )
 
 #: The most backups the rotation will keep. A ceiling rather than a preference: these are copies of

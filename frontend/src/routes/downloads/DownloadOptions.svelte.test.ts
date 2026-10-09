@@ -1,11 +1,5 @@
 /* The Downloads page's Options: the door every entity page wears, holding the page's three doors
- * and the paste's two choices as its rows.
- *
- * What is guarded is that the menu holds exactly those five rows in the screen's own words, that
- * each row opens what it names, that a switch is a row holding its
- * value (flipped as the paste's answer, never written as a setting), and that Download folder
- * opens onto the Add button's list and a pick there becomes the default.
- */
+ * and the paste's two choices as its rows. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { words } from '$lib/design/testing.svelte';
@@ -212,8 +206,8 @@ it('opens Download folder onto the Add list, the default named first, and a pick
 	const rows = await open();
 	expect(words(rowNamed(rows, 'Download folder'))).toContain('Sift Downloads (default)');
 	// The way a pointer does it, as `ContextMenuItem.svelte.test.ts` opens a flyout: the sub row
-	// answers the pointer sequence, and a bare `click()` is enough only once the module graph
-	// is warm.
+	// answers the pointer sequence, and a bare `click()` is enough only once the module graph is
+	// warm.
 	const folderRow = rowNamed(rows, 'Download folder');
 	folderRow.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
 	folderRow.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, button: 0 }));

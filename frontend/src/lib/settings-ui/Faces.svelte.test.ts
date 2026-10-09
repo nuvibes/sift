@@ -1,11 +1,4 @@
-/* The Faces pane, on the one Recognition layout.
- *
- * What is tested is what the pane says about itself, because each line is something somebody acts
- * on: where recognition stands, in one line whose every number is the server's; that the last scan
- * is when it ENDED and says so when it was canceled; that when it runs is the task's own row; that
- * the rows for tuning it are one page in and can be reached; and that the People it knows, the
- * packs and the folder of people are lists on the pane itself, drawn as rows.
- */
+/* The Faces pane, on the one Recognition layout. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
@@ -313,8 +306,7 @@ it('calls the press that looks at every file again Identify, the word of the sta
 
 it('draws no match-again row, even from a server that still sends one', async () => {
 	/* No switch decides whether a match runs again: every change to the People Sift knows
-	   re-matches, once. The pane lists the rows it draws, so an entry a stale server still sends
-	   is not one of them. */
+	   re-matches, once. */
 	const sent = settings(true);
 	sent[0].settings.push(
 		entry('faces.rematch_on_change', { label: 'Match again when People change', value: true })
@@ -338,8 +330,7 @@ it('draws no match-again row, even from a server that still sends one', async ()
 
 it('draws no Naming faces rows, even from a server that still sends them, and keeps Group faces again', async () => {
 	/* How sure Sift must be and how many samples describe a person are fixed in the code: nobody
-	   could tune them without knowing how the matching is measured. A stale server's entries are
-	   not rows the pane draws. */
+	   could tune them without knowing how the matching is measured. */
 	const sent = settings(true);
 	sent[0].settings.push(
 		entry('faces.match_confidence', { label: 'Ask about a match above', value: 45 }),
@@ -370,7 +361,7 @@ it('draws no Naming faces rows, even from a server that still sends them, and ke
 it('offers stash-box starters with the count first, and the one press queues them', async () => {
 	/* The one explicit press that shows the count first: the number is in the row's own label
 	   before anything is pressed, because the press reaches out to the stash-boxes for every one
-	   of those People. The count is read again afterwards, so the row says what is left. */
+	   of those People. */
 	mocks.startersOffer.mockResolvedValue({ people: 500 });
 	mocks.useStarters.mockResolvedValue({ job_id: 'job', people: 500 });
 	await draw(true, {});
@@ -384,8 +375,8 @@ it('offers stash-box starters with the count first, and the one press queues the
 });
 
 it('names the People the starters count, each opening that person, folded under the row', async () => {
-	/* A count alone says which people nowhere: the count is checked as names before a press
-	   that reaches out to a stash-box for every one of them. */
+	/* A count alone says which people nowhere: the count is checked as names before a press that
+	   reaches out to a stash-box for every one of them. */
 	mocks.startersOffer.mockResolvedValue({
 		people: 2,
 		who: [
@@ -1068,8 +1059,7 @@ it('takes a fingerprints file in with recognition off and says nothing is recogn
 });
 
 /* A file only holds facial fingerprints: the press sends the file and nothing else, whatever the
- * switch under it says, and the answer names nobody and asks nothing. Who each one is, is the pass's
- * to decide by face. */
+ * switch under it says, and the answer names nobody and asks nothing. */
 it.each([true, false])(
 	'sends the fingerprints file alone with the switch %s, and says what it took in and that recognizing started',
 	async (on) => {

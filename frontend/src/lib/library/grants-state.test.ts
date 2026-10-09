@@ -2,12 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { Grants } from './grants-state.svelte';
 
-/* Handing a folder over, from the page's side.
- *
- * The interesting cases are the two that are not "it worked": a cancelled dialog, which must not
- * draw an error because changing your mind is what Cancel is for, and a refusal from the server,
- * whose own sentence has to reach the screen rather than being replaced with something generic.
- */
+/* Handing a folder over, from the page's side. */
 
 const originalFetch = globalThis.fetch;
 
@@ -36,9 +31,7 @@ afterEach(() => {
 });
 
 describe('in a browser', () => {
-	/* Not a missing feature. The dialog belongs to the machine, and granting a folder is exactly the
-	 * decision that should require sitting at it, so the screen says so instead of drawing a button
-	 * that cannot work. */
+	/* Not a missing feature. */
 	it('cannot add a folder', () => {
 		expect(new Grants().canAdd).toBe(false);
 	});

@@ -1,9 +1,4 @@
-/* The first question: does this computer hold the library, or look at one somebody else holds?
- *
- * What these tests are about: the two answers reach the shell, the words are the ones the person
- * asked for, and a browser (which cannot answer at all) says so rather than drawing two cards
- * that do nothing.
- */
+/* The first question: does this computer hold the library, or look at one somebody else holds? */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -30,14 +25,7 @@ function render(): HTMLElement {
 	return host;
 }
 
-/*
- * A card BY ITS NAME, not by anything its sentence happens to mention.
- *
- * A card's own note can name the OTHER card, so matching the whole card's text can match both, and
- * only the order in the markup would decide which came back. `ChoiceCard` puts the name in a
- * `.name` of its own, with the aside after it, so the name is a thing that can be asked for
- * exactly.
- */
+/* A card BY ITS NAME, not by anything its sentence happens to mention. */
 function card(where: HTMLElement, label: string): HTMLButtonElement | undefined {
 	return [...where.querySelectorAll('button')].find((one) =>
 		one.querySelector('.name')?.textContent?.trim().startsWith(label)
@@ -86,9 +74,7 @@ describe('in the desktop app', () => {
 		await vi.waitFor(() => expect(chooseMode).toHaveBeenCalledWith('client'));
 	});
 
-	/* Running the library here is what almost everybody wants, and the card says so. Asserted
-	   because a first screen that steers somebody into client mode by accident is a first screen
-	   that leaves them with an application pointed at nothing. */
+	/* Running the library here is what almost everybody wants, and the card says so. */
 	it('and marks running the library here as the one most people want', () => {
 		inTheApp();
 		const where = render();
@@ -108,8 +94,8 @@ describe('in the desktop app', () => {
 		expect(chooseMode).toHaveBeenCalled();
 	});
 
-	/* Pressing twice must not send two answers: the second would arrive while the shell is already
-	   loading the next screen, and the mode it names could be the other one. */
+	/* Pressing twice must not send two answers: the second would arrive while the shell is
+	   already loading the next screen, and the mode it names could be the other one. */
 	it('and a second press while the first is in flight is ignored', async () => {
 		let settle: (value: { ok: boolean; refusal: string | null }) => void = () => {};
 		const chooseMode = vi.fn(

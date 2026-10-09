@@ -1,13 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick } from 'svelte';
 
-/*
- * The lettering and the backgrounds, as the Appearance pane offers them.
- *
- * A pairing is a PRESET of two faces, one of each role, and pressing one sets both menus under it.
- * Which card shows as chosen is worked out from the two faces in force, so the pair a person took
- * apart with the menus marks no card at all rather than the card it started from.
- */
+/* The lettering and the backgrounds, as the Appearance pane offers them. */
 
 const fetchSettingValues = vi.fn();
 const saveSettings = vi.fn();
@@ -118,11 +112,8 @@ describe('the backgrounds', () => {
 });
 
 describe('the saved colors', () => {
-	/*
-	 * A second row under the six: each kept colour a radio named by its hex, painted as it will be
-	 * WORN on the base in force, the one in force marked. Save at the foot of the picker keeps the
-	 * custom colour in force, and at ten it says how to make room instead.
-	 */
+	/* A second row under the six: each kept colour a radio named by its hex, painted as it will
+	 * be WORN on the base in force, the one in force marked. */
 	const APP_CSS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app.css');
 
 	function wearMidnight(): void {
@@ -218,10 +209,8 @@ describe('the saved colors', () => {
 		expect(saveSettings).toHaveBeenLastCalledWith({ [ACCENT_SWATCHES_KEY]: [row[1]] });
 	});
 
-	/*
-	 * A phone has no right button and a hold there is a selection, so its door is the three dots
-	 * acting on what is picked: the colour in force, worn by pressing its dot.
-	 */
+	/* A phone has no right button and a hold there is a selection, so its door is the three dots
+	 * acting on what is picked: the colour in force, worn by pressing its dot. */
 	/** A row's words, less its glyph: an icon is a ligature, a private-use character in the text. */
 	const named = (row: HTMLElement): string =>
 		(row.textContent ?? '').replace(/[^\x20-\x7e]/g, '').trim();

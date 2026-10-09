@@ -1,44 +1,32 @@
-/* Two things the Activity screen does not do for itself.
- *
- * **Its state filter is the row every entity page draws**, the row of words Downloads draws too,
- * here in its value mode: the pane is inside the Settings sheet, where a link would navigate and
- * tear the page behind it down. One strip in the app filters a list by its states.
- *
- * **A download's row is a pointer.** Everything a download needs (its Site, its address, the
- * cookies it is waiting for, the sentence saying why it stopped) is on the Downloads screen, and
- * none of it can be on a row in a queue of every kind of work. So the name is the way there.
- *
- * ## Why the source and not the rendered screen
- *
- * The same reason the header's own test gives: what is asserted is what the screen DECLARES, and a
- * rendered test can only see what today's counts happen to draw: on an idle library there are no
- * state chips and no download row at all, so it would pass against a screen that had quietly gone
- * back to drawing its own.
- */
+/* Two things the Activity screen does not do for itself. */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Read from the project root, which is where vitest runs, the same way the header's test reads it.
-const source = readFileSync('src/lib/jobs/JobsScreen.svelte', 'utf8');
+const files = ['JobsScreen.svelte', 'ActivitySummary.svelte'].map((name) =>
+	readFileSync(`src/lib/jobs/${name}`, 'utf8')
+);
+const source = files.join('\n');
 
 /** The markup, with its comments taken out: a rule that matched its own explanation would pass for
  *  as long as the explanation mentioned the thing it forbids. */
-const markup = source.slice(source.indexOf('</script>')).replace(/<!--[\s\S]*?-->/g, '');
+const markup = files
+	.map((one) => one.slice(one.indexOf('</script>')))
+	.join('\n')
+	.replace(/<!--[\s\S]*?-->/g, '');
 
 describe('the state filter', () => {
 	it('is the row every entity page draws, narrowing in place', () => {
 		expect(markup, 'the row is not drawn').toMatch(/<Tabs\b/);
-		// Filtering in place: told which was pressed, never sent to an address. A link here would
-		// leave the Settings sheet and tear down the page it was opened over.
+		// Filtering in place: told which was pressed, never sent to an address.
 		const at = markup.search(/<Tabs\b/);
 		const row = markup.slice(at, markup.indexOf('/>', at));
 		expect(row).toContain('onselect=');
 		expect(row).not.toMatch(/\bhref\b/);
 	});
 
-	/* The tab being looked at stays in the row once it empties. Left out, it would vanish the moment
-	   its last task finished and the row would light nothing while the list stayed filtered to it. */
+	/* The tab being looked at stays in the row once it empties. */
 	it('keeps the tab being looked at even when nothing is left in it', () => {
 		expect(source).toContain('(shownCounts[state] ?? 0) > 0 || state === queue.filter');
 	});
@@ -47,24 +35,21 @@ describe('the state filter', () => {
 		expect(markup, 'a hand-rolled state chip came back').not.toMatch(/<Chip\b/);
 	});
 
-	/* The words are the BADGE's, imported rather than retyped. The chips filter the list to a state
-	   and the badges in the rows say which state each row is in, so a chip with a word of its own
-	   would be one state called two things on one screen. */
+	/* The words are the BADGE's, imported rather than retyped. */
 	it('takes its words from the badge that says the same states', () => {
 		expect(source).toMatch(/import \{ LABELS.*from '\$lib\/components\/common\/Badge\.svelte'/);
 		expect(markup).toContain('LABELS[state as BadgeState]');
 	});
 
-	/* Blocked work is waiting for a person rather than for a worker, and nothing else on this screen
-	   says so. */
+	/* Blocked work is waiting for a person rather than for a worker, and nothing else on this
+	   screen says so. */
 	it('marks the pile that is waiting for somebody', () => {
 		expect(markup).toContain("attention: state === 'blocked' ? BLOCKED_WAITS : undefined");
 	});
 
-	/* One strip for filtering a list by its states, and this is the guard that there is only one:
-	   no component, import or gallery section may carry the name of a separate strip of state
-	   chips. The name is spelt in two halves so this file
-	   is not itself a mention of it. */
+	/* One strip for filtering a list by its states, and this is the guard that there is only
+	   one: no component, import or gallery section may carry the name of a separate strip of
+	   state chips. */
 	it('has no second strip beside it anywhere in the client', () => {
 		const retired = 'State' + 'Chips';
 		const mentions: string[] = [];
@@ -94,8 +79,8 @@ describe("a download's row", () => {
 	});
 
 	it('does so for a download in any state, not only a finished one', () => {
-		// The download case is asked FIRST, before the finished-job case that links to the file:
-		// a download that failed or is waiting for cookies is exactly the one somebody wants to
+		// The download case is asked FIRST, before the finished-job case that links to the file: a
+		// download that failed or is waiting for cookies is exactly the one somebody wants to
 		// follow, and it has no file to open.
 		const download = markup.indexOf("job.type === 'download'");
 		const finished = markup.indexOf("state === 'done' && fileOf(job)");
@@ -106,9 +91,9 @@ describe("a download's row", () => {
 	/* The two verbs every row here offers are unchanged, and the pointer must not have quietly
 	   taken them away: Cancel and Run again are what this screen is for. */
 	it('keeps the two verbs it already had', () => {
-		// Run again reads the row's own state; Cancel reads what the row shows: a folded
-		// download that is done with a step running is worth cancelling, and the cancel walks the
-		// family on the server.
+		// Run again reads the row's own state; Cancel reads what the row shows: a folded download
+		// that is done with a step running is worth cancelling, and the cancel walks the family on
+		// the server.
 		expect(markup).toContain('canRetry(job.state)');
 		expect(markup).toContain('canCancel(state)');
 		expect(markup).toContain('{@const state = shownState(job)}');
@@ -148,7 +133,7 @@ describe("a pass's row", () => {
 /* ONE COLUMN DECLARATION FOR THE TAB. Two hand-built grids sizing their own columns would put
    the status column at a different x in Passes and in Housekeeping. */
 describe("the Now tab's columns", () => {
-	const style = source.slice(source.indexOf('<style>'));
+	const style = files.map((one) => one.slice(one.indexOf('<style>'))).join('\n');
 
 	it('are declared once and read by every list on the tab', () => {
 		const declared = [...markup.matchAll(/columns=\{([^}]+)\}/g)].map((one) => one[1]);

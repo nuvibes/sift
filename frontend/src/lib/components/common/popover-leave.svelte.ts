@@ -1,29 +1,6 @@
-/*
- * A panel opened by pointing at its control goes away when the pointer leaves it, after a pick
- * inside it as well as before one.
- *
- * The library closes a hover-opened panel when the pointer leaves the control and the panel, but
- * only until something inside the panel is pressed. From the first press on it treats the panel as
- * one somebody asked for, and only a press outside or Escape puts it away. That is right for a
- * field somebody is typing into, and wrong for a chooser: picking a download folder from Add's
- * list is a press inside the panel, so the panel would stay up over the screen after the pointer
- * had gone, until somebody pressed somewhere to be rid of it.
- *
- * So the panel answers the pointer leaving on its own terms. It is held while:
- *
- * - its control was pressed to open it (a panel somebody asked for stays until they put it away,
- *   which is the library's rule and stays the rule);
- * - a field in it has the keyboard (somebody is typing a link, and the pointer drifting off must
- *   not throw the words away);
- * - the pointer is on the panel, on its control, or on a list opened from inside it (the
- *   download folder list is drawn at the end of the document, outside the panel's box).
- *
- * Otherwise a pointer that has left closes it after `LEAVE_MS`, the delay the library itself
- * closes with, so a pass over the gap between the control and the panel is not a leaving. Only a
- * moving pointer closes it: a pick that leaves the pointer resting outside the panel closes
- * nothing until the hand moves, as before the pick. Mouse only: a touch screen draws the panel as
- * a sheet and there is no hovering to answer.
- */
+/* A hover-opened panel closes when the pointer leaves, even after a pick inside it (the library
+ * stops after the first press). Held while its control was pressed, a field in it has the keyboard
+ * or the pointer is on it, its control or a list it opened. Mouse only. */
 
 /** How long a pointer is away from the panel before it closes: the library's own close delay. */
 export const LEAVE_MS = 120;
@@ -58,11 +35,8 @@ interface PointerLeave {
 	hover: () => boolean;
 	/** Whether its control was pressed: a panel somebody asked for. */
 	asked: () => boolean;
-	/** The panel's own box. */
 	panel: () => Element | null;
-	/** The control that opens it. */
 	trigger: () => Element | null;
-	/** Put it away. */
 	close: () => void;
 }
 

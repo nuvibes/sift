@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sift.kernel.access import visibility_tables as vt
+
 if TYPE_CHECKING:
     from sift.kernel.db import Connection
 
@@ -68,7 +70,7 @@ def _one(event: str, dp: str, ds: str, row: str) -> tuple[str, str, str]:
     from sift.kernel.access import visibility as v
 
     name = "vis_wall_totals_" + event.split()[0].lower()
-    body = [v._filled(one, ROW=row, DP=dp, DS=ds) for one in (_ENSURED, _MOVED, _EMPTIED)]
+    body = [vt._filled(one, ROW=row, DP=dp, DS=ds) for one in (_ENSURED, _MOVED, _EMPTIED)]
     when = dp + " != 0 OR " + ds + " != 0"
     return (
         name,
@@ -79,10 +81,9 @@ def _one(event: str, dp: str, ds: str, row: str) -> tuple[str, str, str]:
 
 def triggers() -> list[tuple[str, str, str]]:
     """The three triggers on the stored counts, as (name, table, DDL)."""
-    from sift.kernel.access import visibility as v
 
-    alive_new, shown_new = v._filled(_ALIVE, ROW="NEW"), v._filled(_SHOWN, ROW="NEW")
-    alive_old, shown_old = v._filled(_ALIVE, ROW="OLD"), v._filled(_SHOWN, ROW="OLD")
+    alive_new, shown_new = vt._filled(_ALIVE, ROW="NEW"), vt._filled(_SHOWN, ROW="NEW")
+    alive_old, shown_old = vt._filled(_ALIVE, ROW="OLD"), vt._filled(_SHOWN, ROW="OLD")
     return [
         _one("INSERT", alive_new, shown_new, "NEW"),
         _one("DELETE", "-" + alive_old, "-" + shown_old, "OLD"),

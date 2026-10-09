@@ -1,16 +1,5 @@
 <script lang="ts">
-	/*
-	 * A row that does something, rather than one that holds a value.
-	 *
-	 * About half of Settings is not settings. Accounts is a list of people, Maintenance is buttons
-	 * that do things, Backup is a schedule and a Save now, Privacy is a PIN. A `SettingRow` does not
-	 * fit any of them (there is no value to bind and no metadata to derive a control from), so
-	 * they get this instead, and the two together are why the panes line up with each other.
-	 *
-	 * Same geometry as a setting row on purpose: name and help on the left, the thing you press in
-	 * the same right-hand column. A button that sat somewhere else would be the visible seam between
-	 * the parts of Settings that are settings and the parts that are not.
-	 */
+	/* A row that does something, rather than one that holds a value. */
 	import type { Snippet } from 'svelte';
 	import { Button, SplitButton } from '$lib/components/common';
 	import { actGlyph } from '$lib/design/button-glyphs';
@@ -23,43 +12,21 @@
 		help?: string;
 		/** What the button says. A verb: what pressing it does, not what the row is about. */
 		action: string;
-		/**
-		 * The button's accessible name, where its visible verb repeats down a list.
-		 *
-		 * A row of buttons each called "Edit" to a screen reader, one per folder, is a list of
-		 * identical names with nothing to tell them apart, which is the same thing as no names. The
-		 * row's own label sits beside the button on screen and is not part of its name. Give the verb
-		 * AND what it acts on ("Edit 2024", for a folder of that name); the visible word stays inside
-		 * the name, so what is heard and what is seen agree. Plain buttons only: a split button names
-		 * its own halves.
-		 */
+		/** The button's accessible name, where its visible verb repeats down a list. */
 		actionLabel?: string;
 		onclick: () => void;
 		disabled?: boolean;
-		/**
-		 * Marks a button that removes something. This is the one way a settings pane draws a
-		 * destructive act: the name and its sentence on the left, a quiet danger button on the
-		 * right, and a confirm naming the consequence behind the press.
-		 */
+		/** Marks a button that removes something. */
 		destructive?: boolean;
 		busy?: boolean;
-		/**
-		 * The glyph for a verb that is not an act. An act's glyph follows the verb (`actGlyph`), so
-		 * Delete wears the bin and Edit the pencil on every row whoever draws it.
-		 */
+		/** The glyph for a verb that is not an act. An act's glyph follows the verb (`actGlyph`),
+		 * so Delete wears the bin and Edit the pencil on every row whoever draws it. */
 		icon?: IconName;
-		/** A figure shown beside the button: how many, how much. Right-aligned and tabular, so a
-		 *  column of them reads as a column. */
+		/** A figure shown beside the button: how many, how much. */
 		note?: string;
 		/** The figure as a snippet, where it is more than text: a working mark while it is measured. */
 		figure?: Snippet;
-		/**
-		 * A second, adjacent act joined to the button's end: "now", and "tonight".
-		 *
-		 * Given, the button is a split one: the main half does `onclick` and the trailing half does
-		 * `ontrailing`. Absent, the row is a plain button. The trailing half is
-		 * icon-only by the split button's own rule, so `trailingLabel` is what names it.
-		 */
+		/** A second, adjacent act joined to the button's end: "now", and "tonight". */
 		trailingIcon?: IconName;
 		trailingLabel?: string;
 		ontrailing?: () => void;
@@ -67,20 +34,10 @@
 		trailingMenu?: Snippet;
 		/** The act alone is off (the library is already open) while the trailing menu stays live. `disabled` takes the whole row. */
 		actDisabled?: boolean;
-		/**
-		 * A line under the help that is about the row's STATE rather than what it does: files a
-		 * product gave up on, with a way to try them again. Drawn only when given, so the ordinary
-		 * row costs nothing.
-		 */
+		/** A line under the help that is about the row's STATE rather than what it does: files a
+		 * product gave up on, with a way to try them again. */
 		children?: Snippet;
-		/**
-		 * A name for this row, so the settings search can point at it.
-		 *
-		 * A search result opens the section it is on and then rings the row it names. See
-		 * `settings-anchor`. A row drawn from the registry carries its key here already; these are
-		 * the hand-written ones, which without it would have nothing to ring and would land the
-		 * reader at the top of a pane with nothing pointed at. `SettingGroup` takes one for the same reason.
-		 */
+		/** A name for this row, so the settings search can point at it. */
 		id?: string;
 	}
 
@@ -107,9 +64,9 @@
 
 	const glyph = $derived(actGlyph(action, icon));
 
-	/* On a pane held read only (a pane about the computer Sift runs on, on a phone) the row keeps
-	   its name, its help and its figure and draws no press: a press that cannot be pressed says
-	   nothing the pane's own note does not. See `read-only.ts`. */
+	/* On a pane held read only (a pane about the computer Sift runs on, on a phone) the row
+	   keeps its name, its help and its figure and draws no press: a press that cannot be pressed
+	   says nothing the pane's own note does not. */
 	const held = paneHeld();
 </script>
 
@@ -126,10 +83,7 @@
 			{#if figure}<span class="note">{@render figure()}</span>{:else if note}<span class="note"
 					>{note}</span
 				>{/if}
-			<!-- Placed in the second column BY NAME rather than by being the second child. The
-		     figure is optional, so on a row without one the button would be the FIRST grid item
-		     and land in the figure's stretchy column, ending short of the edge every setting
-		     row on the pane ends at, which is precisely the seam this file exists to remove. -->
+			<!-- Placed in the second column BY NAME rather than by being the second child. -->
 			{#if !held()}<div class="press">
 					{#if trailingIcon && trailingLabel}
 						<SplitButton
@@ -165,10 +119,7 @@
 </div>
 
 <style>
-	/* The same grid as a setting row, and the same right edge: the two are read as one list. The
-	   control column is the setting row's width at least and grows to hold a long figure and the
-	   press on one line, so a figure never pushes the press under it; every control still ends on
-	   the one edge. */
+	/* The same grid as a setting row, and the same right edge: the two are read as one list. */
 	.row {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(var(--settings-control-col, 15rem), max-content);
@@ -214,13 +165,10 @@
 		line-height: 1.5;
 	}
 
-	/* The figure and the button each get their own share of the column, so a count sits in one place
-	   down the list rather than wherever the button beside it happens to start. */
+	/* The figure and the button each get their own share of the column, so a count sits in one
+	   place down the list rather than wherever the button beside it happens to start. */
 	.control {
-		/* One line: the figure, then the press at the column's end. The column grows to hold both
-		   (see `.row`), so a long figure (how many files, and how much it frees) sits beside its press
-		   as a short one does. Only where the window leaves no room does the figure wrap, between
-		   its words and inside its own share, and the press keeps its place on the line. */
+		/* One line: the figure, then the press at the column's end. */
 		--row-pack: flex-end;
 		display: flex;
 		flex-wrap: nowrap;
@@ -230,10 +178,7 @@
 		min-height: 2rem;
 	}
 
-	/* The press never shrinks and ends at the column's edge whether or not a figure precedes it.
-	   Where the figure has less room than it needs, it wraps (see `.note`) rather than running
-	   under the press: every one of these is a number, and a number on two lines reads where half
-	   a number with a fade on the end does not. */
+	/* The press never shrinks and ends at the column's edge whether or not a figure precedes it. */
 	.press {
 		flex: 0 0 auto;
 	}
@@ -243,9 +188,7 @@
 		font: var(--text-body-sm);
 		font-variant-numeric: tabular-nums;
 		text-align: end;
-		/* Breaks between words, and inside one only when a single word cannot fit the cell.
-		   `anywhere` is right for one long number and wrong for a list of counts: "16,000
-		   thumbnails, 18,000 previews" would come out as "thumbnail" and "s" on two lines. */
+		/* Breaks between words, and inside one only when a single word cannot fit the cell. */
 		overflow-wrap: break-word;
 		min-width: 0;
 		flex: 0 1 auto;

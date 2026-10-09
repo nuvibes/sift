@@ -1,30 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Checking the faces a person is recognized by, before they are trusted to recognize anybody.
 
-The reference gallery is the one thing the whole feature rests on. A file's faces are found by a
-model and can be wrong in ways that show up as a poor match; a reference that is the wrong person
-is wrong in a way that shows up as **confident matches to the wrong person, for ever**. So every
-candidate is checked, and the checks are the same ones whether a folder is being imported or a
-pack is being made: a pack is what these checks produce, rather than a file accompanied by a
-promise that somebody ran them.
-
-Seven things can be wrong, and one of them is worth more than the other six:
-
-- **no face** in the picture at all
-- **several faces**, so which one is the person is ambiguous
-- **too small**: not enough of a face to describe
-- **too blurred**
-- a **near-duplicate** of another of that person's, which adds nothing and costs matching time
-- **below the minimum** number of pictures, which is about the person rather than any one picture
-- **the odd one out**: a picture whose numbers sit far from that person's others. Almost always
-  somebody else's face in the folder, and invisible to every other check because the picture itself
-  is perfectly good.
-
-**Exactly one face per image is a rule, not a situation to be handled.** An image with none or with
-several is refused and reported for whoever supplied it to fix. Showing the faces found and
-letting somebody choose would quietly accept an ambiguous reference, and the guarantee that a
-reference *is* the face is what everything else depends on. There is no choose-which-face step
-anywhere in this path, deliberately.
+A wrong reference makes confident wrong matches for ever, so every candidate is checked the same
+way for a folder or a pack. Exactly one face per picture is a rule: none or several is refused.
+The odd one out (another person's face) is the check that matters most.
 """
 
 from __future__ import annotations
@@ -52,12 +31,7 @@ from sift.slices.faces.recognize import Recognizer
 
 log = get_logger(__name__)
 
-#: What a folder of candidate references may hold: the still pictures Sift accepts anywhere else.
-#:
-#: Taken from the one allowlist rather than written out again. A second list would drift, and the
-#: way it would drift is by accepting something the gate refuses, which is how a format nobody
-#: checked gets decoded. GIFs are excluded here on purpose: a reference is one picture of one
-#: face, and which frame of a GIF that would be is a question with no answer.
+#: What a folder of candidate references may hold: the one still-picture allowlist, GIFs excluded.
 REFERENCE_SUFFIXES = frozenset(
     extension
     for media in ALLOWED_MEDIA
@@ -65,8 +39,7 @@ REFERENCE_SUFFIXES = frozenset(
     for extension in media.extensions
 )
 
-#: The optional spreadsheet beside the folders, in the four columns a list of people already has.
-#: Nobody fills in a manifest: everything else Sift can work out, it works out.
+#: The optional spreadsheet beside the folders.
 SHEET_NAMES = ("people.csv", "aliases.csv")
 SHEET_COLUMNS = ("name", "aliases", "channel url", "social url")
 
@@ -90,26 +63,13 @@ class Candidate:
 
     @property
     def usable(self) -> bool:
-        """Whether this picture can be a reference.
-
-        A near-duplicate is usable and merely redundant: it is reported so somebody can tidy up,
-        not refused. Everything else on the list is a refusal. Defined as having no reason to be
-        left out, so the two answers are one rule and cannot disagree about any picture.
-        """
+        """Whether this picture can be a reference: nothing left it out (a near-copy is used)."""
         return self.left_out_for is None
 
     @property
     def left_out_for(self) -> Finding | None:
-        """The ONE reason this picture was left out, or None when it was used.
-
-        One reason and never two, because this is what a picture is counted under, and a picture
-        counted twice makes the totals disagree with each other: a near-duplicate is used, and
-        counted with the refusals too it would make "left out" larger than "read" less "used". A
-        picture can also
-        carry two findings (a near-copy is still looked at by the odd-one-out check, and can be
-        marked by it), and it is then left out for the refusal, the only one of the two that
-        stops it being used.
-        """
+        """The one reason this picture was left out, or None when used: a refusal outranks a
+        near-copy, so the totals add up."""
         return next(
             (finding for finding in self.findings if finding is not Finding.NEAR_DUPLICATE), None
         )
@@ -123,12 +83,9 @@ class PersonReport:
     person_id: str | None = None
     candidates: list[Candidate] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
-    #: References this folder actually contributed, filled in by the import rather than the audit.
-    #: Zero after a second import of the same folder: the pictures are already held.
+    #: References this folder contributed; zero when an earlier import already holds them.
     added: int = 0
-    #: Whether the import created this person. An audit never does, so it is always false there.
     created: bool = False
-    #: Whether an earlier import read every picture here, so this one read none of them.
     already: bool = False
 
     @property
@@ -137,13 +94,7 @@ class PersonReport:
 
     @property
     def left_out(self) -> Counter[Finding]:
-        """The pictures left out, by the one reason each was (`Candidate.left_out_for`).
-
-        THE count of what went wrong in a folder; nothing else tallies findings. Every picture is
-        either usable or here exactly once, so `len(candidates) == len(usable) + total` always
-        holds, which is what lets a screen say "read", "used" and "left out" as three numbers that
-        add up.
-        """
+        """The pictures left out, by the one reason each was, so read = used + left out."""
         reasons: Counter[Finding] = Counter()
         for item in self.candidates:
             reason = item.left_out_for
@@ -158,12 +109,7 @@ class PersonReport:
 
     @property
     def near_duplicates(self) -> int:
-        """Pictures used although almost the same as another of this person's.
-
-        A note for whoever tidies the folder, never a refusal: these are among the usable, and are
-        counted here only so the screen can say they were kept rather than folding them into what
-        was left out.
-        """
+        """Pictures used although almost the same as another of this person's; never refused."""
         return sum(
             1 for item in self.candidates if item.usable and Finding.NEAR_DUPLICATE in item.findings
         )
@@ -178,11 +124,7 @@ class Sheet:
 
 
 class Auditor:
-    """Runs the checks over a folder of folders, one per person.
-
-    `bar` is the library's quality preset, the one its scans measure against; absent, the middle
-    preset's. `keep_turned` holds a face turned past the bar's angle rather than refusing it.
-    """
+    """Runs the checks over a folder of folders, one per person, against the library's bar."""
 
     def __init__(
         self,
@@ -204,12 +146,7 @@ class Auditor:
         self._keep_turned = keep_turned
 
     async def examine(self, image: Path) -> Candidate:
-        """One picture, checked and described if it passes.
-
-        The checks run in a thread, as the scan's do: finding, aligning and describing a face is
-        model work, and a folder of thousands done on the event loop stalls every other request
-        and every stream for the length of the import.
-        """
+        """One picture, checked and described if it passes, on a thread."""
         picture = await frames.decode_image(image, self._settings)
         if picture is None:
             return _unreadable(image)
@@ -222,9 +159,8 @@ class Auditor:
     async def _at_own_size(
         self, image: Path, picture: np.ndarray, found: Detection
     ) -> tuple[np.ndarray, Detection]:
-        """The picture a face is measured in: the reduced one, or where the file is larger and the
-        face there is under the size floor, the piece round it at the file's own size. A face is
-        as big as the photograph made it, not as the decode for finding it left it."""
+        """The picture a face is measured in: the reduced one, or the piece at the file's own size
+        where the face there is under the floor."""
         height, width = picture.shape[:2]
         reduced = max(height, width) >= frames.REFERENCE_LONG_SIDE
         if not reduced or found.box.long_side >= self._bar.min_pixels:
@@ -250,20 +186,12 @@ class Auditor:
         )
 
     async def examine_bytes(self, blob: bytes, label: Path) -> Candidate:
-        """A picture that was never a file (a stash-box's photo), checked exactly as a folder's.
-
-        `label` stands where a file's path would, for the report and the log; nothing is opened by
-        it. The same checks and the same order, so a starter passes or fails for the reasons an
-        imported picture would. See `frames.decode_picture_bytes` for why it stays in memory.
-        """
+        """A picture that was never a file (a stash-box's photo), checked exactly as a folder's."""
         picture = await frames.decode_picture_bytes(blob, self._settings)
         return await asyncio.to_thread(self._judge, label, picture)
 
     def _judge(self, image: Path, picture: np.ndarray | None) -> Candidate:
-        """The checks, over a picture already decoded (None when it could not be).
-
-        Synchronous on purpose, called from a thread.
-        """
+        """The checks, over a picture already decoded (None when it could not be), on a thread."""
         if picture is None:
             return _unreadable(image)
         found = self._find(image, picture)
@@ -300,23 +228,14 @@ class Auditor:
         )
         turned = self._keep_turned and quality_module.asked_only(measured)
         if not measured.accepted and not turned:
-            # Named by the check that refused it (`Quality.failed`), the same one that wrote the
-            # sentence, so somebody told what is wrong with their photo is told something they can
-            # act on, and the code and the sentence agree.
-            #
-            # Not worked out here again: a second copy of the rule with fewer cases would log a face
-            # turned from the camera as `too_blurred` beside a detail saying it was turned.
+            # Named by the check that refused it (`Quality.failed`), so code and sentence agree.
             problem = measured.failed or Finding.TOO_BLURRED
             return Candidate(path=image, findings=(problem,), detail=measured.reason)
 
         return Candidate(
             path=image,
             findings=(),
-            # The description's own direction only. A reference is a picture somebody chose on
-            # purpose, and these scores rank a person's chosen pictures against each other rather
-            # than against anything a scan found, so the ranking terms that were added for that
-            # contest are deliberately left out of this one. The audit is what speaks about a
-            # reference that does not belong; see `Finding.ODD_ONE_OUT`.
+            # The description's direction alone: chosen pictures are ranked only against each other.
             vector=self._recognizer.embed(chip).vector,
             chip=chip,
             quality=measured.score,
@@ -347,8 +266,7 @@ def _unreadable(image: Path) -> Candidate:
 
 
 def images_in(folder: Path) -> list[Path]:
-    """The pictures in one person's folder. Reading a directory touches the disk, so it happens off
-    the event loop: a folder on a network share can take a noticeable moment."""
+    """The pictures in one person's folder; reads the disk, so call it off the loop."""
     return [
         image
         for image in sorted(folder.iterdir())
@@ -366,12 +284,7 @@ def folders_in(root: Path) -> list[Path]:
 
 
 def mark_near_duplicates(report: PersonReport) -> None:
-    """Flag pictures that are all but identical to one already kept.
-
-    Compared against what has been kept so far rather than pairwise, so a run of five near-identical
-    pictures reports four rather than ten. The first is kept: two nearly identical references add no
-    information and only lengthen every comparison.
-    """
+    """Flag pictures all but identical to one already kept, against the kept, not pairwise."""
     kept: list[Vector] = []
     for index, candidate in enumerate(report.candidates):
         if candidate.vector is None or not candidate.usable or candidate.turned:
@@ -383,15 +296,7 @@ def mark_near_duplicates(report: PersonReport) -> None:
 
 
 def mark_odd_ones_out(report: PersonReport) -> None:
-    """Flag the picture that does not look like the rest of that person's.
-
-    Judged by how alike a picture is to the *others*, never including itself: a picture is
-    perfectly similar to itself, and including that would drag every score up and hide exactly the
-    case being looked for.
-
-    Needs a few pictures to mean anything: with two, "unlike the others" is a statement about both
-    of them and there is no way to tell which is the intruder.
-    """
+    """Flag the picture unlike the rest of that person's, never compared with itself."""
     described = [
         (index, candidate.vector)
         for index, candidate in enumerate(report.candidates)
@@ -410,12 +315,7 @@ def mark_odd_ones_out(report: PersonReport) -> None:
 
 
 def read_sheet(root: Path) -> Sheet:
-    """The optional spreadsheet dropped beside the folders.
-
-    Four columns, matched by name rather than by position so a spreadsheet with extra columns in it
-    (a status, a note) is read rather than refused. No spreadsheet means a set of people with
-    names and no other names, which is perfectly valid.
-    """
+    """The optional spreadsheet beside the folders, its columns matched by name."""
     aliases: dict[str, tuple[str, ...]] = {}
     links: dict[str, tuple[str, ...]] = {}
     for name in SHEET_NAMES:
@@ -453,12 +353,7 @@ def _split(row: dict[str, str | None], headings: dict[str, str], column: str) ->
 
 
 def _with(candidate: Candidate, finding: Finding) -> Candidate:
-    """The same candidate with one more finding, every other field carried over.
-
-    `replace` rather than a constructor naming the fields: a list written out by hand drops a
-    field the day one is added (`pixels`, say). A near-duplicate is still imported, so it would be
-    stored with a face size of 0 while its twin, the first of the pair, kept the size measured.
-    """
+    """The same candidate with one more finding, every other field carried over by `replace`."""
     return replace(candidate, findings=(*candidate.findings, finding))
 
 

@@ -1,6 +1,7 @@
 import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
+import { trailWords } from './trail';
 
 /* The four sheets and the overlay, driven rather than read.
  *
@@ -211,7 +212,8 @@ test('the folder browser opens on the library and walks into a folder', async ({
 
 	// The trail is the only thing on screen that says where you are, and it is the SHARED one in the
 	// page header. A page does not draw a trail of its own.
-	await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Clips');
+	await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toBeVisible();
+	await expect.poll(() => trailWords(page)).toContain('Clips');
 });
 
 test('and walking into a folder points the WALL at it, without leaving', async ({ page }) => {

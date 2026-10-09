@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from PIL import Image, PngImagePlugin
 
-from sift.kernel import places
+from sift.kernel import places, places_pictures
 from sift.kernel.config import vendored_tool
 
 #: An invented place: the seconds are what the byte checks look for.
@@ -830,7 +830,7 @@ def test_a_png_text_chunk_goes_when_it_holds_a_place_or_cannot_be_read(
 def test_a_png_text_chunk_too_large_to_open_is_dropped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(places, "_TEXT_CAP", 16)
+    monkeypatch.setattr(places_pictures, "_TEXT_CAP", 16)
     source = _made(tmp_path, "large.png", _png(_ztext("Comment", zlib.compress(b"x" * 100))))
 
     copy = places.remove_places(source, tmp_path / "scratch")
@@ -1193,7 +1193,7 @@ def test_a_structure_too_large_to_examine_is_refused(
 def test_a_file_shorter_than_its_size_said_cannot_be_read() -> None:
     reader = places._Source(io.BytesIO(b"short"), 64)
 
-    with pytest.raises(places._Unreadable, match="shorter"):
+    with pytest.raises(places_pictures._Unreadable, match="shorter"):
         reader.read(0, 32)
 
 
@@ -1203,7 +1203,7 @@ def test_a_file_cut_short_while_it_is_copied_is_refused_and_leaves_nothing(
     source = _made(tmp_path, "trip.jpg", _jpeg(_exif_segment(_tiff())))
     planned = places._plan
 
-    def plan_then_cut(path: Path) -> tuple[str, list[places._Splice]]:
+    def plan_then_cut(path: Path) -> tuple[str, list[places_pictures._Splice]]:
         answer = planned(path)
         # Something else cuts the file short between the reading and the copying.
         source.write_bytes(source.read_bytes()[:4])

@@ -509,43 +509,67 @@ async def _passes_said(
     """
     events: list[Event] = []
     if "audio_fingerprints" in here:
-        for row in await database.fetch_all(_MUSIC_PRINT, (asset_id,)):
-            at = int(row["computed_at"])
-            actor, actor_name, by = by_pressed(pressers.of(_MUSIC_PRINT.name, at))
-            events.append(
-                Event(
-                    at=at,
-                    actor=actor,
-                    actor_name=actor_name,
-                    # The fingerprints mark: what the line says is a fingerprint generated, which is
-                    # the duplicate pass's own line's mark too.
-                    kind="scanned",
-                    pieces=say.music_fingerprinted(empty=not int(row["size"] or 0), by=by),
-                    # Housekeeping, as the pictures Sift generates for a file are: one sitting of
-                    # them is one line (`_one_processed_line`). Not where somebody pressed it.
-                    routine=by is None,
-                )
-            )
+        events += await _music_printed(database, asset_id, pressers)
     if {"music_lookups", "workbench_decisions", "workbench_decision_subjects"} <= here:
-        for row in await database.fetch_all(_MUSIC_ASKED, (asset_id,)):
-            status = str(row["status"])
-            if status == "named" and int(row["song_said"]):
-                continue
-            at = int(row["looked_up_at"])
-            actor, actor_name, by = by_pressed(pressers.of(_MUSIC_ASKED.name, at))
-            events.append(
-                Event(
-                    at=at,
-                    actor=actor,
-                    actor_name=actor_name,
-                    kind="asked",
-                    pieces=say.acoustid_answered(status, row["title"], by=by),
-                    # NOT routine, unlike a stash-box that matched nothing: asking AcoustID sends
-                    # the file's fingerprint to somebody else's service, a task of its own that
-                    # runs when it is pressed out of the box, so it is never folded out of sight
-                    # into a sitting of housekeeping.
-                )
+        events += await _music_asked(database, asset_id, pressers)
+    events += await _left_out(database, asset_id, pressers)
+    events += await _details_read_again(database, asset_id, pressers, arrived)
+    if {"asset_stash_box_matches", "stash_boxes"} <= here:
+        events += await _matches_waiting(database, asset_id, pressers)
+    return events
+
+
+async def _music_printed(database: Database, asset_id: str, pressers: Pressers) -> list[Event]:
+    """The music fingerprint, generated."""
+    events: list[Event] = []
+    for row in await database.fetch_all(_MUSIC_PRINT, (asset_id,)):
+        at = int(row["computed_at"])
+        actor, actor_name, by = by_pressed(pressers.of(_MUSIC_PRINT.name, at))
+        events.append(
+            Event(
+                at=at,
+                actor=actor,
+                actor_name=actor_name,
+                # The fingerprints mark: what the line says is a fingerprint generated, which is
+                # the duplicate pass's own line's mark too.
+                kind="scanned",
+                pieces=say.music_fingerprinted(empty=not int(row["size"] or 0), by=by),
+                # Housekeeping, as the pictures Sift generates for a file are: one sitting of
+                # them is one line (`_one_processed_line`). Not where somebody pressed it.
+                routine=by is None,
             )
+        )
+    return events
+
+
+async def _music_asked(database: Database, asset_id: str, pressers: Pressers) -> list[Event]:
+    """AcoustID's answer, where the song is not already said."""
+    events: list[Event] = []
+    for row in await database.fetch_all(_MUSIC_ASKED, (asset_id,)):
+        status = str(row["status"])
+        if status == "named" and int(row["song_said"]):
+            continue
+        at = int(row["looked_up_at"])
+        actor, actor_name, by = by_pressed(pressers.of(_MUSIC_ASKED.name, at))
+        events.append(
+            Event(
+                at=at,
+                actor=actor,
+                actor_name=actor_name,
+                kind="asked",
+                pieces=say.acoustid_answered(status, row["title"], by=by),
+                # NOT routine, unlike a stash-box that matched nothing: asking AcoustID sends
+                # the file's fingerprint to somebody else's service, a task of its own that
+                # runs when it is pressed out of the box, so it is never folded out of sight
+                # into a sitting of housekeeping.
+            )
+        )
+    return events
+
+
+async def _left_out(database: Database, asset_id: str, pressers: Pressers) -> list[Event]:
+    """A pass that gave up on the file."""
+    events: list[Event] = []
     for row in await database.fetch_all(_LEFT_OUT, (asset_id,)):
         at = int(row["at"])
         product = str(row["product"])
@@ -559,6 +583,14 @@ async def _passes_said(
                 pieces=say.could_not(product, again=bool(int(row["transient"])), by=by),
             )
         )
+    return events
+
+
+async def _details_read_again(
+    database: Database, asset_id: str, pressers: Pressers, arrived: tuple[int, object] | None
+) -> list[Event]:
+    """The details read again after the file arrived."""
+    events: list[Event] = []
     # The read that took the file in is part of its arrival, which is the line above everything
     # else here, as an arriving file's fingerprints are (`identity.record_fingerprints`). A read
     # after that sitting (a Run task press of File details, a pass that reads files again) is said.
@@ -578,17 +610,22 @@ async def _passes_said(
                 routine=by is None,
             )
         )
-    if {"asset_stash_box_matches", "stash_boxes"} <= here:
-        for row in await database.fetch_all(_WAITING_MATCH, (asset_id,)):
-            at = int(row["found_at"])
-            actor, actor_name, by = by_pressed(pressers.of(_WAITING_MATCH.name, at))
-            events.append(
-                Event(
-                    at=at,
-                    actor=actor,
-                    actor_name=actor_name,
-                    kind="asked",
-                    pieces=say.asked_and_waiting(str(row["box"]), by=by),
-                )
+    return events
+
+
+async def _matches_waiting(database: Database, asset_id: str, pressers: Pressers) -> list[Event]:
+    """A stash-box match waiting for somebody."""
+    events: list[Event] = []
+    for row in await database.fetch_all(_WAITING_MATCH, (asset_id,)):
+        at = int(row["found_at"])
+        actor, actor_name, by = by_pressed(pressers.of(_WAITING_MATCH.name, at))
+        events.append(
+            Event(
+                at=at,
+                actor=actor,
+                actor_name=actor_name,
+                kind="asked",
+                pieces=say.asked_and_waiting(str(row["box"]), by=by),
             )
+        )
     return events

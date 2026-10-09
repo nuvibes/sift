@@ -1,44 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A file's song: the one door every writer of it goes through.
 
-A song is a row of `songs` (the note over the table in `kernel/access/schema.py` says what one is)
-and a file carries at most one: its row of `song_files`. Five things put a song on a file: a
-download reading a Site's page, AcoustID's answer to the file's music fingerprint, another file
-with the same music, a swap from another install, and a person's own hand (the file's Music
-field, or the song's own page).
-Every one of them comes through here.
-
-## The one home, and the field that follows it
-
-`song_files` is where a file's song is. `assets.music`, the file's Music field, is read by the
-record, the search index, the `music:` filter, a swap and a Stash import, and it is KEPT EQUAL to
-the song's name by the triggers below rather than written by anybody: a file put on a song takes
-its name, a song renamed renames every file on it, a song merged into another moves its files'
-names with them, and a file taken off its song has the field emptied. So nothing that reads the
-field needs to know songs exist, and no writer can leave the two saying different things.
-`test_songs` holds that no statement outside this module writes the field.
-
-`music_names`, where the music feature recorded where Sift's name for a file came from, is moved
-here by catalog step 81 and dropped by the music feature's own step after it: its facts (the
-source, the file a name came from, the recording, the score) are the membership's and the song's
-own columns. `music_lookups` stays: it is what AcoustID was asked and what it said, whether or not
-any file took the name.
-
-## Which song a name means
-
-A recording is one song: an answer naming a recording finds the song that carries it. A name with
-no recording finds the song of that name, the one with no recording first, so a name read off a
-Site's page and the same name typed later are one song; and an answer whose recording no song
-carries yet takes a song of the same name that has none, which is the page's name and AcoustID's
-being the same piece of music. Two recordings with one name stay two songs, and two songs a person
-knows are one are merged on the Music page.
-
-## Who made a song
-
-A song made here says who made it in the five columns every row in the catalog carries: Sift and
-the task (the download for a Site's page, the lookup for AcoustID), or the user who typed it. A
-song made from the same music as another file is that file's song already, so no song is made that
-way unless the file it came from carries a name and no song, which only an older library can.
+`song_files` is where a file's song is; the file's Music field is kept equal to the song's name by
+the triggers below, never written by anybody. A recording is one song; a name with no recording
+finds the song of that name, the one with no recording first.
 """
 
 from __future__ import annotations
@@ -49,7 +14,7 @@ from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from sift.kernel.db import Connection, register_schema_invariant
+from sift.kernel.db import Connection, Row, register_schema_invariant
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
@@ -789,27 +754,8 @@ class _Group:
         return min(moments) if moments else _now()
 
 
-async def move_named_songs(connection: Connection) -> dict[str, int]:
-    """Catalog version 81: every song a file carries, moved onto a row of `songs`.
-
-    Every file with a name in its Music field is put on a song: grouped by the AcoustID recording
-    where the music feature recorded one (and only while the field still says what it recorded,
-    as `identity.music_provenance` reads it: a name typed over Sift's is the typer's), otherwise by
-    the name, case and spacing folded, and a name group joins the recording's song of the same
-    name. Where the feature recorded the name's source, the membership keeps it, with the file it
-    came from and the score; every other name was typed or arrived before anything recorded it, and
-    reads as a person's hand. Each file's field is then the song's name, which the triggers
-    write: a file whose field was spelled differently from most of its song's files is respelled.
-
-    One History line for the library, never one per file. Idempotent: a library that has a song
-    already has been through this. Answers the counts, which it logs.
-    """
-    counts = {"songs": 0, "files": 0, "respelled": 0}
-    if list(await connection.execute_fetchall(_ANY_SONG)):
-        log.info("songs.moved", **counts)
-        return counts
-    noted = await table_exists(connection, "music_names")
-    rows = list(await connection.execute_fetchall(_NAMED_FILES if noted else _NAMED_FILES_ALONE))
+def _grouped(rows: list[Row]) -> list[_Group]:
+    """The named files grouped by recording, else by folded name; a name joins its recording."""
     by_recording: dict[str, _Group] = {}
     by_name: dict[str, _Group] = {}
     for row in rows:
@@ -846,6 +792,22 @@ async def move_named_songs(connection: Connection) -> dict[str, int]:
         joined.names.update(group.names)
         joined.files.extend(group.files)
         joined.sources |= group.sources
+    return groups
+
+
+async def move_named_songs(connection: Connection) -> dict[str, int]:
+    """Catalog version 81: every song a file carries, moved onto a row of `songs`.
+
+    Grouped by recording where the music feature recorded one, else by folded name; one History line
+    for the library, idempotent, answering the counts.
+    """
+    counts = {"songs": 0, "files": 0, "respelled": 0}
+    if list(await connection.execute_fetchall(_ANY_SONG)):
+        log.info("songs.moved", **counts)
+        return counts
+    noted = await table_exists(connection, "music_names")
+    rows = list(await connection.execute_fetchall(_NAMED_FILES if noted else _NAMED_FILES_ALONE))
+    groups = _grouped(rows)
     first: tuple[str, str] | None = None
     for group in groups:
         song_id = new_id()

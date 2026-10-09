@@ -15,13 +15,13 @@ import pytest
 
 from sift.kernel.db import Database
 from sift.slices.backup import recycle
+from sift.slices.backup.naming import filename_for
 from sift.slices.backup.service import (
     FOLDER_KEY,
     KEEP_DAYS_KEY,
     KEEP_KEY,
     BackupService,
     NotThere,
-    filename_for,
     keep_days_from,
 )
 from sift.slices.settings_hub import SettingsService

@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from sift.kernel import subprocess as sp
+from sift.kernel import subprocess_jobs
 from sift.testing.tools import ON_WINDOWS, REAL_PYTHON
 
 
@@ -1220,9 +1221,9 @@ class _Tool:
 def test_a_memory_watch_that_cannot_be_set_up_says_so_rather_than_watching_nothing() -> None:
     """No port, or a job that will not report to it: None, so the caller runs the tool without a
     limit nothing is listening for."""
-    assert sp._MemoryWatch(_Api(port=0)).watch(7, _Tool()) is None  # type: ignore[arg-type]
+    assert subprocess_jobs._MemoryWatch(_Api(port=0)).watch(7, _Tool()) is None  # type: ignore[arg-type]
 
-    refusing = sp._MemoryWatch(_Api(sets=False))
+    refusing = subprocess_jobs._MemoryWatch(_Api(sets=False))
     assert refusing.watch(7, _Tool()) is None  # type: ignore[arg-type]
     assert refusing.watch(8, _Tool()) is None, "the port it already made is used again"  # type: ignore[arg-type]
 
@@ -1233,14 +1234,14 @@ def test_only_a_breach_by_a_job_still_held_ends_it_and_a_gone_port_ends_the_list
     already forgotten, end nothing; a breach ends its job and marks a tool that is still there; a
     port that is gone stops the thread rather than spinning on it."""
     api = _Api()
-    watch = sp._MemoryWatch(api)
+    watch = subprocess_jobs._MemoryWatch(api)
     watch._port = 5
     alive = _Tool()
     gone = _Tool()
     held: Any = {1: (101, weakref.ref(alive)), 2: (102, weakref.ref(gone))}
     watch._jobs = held
     del gone
-    breach = sp._MESSAGE_JOB_MEMORY_LIMIT
+    breach = subprocess_jobs._MESSAGE_JOB_MEMORY_LIMIT
     api.completions = [
         (False, 0, 0, 1),
         (True, breach + 1, 1, 1),
@@ -1253,7 +1254,7 @@ def test_only_a_breach_by_a_job_still_held_ends_it_and_a_gone_port_ends_the_list
     watch._listen()
 
     assert api.ended == [102, 101]
-    assert alive in sp._OVER_MEMORY  # type: ignore[comparison-overlap]
+    assert alive in subprocess_jobs._OVER_MEMORY  # type: ignore[comparison-overlap]
     assert api.completions == []
 
 
@@ -1293,7 +1294,7 @@ class _RateApi(_Api):
 
     def SetInformationJobObject(self, *args: Any) -> bool:
         job, kind, info, _ = args
-        if kind == sp._CPU_RATE_INFORMATION:
+        if kind == subprocess_jobs._CPU_RATE_INFORMATION:
             self.rates.append((job, info._obj.ControlFlags, info._obj.CpuRate))
         return True
 
@@ -1317,7 +1318,7 @@ def test_a_background_tool_is_held_to_the_rate_in_force_and_let_go_with_it(
     monkeypatch.setattr(sp, "_LIVE_JOBS", set())
     monkeypatch.setattr(sp, "_BACKGROUND", weakref.WeakSet())
     monkeypatch.setattr(sp, "_background_rate", None)
-    on = sp._CPU_RATE_ON | sp._CPU_RATE_HARD_CAP
+    on = subprocess_jobs._CPU_RATE_ON | subprocess_jobs._CPU_RATE_HARD_CAP
 
     running, waited_on, arriving = _Held(), _Held(), _Held()
     sp._contain(running, background=True)  # type: ignore[arg-type]

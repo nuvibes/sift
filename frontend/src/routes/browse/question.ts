@@ -39,10 +39,7 @@ export function cleared(
 	return kept;
 }
 
-/*
- * The bare word searched for, or empty for anything more. Bare is the absence of a colon and a
- * minus, since the client has no parser; a wrong guess draws a band that comes back empty.
- */
+/* The bare word searched for, or empty for anything more. */
 export function bareWord(question: Record<string, string>): string {
 	const word = (question.q ?? '').trim();
 	const bare =

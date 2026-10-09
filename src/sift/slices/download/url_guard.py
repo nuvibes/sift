@@ -1,28 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Deciding whether the server is allowed to fetch a URL, before it fetches it.
+"""Deciding whether the server may fetch a URL: the early SSRF answer, before a tool runs.
 
-This slice takes an address a person typed and makes the server go and get it. That is the exact
-shape of a server-side request forgery, and it is the most dangerous thing in the backend: without
-a check, the address could point the server at its own loopback, at the private network the machine
-sits on (a house full of admin panels) or at a cloud metadata endpoint that hands out
-credentials. Being admin-only is not a defense, because an admin deliberately pastes untrusted
-links from the internet. Routing egress through a VPN is not a defense either: it changes which
-network the request leaves from, not whether the address resolves to a private one.
-
-So every address is checked here first, and the check is about where it actually resolves, not what
-it looks like. The scheme must be http or https. The host is resolved, and every address it resolves
-to must be a public one: not loopback, not a private range, not link-local, not the metadata
-address. And because a public URL is free to redirect to a private one, the redirects are walked
-here, before the tool runs, and every hop is held to the same rule. A chain that starts public and
-ends private is refused, not followed. The walk is asked by the route the download holds, so a Site
-set to a tunnel is sent nothing from this machine's own address; through a tunnel a name is not
-resolved here at all (only a literal address is judged), as the tool proxy does it.
-
-A tool follows redirects and fetches segments on its own once it has the URL, so this pre-walk is
-the early answer rather than the only one: it refuses a private link before a tool is spawned, with
-a sentence a person can read. Everything a tool connects to afterwards goes through the kernel's
-tool proxy (`kernel.public_net.ToolProxy`), which holds every connection to the same rule.
-"""
+Every resolved address and every redirect hop must be public; the tool proxy guards the rest."""
 
 from __future__ import annotations
 
@@ -40,29 +19,20 @@ from sift.kernel.public_net import address_is_public, literal_address
 
 log = get_logger(__name__)
 
-#: The only schemes a downloader is ever handed. Everything else (file, ftp, gopher, data) is a
-#: way to reach something that is not a web resource, so none of them is allowed.
 SAFE_SCHEMES = frozenset({"http", "https"})
 
-#: A cap on how many redirects the pre-walk follows before giving up. A chain longer than this is
-#: either broken or deliberately trying to exhaust the check.
+#: A longer chain is broken or trying to exhaust the check.
 MAX_REDIRECT_HOPS = 10
 
-#: How long a single pre-walk request may take.
 _REDIRECT_TIMEOUT = aiohttp.ClientTimeout(total=10.0)
 
-#: The answers that send a request somewhere else.
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
-#: Follows one redirect: given a URL, returns where it points next, or None if it does not redirect.
 Follower = Callable[[str], Awaitable[str | None]]
 
 
 class UrlRejected(Exception):
-    """A URL may not be fetched. The message is plain-language and names no address.
-
-    `reason` is a short stable code for the log and the tests; the message is what a person reads.
-    """
+    """A URL may not be fetched; the message names no address, `reason` is a stable code."""
 
     def __init__(self, message: str, *, reason: str) -> None:
         super().__init__(message)
@@ -81,12 +51,7 @@ def _resolve(host: str) -> list[str]:
 
 
 def _check_address(url: str, *, here: bool = True) -> None:
-    """Check one URL's scheme and where its host resolves. Raises `UrlRejected` on any problem.
-
-    Resolve-then-check, and check every address the host offers: a host that resolves to one public
-    and one private address is refused, because the tool is free to connect to either. Not `here`
-    (through a tunnel), only a literal address or a name for this machine is judged.
-    """
+    """Check a URL's scheme and every address its host offers; not `here`, only literal ones."""
     parts = urlsplit(url)
     scheme = parts.scheme.lower()
     if scheme not in SAFE_SCHEMES:
@@ -121,16 +86,11 @@ def _refuse(url: str, reason: str, message: str) -> NoReturn:
 
 
 async def next_hop(session: aiohttp.ClientSession, url: str) -> str | None:
-    """Where a URL redirects to, asked with a HEAD on `session` and never followed; None if not.
-
-    The session is the download's own, so the ask leaves by the download's route. An address that
-    cannot be reached is None as well: the tool then fails on it with a real reason.
-    """
+    """Where a URL redirects, asked with a HEAD on the download's own session; None if not."""
     try:
         async with session.head(url, allow_redirects=False, timeout=_REDIRECT_TIMEOUT) as answer:
             if answer.status not in _REDIRECT_STATUSES:
                 return None
-            # aiohttp's own precedence when it follows a redirect.
             location = answer.headers.get("Location") or answer.headers.get("URI")
     except (aiohttp.ClientError, OSError):
         return None
@@ -140,11 +100,7 @@ async def next_hop(session: aiohttp.ClientSession, url: str) -> str | None:
 async def guard_url(
     url: str, *, follow: Follower, here: bool = True, max_hops: int = MAX_REDIRECT_HOPS
 ) -> None:
-    """Refuse a URL the server must not fetch. Returns on success, raises `UrlRejected` otherwise.
-
-    Checks the address, then walks its redirects with `follow` and checks each hop the same way.
-    `here` is False when the walk goes through a tunnel (see `_check_address`).
-    """
+    """Refuse a URL the server must not fetch, checking every redirect hop the same way."""
     _check_address(url, here=here)
 
     current = url
@@ -159,24 +115,12 @@ async def guard_url(
 
 
 def check_url(url: str, *, here: bool = True) -> None:
-    """Refuse a URL by scheme and resolved address, without walking its redirects.
-
-    For a caller that fetches the URL with redirects disabled: the curl_cffi resolvers, which cannot
-    pin a connection and so refuse rather than chase a redirect to a fresh, unvetted address.
-    `guard_url` adds the redirect pre-walk for a caller whose fetch will follow them. Not `here`,
-    nothing is resolved: the check a link gets before its route is known.
-    """
+    """Refuse a URL by scheme and resolved address, for a caller that never follows redirects."""
     _check_address(url, here=here)
 
 
 def confine_to(root: Path, candidate: Path) -> Path:
-    """Return `candidate` resolved, having proved it is inside `root`. Raises `UrlRejected` if not.
-
-    A downloader names its own output file, and that name came from the same untrusted place the
-    bytes did: it can carry `..` or an absolute path that walks out of the directory it was meant
-    to land in. Resolving both and checking containment is what makes "inside the download folder" a
-    fact rather than a hope; the shared `confine` also fails closed on a path that will not resolve.
-    """
+    """Return `candidate` resolved, proved inside `root`: a tool's file name is untrusted."""
     try:
         return confine(root, candidate)
     except PathEscape:
@@ -187,7 +131,6 @@ def confine_to(root: Path, candidate: Path) -> Path:
         ) from None
 
 
-#: `address_is_public` is the kernel's rule; the slice's modules ask for it here.
 __all__ = [
     "MAX_REDIRECT_HOPS",
     "SAFE_SCHEMES",

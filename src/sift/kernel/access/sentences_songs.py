@@ -111,6 +111,10 @@ def _song_line(
         if file is None:
             return said(by, f" named the song {song}{SONG_FROM_SAME_MUSIC}", origin)
         return said(by, f" named the song {song} on ", file, SONG_FROM_SAME_MUSIC, origin)
+    return _from_a_page(by, song, file, site, site_is_page)
+
+
+def _from_a_page(by: str, song: str, file: Part, site: Part, site_is_page: bool) -> Line:
     if site_is_page:
         return said(by, f" named the song {song} on ", file, " from this Site's page")
     if file is None:

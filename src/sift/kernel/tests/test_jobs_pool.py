@@ -28,6 +28,7 @@ from sift.kernel.jobs import (
     Workspaces,
     in_claim_order,
     register_handler,
+    registry,
     retrying,
     worker_pool,
 )
@@ -541,7 +542,7 @@ async def test_a_pool_with_a_ledger_tells_it_what_each_job_was_about(
 ) -> None:
     """One job about a video of a known size, saying it was about three files: the run opens with
     it, and counts three video files of that many bytes."""
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
     units_seen: list[int] = []
 
     async def handler(context: JobContext) -> None:
@@ -587,7 +588,7 @@ async def test_the_ledger_is_told_what_a_job_ended_with_only_once_it_will_not_be
     library_store: LibraryStore,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
 
     async def missing(_context: JobContext) -> None:
         raise FileNotFoundError("clip.mp4")
@@ -622,7 +623,7 @@ async def test_the_ledger_is_told_what_a_job_ended_with_only_once_it_will_not_be
 async def test_a_done_jobs_note_reaches_the_report_and_a_failed_ones_does_not(
     job_queue: JobQueue, temp_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
     unread = (
         "1 folder stopped answering partway through, so nothing in it was marked missing or"
         " unreadable."
@@ -670,7 +671,7 @@ async def test_the_run_is_requested_by_the_user_on_the_job_and_children_carry_no
     """The pool hands the claimed job's `requested_by` to the ledger, so the run names the person;
     the children the job hands out carry nobody, so another family's run is not named for a press
     that was not of it."""
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
     children: list[str] = []
 
     async def walk(context: JobContext) -> None:
@@ -718,7 +719,7 @@ async def test_the_run_records_the_products_its_jobs_were_for(
     """The pool hands the ledger what a claimed job was FOR: a carrier's payload products, and for
     any other job the product its type is the maker of. So a Generate run of the music product is
     Music's run, not Generate's thumbnails'."""
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
 
     async def nothing(context: JobContext) -> None:
         return None
@@ -770,7 +771,7 @@ async def test_work_handed_to_another_job_of_the_same_family_is_not_work_done(
     The probes are counted too, one each, which is the half that belongs to the family's pace: what
     a scan has LEFT is files nothing has read yet, and reading one is what takes it off that pile.
     """
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
 
     async def walk(context: JobContext) -> None:
         await context.set_units(5)
@@ -819,7 +820,7 @@ async def test_a_file_the_store_cannot_say_anything_about_is_counted_with_no_kin
     """A payload naming no file, one naming a file the store has no row for, and one naming a file
     the store cannot read at all: every job is counted, as a file of no known kind, and the read
     failing is never the job failing."""
-    monkeypatch.setattr(worker_pool, "_FAMILIES", {})
+    monkeypatch.setattr(registry, "_FAMILIES", {})
     register_handler("probe", Recorder().handler, name="Test job", family=Family.SCAN)
     ledger = Ledger(temp_db, families_of=worker_pool.registered_families())
     pool = WorkerPool(
@@ -1453,7 +1454,7 @@ def test_a_declared_failure_holds_its_job_and_an_ordinary_one_does_not(
     class CardGone(RuntimeError):
         pass
 
-    monkeypatch.setattr(worker_pool, "_HOLDS", {})
+    monkeypatch.setattr(registry, "_HOLDS", {})
     with pytest.raises(ValueError, match="positive number of seconds"):
         hold_on(CardGone, seconds=0)
     hold_on(CardGone, seconds=90)

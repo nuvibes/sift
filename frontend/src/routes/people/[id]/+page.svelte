@@ -3,14 +3,7 @@
 	import type { Frame } from '$lib/entity/cover-frame';
 	import { filesSized, sizeOf } from '$lib/entity/entity-counts';
 	import { untrack } from 'svelte';
-	/*
-	 * One person: their name, the vault flag, and the editor for the other names they go by.
-	 *
-	 * The alias list here holds names somebody typed. A USERNAME is not listed among them, deliberately:
-	 * it is a name on one Site rather than another name for the person, and listing it here would
-	 * invite deleting it and being surprised the username survived. Usernames are drawn on the Sites tab
-	 * instead, under the card of the Site each one is on. See `usernamesHere` below.
-	 */
+	/* One person: their name, the vault flag, and the editor for the other names they go by. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import { page } from '$app/state';
@@ -101,16 +94,7 @@
 	const shown = $derived<RelatedKind>(chosenTab('person', asked));
 	const fileWords = new TabWords();
 
-	/*
-	 * THIS PERSON'S USERNAMES, filed by the Site each is on, for the Sites tab.
-	 *
-	 * A username has no page of its own; it is shown here, under the card of its Site, with how
-	 * many files were posted under it and the Site's own number when that is known. One read for
-	 * the whole tab (see `UsernamesByCard`).
-	 *
-	 * Read only while the Sites tab is showing (no other tab draws them), and again whenever the
-	 * library moves, because a filing, a join or a typed number all change what a line says.
-	 */
+	/* THIS PERSON'S USERNAMES, filed by the Site each is on, for the Sites tab. */
 	const usernamesHere = new UsernamesByCard('site_id');
 
 	$effect(() => {
@@ -126,22 +110,12 @@
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
 	reloadOnLibraryChange(() => counts.refresh());
 
-	/* How many fields a stash-box disagrees with about this record, out of the strip's own numbers.
-	 *
-	 * Off the counts map rather than asked for separately, because it arrives with every other number
-	 * on that strip (one request, one moment), and because the panel on the History tab OVERWRITES
-	 * it through `saw` the moment it has read them itself. Two readers of one number is how a mark
-	 * comes to stand over a panel that has nothing in it.
-	 *
-	 * Undefined until the strip has answered, which draws no mark: a mark that appeared and then went
-	 * again would report a question that was never there. */
+	/* How many fields a stash-box disagrees with about this record, out of the strip's own
+	 * numbers. */
 	const disagreeing = $derived(counts.current.disagreements ?? 0);
 
-	/*
-	 * WHAT HAPPENED TO THEM is `EntityHistory`, which owns all of it: the asking, the two states an
-	 * array cannot tell apart, and the Undo. It is a file of its own with its own tests (mounting
-	 * this page takes fifteen stand-ins), and this page says which subject and which one of them.
-	 */
+	/* WHAT HAPPENED TO THEM is `EntityHistory`, which owns all of it: the asking, the two states
+	 * an array cannot tell apart, and the Undo. */
 
 	let aliases = $state<Alias[]>([]);
 	let links = $state<Link[]>([]);
@@ -151,62 +125,36 @@
 	/* Bumped when suggestions are agreed to or what a swap brought is added, so the recognition
 	   bar beside them re-reads: those are what move that number, and they sit together on purpose. */
 	let agreed = $state(0);
-	/* The stash-boxes this person's starter pictures came from, as the recognition bar reads them,
-	   or null where Sift already knows them by a face somebody confirmed. */
+	/* The stash-boxes this person's starter pictures came from, as the recognition bar reads
+	   them, or null where Sift already knows them by a face somebody confirmed. */
 	let starterBoxes = $state<readonly string[] | null>(null);
 
 	/** Rising counter, so aliases fetched for the person we have just navigated away from cannot
-	 * land under the name of the one we navigated to. Without it the previous person's other
-	 * names appear under this person's heading, and removing one from there deletes nothing. */
+	 * land under the name of the one we navigated to. */
 	let generation = 0;
 
-	/* The subject, fetched by id.
-	 *
-	 * Not read out of the shared list, which is one page of the WALL: a bounded number of rows in
-	 * a chosen order. Anybody ranked past the cap would have no page at all, and anything that
-	 * replaced the cached page (the vault opening or shutting, a reload, a later page being
-	 * fetched) would take the subject out from under an already-open page.
-	 *
-	 * Every write below assigns back into this. The store owns the writing; this is where the
-	 * page finds out who it is about.
-	 */
-	/* Whether the form is up. On the PAGE rather than inside the header, because editing replaces
-	 * what the page is showing: one save at the end of a whole record is a screen's worth of boxes,
-	 * and a strip above a wall of files is not where that goes. */
+	/* The subject, fetched by id. Not read out of the shared list, which is one page of the
+	 * WALL: a bounded number of rows in a chosen order. */
+	/* Whether the form is up. */
 	let editing = $state(false);
-	/* The subject and its fetching flags, shared with every entity page (`EntitySubject`): a re-read
-	 * leaves this person on screen. `follow` also hears a share given or taken back, which changes
-	 * what this account may see and announces no import job. */
+	/* The subject and its fetching flags, shared with every entity page (`EntitySubject`): a
+	 * re-read leaves this person on screen. */
 	const subject = new EntitySubject<Person>((id) => people.one(id));
 	subject.follow(() => personId);
 	/* Held until what sits under the cover answers too, so the header is drawn once (`underCover`). */
 	const cover = underCover(() => personId);
-	/* Read through a `const` so the markup keeps its narrowing. A field on a class is not narrowed
-	 * inside an event handler (the checker has to assume anything could have reassigned it since
-	 * the enclosing block was entered), and every button on this page reads a field off it. */
+	/* Read through a `const` so the markup keeps its narrowing. */
 	const person = $derived(subject.value);
 
-	/* The whole record, saved once.
-	 *
-	 * Everything is diffed against what is stored rather than written unconditionally: a rename
-	 * costs a re-index of everything filed under that name, and adding an alias that is already
-	 * there is a refusal the person editing did not cause. Nothing is written for a field nobody
-	 * touched.
-	 *
-	 * The name and the details ride together because the route that takes them replaces what it
-	 * is sent: sending one without the other renames somebody to nothing, or clears what an
-	 * admin wrote, as a side effect of the other edit.
-	 */
+	/* The whole record, saved once. */
 	async function saveRecord(draft: Record<string, unknown>) {
 		if (!person) return;
 		const wantedName = String(draft.name ?? '').trim() || person.name;
 		const wantedNotes = String(draft.details ?? '').trim();
 		/* The row is written every time, even when the name and the details are unchanged: the
-		 * record is on that row, so skipping the write when the name is the same would throw away
-		 * a changed birthdate, and editing a record is usually editing everything except the
-		 * name. The other names and the addresses ride on the same request, so an address the
-		 * server refuses refuses the whole save rather than leaving the rename behind it.
-		 */
+		 * record is on that row, so skipping the write when the name is the same would throw
+		 * away a changed birthdate, and editing a record is usually editing everything except
+		 * the name. */
 		const wantedAliases = ((draft.aliases as string[]) ?? []).map((one) => one.trim());
 		const wantedLinks = ((draft.links as string[]) ?? []).map((one) => one.trim());
 		subject.value = await people.update(
@@ -222,8 +170,7 @@
 		);
 		notes = wantedNotes;
 
-		/* Tags, which the form edits into its draft rather than writing as they are pressed. See
-		   `RecordForm`. Diffed, so a record saved with nothing changed writes no tag. */
+		/* Tags, which the form edits into its draft rather than writing as they are pressed. */
 		const wantedTags = (draft.tags as { id: string }[] | undefined) ?? [];
 		for (const gone of tags.filter((one) => !wantedTags.some((held) => held.id === one.id))) {
 			await entityTags.set('people', person.id, gone.id, false);
@@ -237,9 +184,7 @@
 		toasts.show('Saved', { tone: 'success' });
 	}
 
-	/* How many files the Files tab holds while picks filter it (null: nothing picked). Asked of
-	   the same listing the tab reads, once per change of the picks, with a sequence number so a
-	   slower answer for picks moved away from cannot land over the current one. */
+	/* How many files the Files tab holds while picks filter it (null: nothing picked). */
 	let narrowedFiles = $state<number | null>(null);
 	let narrowedAsk = 0;
 	$effect(() => {
@@ -260,39 +205,30 @@
 			...counts.current,
 			// Files is the one wall this page does not fetch (the media grid does), and the
 			// person's own row already carries that number, scoped the same way.
-			// The filtered figure while picks are in force, the record's own otherwise. See `narrowedFilesTotal`.
 			files: narrowedFiles ?? person?.asset_count
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
-		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   length of the very thread the pane draws, read beside the strip (`readThread`). */
+		   word on a row of numbered ones reads as a tab nobody has looked at yet. */
 		{
 			id: HISTORY,
 			label: 'History',
 			icon: 'history' as const,
 			href: `/people/${personId}?show=${HISTORY}`,
 			count: counts.current.history,
-			/* And a mark where a stash-box disagrees with this record. It is on THIS word
-			   because the panel that settles it is at the top of this tab, so the mark is
-			   what says the question is there without anybody opening anything. Absent at
-			   nought and absent for anyone who may not settle them, which is what an absent
-			   count from the strip already means. */
+			/* And a mark where a stash-box disagrees with this record. */
 			attention: disagreeing > 0 ? waitingText(disagreeing, counts.boxes) : undefined
 		}
 	]);
 
-	/* Sharing a person shares everything they are in, and keeps doing so as more arrives, which is
-	   the reason the logical axis exists at all. A folder share is a share of what is on a disk; this
-	   is a share of a subject, and it reaches next month's files without anybody going back to it. */
+	/* Sharing a person shares everything they are in, and keeps doing so as more arrives, which
+	   is the reason the logical axis exists at all. */
 	let shareOpen = $state(false);
 	let reachOpen = $state(false);
 	const shareTarget = $derived<ShareTarget | null>(
 		person ? { type: 'person', id: person.id, label: person.name } : null
 	);
 
-	/* The tags on this person, fetched per page and forgotten with it. Keyed on the id alone, for
-	 * the same reason the aliases effect below is: reading the person object would make the whole
-	 * list a dependency and refetch these on every drag-assign anywhere in the app. */
+	/* The tags on this person, fetched per page and forgotten with it. */
 	const tags = $derived(entityTags.items);
 
 	$effect(() => {
@@ -301,8 +237,7 @@
 		if (id) void entityTags.load('people', id);
 	});
 
-	/* The store puts a failed write back on its own, so all these have to do is say so. Silence
-	 * would be a heart that springs back with nothing on screen to explain it. */
+	/* The store puts a failed write back on its own, so all these have to do is say so. */
 	async function heart(favorite: boolean) {
 		try {
 			await people.setFavorite(personId, favorite);
@@ -341,10 +276,6 @@
 
 	// Keyed on the id alone. Reading `people.byId` in here would make the whole list a dependency,
 	// so every drag-assign anywhere would refetch these and widen the window above.
-	//
-	// AND ON THE LIBRARY BELL, as the row above is (`subject.follow`): a merge writes the name that
-	// went onto the survivor as another name and brings the other person's links with it, and a
-	// page standing on the survivor has to list them without a reload.
 	$effect(() => {
 		void libraryChanges.generation;
 		void refreshLists(personId);
@@ -373,59 +304,23 @@
 		}
 	}
 
-	/*
-	 * Notes: free text an admin wrote about somebody.
-	 *
-	 * Read from a route of their own rather than from the person row, because the row is what every
-	 * wall and every suggester draws and notes belong on none of them. Written through the person
-	 * route, which is the only writer of the column. The read being separate does not make it a
-	 * second way to change it.
-	 *
-	 * Asked for by anybody signed in, not only an admin. Details is part of what the record says,
-	 * and a guest who saw four of its five fields would be reading a record that looks broken. The
-	 * server agrees: the read is open, the write is not, and neither is in the search index.
-	 *
-	 * The same editor the site page has, for the same reason a heart is the same heart: two boxes
-	 * that both mean "what I wrote about this" should not behave differently.
-	 */
+	/* Notes: free text an admin wrote about somebody. */
 	let notes = $state('');
 	let notesFor = $state('');
 	let notesLoaded = $state(false);
 
-	/* Everything the record is made of, in one place.
-	 *
-	 * The readout, the summary under the name and the form are three surfaces over the same facts,
-	 * and each of them building its own object is how one of them ends up a field behind. The form
-	 * takes the links as plain addresses because that is what its list editor edits; everything else
-	 * is identical.
-	 */
-	/* The stash-boxes that have been agreed to know this person.
-	 *
-	 * Its own read, because it belongs to a different slice and is optional: an install with no
-	 * stash-boxes configured gets an empty list and every screen here works exactly as before. A
-	 * failure is an empty list too: the record is not the place a network problem surfaces.
-	 */
+	/* Everything the record is made of, in one place. */
+	/* The stash-boxes that have been agreed to know this person. */
 	let sources = $state<StashBoxLink[]>([]);
-	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`).
-	   Null for everything nothing recorded, which is most of a library. */
+	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`). */
 	let madeBy = $state<Maker | null>(null);
 	let sourcesFor = $state('');
 	let lookUpOpen = $state(false);
 	let mergeOpen = $state(false);
 
-	/* Everything this page can do to this person, behind the one door.
-	 *
-	 * Declared rather than drawn, which is what lets the same rows sit in the same menu on every
-	 * entity page instead of each growing its own row of named buttons, which would be the widest
-	 * thing on a page about somebody's files.
-	 *
-	 * Merging keeps its component (it owns a chooser, a count of what would move and a warning
-	 * that cannot be taken back) and does not draw its own button, the same seam the wall's menu
-	 * uses.
-	 */
+	/* Everything this page can do to this person, behind the one door. */
 	/* WHERE THIS ROW STANDS WITH ENRICHMENT, so the two rows that send its name outside are
-	   drawn refused rather than refused on the press. See `EntityEnrichment`: one route answers
-	   it, and pressing the row below writes the reply back. */
+	   drawn refused rather than refused on the press. */
 	const enrichment = new EntityEnrichment('person');
 	enrichment.follow();
 	const enrichState = $derived(enrichment.of(person?.id));
@@ -440,8 +335,7 @@
 		if (session.isAdmin) loadEnrichBoxes();
 	});
 	/* AUTO-ENRICH, THE SAME ROWS EVERY SURFACE DRAWS: every box, then each box by name, and the
-	   box handed on. With no list it is a plain press, which asks what Settings says. See
-	   `autoEnrichRows`, which also says why there is no "Sift's own" row. */
+	   box handed on. */
 	function autoEnrichThis(id: string, box: string = ''): void {
 		if (enrichRefused) return void sayKeptLocal();
 		void enrichMany('person', [id], box);
@@ -495,10 +389,7 @@
 									icon: 'group' as const,
 									run: () => (shareOpen = true)
 								},
-								/* What the sharing above it comes to. Share is where a decision is made; this
-								   reports who can actually reach this, however the reach was arranged: through a
-								   folder, a tag, a set, or the network above a label, none of which are written
-								   here. */
+								/* What the sharing above it comes to. */
 								{
 									id: 'visibility',
 									label: 'Visibility',
@@ -513,8 +404,8 @@
 								}
 							]
 						: []),
-					/* Only reachable with the vault open: with it shut, this page answers 404 for them. So the
-		   row appears exactly when it can work. */
+					/* Only reachable with the vault open: with it shut, this page answers 404
+					   for them. */
 					person.vault
 						? {
 								id: 'unhide',
@@ -531,17 +422,7 @@
 				]
 	);
 
-	/* Arriving with the chooser already open, because a menu somewhere else asked for it.
-	 *
-	 * `Enrich` on the wall cannot draw this sheet itself (it needs the record's own values and
-	 * its save), so it navigates here and says so in the address. Reading it here rather than
-	 * passing state through the navigation means the address is the whole story: it survives a
-	 * reload, and it can be sent to somebody.
-	 *
-	 * Once, on arrival, and not as a `$derived`: this is a door being opened, not a fact about the
-	 * page. Left reactive, closing the sheet with the parameter still in the address would
-	 * immediately re-open it.
-	 */
+	/* Arriving with the chooser already open, because a menu somewhere else asked for it. */
 	$effect(() => {
 		if (untrack(() => lookUpOpen)) return;
 		// Refused before the sheet opens, even where the address asked for it. See the Site page.
@@ -584,13 +465,8 @@
 	}
 
 	const recordValues = $derived({
-		/* Everything the server keeps on the person's own row, spread FIRST so the five below win.
-		 *
-		 * Those five are not columns on that row. They are their own tables, or they are read by
-		 * their own route, and this page holds each of them separately because each is written
-		 * separately. Anything else the record gains is a column, arrives here already, and needs no
-		 * line adding: that is the point of the record being a mapping keyed the way the registry
-		 * names its fields. */
+		/* Everything the server keeps on the person's own row, spread FIRST so the five below
+		 * win. */
 		...(person?.record ?? {}),
 		name: person?.name ?? '',
 		aliases: aliases.map((one) => one.alias),
@@ -600,16 +476,8 @@
 		sources
 	});
 
-	/* The keys the person's own ROW holds, taken from the registry rather than listed here.
-	 *
-	 * The five the page writes another way are named once, in one place, and everything else the
-	 * registry declares goes to the record. A list of fifteen field names written into this page
-	 * would be a second copy of the server's declaration, and the copy that stops being edited.
-	 */
-	/* `accounts` and `sources` are their own tables and are never written from here. `age` is
-	   arithmetic on the birthdate and there is nothing to write it to. The server ignores a key
-	   it does not pair with a column, so leaving it in would work and would read as an attempt to
-	   store something that cannot be stored. */
+	/* The keys the person's own ROW holds, taken from the registry rather than listed here. */
+	/* `accounts` and `sources` are their own tables and are never written from here. */
 	const APART = ['name', 'details', 'aliases', 'links', 'tags', 'accounts', 'sources', 'age'];
 
 	function recordFrom(draft: Record<string, unknown>): Record<string, unknown> {
@@ -643,12 +511,7 @@
 	/** The id the header's Save submits. One form is open at a time, so one name is enough. */
 	const RECORD_FORM = 'person-record-form';
 
-	/* Deleting the person.
-	 *
-	 * Their FILES are untouched: `asset_people` names the asset with the cascade pointing the other
-	 * way, so what goes is the person, their other names, and the rows joining them to files. The
-	 * sentence on the question says so, because that is the fact somebody wants before pressing it.
-	 */
+	/* Deleting the person. */
 	async function removePerson() {
 		if (!person) return;
 		await people.remove(person.id);
@@ -656,8 +519,8 @@
 		await leaveFor('/people');
 	}
 
-	/* What the two below are about, in one place: the noun the sentence uses, the plural it cannot
-	   guess, and the write itself. The same four lines the People wall passes. */
+	/* What the two below are about, in one place: the noun the sentence uses, the plural it
+	   cannot guess, and the write itself. */
 	const hiddenAs = $derived({
 		noun: 'person',
 		plural: 'people',
@@ -665,32 +528,19 @@
 		set: (id: string, flag: boolean) => people.setVault(id, flag)
 	});
 
-	/*
-	 * Hiding somebody, and bringing them back, through the ONE mechanism that does it.
-	 *
-	 * `people.setVault` is the per-account vault route, not the record write an admin makes, so a
-	 * guest's Hide is not a 403, and everything around the write (the Privacy wording, a 401 read
-	 * like the 409, an Undo on the sentence) comes from `hiding.ts`, which the People WALL uses
-	 * too.
-	 *
-	 * `stays` is the vault's state and not a constant: with Hidden open they are still listed, so
-	 * "unlock Hidden to see them" would be advice about somebody who is on the screen.
-	 */
+	/* Hiding somebody, and bringing them back, through the ONE mechanism that does it. */
 	async function conceal() {
 		if (!person) return;
 		const moved = await setHidden([person.id], true, hiddenAs);
 		// Back to the list, because this page is about to stop answering: with the vault shut they
-		// are concealed from every route that names them, this one included. Only on a write that
-		// actually landed. A refusal has already been said, and leaving the page would take the
-		// sentence away with it.
+		// are concealed from every route that names them, this one included.
 		if (moved.length > 0) await leaveFor('/people');
 	}
 
 	/** Whether the picture chooser is open. Opened by the pencil on the cover, while editing. */
 	let pickingPicture = $state(false);
 
-	/* Set the still this person is drawn as, from one of their own files. Admin-only, like the
-	 * server behind it. */
+	/* Set the still this person is drawn as, from one of their own files. */
 	async function makeCover(
 		assetId: string,
 		atMs: number | null = null,
@@ -704,9 +554,7 @@
 		}
 	}
 
-	/* A picture from the disk rather than from the library. The same two lines as the pick, and
-	   the refusal is deliberately NOT caught here: the sheet shows the server's own sentence, which
-	   is the half that knows whether the file was too big or was not readable as a picture. */
+	/* A picture from the disk rather than from the library. */
 	async function uploadCover(file: File) {
 		subject.value = await people.uploadCover(personId, file);
 		toasts.show('Cover set', { tone: 'success' });
@@ -725,16 +573,7 @@
 		{ label: person?.name ?? '' }
 	]);
 
-	/* What the header says under the name: how many files they are on. This account's own O tally
-	   over them is handed to the header beside it (`oCount`) and drawn there as a glyph.
-	 *
-	 * The tally is left off entirely when it is nought rather than drawn as a zero. A number that
-	 * reads the same on every person in a library until somebody presses something is a number that
-	 * says nothing, and the counts line is the one place on this page somebody scans rather than
-	 * reads.
-	 *
-	 * Theirs and not the person's: it is a sum of what THIS account has counted, exactly as the
-	 * heart and the stars beside it are this account's. */
+	/* What the header says under the name: how many files they are on. */
 	const countsLine = $derived.by(() => {
 		if (!person) return '';
 		return `On ${filesSized(person.asset_count, sizeOf(person))}`;
@@ -750,16 +589,7 @@
 	<EntityDropZone kind="person" id={person.id} name={person.name} />
 {/if}
 
-<!--
-	ONE frame and one scrolling region: the grid's.
-
-	Three bands stacked in a flex column, each with a percentage cap and an `overflow-y` of its own,
-	would be three scroll regions on one screen and would squeeze the wall to a sliver of the
-	window. The band is handed to the grid instead, which draws it inside its own frame's header.
-	The frame already knows how to hold furniture still above a body that scrolls, and the grid
-	already measures that body, so there is nothing left for this page to arrange. The tall part
-	of the band, the fields, folds into a dialog; see `EntityHeader`'s `foldFields`.
--->
+<!-- ONE frame and one scrolling region: the grid's. -->
 {#if subject.settling || !cover.ready}
 	<Skeleton lines={3} />
 {:else if subject.unreadable}
@@ -867,8 +697,7 @@
 							refresh={agreed}
 							onstarters={(boxes) => (starterBoxes = boxes)}
 						/>
-						<!-- What a swap brought for them, held until it is added here. Adding moves the
-						     bar above, so it is told to read again. -->
+						<!-- What a swap brought for them, held until it is added here. -->
 						<HeldFaces
 							personId={person.id}
 							name={person.name}
@@ -905,26 +734,14 @@
 	{/snippet}
 
 	{#if editing}
-		<!--
-			Editing takes the page.
-
-			Not a band above the wall and not a dialog: one Save at the end of a whole record is a
-			screen's worth of boxes, and both of those squeeze it into a strip with its own scrollbar.
-			The page scrolls, the form is as tall as it needs to be, and the wall is not competing
-			with it for the window.
-		-->
+		<!-- Editing takes the page. -->
 		<PageFrame header={identity}>
 			{#snippet children()}
 				{@render editing_form()}
 			{/snippet}
 		</PageFrame>
 	{:else if showingHistory}
-		<!--
-			The thread, in the frame every other screen uses. Not a wall: there is nothing to select,
-			nothing to page and nothing to count, so the grid's furniture would all be furniture with
-			no work behind it. The identity band stays, because this is a different view OF somebody
-			rather than a different page.
-		-->
+		<!-- The thread, in the frame every other screen uses. -->
 		<!-- WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at
 		     the page's own left edge where the tabs and the title are. `EntityHistory` bounds
 		     itself on the same token. -->
@@ -939,11 +756,10 @@
 			{#snippet children()}
 				<EntityHistory subject="person" id={personId} name={person.name}>
 					{#snippet waiting()}
-						<!-- Where a stash-box disagrees with THIS record, at the top of the thread rather
-						     than in the header. Draws nothing at all when nothing does, which is the
-						     ordinary case. Admin-only: what a box wrote is shared vocabulary, like every
-						     other stash-box control, and the strip answers None rather than a number for
-						     anybody else, so the mark and the panel appear and disappear together. -->
+						<!--
+							Where a stash-box disagrees with THIS record, at the top of the thread
+							rather than in the header.
+						-->
 						{#if session.isAdmin}
 							<Disagreements
 								subject="person"
@@ -1043,8 +859,7 @@
 <ShareDialog bind:open={shareOpen} targets={shareTarget ? [shareTarget] : []} />
 <VisibilityDialog bind:open={reachOpen} target={shareTarget} />
 
-<!-- No button of its own: the row in the Options menu opens it. What stays here is the chooser and
-     the warning, which is the whole of what this component is. -->
+<!-- No button of its own: the row in the Options menu opens it. -->
 {#if person}
 	<MergeEntities
 		people={[person]}
@@ -1054,13 +869,7 @@
 	/>
 {/if}
 
-<!--
-	Looking somebody up, and agreeing field by field to what comes back.
-
-	Handed `saveRecord`, the SAME function the edit form is handed. What an import writes and what
-	somebody types go through one path, so the two can never come to disagree about what saving a
-	record does.
--->
+<!-- Looking somebody up, and agreeing field by field to what comes back. -->
 {#if person}
 	<LinkToStashBox
 		bind:open={lookUpOpen}
@@ -1084,18 +893,7 @@
 {/if}
 
 <style>
-	/* How well Sift knows them, and what is waiting to be answered. Not inside the record panel,
-	 * which would make both of them things you had to open the record to find.
-	 *
-	 * Under the COVER (see `EntityHeader.underCover`), with no width of its own: the cover's
-	 * column ends at the picture and is empty from there down, so this block costs the page
-	 * nothing there, where under the name column it would push the bottom of the hero (and the
-	 * tab strip with it) a long way down the one screen somebody opens in order to browse. It
-	 * is about the person in the picture, and it is under the picture of them.
-	 *
-	 * What that buys is paid for in the words: the column is 200 pixels wide, so the three
-	 * numbers are three short lines and their sentences are in tooltips. See `WaitingForYou`.
-	 */
+	/* How well Sift knows them, and what is waiting to be answered. */
 	.recognition {
 		display: flex;
 		flex-direction: column;

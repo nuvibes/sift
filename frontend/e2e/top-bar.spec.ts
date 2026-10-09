@@ -652,13 +652,13 @@ test('every row of the search list lies inside the bar, its words whole', async 
 });
 
 /* As the bar narrows the tile size leaves before the menus do, so at 1024 with the rail open Filter
- * and Sort by still stand on the bar, centred, on a wall and on an entity page alike; at 1280 the
- * tile size is back. */
+ * and Sort by still stand on the bar, centred, on a wall and on an entity page alike; at 1440 the
+ * tile size is back (at 1280 an admin's Add with its paste half still leaves it just short). */
 test('the tile size leaves the bar before Filter and Sort by do', async ({ page }) => {
 	await page.setViewportSize({ width: 1024, height: 800 });
 	for (const screen of ['/browse', '/people'] as const) {
 		await page.goto(screen);
-		await settled(page);
+		await settled(page.locator('header.topbar'));
 		const menus = page.locator('header.topbar .centre .menus');
 		await expect(menus, `${screen}: the menus left the bar at 1024`).toBeVisible();
 		await expect(page.locator('.bar-fold .menus')).toHaveCount(0);
@@ -671,8 +671,8 @@ test('the tile size leaves the bar before Filter and Sort by do', async ({ page 
 			0.5 + SLACK
 		);
 	}
-	await page.setViewportSize({ width: 1280, height: 800 });
+	await page.setViewportSize({ width: 1440, height: 800 });
 	await page.goto('/browse');
-	await settled(page);
+	await settled(page.locator('header.topbar'));
 	await expect(page.locator('header.topbar .size:not(.gone)')).toBeVisible();
 });

@@ -1,10 +1,4 @@
-/*
- * The Activity pane at a phone's width: every row a card, with the same words the columns hold.
- *
- * Five tracks across a phone would print "Time left" over "Progress" and stand a count as three
- * lines of one number each. A card keeps every fact the row says and gives each its own line, so this
- * mounts the pane at both widths and reads what each draws.
- */
+/* The Activity pane at a phone's width: every row a card, with the same words the columns hold. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { imports } from '$lib/library/imports.svelte';

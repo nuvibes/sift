@@ -1,30 +1,5 @@
 <script lang="ts">
-	/* Turning the graphics card on.
-	 *
-	 * A SCREEN THAT ONLY SAYS NO IS NOT AN ANSWER. A GPU offered on an installed Sift that cannot
-	 * use it, refused with a correct sentence that has no next step in it, reads as a fault in
-	 * the machine, and people go looking for a driver they already have.
-	 *
-	 * There are five states and they must be five, because the action differs and so does whose
-	 * decision each one is:
-	 *
-	 *   no card              nothing to offer, and saying so is the whole answer
-	 *   already capable      this machine's own runtime drives a card. Sift offers NOTHING, because
-	 *                        which version is installed there is somebody else's decision
-	 *   card, not installed  a download, with its size named BEFORE anybody agrees to it
-	 *   downloading          a bar with a percentage, and a note that it can be left
-	 *   installed            and then, separately, whether it actually WORKS, which is not the
-	 *                        same question and cannot be assumed from the first
-	 *
-	 * The last split is the one worth defending. A runtime lists every device it was compiled for
-	 * whether or not the hardware behind it can be reached, so "installed" is not evidence. The
-	 * test button loads a real model onto the card in a process of its own and reports what
-	 * happened.
-	 *
-	 * Drawn with `SettingGroup`, `ActionRow` and `FactRow` like every other block in Settings,
-	 * and with no geometry of its own. A panel that drew its own card would sit at a different
-	 * distance from the edge than the rows above and below it, a visible seam in Settings.
-	 */
+	/* Turning the graphics card on. A SCREEN THAT ONLY SAYS NO IS NOT AN ANSWER. */
 	import { onMount } from 'svelte';
 	import { ProgressBar } from '$lib/components/common';
 	import { accelWatch } from '$lib/jobs/accelerator.svelte';
@@ -34,19 +9,17 @@
 	import { COPY } from './GraphicsCard.search';
 	import type { GraphicsCardState } from './graphics-card-state.svelte';
 
-	/* The reading, shared with the danger row at the foot of the pane (`GraphicsCardRemove`): the
-	   way out of a pane is its last group, so deleting the support is drawn there, not here. */
+	/* The reading, shared with the danger row at the foot of the pane (`GraphicsCardRemove`):
+	   the way out of a pane is its last group, so deleting the support is drawn there, not here. */
 	let { card }: { card: GraphicsCardState } = $props();
 
 	onMount(() => {
 		void card.read();
-		// A download started here and then left runs on. Coming back to this screen has to join it
-		// rather than show the button again.
+		// A download started here and then left runs on.
 		void accelWatch.resume();
 	});
 
-	/* The download ended, however it ended, so what this says is now out of date. Read again rather
-	   than inferred from the outcome: whether it is installed is the server's answer, not ours. */
+	/* The download ended, however it ended, so what this says is now out of date. */
 	$effect(() => {
 		if (accelWatch.outcome !== null) void card.read();
 	});
@@ -59,8 +32,7 @@
 		accel ? `${(accel.download_bytes / 1_000_000_000).toFixed(1)} GB` : COPY.install.defaultSize
 	);
 	/** The room it needs while it installs, which is more than twice what comes down: the wheels
-	 *  and what they unpack to are both on the disk until the last one is through. The server
-	 *  refuses the download without it, and the same figure is said here first. */
+	 * and what they unpack to are both on the disk until the last one is through. */
 	const room = $derived(
 		accel && accel.peak_bytes > 0
 			? COPY.install.room((accel.peak_bytes / 1_000_000_000).toFixed(1))
@@ -79,9 +51,9 @@
 		if (accel.installed) {
 			return COPY.ready;
 		}
-		/* IT LEADS WITH THE DRIVER, because that is the question everybody asks: the card is named
-		   right above this line, the driver is plainly working, and the screen still wants a download.
-		   Saying what is actually missing is the difference between an offer and a puzzle. */
+		/* IT LEADS WITH THE DRIVER, because that is the question everybody asks: the card is
+		   named right above this line, the driver is plainly working, and the screen still wants
+		   a download. */
 		return COPY.missing;
 	});
 </script>

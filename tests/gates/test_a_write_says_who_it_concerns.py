@@ -555,10 +555,6 @@ SILENT: dict[str, str] = {
         "the store's one-statement helper; every caller is read as a write of its own"
         " (`self._write(`) and judged here by name"
     ),
-    "kernel.content.user_state.record_opinion": (
-        "a helper on the caller's connection; the act and its record are the caller's, and every"
-        " caller announces (`_write_state`, `_write_many`, `set_pinned`, the slices' own writers)"
-    ),
     "kernel.content.user_state.add_replay_heat": (
         "time one sitting spent on each slice of a file, added up for the player, which reads it"
         " when a file opens; a bell per sitting would re-read every open wall for one page's line"

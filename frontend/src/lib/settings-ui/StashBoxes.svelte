@@ -21,24 +21,11 @@
 	import { STASH_BOX_KEYS } from './StashBoxes.search';
 	import type { Verb } from '$lib/components/common/verbs';
 
-	/* The stash-boxes, on the Stash-boxes section.
-	 *
-	 * A stash-box is a shared database of who is in what: StashDB, FansDB, PMVStash. Sift asks them and
-	 * never tells them anything: there is no route here that edits, votes or submits, even where a
-	 * key carries the right to do all three.
-	 *
-	 * The key is write-only. It is typed in and sent and never rendered back, which is why a box
-	 * that has one shows the word "Key saved" and a box to replace it rather than the key itself.
-	 *
-	 * The look-up at the bottom is the proof that any of this works. It shows what came back and
-	 * applies none of it: there is nothing to undo, because nothing was done.
-	 */
+	/* The stash-boxes, on the Stash-boxes section. A stash-box is a shared database of who is in
+	 * what: StashDB, FansDB, PMVStash. */
 
 	/* The list, handed in rather than made here, so the panel that unlocks the master key can
-	   re-read it. Unlocking changes what every box on this page can DO and nothing about what it
-	   says, so a private store would leave every box wearing "Key cannot be opened" until somebody
-	   reloaded the page by hand, which reads as the password not having worked. Defaulted, because
-	   the section is legible on its own; the page above simply owns one when it needs to. */
+	   re-read it. */
 	let { boxes = new StashBoxes() }: { boxes?: StashBoxes } = $props();
 
 	/* The tunnels, read only to NAME the ways out. The same store the Routing pane uses, so the
@@ -109,9 +96,7 @@
 		replacing = null;
 	}
 
-	/* Auto-enriching the whole library is not a button of this list's. It is the
-	   enrichment task's Run now, on the When row above (the same row Tasks draws), so there is
-	   one way to start it and it is the same everywhere. */
+	/* Auto-enriching the whole library is not a button of this list's. */
 
 	async function look(event: SubmitEvent) {
 		event.preventDefault();
@@ -203,19 +188,7 @@
 						{/snippet}
 					</DataRow>
 					<div class="marks">
-						<!--
-							THREE states, not two. A stored key and an OPENABLE one are different
-							facts: drawing the first while every lookup reports the second would put
-							a green "Key saved" on a box at the same moment as "this one has no key
-							Sift can read" in the chooser, and the obvious reading of a green badge
-							is that the box works.
-
-							The middle state is what a restart leaves behind: the row is untouched
-							and the browser's session still works, but the master key that unseals
-							the stored one is held in memory for the length of a sign-in and is
-							gone. So it says what happened and what to do, rather than looking
-							healthy.
-						-->
+						<!-- THREE states, not two. -->
 						{#if !box.has_key}
 							<Badge state="blocked" label="No key" />
 						{:else if box.key_ready}
@@ -233,21 +206,7 @@
 					{/if}
 					<Problem message={checked[box.id]} />
 
-					<!--
-						How this box files its creators, said rather than asked.
-
-						Most stash-boxes file a studio as a production company, which is a Site
-						here. One of them files its CREATORS there, so looking somebody up as a
-						person would ask the half of the service they are not on and come back,
-						truthfully, with nothing.
-
-						Not a menu: it is a property of somebody else's service with exactly one
-						right answer, and the only way for a person to discover that answer would be
-						to search for a name they knew was there and get nothing back, which is
-						also what "they are not on this box" looks like. Sift decides it from the
-						address. It is still SHOWN, because it changes what a search does, and a
-						rule nobody can see is a search that fails for no visible reason.
-					-->
+					<!-- How this box files its creators, said rather than asked. -->
 					<p class="filing">
 						{box.sites_are === 'person'
 							? `On ${box.name} the creators are filed as studios, so Sift searches for a person among them.`
@@ -255,9 +214,9 @@
 					</p>
 
 					<!--
-						Where its traffic goes out. A stash-box question
-						carries a key and a name to somebody else's service, which is exactly the kind of
-						traffic somebody sets a tunnel up for.
+						Where its traffic goes out. A stash-box question carries a key and a name to
+						somebody else's service, which is exactly the kind of traffic somebody sets a
+						tunnel up for.
 					-->
 					<div class="pair">
 						<!-- A settings row, so it lines up with every control on the pane rather than being
@@ -443,8 +402,7 @@
 		gap: var(--space-4);
 	}
 
-	/* How this box files its creators, stated rather than asked. Quiet: it is a fact about somebody
-	   else's service, not something on this screen to act on. */
+	/* How this box files its creators, stated rather than asked. */
 	.filing {
 		margin: 0;
 		color: var(--sift-ink-3);
@@ -476,8 +434,8 @@
 	}
 
 	/* The record's head row on the pane's edges, as a list with `edges` stands (`DataRows`): the
-	   row is pulled out by the room its hover ground needs and pads its name back in by the same,
-	   so the name starts where the badge, the sentence and every other row's name start. */
+	   row is pulled out by the room its hover ground needs and pads its name back in by the
+	   same, so the name starts where the badge, the sentence and every other row's name start. */
 	.boxes > li > :global(.line) {
 		margin-inline: calc(-1 * var(--space-2)) calc(-1 * var(--space-3));
 	}

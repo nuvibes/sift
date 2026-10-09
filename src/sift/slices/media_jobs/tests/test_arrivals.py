@@ -16,8 +16,9 @@ from sift.kernel.jobs.holding import Holding
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import LiveWork
 from sift.kernel.jobs.switchboard import Switchboard
+from sift.slices.media_jobs.activity_families import _families
 from sift.slices.media_jobs.presses import Presses
-from sift.slices.media_jobs.router import FamilyOfWork, KindOfWork, _families
+from sift.slices.media_jobs.router import FamilyOfWork, KindOfWork
 
 pytestmark = pytest.mark.integration
 

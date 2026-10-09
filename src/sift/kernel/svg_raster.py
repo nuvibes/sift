@@ -1,35 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Turning an SVG from outside into a PNG in memory, with nothing in it reaching anything.
 
-## Why this exists
-
-A stash-box keeps some studios' logos as SVG only, and the cover door re-encodes every picture
-through the vendored ffmpeg, which has no SVG decoder. That re-encode is the door's security
-property (what lands on disk is Sift's own JPEG, never a stranger's file), so the SVG is drawn here
-ONCE into a PNG in memory, and that PNG goes through the same door (`covers.CoverPictures.receive`).
-
-## What an SVG can do, and what this lets it do
-
-An SVG is a document, not a picture: it can carry a script, a page of HTML (`foreignObject`) and
-references to other resources (an `<image>` or a filter's `feImage` naming an address or a FILE, a
-`<use>` naming another document, a `url(...)` in a style). The renderer, resvg, runs no script and
-has no network code, but it DOES read a file an `<image>` names by path (measured, not assumed), so
-the document is parsed and rewritten here before resvg sees it; only what is inside it survives:
-
-- `script` and `foreignObject` are removed.
-- A reference is kept only where it points inside the document (`#id`), or, for a picture
-  element, at a picture carried inside it (`data:image/png;base64,...` and its raster kin). Any
-  other `<image>` or `feImage` is removed; any other `href` attribute is dropped.
-- A `url(...)` that does not start with `#`, anywhere in an attribute or a `<style>`, removes that
-  attribute or that style, and so does `@import`.
-
-No folder is ever given to resvg, and it is handed the rewritten text, never a path.
-
-## The ground a logo is drawn on
-
-A JPEG cover has no transparency: what was transparent comes out as whatever colour lay under
-it, usually black, and a black mark on black is no picture. So the mark is drawn once to be LOOKED
-AT, then again on a ground chosen from it: a light mark on a dark ground, anything else on white.
+The cover door's ffmpeg has no SVG decoder, so the mark is drawn here into a PNG that then goes
+through the door. resvg reads a file an `<image>` names, so the document is rewritten first: no
+script or `foreignObject`, and no reference that points outside it. A light mark is drawn on a
+dark ground, anything else on white, since a JPEG has no transparency.
 """
 
 from __future__ import annotations
@@ -42,19 +17,16 @@ from xml.etree import ElementTree
 SVG_NS = "http://www.w3.org/2000/svg"
 XLINK_NS = "http://www.w3.org/1999/xlink"
 
-#: The longest side the mark is drawn at. The cover door scales a picture to at most 720 high, and a
-#: logo is usually wide, so the longest side is given room above that; the door does the rest.
+#: The longest side the mark is drawn at, above the door's 720 high; the door does the rest.
 LONGEST_SIDE = 1024
 
 #: The longest side of the small drawing the mark's lightness is read from.
 LOOK_SIDE = 64
 
-#: The most text a rewritten document may be. The door caps what it READS; this caps what an
-#: internal entity can expand that into, which the cap on the input cannot see.
+#: The most text a rewritten document may be: what an internal entity can expand into.
 _MAX_TEXT = 4 * 1024 * 1024
 
-#: The grounds, as RGBA. The dark one is the colour of Sift's darkest surface family, near enough
-#: that a light mark drawn on it looks at home beside the pack's own.
+#: The grounds, as RGBA; the dark one is near Sift's darkest surface.
 _WHITE = (255, 255, 255, 255)
 _DARK = (32, 34, 38, 255)
 
@@ -73,12 +45,7 @@ class SvgRefused(ValueError):
 
 
 def looks_like_svg(raw: bytes) -> bool:
-    """Whether these bytes are an SVG document rather than a picture ffmpeg reads itself.
-
-    By what the start of the bytes says, never by a name or a declared type: a picture's bytes say
-    what it is, and a stranger chooses the rest. An XML declaration, a comment or a doctype may
-    come first, so the root element is looked for in the first four kilobytes.
-    """
+    """Whether the start of these bytes is an SVG document, never judged by a name or a type."""
     head = raw[:4096].lstrip(b"\xef\xbb\xbf \t\r\n")
     if not head.startswith(b"<"):
         return False
@@ -86,13 +53,9 @@ def looks_like_svg(raw: bytes) -> bool:
 
 
 def rasterise(raw: bytes) -> bytes:
-    """The PNG an SVG draws, on a ground chosen from the mark. Raises `SvgRefused`.
-
-    Blocking: the caller runs it in a thread.
-    """
+    """The PNG an SVG draws, on a ground chosen from the mark; blocking. Raises `SvgRefused`."""
     root = _made_safe(raw)
-    # Looked at small (that pass wants one number and reads every pixel in Python), then drawn at
-    # full size once, on the ground that number chose.
+    # Looked at small, then drawn at full size once on the ground that chose.
     lightness = _mean_lightness(_drawn(root, LOOK_SIDE, ground=None))
     if lightness is None:
         raise SvgRefused("it draws nothing")
@@ -110,8 +73,7 @@ def _drawn(
     if len(text) > _MAX_TEXT:
         raise SvgRefused("it's too large once read")
     options = usvg.Options.default()
-    # System fonts, so a logo keeping its lettering as text draws it; nothing the document names
-    # is read, and no folder is given to resolve a name against.
+    # System fonts only; no folder is given to resolve a name against.
     options.load_system_fonts()
     try:
         tree = usvg.Tree.from_str(text, options)
@@ -191,12 +153,7 @@ def _reaches_out(value: str) -> bool:
 
 
 def _sized(root: ElementTree.Element, longest: int) -> None:
-    """Draw the mark with its longest side at `longest`, its proportions kept.
-
-    resvg draws at the document's own size, and a logo is often written at a few dozen pixels.
-    The view box says what the drawing's own coordinates are; where there is none, the width and
-    height are it, so one is written from them before they are replaced.
-    """
+    """Draw the mark with its longest side at `longest`, writing a view box where there is none."""
     box = root.get("viewBox")
     if box is None:
         width, height = _length(root.get("width")), _length(root.get("height"))
@@ -221,11 +178,7 @@ def _length(value: str | None) -> float | None:
 
 
 def _mean_lightness(png: bytes) -> float | None:
-    """The mean lightness (0 to 1) of what a PNG draws, weighted by how opaque it is.
-
-    None when nothing is drawn at all. Reads only the PNG the renderer itself wrote (8-bit RGBA, not
-    interlaced), which is the only kind it hands back.
-    """
+    """The mean lightness (0 to 1) of the renderer's own PNG, weighted by opacity; None if empty."""
     width, _height, rows = _rgba_rows(png)
     weight = 0.0
     total = 0.0
@@ -261,24 +214,29 @@ def _rgba_rows(png: bytes) -> tuple[int, int, list[bytes]]:
     for y in range(height):
         start = y * (stride + 1)
         filtering, line = data[start], bytearray(data[start + 1 : start + 1 + stride])
-        for x in range(stride):
-            left = line[x - 4] if x >= 4 else 0
-            up = previous[x]
-            corner = previous[x - 4] if x >= 4 else 0
-            if filtering == 1:
-                line[x] = (line[x] + left) & 0xFF
-            elif filtering == 2:
-                line[x] = (line[x] + up) & 0xFF
-            elif filtering == 3:
-                line[x] = (line[x] + (left + up) // 2) & 0xFF
-            elif filtering == 4:
-                guess = left + up - corner
-                near = min(
-                    (abs(guess - left), 0, left),
-                    (abs(guess - up), 1, up),
-                    (abs(guess - corner), 2, corner),
-                )
-                line[x] = (line[x] + near[2]) & 0xFF
+        _unfilter(filtering, line, previous, stride)
         rows.append(bytes(line))
         previous = line
     return width, height, rows
+
+
+def _unfilter(filtering: int, line: bytearray, previous: bytearray, stride: int) -> None:
+    """Undo one row's PNG filter in place, against the row before it."""
+    for x in range(stride):
+        left = line[x - 4] if x >= 4 else 0
+        up = previous[x]
+        corner = previous[x - 4] if x >= 4 else 0
+        if filtering == 1:
+            line[x] = (line[x] + left) & 0xFF
+        elif filtering == 2:
+            line[x] = (line[x] + up) & 0xFF
+        elif filtering == 3:
+            line[x] = (line[x] + (left + up) // 2) & 0xFF
+        elif filtering == 4:
+            guess = left + up - corner
+            near = min(
+                (abs(guess - left), 0, left),
+                (abs(guess - up), 1, up),
+                (abs(guess - corner), 2, corner),
+            )
+            line[x] = (line[x] + near[2]) & 0xFF

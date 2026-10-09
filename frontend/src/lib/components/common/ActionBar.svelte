@@ -14,18 +14,9 @@
 	import Button from './Button.svelte';
 	import Scroller from './Scroller.svelte';
 	/* WHY NOT BITS-UI: the floating region, not the controls inside it. The verbs arrive as a snippet from
-	   whoever opened the bar, and bits-ui's Toolbar owns its own items: roving focus belongs to
-	   VerbButtons, which renders them, not to the box they sit in. */
-	/*
-	 * The bar that appears when things are picked, and says what will happen to them.
-	 *
-	 * It floats over the grid rather than pushing it down, because a bar that reflowed the layout
-	 * would move the tile under the pointer at the moment somebody is clicking tiles.
-	 *
-	 * The count is not decoration. Every action offered here runs over several things together, and
-	 * the number is the only thing on screen that says how many, so it is stated here, and stated
-	 * again in the confirm dialog, and the two come from the same place.
-	 */
+	whoever opened the bar; roving focus belongs to VerbButtons, not the box. */
+	/* The bar that floats over the grid when things are picked, so no tile moves under a click; the
+	 * count is the only place that says how many. */
 	import type { Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { arrive } from '$lib/shell/motion.svelte';
@@ -34,40 +25,18 @@
 
 	interface Props {
 		count: number;
-		/**
-		 * How many the whole question matches, when that is more than is on screen.
-		 *
-		 * The number at the foot of the page. Absent on a list that is never paged, where "all of
-		 * them" and "all of the ones loaded" are the same set and an offer would be noise.
-		 */
+		/** How many the whole question matches, when more than is on screen. */
 		total?: number;
-		/**
-		 * Pick every one of them, not just the loaded page.
-		 *
-		 * Asynchronous because it means reading the rest of the list, and the bar shows that it is
-		 * working rather than appearing to have ignored the press. Absent means the offer is not
-		 * made at all, which is what a list with nothing more to fetch hands over.
-		 */
+		/** Pick every one of them, not just the loaded page; absent, not offered. */
 		onselectall?: () => Promise<void>;
-		/** What the things are, singular. "file", "person". Pluralized here so callers do not each
-		 * write their own `count === 1 ? ... : ...`. */
+		/** What the things are, singular ("file"), pluralized here. */
 		noun?: string;
 		/** The plural, where adding an "s" is wrong ("person", "people"). */
 		plural?: string;
 		onclear: () => void;
 		/** The buttons. Given as a snippet so the bar has no opinion about what can be done. */
 		actions: Snippet;
-		/**
-		 * The door at the end, holding the verbs the bar does not name. See `VerbMore`.
-		 *
-		 * Its own slot rather than the last thing in `actions`, because it must not be inside the
-		 * strip that scrolls: the whole point of a bar that names a few verbs is that the way to the
-		 * rest is always in the same place, and a door that can scroll out of sight is a door
-		 * somebody has to find twice.
-		 *
-		 * Optional. A bar with one verb (agreeing to a page of names) has nothing left over, and
-		 * `VerbMore` draws nothing when handed nothing either way.
-		 */
+		/** The door to the verbs the bar does not name, outside the scrolling strip. */
 		overflow?: Snippet;
 	}
 
@@ -83,38 +52,20 @@
 	}: Props = $props();
 
 	const many = $derived(plural ?? `${noun}s`);
-	/* Grouped thousands, for the reason the pager gives about its own readout: this is a number
-	   somebody reads rather than one they compute with, and "8709" scans as four digits of
-	   something. It also has to match the offer beside it: "Select all 8,709" answered by "8709
-	   selected" reads as two different numbers. */
+	/* Grouped thousands, matching the offer beside it. */
 	const label = $derived(`${count.toLocaleString()} ${count === 1 ? noun : many} selected`);
 
-	/* Whether there is more of the question than has been picked.
-	 *
-	 * Offered here rather than as a control that is always on screen, which is the arrangement every
-	 * list with a long tail arrives at: nothing has been picked, so there is nothing to say; one
-	 * thing has been picked, so "and the other eight thousand" is the obvious next sentence.
-	 *
-	 * The number is the one the pager shows, handed in rather than counted here. A bar that worked
-	 * it out from what is loaded would say "select all 48" on a library of eight thousand, which is
-	 * the fault this exists to fix wearing a button.
-	 */
+	/* More of the question than is picked, by the pager's own number. */
 	const more = $derived(total !== undefined && onselectall !== undefined && count < total);
 
-	/* WHAT THE PRESS WILL ACTUALLY DO, which on a large library is not "all" of it.
-	 *
-	 * Selecting a whole query is capped (see `MOST_SELECTED`) and a button reading "Select all
-	 * 84,000" that hands back a thousand is the exact fault the cap's own comment warns about: a
-	 * short answer nobody was told about. So the offer states the ceiling wherever the query is
-	 * bigger than it, and says "all" only where all is what it means. */
+	/* The offer states the cap (`MOST_SELECTED`) where the query is bigger, never a false "all". */
 	const allLabel = $derived(
 		(total ?? 0) > MOST_SELECTED
 			? `Select ${MOST_SELECTED.toLocaleString()} of ${(total ?? 0).toLocaleString()}`
 			: `Select all ${(total ?? 0).toLocaleString()}`
 	);
 
-	/* Reading a whole library's ids is several requests, so a second press while the first is in
-	   flight would run them twice and the second answer would win. Disabled rather than queued. */
+	/* Disabled while reading, so a second press cannot run it twice. */
 	let picking = $state(false);
 
 	async function pickEverything(): Promise<void> {
@@ -129,13 +80,9 @@
 </script>
 
 {#if count > 0}
-	<!-- A region rather than a dialog: it does not trap focus and nothing is blocked while it is up.
-	     Picking more things is the obvious next thing to do, and a bar that stole the keyboard to
-	     announce itself would be in the way of exactly that. -->
-	<!-- It rises from the bottom rather than appearing there. The bar is the answer to something
-	     that just happened somewhere else on the screen (a tile was picked) and the travel is
-	     what connects the two: it comes from off the edge, so it reads as arriving rather than as
-	     the page having been rebuilt around the selection. -->
+	<!--
+	A region, not a dialog: it traps nothing. It rises from the bottom, arriving from the pick.
+	-->
 	<div
 		class="bar"
 		role="region"
@@ -146,21 +93,11 @@
 			<Icon name="close" />
 		</button>
 
-		<!-- Announced when the number changes, so somebody using a screen reader is told what the
-		     sighted user can see at a glance. Polite: it waits its turn rather than cutting in. -->
+		<!-- Announced politely when the number changes. -->
 		<span class="count" aria-live="polite">{label}</span>
 
-		<!--
-			The rest of the question, when there is more of it than has been picked, before the
-			verbs and beside the count it extends. "8 selected" and "Select all 1,200" are two
-			readings of the same number, and somebody who has just read the count is looking here;
-			at the far end it would be a control about the selection among controls about the files,
-			one press from Delete.
+		<!-- The rest of the question beside the count it extends, far from Delete. -->
 
-			The price is paid knowingly: the offer goes when the pick reaches the whole question and
-			the verbs shift left by its width, once, at the moment somebody is looking at the offer
-			they just pressed.
-		-->
 		{#if more}
 			<span class="all">
 				<Button tone="ghost" size="small" disabled={picking} onclick={pickEverything}>
@@ -169,9 +106,7 @@
 			</span>
 		{/if}
 
-		<!-- At a phone's width the verbs are a row of their own under the count, four columns and the
-		     door, and they do not scroll: `barShape` names four there, which is what fits. The door
-		     is in the same row as the verbs, so all five are one set of equal columns. -->
+		<!-- On a phone the verbs and the door are one row of five equal columns. -->
 		{#if phoneWidth.yes}
 			<div class="line">
 				<div class="actions columns">{@render actions()}</div>
@@ -189,26 +124,11 @@
 {/if}
 
 <style>
-	/*
-	 * Centred on the screen, not on the window.
-	 *
-	 * `position: absolute` inside the screen, because the rail takes width off the left: `fixed` at
-	 * 50% of the window would sit off-centre and, on a narrow window, run under the rail.
-	 * Subtracting the rail's width would silently go wrong when the rail collapses; the container
-	 * is the box, so it follows the rail, top bar and page frame with nothing to keep in step.
-	 *
-	 * It needs a positioned ancestor, and every screen that draws this has one. `Tooltip` and the
-	 * menus stay window-level, correctly: they are positioned against what opened them, and a modal
-	 * covers the rail on purpose.
-	 */
+	/* Centred on the screen, not the window: absolute inside the screen, so it follows the rail. */
 	.bar {
 		position: absolute;
 		z-index: var(--z-bar);
-		/* Above the page's footer, not across it.
-		   `--frame-footer` is what the frame publishes when it draws one; a screen with no footer
-		   publishes nothing and the fallback puts the bar where it would otherwise be. Without it
-		   the bar covers a footer pager completely, so a wall with anything picked cannot be
-		   paged: the buttons are visible, enabled and unclickable. */
+		/* Above the frame's footer (--frame-footer), or it covers the pager. */
 		inset-block-end: calc(var(--frame-footer, 0px) + var(--space-4));
 		inset-inline-start: 50%;
 		translate: -50% 0;
@@ -228,13 +148,7 @@
 		white-space: nowrap;
 	}
 
-	/*
-	 * The verbs, allowed to shrink and, at the last resort, to scroll.
-	 *
-	 * Without `min-inline-size: 0` a flex child refuses to go below its content's width, so the row
-	 * would overflow the bar's ceiling and a narrow window would cut the last verb off at the edge
-	 * of the screen.
-	 */
+	/* The verbs may shrink and, last, scroll; min 0 so the last is not cut off. */
 	.actions {
 		display: flex;
 		align-items: center;
@@ -242,14 +156,7 @@
 		min-inline-size: 0;
 	}
 
-	/*
-	 * The buttons callers put in the bar, dressed by the bar.
-	 *
-	 * Reached globally because they come in through a snippet, so they are this component's
-	 * children in the tree and nobody else's: the reach is exactly the slot. Styled HERE rather
-	 * than left to each caller, because the first caller that forgets gets the browser's own button
-	 * in the middle of the app: a grey rectangle in the system typeface.
-	 */
+	/* The callers' buttons, dressed here through the slot. */
 	.actions :global(button) {
 		display: inline-flex;
 		align-items: center;
@@ -264,8 +171,7 @@
 		font-weight: 500;
 		white-space: nowrap;
 		cursor: pointer;
-		/* The Light register: the ground steps, over --dur-instant, and nothing
-		   moves, rather than every button in every selection bar snapping. */
+		/* The ground steps, nothing moves. */
 		transition: background var(--dur-instant) var(--ease);
 	}
 
@@ -273,10 +179,7 @@
 		background: var(--sift-surface-2);
 	}
 
-	/* A verb that is offered and cannot be answered just now: a request already in flight, or a
-	   row that does not apply to what is picked. Without a rule a disabled button in this bar
-	   would be indistinguishable from a live one and still light up under the cursor: it would
-	   look exactly like a button that had stopped working. */
+	/* An offered verb that cannot be answered now looks it, and does not light. */
 	.actions :global(button:disabled) {
 		color: var(--sift-ink-3);
 		cursor: default;
@@ -315,24 +218,14 @@
 		box-shadow: var(--focus-ring);
 	}
 
-	/* Wrappers only, so the phone's grid below can place what is in them. On a wide window they are
-	   nothing: `contents` hands their child straight to the bar's row. */
+	/* Wrappers only, `contents` on a wide window, placed by the phone grid. */
 	.all,
 	.more {
 		display: contents;
 	}
 
-	/*
-	 * AT A PHONE'S WIDTH: two lines, the whole width of the screen, never off its edge.
-	 *
-	 * The first line is about the selection (the way out, the count, the offer of the rest); the
-	 * second is what can be done to it: four verbs and the door to the others, as five equal columns
-	 * with the glyph over the word, the shape every phone's photo library draws, each a finger's
-	 * height. `barShape` names four at this width, so the row has what fits and nothing scrolls.
-	 *
-	 * Above the corner player when it is docked over the tabs: `--mini-docked` is its height and
-	 * gap, published by the player only while it is there, and nothing at all otherwise.
-	 */
+	/* At a phone's width: two lines, the selection and then five equal columns of verbs, above the
+	 * docked corner player (--mini-docked). */
 	@media (max-width: 767px) {
 		.bar {
 			inset-inline: var(--space-2);
@@ -366,14 +259,7 @@
 			align-items: center;
 		}
 
-		/*
-		 * The second line: every verb and the door as ONE set of equal columns, whatever wraps the
-		 * button in each (the rating's chooser and a group's door each put an element of their own
-		 * around it). A grid track rather than a shared flex, because a flex item's share starts from
-		 * its padding: a bare button would come out wider than the rating's wrapper beside it, and
-		 * the door, in a track of its own width, a third width. The verbs' own wrapper
-		 * draws no box (`contents`), so the door is a column of the same row as they are.
-		 */
+		/* One grid of equal columns for every verb and the door, whatever wraps each. */
 		.line {
 			grid-area: verbs;
 			display: grid;

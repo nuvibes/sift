@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The settings endpoints.
-
-The two main routes are generated from the registry rather than written per setting: reading
-returns every setting the caller may see with its current value, and writing validates each change
-against its registered declaration. Adding a preference elsewhere in the app is one
-`register_setting` call and it appears here with no edit to this file: that is the point of a
-registry, and the reason there is no bespoke endpoint per setting.
-
-A write is state-changing, so it carries `csrf_protect` like every other mutating route. Whether a
-particular change is allowed is decided per key inside the service: a guest may change their own
-per-user preferences, and a global setting is refused with a 403 on the server, not merely hidden.
-"""
+"""The settings endpoints, generated from the registry rather than written per setting."""
 
 from __future__ import annotations
 
@@ -35,18 +24,12 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 def _service(request: Request) -> SettingsService:
-    """The whole store, which only this feature may have.
-
-    The kernel publishes the same object under the same name as a read-only interface, and that is
-    what every other feature takes. Writing a preference has to check the key exists, that the value
-    fits its type, and that this user may set it, so the writes stay behind this door.
-    """
+    """The whole store, which only this feature may have; others take the read-only view."""
     return part_of(request, SERVICE)
 
 
 class SettingsUpdate(Wire):
-    """A batch of changes: setting key to new value. Values are whatever the setting holds (a
-    boolean, a number, a string) and are validated against the registered declaration, not here."""
+    """A batch of changes, setting key to new value, checked against each declaration."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -58,11 +41,7 @@ async def read_settings(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     service: Annotated[SettingsService, Depends(_service)],
 ) -> dict[str, Any]:
-    """Every setting the caller may see, with its value, grouped into the screen's sections.
-
-    A guest sees their own per-user preferences; an admin also sees the instance-wide ones. The
-    sections are all present even when empty, so the screen renders the same shell for everyone.
-    """
+    """Every setting the caller may see, with its value, grouped into the screen's sections."""
     return await service.effective(viewer)
 
 
@@ -73,18 +52,7 @@ async def update_settings(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     service: Annotated[SettingsService, Depends(_service)],
 ) -> None:
-    """Apply a batch of changes, all or none.
-
-    An unknown key is a 400: it is a bug or a probe, never a preference. A guest writing a global
-    setting is a 403, enforced here on the server. A value its validator rejects is a 422. Nothing
-    is stored unless every change in the batch is accepted.
-
-    Once the batch has landed, anything that has to act on a change the instant it is made (the
-    watcher rebuilding its observers when the polling setting flips) is told through an optional
-    application hook. The route does not know what listens or why; it names the keys that changed and
-    leaves the wiring to whoever installed the hook. Absent in a test that builds routes without
-    booting the app, so it is reached for rather than assumed.
-    """
+    """Apply a batch of changes, all or none, then tell the change hook which keys moved."""
     try:
         await service.apply(viewer, body.values)
     except UnknownSetting as exc:
@@ -97,10 +65,6 @@ async def update_settings(
     notify = part_or_none(request, ON_SETTINGS_CHANGED)
     if notify is not None:
         await notify(set(body.values))
-
-
-# There is no first-run endpoint: a first run is a user and an installation method and nothing else.
-# Every other question is asked in Settings, or not at all. See the note in the settings registry.
 
 
 class InterfaceState(Wire):
@@ -124,14 +88,7 @@ async def read_interface(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     service: Annotated[SettingsService, Depends(_service)],
 ) -> InterfaceState:
-    """How this user has arranged the interface, so it is the same on every machine.
-
-    Separate from the settings above and not a section of them. A setting is a preference chosen on
-    a screen and every one of them is drawn there; where somebody dragged a rail row to is not a
-    preference and would be a nonsense row in Settings.
-
-    Empty is the ordinary answer for a user that has never rearranged anything.
-    """
+    """How this user has arranged the interface, so it is the same on every machine."""
     return InterfaceState(state=await service.interface(viewer))
 
 
@@ -143,11 +100,7 @@ async def update_interface(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     service: Annotated[SettingsService, Depends(_service)],
 ) -> None:
-    """Remember an arrangement, all of it or none of it.
-
-    Every signed-in user may write their own, guest included: this is where they put their own rail
-    and it reaches nobody else. An unknown key is a 400, and a value the store cannot hold is a 422.
-    """
+    """Remember an arrangement, all of it or none of it; every user may write their own."""
     try:
         await service.arrange(viewer, body.state)
     except UnknownSetting as exc:

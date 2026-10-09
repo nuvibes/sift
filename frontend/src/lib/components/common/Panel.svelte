@@ -17,49 +17,20 @@
 	/* WHY NOT BITS-UI: a box on a surface has no behaviour (ground, edge, corner, inset) and the
 	   library ships behaviour. What opens and closes a panel is whatever draws it. */
 
-	/*
-	 * The box everything else stands in: a ground, a hairline edge, a corner and an inset, answered
-	 * once. `BarPanel` is this plus the margins a bar's panel needs.
-	 *
-	 * The two grounds. `raised` is a step lighter than what it stands on, a panel over the page.
-	 * `recessed` is a step darker, a box set into a surface that is already raised, which keeps a
-	 * box inside a dialog from being the same grey as the dialog. These are the same two steps the
-	 * whole surface scale uses.
-	 *
-	 * And a third, which is not a step of that scale: `caution`. A box holding something worth
-	 * reading twice before going on: what a compression cannot do to some of the files, what an
-	 * edit is not allowed to do at all. A tone here rather than a block form of `Note`: `Note` is a
-	 * sentence with a mark and has no box, this is the box, and a boxed caution is the two
-	 * together.
-	 *
-	 * The ground is `--sift-warn-bg` and the edge `--sift-warn`, the pair the status chips use for
-	 * the same meaning. The ink is untouched: a whole sentence in warning amber reads as something
-	 * having gone wrong (see `Note`'s header). The box says it; the words stay ordinary.
-	 */
+	/* The box everything stands in: `raised` a step lighter, `recessed` a step darker, `caution`
+	 * on the warn pair for something to read twice, its words left in ordinary ink. */
 	import type { Snippet } from 'svelte';
 
 	interface Props {
 		children: Snippet;
-		/**
-		 * Lighter than what it stands on (`raised`), set into it (`recessed`), or something to read
-		 * twice (`caution`).
-		 */
 		tone?: PanelTone;
-		/**
-		 * How much room inside. `sm` for a panel of controls, `md` for one with words in it, `xs`
-		 * for a panel of MENU ROWS: the menu's own inset, so rows that carry `--menu-row-radius`
-		 * (the menu's corner less this inset) sit concentric in a panel with the `lg` corner.
-		 */
+		/** Room inside: `sm` controls, `md` words, `xs` menu rows (concentric with `lg`). */
 		inset?: 'xs' | 'sm' | 'md';
 		/** The corner. `lg` for a panel on the page, `md` for one inside something else. */
 		corner?: 'md' | 'lg';
 		/** Lifted off the page with a shadow, for a panel that floats over content. Floats too. */
 		elevated?: boolean;
-		/**
-		 * Over the screen rather than standing on it: a bar's panel, a sheet hanging from a bar. It
-		 * keeps the flat card tone, because a floating thing with a light of its own reads as a
-		 * second lamp. A raised panel standing on the page wears the card's light (`--sift-card`).
-		 */
+		/** Over the screen (a bar's panel): the flat card tone, no light of its own. */
 		floating?: boolean;
 		/** The hairline edge. A card on a wall of cards has none: the ground is its boundary. */
 		edge?: boolean;
@@ -109,10 +80,7 @@
 		background: var(--sift-surface-2);
 	}
 
-	/* A card standing on the page: lit from the top-left, its hairline catching that light and lost
-	   into the fill at the bottom-right. The edge is a layer of the ground under a transparent
-	   border, so the border keeps its width and nothing moves. Without an edge the fill runs under
-	   the border too, and the ground alone is the boundary. */
+	/* A card on the page, lit top-left; the edge is a layer under a transparent border. */
 	.raised:not(.floating) {
 		border-color: transparent;
 		background: var(--sift-card);
@@ -126,9 +94,7 @@
 		background: var(--sift-surface-1);
 	}
 
-	/* The one tone that is not a step of the surface scale. The edge carries the colour as well as
-	   the ground, because the tint alone is a few percent of light in a dark theme and a box that
-	   only nearly looks different is worse than one that does not try. */
+	/* The edge carries the colour too, as the tint alone barely shows in a dark theme. */
 	.caution {
 		background: var(--sift-warn-bg);
 		border-color: var(--sift-warn);

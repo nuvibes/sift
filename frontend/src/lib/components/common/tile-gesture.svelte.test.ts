@@ -1,13 +1,5 @@
-/*
- * Press and hold to select, proved rather than assumed.
- *
- * Every one of these is a way the gesture fails without anybody reporting it as a bug: they
- * report it as "it sometimes doesn't select" or "it opened the file as well".
- *
- * The one worth reading twice is the last group. A hold ends in a pointerup, a pointerup on a
- * button is a click, and a click on a tile opens it, so without the suppression, holding a tile
- * selects it and then immediately opens the thing it just selected.
- */
+/* Press and hold to select, proved: each case is a way the gesture fails unreported. A hold ends
+ * in a click, which must not also open the tile it picked. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,13 +8,7 @@ import { PRESS_HOLD_MS, TileGesture } from './tile-gesture.svelte';
 
 const ORDER = ['a', 'b', 'c', 'd'];
 
-/**
- * A pointer event jsdom will actually construct.
- *
- * `PointerEvent` is not implemented there, so a plain `MouseEvent` carries the fields the gesture
- * reads. `currentTarget` is only set by real dispatch, so the tests that care about the cue
- * dispatch through an element rather than calling the method with a hand-made event.
- */
+/** A pointer event jsdom constructs (a MouseEvent); the cue tests dispatch through an element. */
 function pointer(type: string, init: Partial<PointerEvent> = {}): MouseEvent {
 	return new MouseEvent(type, {
 		bubbles: true,
@@ -49,18 +35,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	gesture.pressEnd();
-	/*
-	 * And let go of the pointer, which is what actually ends a SWEEP.
-	 *
-	 * `pressEnd` ends the press. The sweep is a second set of window listeners armed after the
-	 * hold fires, and only a pointerup takes them off, so a test that swept and never released
-	 * would leave them on the window for the next test, where a leaked one refuses `dragstart` in
-	 * a test that held nothing.
-	 *
-	 * Not a leak in the application, and it is worth saying which: `#stopSweeping` is on the
-	 * WINDOW, so a real pointerup reaches it even after the wall that started the sweep has
-	 * unmounted. This is the one place a pointer can go missing.
-	 */
+	/* And let go: only a pointerup removes the sweep's window listeners, or they leak onward. */
 	window.dispatchEvent(pointer('pointerup'));
 	tile.remove();
 	vi.useRealTimers();
@@ -103,8 +78,7 @@ describe('not holding', () => {
 	});
 
 	it('gives up when the pointer wanders off, which is a drag', () => {
-		// A tile has drag handlers of its own. A drag that also selected what it was dragging would
-		// pick things up by accident, every time.
+		// A drag that also selected would pick things up by accident.
 		tile.dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
 		window.dispatchEvent(pointer('pointermove', { clientX: 140, clientY: 100 }));
 		vi.advanceTimersByTime(PRESS_HOLD_MS);
@@ -113,8 +87,7 @@ describe('not holding', () => {
 	});
 
 	it('forgives a hand that is not perfectly still', () => {
-		// The reason there is a slop radius at all. With none the gesture works for people with
-		// steady hands and fails for everybody else, which is the worst way for it to fail.
+		// The slop radius, for hands that are not steady.
 		tile.dispatchEvent(pointer('pointerdown', { clientX: 100, clientY: 100 }));
 		window.dispatchEvent(pointer('pointermove', { clientX: 103, clientY: 102 }));
 		vi.advanceTimersByTime(PRESS_HOLD_MS);
@@ -155,8 +128,7 @@ describe('the click that follows a hold', () => {
 		vi.advanceTimersByTime(PRESS_HOLD_MS);
 		gesture.clicked('b', pointer('click'));
 
-		// Something is selected now, so this one toggles rather than opening, but it is handled as
-		// a click on a selection rather than as the tail of the hold.
+		// Now it toggles, as a click on a selection, not the hold's tail.
 		gesture.clicked('b', pointer('click'));
 		expect(selection.count).toBe(0);
 	});
@@ -171,24 +143,13 @@ describe('Escape lets go of the selection', () => {
 	});
 
 	it('says it did nothing when there was nothing to let go of', () => {
-		// Escape means something else to every dialog, menu and search box on the page, and
-		// swallowing it while nothing is picked would take it from them.
+		// Escape belongs to everything else while nothing is picked.
 		expect(gesture.escaped()).toBe(false);
 	});
 
 	it('leaves the selection alone when something nearer already answered the key', () => {
-		/*
-		 * Escape closes the innermost thing: menu before dialog before overlay.
-		 *
-		 * A menu is portalled to the end of the document, so the key travels from it up to the
-		 * window handler this sits behind; the menu closes itself and the event carries on. So one
-		 * press would do two things, and the selection the menu was opened ON would go with it:
-		 * open a menu, press Escape, and the bar you were about to use is gone.
-		 *
-		 * Asserted on `defaultPrevented` rather than on an open menu being in the document, because
-		 * in the running application the menu has already flipped its own state to closed by the
-		 * time this runs, so a check for one would never fire.
-		 */
+		/* Escape closes the innermost thing: a portalled menu has already closed, so `defaultPrevented`
+		 * says the window must leave the selection alone. */
 		selection.toggle('a');
 		const answered = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
 		answered.preventDefault();
@@ -204,8 +165,7 @@ describe('Escape lets go of the selection', () => {
 
 describe('tearing down', () => {
 	it('takes its window listeners with it', () => {
-		// They call back into the gesture, so a leaked pair fires on every pointer move and every
-		// scroll on the page, for the rest of the session, holding the tile that started it.
+		// A leaked pair would hold the tile for the rest of the session.
 		const remove = vi.spyOn(window, 'removeEventListener');
 		tile.dispatchEvent(pointer('pointerdown'));
 		gesture.pressEnd();
@@ -215,8 +175,7 @@ describe('tearing down', () => {
 	});
 
 	it('removes the same function it added, or nothing ever comes off', () => {
-		// A method passed straight to addEventListener is a new bound function every call and can
-		// never be removed. On a grid that is one leaked listener per press.
+		// A method passed straight to addEventListener can never be removed.
 		const added: unknown[] = [];
 		vi.spyOn(window, 'addEventListener').mockImplementation(((type: string, fn: unknown) => {
 			if (type === 'pointermove') added.push(fn);
@@ -231,14 +190,7 @@ describe('tearing down', () => {
 	});
 });
 
-/*
- * The sweep: hold, then keep the button down and move.
- *
- * A synthetic drag does not fire an event per step, and jsdom has no layout at all, so
- * `elementFromPoint` answers nothing here whatever the coordinates say. Both are stubbed, which
- * means what these prove is the RULE the sweep follows and never that a real mouse reaches it.
- * That half is a hand check.
- */
+/* The sweep, with the layout stubbed: this proves the rule, a real mouse is a hand check. */
 describe('sweeping across tiles after a hold', () => {
 	/** Stand in for the layout: whatever id the next move should land on. */
 	function under(id: string | null) {
@@ -266,17 +218,7 @@ describe('sweeping across tiles after a hold', () => {
 		expect([...selection.ordered(ORDER)]).toEqual(['b', 'c', 'd']);
 	});
 
-	/*
-	 * The native drag, refused, which is the difference between this gesture working and not.
-	 *
-	 * A drag session pre-empts `pointermove` entirely, so on any draggable tile the sweep gets its
-	 * hold and never sees another move. Almost every tile is draggable without anybody asking: an
-	 * `<a href>` is, and so is an `<img>`.
-	 *
-	 * **jsdom cannot START a native drag, so this can never prove the gesture survives one.**
-	 * What it proves is that the refusal is installed for exactly the window it is needed and taken
-	 * off again. The other half is a hand check.
-	 */
+	/* The native drag refused while sweeping; jsdom cannot start one, so the window is proved. */
 	it('refuses the native drag a sweep looks like, while one is running', () => {
 		const dragged = () => {
 			const event = new Event('dragstart', { bubbles: true, cancelable: true });
@@ -292,16 +234,13 @@ describe('sweeping across tiles after a hold', () => {
 		move(300);
 		expect(dragged()).toBe(true);
 
-		// And it is given back the moment the button comes up: a wall that legitimately drags
-		// must not be left unable to.
+		// Given back on pointerup, so a wall can drag again.
 		window.dispatchEvent(pointer('pointerup', { clientX: 300, clientY: 100 }));
 		expect(dragged()).toBe(false);
 	});
 
 	it("does not reach the tile's own handler while a sweep is running", () => {
-		/* Capture phase and `stopPropagation`, so a wall that builds a drag payload never starts
-		 * building one. Prevented but still delivered, the media grid would assemble a transfer for
-		 * a drag that is not happening. */
+		/* Capture phase and stopPropagation, so no drag payload is built. */
 		const built = vi.fn();
 		tile.addEventListener('dragstart', built);
 
@@ -319,8 +258,7 @@ describe('sweeping across tiles after a hold', () => {
 		move(300);
 		under('c');
 		move(200);
-		// The whole reason this extends rather than toggling each: going too far and coming back
-		// has to UNPICK the overshoot, and a toggle-each would have left 'd' picked.
+		// Coming back unpicks the overshoot.
 		expect([...selection.ordered(ORDER)]).toEqual(['b', 'c']);
 	});
 
@@ -353,17 +291,7 @@ describe('sweeping across tiles after a hold', () => {
 	});
 });
 
-/*
- * The one a unit test cannot reach, guarded here anyway.
- *
- * A tile is `draggable`, so pressing it and moving starts a NATIVE drag session, which pre-empts
- * `pointermove` entirely, so the sweep would get its hold and never see another move. jsdom has no
- * drag-and-drop and a synthetic pointer sequence never starts one, so none of the twenty checks
- * above it can see this.
- *
- * What is provable here is the FLAG the grid refuses the drag on. That the grid reads it is a
- * contract test's job, and that a real mouse then sweeps is a hand check.
- */
+/* A sweep is not a drag: the flag the grid refuses the drag on. */
 describe('a sweep is not a drag', () => {
 	it('says it is sweeping only between the hold and letting go', () => {
 		expect(gesture.sweeping).toBe(false);
@@ -379,17 +307,8 @@ describe('a sweep is not a drag', () => {
 	});
 });
 
-/*
- * Sweeping again once something is already picked.
- *
- * With a selection already made, a press-and-move must start a run rather than a native drag of the
- * tile under the hand, or the gesture reads as used up after the first sweep.
- *
- * The same stubs as the group above, and the same limit: jsdom cannot start a real drag, so what is
- * proved is the rule and the window the refusal is armed for. A real second sweep is a hand check.
- */
+/* A second sweep while something is picked starts a run, not a drag. */
 describe('sweeping again while something is already picked', () => {
-	/** Stand in for the layout: whatever id the next move should land on. */
 	function under(id: string | null) {
 		const row = id === null ? null : document.createElement('div');
 		if (row && id) row.setAttribute('data-tile-id', id);
@@ -410,15 +329,13 @@ describe('sweeping again while something is already picked', () => {
 		under('d');
 		move(300);
 
-		// 'b' is where the press was and 'd' is where the pointer is; 'c' was crossed. 'a' stays,
-		// because a second run ADDS to a selection rather than starting over.
+		// A second run adds to the selection.
 		expect([...selection.ordered(ORDER)]).toEqual(['a', 'b', 'c', 'd']);
 	});
 
 	it('waits for the pointer to leave the tile, so a plain click is still a plain click', () => {
 		tile.dispatchEvent(pointer('pointerdown'));
-		// The press has armed nothing visible. Everything that was picked is still picked and the
-		// tile pressed is not.
+		// The press alone picks nothing.
 		expect([...selection.ordered(ORDER)]).toEqual(['a']);
 
 		tile.dispatchEvent(pointer('pointerup'));
@@ -427,8 +344,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('does not toggle the tile it started on back out on the way up', () => {
-		// The click a press produces is the gesture's, exactly as it is after a hold. Without that
-		// the run's own first tile would come straight back off.
+		// The press's click is the gesture's, as after a hold.
 		tile.dispatchEvent(pointer('pointerdown'));
 		under('d');
 		move(300);
@@ -439,11 +355,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('UNPICKS what it crosses when the run began on a tile that was picked', () => {
-		/*
-		 * The press is on 'b', which is picked, so this run takes 'b', 'c' and 'd' off and leaves
-		 * 'a', which the hand never went near. A run that could only add would never let a sweep
-		 * back rub anything out.
-		 */
+		/* Pressed on a picked tile, the run removes and leaves 'a'. */
 		selection.toggle('b');
 		expect([...selection.ordered(ORDER)]).toEqual(['a', 'b']);
 
@@ -455,16 +367,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('takes an unpick run back onto the selection that was on screen', () => {
-		/*
-		 * Where `beginRun` and `toggle` actually differ, which is not where it looks.
-		 *
-		 * `toggle` acts on the tile it is handed and the run is then drawn over it anyway, so for a
-		 * run that adds the two end with the same tiles picked. They differ in the direction (a
-		 * `toggle` would leave the run adding, and this group is about a run that removes) and in
-		 * what the gesture leaves to take back: `beginRun` changes nothing and takes no step, so
-		 * one Ctrl+Z lands on what was picked before the hand moved rather than on a half-drawn
-		 * selection nobody saw.
-		 */
+		/* `beginRun` sets the direction and takes no step, so one Ctrl+Z undoes the whole run. */
 		selection.toggle('b');
 		tile.dispatchEvent(pointer('pointerdown'));
 		under('d');
@@ -486,8 +389,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('puts back what an unpick run overshot, which is the other half of the same rule', () => {
-		// Out over 'c' and 'd' with the run removing, then back to 'c': 'd' is no longer in the run,
-		// so it returns to the state it was in before the hand moved, which is picked.
+		// Back to 'c': 'd' returns to picked.
 		selection.toggle('b');
 		selection.toggle('c');
 		selection.toggle('d');
@@ -503,8 +405,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('lets go of the direction when the hand is lifted', () => {
-		// A run that removed things must not leave the next range removing. Letting go closes the
-		// run; a shift-click after it is a gesture of its own and adds, as it always has.
+		// Letting go closes the run; the next shift-click adds.
 		selection.toggle('b');
 		tile.dispatchEvent(pointer('pointerdown'));
 		under('d');
@@ -517,8 +418,7 @@ describe('sweeping again while something is already picked', () => {
 	});
 
 	it('refuses the native drag from the PRESS, not from the first move', () => {
-		// A drag session pre-empts `pointermove`, so a refusal armed after the first move is armed
-		// after the only event that could have told us to.
+		// Armed at the press, before a drag pre-empts the moves.
 		const event = new Event('dragstart', { bubbles: true, cancelable: true });
 		tile.dispatchEvent(pointer('pointerdown'));
 		tile.dispatchEvent(event);

@@ -1,20 +1,7 @@
 /*
- * The row a wall is opened at, carried in the address.
- *
- * Seven screens read these four functions, and every guard underneath exists because of a specific
- * way this goes wrong quietly: a browser spec asserting that the address grows a `?from=` and
- * loses it again covers two of the behaviours, on one of the seven:
- *
- * - Writing the anchor from a screen that is not the one on top any more navigates somebody out of
- *   whatever they just opened.
- * - Writing it as a real navigation makes Back walk through every page anybody scrolled past.
- * - Rebuilding an absolute address hands the router an origin the browser may not be on, which it
- *   refuses outright as external, and Sift is reached through proxies and tunnels.
- * - Sending an anchor and an offset together asks two questions, and which one wins would then be
- *   a detail of the server rather than a decision.
- *
- * None of those shows up as an error. Each shows up as a screen that jumps, or a Back button that
- * stops working, or a link that opens somewhere else.
+ * The row a wall is opened at. Each guard exists for a quiet failure: a write from a screen no
+ * longer on top, a write that is a navigation, an absolute address a proxy makes external, an
+ * anchor and an offset together.
  */
 
 import { readFileSync } from 'node:fs';
@@ -32,7 +19,6 @@ import { ANCHOR, NEAR, anchorIn, asked, forgetAnchor, rememberAnchor } from './a
 vi.mock('$app/navigation', () => ({ replaceState: vi.fn() }));
 vi.mock('$app/state', () => ({
 	navigating: { to: null, from: null, type: null },
-	// What a panel over this screen is drawn from. It has to survive an address correction.
 	page: { state: {} }
 }));
 
@@ -40,12 +26,10 @@ const went = vi.mocked(replaceState);
 const going = navigating as { to: unknown };
 const showing = page as unknown as { state: Record<string, unknown> };
 
-/** Somebody is on their way to another screen and has not arrived. */
 function partway(): void {
 	going.to = { url: new URL('http://sift.test/organize'), route: { id: '/organize' } };
 }
 
-/** An address, as the app sees it: a real URL with an origin on it. */
 function at(path: string): URL {
 	return new URL(path, 'http://sift.test');
 }
@@ -74,7 +58,6 @@ describe('reading the anchor out of the address', () => {
 	});
 
 	it('refuses a `near` that is not a whole number from zero up', () => {
-		/* The address is somebody else's to write. */
 		for (const bad of ['-1', '1.5', 'abc', '', '1e3', '9999999999']) {
 			expect(anchorIn(at(`/people?from=p7&near=${bad}`))).toEqual({ from: 'p7', near: null });
 		}
@@ -100,9 +83,7 @@ describe('writing where the page landed', () => {
 	});
 
 	it('goes as a path, never as an absolute address', () => {
-		/* An origin the router does not recognise is an external navigation and is refused. Sift is
-		   reached through proxies and tunnels, so rebuilding the address is a real way to produce
-		   one, not only a thing that happens in a test. */
+		/* Sift is reached through proxies and tunnels, so a rebuilt origin is a real failure. */
 		rememberAnchor(at('/people'), '/people', 'p7', 0);
 
 		expect(String(went.mock.calls[0][0])).toBe('/people?from=p7&near=0');
@@ -110,16 +91,8 @@ describe('writing where the page landed', () => {
 
 	it('carries the page state, so a panel opened over the wall is not thrown away', () => {
 		/*
-		 * THE FOURTH EDGE: a correction that lands LATER.
-		 *
-		 * A `goto` lands some frames after it is asked for and drops the page state on the way. A
-		 * wall's page settling and somebody opening Settings in the same breath is enough: the
-		 * panel goes up, the correction lands, the state a panel is drawn from is gone and so is
-		 * the panel: the address going from `/settings/library` back to `/browse?from=...` with
-		 * nothing having been pressed.
-		 *
-		 * Writing it as a `replaceState` closes the window and keeps the state; this holds the
-		 * second half, which is the half a mock of the first would let through.
+		 * THE FOURTH EDGE: a correction landing later must keep the page state a panel is drawn
+		 * from.
 		 */
 		showing.state = { settings: 'library' };
 
@@ -129,17 +102,14 @@ describe('writing where the page landed', () => {
 	});
 
 	it('says nothing when the screen it belongs to is no longer the one on top', () => {
-		/* Opening a file pushes an address over a wall that stays mounted underneath, and its
-		   background refresh keeps running. Without this the refresh navigates the person out of the
-		   file they just opened. */
+		/* Opening a file pushes an address over a wall still refreshing underneath. */
 		rememberAnchor(at('/assets/a1'), '/people', 'p7', 0);
 
 		expect(went).not.toHaveBeenCalled();
 	});
 
 	it('says nothing for a row with no id', () => {
-		// The Identified wall gathers everybody a viewer may not be told about under one nameless
-		// card. A card that exists in order to have no name is not one an address should name.
+		// A card that exists to have no name is not one an address should name.
 		rememberAnchor(at('/organize/identified'), '/organize/identified', null, 0);
 		rememberAnchor(at('/organize/identified'), '/organize/identified', undefined, 0);
 		rememberAnchor(at('/organize/identified'), '/organize/identified', '', 0);
@@ -148,8 +118,6 @@ describe('writing where the page landed', () => {
 	});
 
 	it('says nothing when the address already names that row', () => {
-		// Most background refreshes land here, and a `goto` to where you already are still costs a
-		// navigation.
 		rememberAnchor(at('/people?from=p7&near=24'), '/people', 'p7', 24);
 
 		expect(went).not.toHaveBeenCalled();
@@ -162,17 +130,17 @@ describe('writing where the page landed', () => {
 	});
 
 	it('moves `near` with the row even when only the offset changed', () => {
-		/* The same first row at a new offset: something above it was removed. The row is the fact,
-		   and where it now sits is what the way back needs if it goes too. */
+		/* Something above was removed: the row is the fact, its offset what the way back needs. */
 		rememberAnchor(at('/people?from=p7&near=24'), '/people', 'p7', 23);
 
 		expect(String(went.mock.calls[0][0])).toBe('/people?from=p7&near=23');
 	});
 
 	it('says nothing while somebody is already on their way somewhere else', () => {
-		/* The path check reads where we are NOW, and during a navigation that is still the screen
-		   being left, so it passes, and the write lands on top of the move. Pressing a sidebar
-		   link while a wall's first page arrives would change the screen and pull it straight back. */
+		/*
+		 * During a navigation the path check still passes, and the write would land on top of the
+		 * move.
+		 */
 		partway();
 
 		rememberAnchor(at('/people'), '/people', 'p7', 0);
@@ -182,13 +150,8 @@ describe('writing where the page landed', () => {
 
 	it('tells what remembers the address, because a replaceState is invisible to it', () => {
 		/*
-		 * THE FIFTH EDGE: leaving a wall at `/people?from=p16` must remember that, not plain
-		 * `/people`, or the crumb comes back to the front.
-		 *
-		 * `replaceState` never assigns `page.url` (it sets the history entry and `page.state` and
-		 * nothing else), so an effect watching `page.url` cannot see this write at all. The wall
-		 * says so itself. Asserted through `cameFrom` rather than through the stored key, because
-		 * what the crumb reads is the promise.
+		 * THE FIFTH EDGE: `replaceState` never moves `page.url`, so the wall tells the recorder
+		 * itself.
 		 */
 		sessionStorage.clear();
 		const wall = `${window.location.origin}/people`;
@@ -208,7 +171,6 @@ describe('forgetting it', () => {
 	});
 
 	it('says nothing when there is no anchor to take out', () => {
-		// Otherwise every reset would cost a navigation, and there is one on every new question.
 		forgetAnchor(at('/people?prefix=b'), '/people');
 
 		expect(went).not.toHaveBeenCalled();
@@ -248,23 +210,14 @@ describe('what a wall asks the server for', () => {
 	});
 
 	it('is never both together', () => {
-		/* A request carrying an anchor and an offset asks two questions, and which of them the
-		   server honours would then be a detail of the server rather than a decision. */
 		expect(asked({ limit: 60, from: 'p7' })).not.toHaveProperty('offset');
 		expect(asked({ limit: 60, offset: 120 })).not.toHaveProperty('from');
 	});
 });
 
 /*
- * WHAT BACK RETURNS TO, which is not the address in the bar.
- *
- * The router keeps each history entry's own record of the address it is for, and on a `popstate` it
- * navigates to THAT rather than to what the bar says. `replaceState` writes `page.url` into it
- * (the address the screen arrived at) and never moves `page.url`, so every correction a wall makes
- * stamps the entry with the arrival address again: on /people, two pages forward, the bar reads
- * `?from=...` and the entry's record still reads `/people`. Back would go to the bare address, the
- * wall would draw page one, and the anchor it then wrote would make this look like the last
- * correction being lost.
+ * WHAT BACK RETURNS TO: the history entry's own record, which `replaceState` stamps with the stale
+ * address.
  */
 describe("the history entry's own record of the address it is for", () => {
 	const ROUTERS_RECORD = 'sveltekit:pageurl';
@@ -275,7 +228,6 @@ describe("the history entry's own record of the address it is for", () => {
 			'',
 			'/people'
 		);
-		// The router's own write, as it behaves: the bar moves and the record does not.
 		went.mockImplementation((where) => {
 			history.replaceState(history.state, '', String(where));
 		});
@@ -306,11 +258,9 @@ describe("the history entry's own record of the address it is for", () => {
 		expect(history.state['sveltekit:history']).toBe(1);
 	});
 
-	/* The key is the router's, so it is held against the router's own file rather than trusted. A
-	   SvelteKit that renames it would otherwise take this correction quietly back out. */
+	/* Held against the router's own file, so a rename is caught. */
 	it('is named the way the router names it', () => {
-		// From the project root, which is where vitest runs: `import.meta.url` is an http address
-		// under the dev server's transform and cannot be handed to the file system.
+		// From the project root: `import.meta.url` is an http address under the dev server.
 		const constants = readFileSync(
 			resolve(process.cwd(), 'node_modules/@sveltejs/kit/src/runtime/client/constants.js'),
 			'utf8'

@@ -1,10 +1,4 @@
-/* The Sift Downloads folder proposed when a library gains its first folder.
- *
- * The rules worth a test: it PROPOSES and never picks (nothing is written until "Create this folder"),
- * it appears only for a library that had no folder when the screen opened, it is not drawn over a
- * default somebody already set, and the one write it makes carries the naming rule and the tool
- * it did not change: the row is stored whole, and a write naming one answer blanks the others.
- */
+/* The Sift Downloads folder proposed when a library gains its first folder. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { words } from '$lib/design/testing.svelte';
@@ -165,9 +159,7 @@ it('proposes nothing on a library that already had a folder', async () => {
 	expect(buttonSaying('Create this folder')).toBeUndefined();
 });
 
-/* The server writes a marker where the profile folder's name is hidden. It is a word meant for the
-   logs, and drawn as text on this offer it would read "C:\\Users\\[redacted]\\...".
-   The path is drawn the way every path is, with the name as a blur. */
+/* The server writes a marker where the profile folder's name is hidden. */
 it('draws a hidden profile folder as the blur, never as the marker word', async () => {
 	library.roots = [];
 	host = document.createElement('div');

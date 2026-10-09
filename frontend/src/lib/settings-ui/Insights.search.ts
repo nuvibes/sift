@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Insights pane's words, and what somebody can type to find it.
- *
- * The four recap switches are registry rows, whose own label and help feed the search by
- * themselves. The two rows below them point at settings that live elsewhere. */
+/* The Insights pane's words, and what somebody can type to find it. */
 import type { Searchable } from './search';
 
 /** The recap switches, a period each, in the order the rows are drawn. */

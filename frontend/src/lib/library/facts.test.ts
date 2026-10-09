@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { codec, depth, dimensions, length, rate, size, sizeOf } from './facts';
 
-/*
- * The one definition of a file's facts.
- *
- * Two things are being checked and the second is the point of the file. The first is that each
- * function writes a known value the way it is meant to be written. The second is that ABSENT comes
- * back as `null` every time, because the surfaces word a blank differently, and a function that
- * decided the word for them would be wrong on one of them.
- */
+/* The one definition of a file's facts. Two things are being checked and the second is the point
+ * of the file. */
 
 describe('a size on disk', () => {
 	it('is written in whichever unit keeps it to three or four figures', () => {

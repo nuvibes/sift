@@ -1,33 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Noticing that a file arrived, and waiting until it has finished arriving.
-
-Drop a video into a watched folder and it should appear, without anybody pressing anything. That
-is the whole of what this does, and almost all of it is the waiting.
-
-**Why this is not a job.** A watcher runs for as long as Sift does. The queue's workers are a
-small fixed number (as many as the machine can usefully run at the same time), and a job that never
-returns keeps one of them forever. Watch four folders on a four-worker box and nothing else ever
-runs again: no `probe`, no thumbnails, no scans. So the watcher lives beside the queue and puts
-work into it, rather than being work in it.
-
-**Why quiet, not events.** A file is not ready when it appears; it is ready when the program
-writing it has finished. Copying a video produces a stream of events over however many seconds it
-takes, and the first of them is a file of zero bytes. Hashing that gets the digest of nothing:
-a permanently mis-identified asset that nothing ever revisits, because as far as Sift is concerned
-it was indexed successfully.
-
-So no single event means anything here. What means something is events *stopping*: every event
-pushes a deadline out, and only when a folder has said nothing for a while is it handed to a scan.
-That is the settle-wait, and it is the same mechanism as the debounce: a file still being written
-is a folder that has not gone quiet. It also collapses a copy of five hundred files into one scan
-instead of five hundred.
-
-**Why the scan does the work.** The watcher decides *when*, never *what*. Once a folder is quiet it
-enqueues an ordinary scan of that folder, and everything after that (the gate, the digest, the
-rows, `probe`, the refusal memory) is the code that already exists and is already tested. A
-watcher that indexed files itself would be a second pipeline, and the second one is always the one
-that is subtly wrong.
-"""
+Not a job: it runs as long as Sift does. It decides when a folder is quiet; a scan does the rest."""
 
 from __future__ import annotations
 
@@ -70,126 +43,52 @@ from sift.slices.library_roots.jobs import (
 )
 
 if sys.platform == "win32":  # pragma: no cover (one arm of it is dead on whichever platform)
-    # Guarded, because the module underneath is ctypes against kernel32 and `ctypes.wintypes` does
-    # not exist anywhere else. Sift ships on Windows and is meant to be readable and runnable by
-    # somebody self-hosting it on a Linux box, where watchdog's own inotify observer is the right
-    # answer and this file must still import.
-    #
-    # Excluded rather than tested: an import decided at import time cannot be taken both ways in one
-    # process, so a coverage run reads whichever arm this machine did not take as a line nothing
-    # reaches. What the two arms lead to IS tested (see `_observer_for`, which is asked for both).
+    # Guarded: native_watch uses kernel32 through ctypes, and this must import on Linux.
     from sift.slices.library_roots.native_watch import SafeWindowsApiObserver
 
 log = get_logger(__name__)
 
-#: How long a folder has to say nothing before it is scanned. Long enough that a file being copied
-#: keeps resetting it (a stalled write of a few hundred milliseconds is ordinary), and short
-#: enough that dropping a file in feels immediate.
+#: Long enough that a file being copied keeps resetting it, short enough to feel immediate.
 QUIET_SECONDS = 3.0
 
-#: How often the pending folders are looked at. Not the quiet period: this is the resolution of it.
+#: The resolution of the quiet period, not the period.
 TICK_SECONDS = 0.5
 
-#: The polling timeout used when nothing configures one: a watcher built directly in a test, or a
-#: NAS root with the settings at their defaults. watchdog's own default is ten seconds, which is a
-#: long time to wait for a dropped-in file to appear; five is a gentler-than-inotify middle.
+#: When nothing configures one; watchdog's own ten seconds is too long to wait.
 DEFAULT_POLL_SECONDS = 5.0
 
 #: How long one observer gets to let go before it is left to the process.
-#:
-#: Generous rather than tight: a poller mid-walk over a slow share legitimately takes seconds to
-#: notice it has been asked to stop, and killing that off early is how a watch gets abandoned on a
-#: machine where nothing was wrong. What this exists to bound is the case where the answer is never
-#: coming at all (see `_stop_observers`).
 _STOP_SECONDS = 5.0
 
 
-#: The most of its time the poller may spend walking a tree, as a share of one.
-#:
-#: A poll interval is a promise nobody can keep on a large library over a slow filesystem, because
-#: the person setting it cannot know what a pass costs: one pass over a few thousand files on a
-#: network-backed mount can take **tens of seconds**, against an interval set to three, so without
-#: this the poller would never stop walking, and the machine would spend every second of every day
-#: re-reading a library that had not changed.
-#:
-#: A share is the right control because it is the only one that keeps meaning the same thing on a
-#: different machine. A quarter says: noticing a new file may cost up to a quarter of the poller's
-#: time, and the rest belongs to whoever is using the application. On a small library a pass is
-#: milliseconds and this never binds: the configured interval is longer and simply wins, so
-#: nothing changes for the ordinary case.
-#:
-#: Not a smaller share, because the other end of it is how long a dropped-in file takes to appear.
+#: The most of its time the poller may spend walking, so a slow tree backs off instead of walking
+#: nonstop.
 POLL_WALK_SHARE = 0.25
 
-#: However expensive a pass turns out to be, wait no longer than this between them.
-#:
-#: The share alone has no ceiling: a slow enough tree would back off until nothing was noticed for
-#: an hour, which is indistinguishable from a watcher that has stopped. Five minutes is the point
-#: past which somebody would go and press Rescan.
+#: The share has no ceiling; past five minutes a watcher looks stopped.
 MAX_POLL_REST_SECONDS = 300.0
 
-#: Whether this platform's own change notifications can be used, or the tree has to be walked.
-#:
-#: TRUE EVERYWHERE. The fault it answers is the reason the flag exists: watchdog's native watch on
-#: Windows is a synchronous `ReadDirectoryChangesW` parked in a thread of its own, and the only way
-#: to end one is to close the handle it is blocked on, from a different thread, while the call is
-#: still writing into a buffer it was handed. Windows says plainly that closing a handle with I/O
-#: outstanding on it is undefined, and both of the things it is undefined into happen: the read
-#: never returns, so stopping a watch never finishes, AND the completion lands in memory that has
-#: been given back, which takes the process down with an access violation.
-#:
-#: Walking instead is bounded by `POLL_WALK_SHARE` (the pacing above is what makes it affordable
-#: on a large library), and it is how every network share without notifications is watched. A
-#: crash while somebody is using the application is not a trade against latency.
-#:
-#: **So `native_watch.py` does the read inside Sift.** The read is issued OVERLAPPED, so it
-#: returns immediately and completes into an event the emitter waits on with a timeout, which is
-#: what gives the thread a moment to notice it has been asked to stop. Stopping cancels and closes
-#: nothing; the handle is closed by the emitter's own thread, after its loop has ended and after the
-#: cancelled read has been collected with `GetOverlappedResult(bWait)`. There is never an
-#: outstanding operation at close time, so the undefined behaviour is removed rather than raced.
+#: True because `native_watch.py` issues the read OVERLAPPED and closes the handle on its own thread,
+#: so no I/O is outstanding at close; watchdog's version could hang or crash on stop.
 _NATIVE_WATCH_IS_SAFE = True
 
-#: How long after a watch ends before the first attempt to attach it again, and the most it waits
-#: between attempts after doubling. See `LibraryWatcher._reattach`.
-#:
-#: Not immediately: the ordinary way a watch ends is a share that has just dropped, and asking a
-#: share that is not there a question every second is a stream of timeouts over a network that is
-#: already in trouble. Doubling from five seconds reaches the ceiling in six attempts, about five
-#: minutes: the same ceiling the poller's rest has, and for its reason: past it, a share that came
-#: back looks like a watcher that has stopped, and somebody goes and presses Rescan.
+#: Backoff for re-attaching an ended watch; doubling reaches the ceiling in about five minutes.
 REATTACH_FIRST_SECONDS = 5.0
 REATTACH_MOST_SECONDS = MAX_POLL_REST_SECONDS
 
-#: How long to wait before asking a second time whether a file has stopped growing.
-#:
-#: Deliberately much shorter than the settle-wait. See `_sweep_pending` for why they are two
-#: different questions: by the time this is used, the folder has ALREADY been quiet for a full
-#: settle-wait, and all that is left is to confirm the bytes have stopped as well.
+#: Much shorter than the settle-wait: the folder is already quiet, only the bytes are left to
+#: confirm.
 _SETTLE_RECHECK_SECONDS = 0.5
 
-#: How long a native watch waits before looking up to see whether it has been asked to stop.
-#:
-#: Nothing is polled at this rate and it has no effect on how quickly a file is noticed: a change
-#: signals the wait immediately, and a stop cancels the read, which signals it too. All it bounds is
-#: how long a thread with nothing to do sleeps between two checks it will almost always pass.
+#: How long a native watch sleeps between checks for a stop; it does not affect noticing.
 _STOP_CHECK_SECONDS = 1.0
 
-#: Whether the native watch here is Sift's own emitter or watchdog's. See `_observer_for`.
 _WINDOWS = sys.platform == "win32"
 
 
 class _PacedPollingEmitter(PollingEmitter):
-    """A poller that rests in proportion to what its last walk cost.
-
-    watchdog waits for the interval and then walks, so the interval is a gap between passes rather
-    than a period, and when the walk is the expensive part, the gap is all that stands between the
-    library and being read continuously. Nothing in watchdog notices that.
-
-    So each pass is timed, and the next wait is whatever keeps the walking down to `POLL_WALK_SHARE`
-    of the time. The configured interval is a floor, never a ceiling: a small library polls exactly
-    as often as it was told to, because its pass costs nothing and the floor always wins.
-    """
+    """A poller that rests in proportion to what its last walk cost; the configured interval is a
+    floor."""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
@@ -200,14 +99,11 @@ class _PacedPollingEmitter(PollingEmitter):
         waited = min(MAX_POLL_REST_SECONDS, max(timeout, self._rest_seconds))
         began = time.monotonic()
         super().queue_events(waited)
-        # What the walk cost, separated from the wait asked for. The base class does both inside
-        # this one call, and a stopped watcher returns early, hence the floor at zero rather than
-        # trusting the subtraction.
+        # The base class waits and walks in one call; a stopped watcher returns early.
         walked = max(0.0, (time.monotonic() - began) - waited)
         self._rest_seconds = walked * (1.0 / POLL_WALK_SHARE - 1.0)
         if not self._reported and self._rest_seconds > timeout:
-            # Once per watch, so a library that is simply expensive to walk says so instead of
-            # looking like a watcher that has quietly stopped noticing things.
+            # Once per watch, so an expensive library says so rather than looking stopped.
             self._reported = True
             log.info(
                 "library.watch_paced",
@@ -221,33 +117,19 @@ class _PacedPollingObserver(PollingObserver):
     """`PollingObserver`, with the emitter above in place of watchdog's."""
 
     def __init__(self, *, timeout: float) -> None:
-        # Naming a different emitter class is the entire change, so this goes past
-        # PollingObserver's own __init__, which exists only to name watchdog's.
+        # Bypasses PollingObserver's __init__, which only names watchdog's emitter.
         BaseObserver.__init__(self, _PacedPollingEmitter, timeout=timeout)
 
 
 @dataclass(slots=True)
 class _Pending:
-    """A folder that has changed, the moment it may be scanned, and what changed in it.
-
-    `paths` is what turns a notification into one `stat` instead of a walk. It is dropped (and
-    the folder scanned whole instead) in the three cases where naming files cannot be right:
-
-    * something MOVED ACROSS DIRECTORIES, which may be a folder being renamed underneath, and only
-      a listing can tell that from a file going away;
-    * more than `MOST_NAMED_PATHS` files arrived together, where a walk of the folder is cheaper
-      than a payload of ten thousand strings and a `stat` each; and
-    * the folder these files were in has itself gone, which is the one that cannot be decided from
-      the notification and is decided on the disk instead (see `_folder_went`).
-
-    Once dropped it stays dropped for this burst. A folder that has already earned a full walk does
-    not un-earn it because the next event was an ordinary arrival.
-    """
+    """A folder that changed, when it may be scanned, and which files. `paths` is None for a walk:
+    a move across directories, too many files, or the folder itself gone. Once dropped, it stays
+    dropped."""
 
     due: float
     paths: set[str] | None = None
-    #: What each named file measured last time the folder came due, so a file that is still growing
-    #: can be told from one that has finished. See `_still_arriving`.
+    #: What each named file measured last time, to tell growing from finished.
     sizes: dict[str, tuple[int, int]] = field(default_factory=dict)
 
     def note(self, rel_path: str | None) -> None:
@@ -261,32 +143,12 @@ class _Pending:
             self.paths = None
 
 
-#: The least time between two scans of the SAME folder, however much it keeps changing.
-#:
-#: The settle-wait is not a bound on its own. It bounds one burst; it says nothing about how often
-#: bursts arrive. On a filesystem whose events never really stop (a network share, or a Windows
-#: drive seen through WSL, where routine activity reads as constant change), the folder goes quiet
-#: for the settle-wait over and over, and each time is another scan. Those are also the filesystems
-#: a scan is slowest on, so the scans overlap: a folder that takes a minute to walk, handed to a
-#: scan every few seconds, ends up being walked by every worker at the same time and nothing else in
-#: the queue ever runs. Deduping the queue alone does not fix it, because each new scan is allowed
-#: the moment the last one is claimed.
-#:
-#: A change made during the cooldown is not lost. The folder is re-armed for the moment the cooldown
-#: ends, so it is scanned once more, late, rather than repeatedly or never.
+#: The least time between two scans of one folder: some filesystems never stop reporting change.
+#: A change during the cooldown re-arms the folder for when it ends.
 SCAN_COOLDOWN_SECONDS = 60.0
 
-#: The events that mean a file's CONTENT changed, and therefore the only ones worth a scan.
-#:
-#: Reading a file is not a change to it, and treating it as one is a loop that feeds itself: a scan
-#: opens and reads every file in the folder, each read raises `opened` and `closed_no_write`, those
-#: schedule another scan, and that scan reads every file again: a scan finishing and the next one
-#: triggered seconds later, for a folder nobody has touched in hours. It never stops on its own, and
-#: every pass re-reads the whole library.
-#:
-#: `closed` (a close after WRITING) is kept and is the most reliable signal there is that a
-#: download or a copy has actually finished. Its read-only twin, `closed_no_write`, is what a scan
-#: produces, and is exactly what must not come back here.
+#: Events that mean CONTENT changed. Reads are left out, or a scan's own reads schedule the next
+#: scan.
 WATCHED_EVENTS = frozenset(
     {
         EVENT_TYPE_CREATED,
@@ -298,10 +160,7 @@ WATCHED_EVENTS = frozenset(
 )
 
 
-#: The events that name ONE FILE and say nothing about the shape of the library around it.
-#:
-#: A deletion is here. See `_can_be_named` for the argument that puts it on this side and for the
-#: one question it leaves open.
+#: Events that name one file and say nothing about the library's shape.
 NAMEABLE = frozenset(
     {EVENT_TYPE_CREATED, EVENT_TYPE_MODIFIED, EVENT_TYPE_CLOSED, EVENT_TYPE_DELETED}
 )
@@ -309,75 +168,24 @@ NAMEABLE = frozenset(
 
 def _can_be_named(event: FileSystemEvent) -> bool:
     """Whether this change can be answered by looking at the named file, or needs the folder walked.
-
-    A file that arrived, was written, or went away can be taken in by naming it: a `stat` instead of
-    a walk of everything around it. What cannot is a change to the SHAPE of the library: a folder
-    renamed arrives as a moved event for every file inside it, and what has to happen then is that
-    the folder's ROW moves, keeping its id and its shares. That is a comparison of listings
-    (`_reconcile_folders`), not something a list of files can express.
-
-    **A DELETION IS NAMED.** The half of a scan that decides a file has gone is the sweep, and a
-    sweep of a folder somebody RENAMED has to see the whole listing to tell "moved" from "gone",
-    but that is about the FOLDER going, not about the file. A file deleted out of a folder that is
-    still there is exactly as nameable as one that arrived in it: `look_at` leaves out a path that
-    is not on the disk, and the narrowed sweep marks it missing. The catch-up pass has always relied
-    on precisely that (`_differences` names what Sift believes is present and the listing does not
-    show).
-
-    What the folder case is really about is a question no notification can answer, because
-    watchdog raises a plain file-deleted event for a DIRECTORY too: by the time it arrives there
-    is nothing left to ask what it was. So that question is asked of the disk, once per burst,
-    where it can actually be answered: see `_folder_went`.
-
-    Walked instead, deleting one file from a watched folder would answer with `named: null` and a
-    walk of thousands of files, and Sift's own delete does that to itself.
-
-    **A RENAME WITHIN ONE DIRECTORY IS AN ARRIVAL.** Pasting a file into a folder IS a move:
-    Explorer and every downloader write under one name and rename into place, so one pasted file
-    produces `created`, `modified` and then `moved`. Treated as structural, the moved would drop
-    the named paths and walk thousands of files to take in the one that had already been named
-    twice.
-
-    The test is where the two ends are. A file renamed inside one directory has the same parent at
-    both ends and nothing about the library's shape has changed: both ends are named, because the
-    old name has gone and the new one has arrived, and the filtered sweep needs to hear about both.
-    A move that CROSSES directories is the folder case, and is walked.
-
-    """
+    A deletion and a rename within one directory are nameable; a move across directories is
+    walked."""
     if event.event_type in NAMEABLE:
         return True
     if event.event_type != EVENT_TYPE_MOVED:
         return False
     destination = getattr(event, "dest_path", None)
     if not destination:
-        # A move with no destination is the file leaving, and where it went is not this watch's to
-        # say. Walked.
+        # A move with no destination: walked.
         return False
     if not event.src_path:
-        # A NAME APPEARED AND NOTHING SAYS WHERE IT CAME FROM, which is an arrival, and on a
-        # network share it is the ordinary way a paste is reported.
-        #
-        # Windows sends a rename as two notifications, an old name and a new one, and watchdog pairs
-        # them by remembering the old until the new arrives. Over SMB they do not always land in the
-        # same read of the buffer, so the new one turns up with the old still unseen and watchdog
-        # emits it with an EMPTY source: one paste can produce a properly paired move AND a second
-        # move with no source at all.
-        #
-        # `Path("").parent` is `.`, so the same-directory test below would read that as a move
-        # across directories (structural), and one pasted file would walk the whole library. A
-        # paste into a LOCAL folder pairs perfectly, which is why only a share shows it.
+        # An SMB rename can arrive unpaired with an empty source; it is an arrival.
         return True
     return Path(str(event.src_path)).parent == Path(str(destination)).parent
 
 
 class _Events(FileSystemEventHandler):
-    """Turns watchdog's callbacks into something the event loop can hear.
-
-    Every method here runs on watchdog's own thread, not on the event loop, and that is the entire
-    reason this class exists. Touching an asyncio structure from another thread is unsupported and
-    fails rarely enough to reach production: `call_soon_threadsafe` is the one sanctioned way
-    across, and it is what makes the rest of this file ordinary single-threaded code.
-    """
+    """Turns watchdog's callbacks, on its own thread, into calls on the event loop."""
 
     def __init__(
         self,
@@ -388,53 +196,34 @@ class _Events(FileSystemEventHandler):
         self._root_id = root_id
         self._loop = loop
         self._notify = notify
-        #: Cleared when the watcher lets go of the observer that owns this handler. An observer
-        #: that will not stop is left running rather than waited on for ever (see
-        #: `_stop_observers`), and a thread still delivering events into a loop that is closing is
-        #: exactly what that trade must not cost. Read without a lock on purpose: a bool assigned
-        #: once and never back is the one thing threads can share safely, and the worst a stale
-        #: read can do is deliver one more event to a handler that is about to be dropped.
+        #: Cleared when the watcher lets go of the observer, so an abandoned thread delivers nothing.
         self._live = True
 
     def detach(self) -> None:
-        """Stop delivering. Anything still arriving after this is somebody else's problem."""
+        """Stop delivering."""
         self._live = False
 
     @property
     def live(self) -> bool:
-        """Whether the watch this delivers for is still held. False once it has been let go of."""
+        """Whether the watch this delivers for is still held."""
         return self._live
 
     def on_any_event(self, event: FileSystemEvent) -> None:
         if not self._live:
             return
-        # Reading is not changing. See WATCHED_EVENTS: without this the scan's own reads schedule
-        # the next scan, forever.
+        # Reading is not changing. See WATCHED_EVENTS.
         if event.event_type not in WATCHED_EVENTS:
             return
         if event.is_directory:
-            # A directory event carries no file. The file events inside it are what matter, and a
-            # directory that is created empty has nothing to scan yet.
-            #
-            # Renaming a folder is handled, and it is worth saying where: watchdog raises a moved
-            # event for every FILE inside a directory that was renamed, not just for the directory,
-            # so the branch below sees them and the folder's contents are re-indexed at their new
-            # path. Adding the directory itself here changes nothing except how often a polling
-            # watch asks for a scan.
+            # Directory events carry no file; a renamed folder raises a moved event for each file in
+            # it.
             return
         for raw in (event.src_path, getattr(event, "dest_path", None)):
-            # Both ends of a rename. A file renamed INTO a watched folder arrives only as a
-            # destination (there is no create event for it), so watching src alone misses every
-            # file that was assembled under a temporary name, which is how most downloaders write.
+            # Both ends: a file renamed into the folder arrives only as a destination.
             if not raw:
                 continue
             path = Path(str(raw))
-            # The SAME list the walk stops for, archives included. `ALLOWED_EXTENSIONS` is "things
-            # Sift can decode" and does not name a `.zip`, so with it a gallery dropped into a
-            # watched folder would be ignored until somebody happened to rescan the whole root.
-            #
-            # Imported from the walk rather than rebuilt here, so the two cannot come to disagree
-            # about what is worth looking at.
+            # The walk's own list, archives included.
             if path.suffix.lower() not in WORTH_OPENING:
                 continue
             self._loop.call_soon_threadsafe(self._notify, self._root_id, path, _can_be_named(event))
@@ -442,35 +231,16 @@ class _Events(FileSystemEventHandler):
 
 @dataclass(frozen=True, slots=True)
 class _Look:
-    """What one pass over a burst found on the disk.
+    """What one pass over a burst found: whether files settled, and whether the folder is still
+    there."""
 
-    Two answers in one object because they are read at the same moment and cost the same handful of
-    `stat` calls, not because they are one question. `sizes` says whether the named files have
-    stopped changing; `folder_is_there` says whether naming them is the right answer at all.
-    """
-
-    #: Each named file that exists, by size and modification time. See `_Pending.sizes`.
     sizes: dict[str, tuple[int, int]]
-    #: Whether the folder those files were in is still a directory on the disk.
     folder_is_there: bool
 
 
 def _measure(base: Path, rel_dir: str, rel_paths: list[str]) -> _Look:
     """Every named file, and the folder holding them. Blocking; call it on a thread.
-
-    A file that is not there is left out rather than recorded as zero, so it neither looks like a
-    change every time nor like a file that has settled at nothing.
-
-    The folder is asked about ONCE, however many files the burst named, and it is the only way to
-    tell a few files being deleted from a whole folder going away: watchdog reports a directory's
-    removal as an ordinary file deletion, because by the time the notification arrives there is
-    nothing left to ask what it was.
-
-    !! UNREADABLE IS NOT GONE.** Only the two errors that really mean "there is no directory at this
-    path" count as absence. A permissions change, or a share that stopped answering, would otherwise
-    turn every deletion into a walk of the folder above, which is the reading that costs the most
-    and is available exactly when the disk is least able to pay for it.
-    """
+    Only a real absence counts as gone: unreadable is not gone."""
     seen: dict[str, tuple[int, int]] = {}
     for rel_path in rel_paths:
         try:
@@ -484,18 +254,13 @@ def _measure(base: Path, rel_dir: str, rel_paths: list[str]) -> _Look:
     except NotADirectoryError:
         folder_is_there = False
     except OSError as error:
-        # A share that stopped answering raises the same class as a folder that is gone; the
-        # code on the error is what tells them apart, and the root is asked where the code alone
-        # cannot say. See `is_absence`.
+        # A dropped share raises the same class as a missing folder; see `is_absence`.
         folder_is_there = not is_absence(error, under=base)
     return _Look(sizes=seen, folder_is_there=folder_is_there)
 
 
 class LibraryWatcher:
-    """Watches every root that asked to be watched, and scans a folder once it goes quiet.
-
-    One per application, started and stopped with it.
-    """
+    """Watches every root that asked to be watched, and scans a folder once it goes quiet."""
 
     def __init__(
         self,
@@ -515,37 +280,24 @@ class LibraryWatcher:
         self._cooldown = cooldown_seconds
         self._clock = clock
         self._observers: list[BaseObserver] = []
-        #: The handler each observer delivers through, kept beside it so it can be switched
-        #: off when the observer is let go (see `_stop_observers`).
+        #: Kept so each can be switched off when its observer is let go.
         self._handlers: list[_Events] = []
-        #: Where each watched root is on disk, so an event's path can be turned back into a folder.
-        #: Kept here rather than read back out of the observer: watchdog's own record of it is
-        #: private, and a library that stops watching on a version bump would do so in silence.
+        #: Kept here: watchdog's own record of it is private.
         self._bases: dict[str, Path] = {}
-        #: The folder a file landed in, the moment it may be scanned, and which files changed. A
-        #: later event on the same folder pushes the moment out, which is what makes this a
-        #: settle-wait rather than a timer.
+        #: A later event pushes the moment out, which makes this a settle-wait.
         self._pending: dict[tuple[str, str], _Pending] = {}
-        #: When each folder was last handed to a scan, so one that will not stop changing cannot be
-        #: scanned faster than the cooldown allows.
         self._last_scan: dict[tuple[str, str], float] = {}
         self._task: asyncio.Task[None] | None = None
-        #: The in-flight attach, so shutting down does not leave a folder walk running behind it.
         self._attaching: asyncio.Task[None] | None = None
-        #: Which observer and handler watch each root, so ONE watch that ended can be let go of and
-        #: replaced without touching the others. The two lists above are the same watches, kept for
-        #: the letting-go of all of them together.
+        #: Per root, so one ended watch can be replaced alone.
         self._watches: dict[str, tuple[BaseObserver, _Events]] = {}
-        #: A root whose watch ended and is being attached again, by the task doing it.
         self._reattaching: dict[str, asyncio.Task[None]] = {}
         self._reattach_seconds = reattach_seconds
-        #: The roots the last refresh saw, or None before the first.
         self._known: set[str] | None = None
         self._matching = asyncio.Lock()
 
     async def start(self) -> None:
-        """Begin watching every root in the background: attaching can walk a slow share for minutes,
-        and awaited here it would keep Sift from serving anything at all."""
+        """Begin watching every root in the background; attaching can walk a slow share for minutes."""
         self._task = asyncio.create_task(self._run())
         self._attaching = asyncio.create_task(self.refresh())
 
@@ -555,12 +307,7 @@ class LibraryWatcher:
             await self._attaching
 
     async def refresh(self) -> None:
-        """Match the watches to the library folders: drop the removed and moved, attach the rest.
-
-        A watch already attached is left running. The first refresh catches every folder up, and a
-        later one only a folder whose watch could not attach before: a folder added or moved is
-        read by whoever added or moved it, and a catch-up beside that walk names every file again.
-        """
+        """Match the watches to the library folders: drop the removed and moved, attach the rest."""
         async with self._matching:
             first = self._known is None
             roots = {root.id: root for root in await self._library.roots()}
@@ -583,12 +330,10 @@ class LibraryWatcher:
                 running = self._reattaching.get(root.id)
                 if root.id in self._watches or (running is not None and not running.done()):
                     continue
-                # Off the event loop: attaching may walk a slow share's tree.
                 watching = await asyncio.to_thread(self._observe, root, loop)
                 if watching is not None:
                     self._keep(root, watching)
-                # After attaching, so a file landing between the two belongs to one of them; and
-                # for a watch that failed too, as the catch-up is all such a folder gets.
+                # After attaching, so a file landing between the two belongs to one of them.
                 if first or (root.id in (self._known or set()) and root.id not in moved):
                     await self._catch_up(root.id)
             self._known = set(roots)
@@ -613,20 +358,12 @@ class LibraryWatcher:
             await asyncio.to_thread(_let_go, [observer], [handler])
 
     def _ended(self, root_id: str, handler: _Events, loop: asyncio.AbstractEventLoop) -> None:
-        """A watch stopped by itself: the share went, the folder went. On the emitter's thread.
-
-        It hops to the loop like every other notification here, and asks for the re-attach there.
-        """
+        """A watch stopped by itself (the share or folder went). On the emitter's thread."""
         loop.call_soon_threadsafe(self._watch_ended, root_id, handler)
 
     def _watch_ended(self, root_id: str, handler: _Events) -> None:
-        """Begin attaching this root again, unless the watch that ended is no longer the root's.
-
-        A handler that has been detached belongs to a watch that was LET GO (a refresh, a stop,
-        a root removed), and one that is not the root's current handler was already replaced;
-        either way this is the letting-go being heard late, and there is nothing to come back to.
-        One re-attach per root at a time: a second ending while one is running is the same outage.
-        """
+        """Begin attaching this root again, unless the ended watch was already let go of or
+        replaced."""
         current = self._watches.get(root_id)
         if not handler.live or current is None or current[1] is not handler:
             return
@@ -636,23 +373,8 @@ class LibraryWatcher:
         self._reattaching[root_id] = asyncio.create_task(self._reattach(root_id))
 
     async def _reattach(self, root_id: str) -> None:
-        """Attach a root whose watch ended, waiting longer each time it will not, then catch up.
-
-        !! WITHOUT THIS A SHARE THAT DROPPED WOULD NEVER BE WATCHED AGAIN UNTIL SIFT RESTARTED.
-        The native watch stops when its read fails, and with nothing asking for another, a file
-        added to the share after it came back would appear only when somebody pressed Rescan or
-        restarted.
-
-        The watch that ended is let go of first, the ordinary bounded way. Then the root is asked
-        for again after `reattach_seconds`, doubling up to `REATTACH_MOST_SECONDS` while it will not
-        attach: a share that is still away answers every attempt the same, so asking faster buys
-        nothing but timeouts. Once it attaches, the catch-up pass is asked for: whatever arrived
-        while nobody was listening is not a change the new watch will ever report.
-
-        A root removed meanwhile ends this quietly. A refresh or a stop cancels it (a refresh
-        attaches every root itself), and a watch that attached while the cancel landed is let go
-        of rather than left running with nobody holding it.
-        """
+        """Attach a root whose watch ended, with doubling backoff, then catch up on what arrived
+        meanwhile."""
         loop = asyncio.get_running_loop()
         await self._drop(root_id)
         delay = self._reattach_seconds
@@ -690,13 +412,8 @@ class LibraryWatcher:
                 await task
 
     async def _catch_up(self, root_id: str) -> None:
-        """Ask for a pass over one library's folders, to find what moved while Sift was off.
-
-        Deduped like the scans are: a boot, a watch coming back and lost events can ask together.
-        """
-        # Switched off is not a failure here. This runs for the machine rather than for somebody,
-        # so a refusal is the answer rather than something to report: the queue says so in its own
-        # log, and a raise from inside a background task would be an unretrieved exception.
+        """Ask for a pass over one library's folders, to find what moved while Sift was off."""
+        # Switched off is the answer here, not a failure to report.
         try:
             await self._queue.enqueue(RECONCILE, {"root_id": root_id}, dedupe=True)
         except JobSwitchedOff:
@@ -706,17 +423,8 @@ class LibraryWatcher:
         self, root: Root, loop: asyncio.AbstractEventLoop
     ) -> tuple[BaseObserver, _Events] | None:
         base = Path(root.abs_path)
-        #
-        # WHETHER A SHARE REPORTS ITS OWN CHANGES IS A QUESTION ABOUT THE PLATFORM, NOT ABOUT THE
-        # ROOT, and the two answers are opposite.
-        #
-        # inotify is a kernel telling a program about its own filesystem, so a file written by
-        # another machine onto a NAS never touches this kernel and a share reports nothing. That is
-        # not what happens on **Windows**, which is the platform Sift ships on: there
-        # `ReadDirectoryChangesW` on a mapped drive is served by the FILE SERVER, through SMB2
-        # `CHANGE_NOTIFY`, which is a mandatory command in the protocol. A file created on a share
-        # (by this machine or by another) is reported within milliseconds, and so is a deletion.
-        # What remains is the fallback below, which polls a root whose native watch will not attach.
+        # On Windows a share reports its own changes through SMB2 CHANGE_NOTIFY; polling is the
+        # fallback.
         polling = root.kind is RootKind.NAS and not _NATIVE_WATCH_IS_SAFE
         handler = _Events(root.id, loop, self._notice)
         ended = partial(self._ended, root.id, handler, loop)
@@ -725,12 +433,8 @@ class LibraryWatcher:
             observer.schedule(handler, str(base), recursive=True)
             observer.start()
         except OSError as exc:
-            # A root on a drive that is not plugged in, or a watch limit the kernel will not raise.
-            # Not fatal: the library is still browsable and a rescan still works by hand.
-            #
-            # A NATIVE watch that will not attach falls back to polling rather than giving up, and
-            # that is the capability decision made where it can actually be observed: whether this
-            # filesystem reports its own changes is not something a root's `kind` knows.
+            # A drive not plugged in or a watch limit: a native watch that will not attach falls
+            # back to polling.
             if not polling:
                 log.info(
                     "library.watch_falling_back_to_polling", root_id=root.id, error=exc.strerror
@@ -762,28 +466,12 @@ class LibraryWatcher:
         polling: bool,
         ended: Callable[[], None] | None = None,
     ) -> BaseObserver:
-        """A poller, or the platform's own notifications.
-
-        On Windows the native one is Sift's own emitter rather than watchdog's. See
-        `native_watch.py` for the four calls that differ and why the library's version could not be
-        used. Everywhere else it is watchdog's, unchanged.
-
-        `ended` is how a native watch that stops by itself says so (see `_reattach`). A poller
-        does not end: a folder that goes away is a walk that finds nothing, and the walk after the
-        folder comes back finds it again.
-        """
+        """A poller, or the platform's own notifications (Sift's own emitter on Windows)."""
         if polling:
             return _PacedPollingObserver(timeout=DEFAULT_POLL_SECONDS)
-        # Read from a name rather than testing `sys.platform` here, and that is not style: a type
-        # checker narrows a direct `sys.platform` test to the platform it is configured for and then
-        # reports the other branch as dead code, which it is, for that configuration, and is not
-        # for the person running this on a Linux server.
+        # A name, so a type checker does not report the other platform's branch as dead.
         if _WINDOWS:
-            # NOT the poll interval. For a poller that number is how often to look; for a native
-            # watch nothing is being looked at, and the timeout is only how long the emitter waits
-            # before checking whether it has been asked to stop. Handing it the poll interval would
-            # tie one meaning to a setting about the other, and a person shortening their poll
-            # interval would silently be asking a native watch to wake up more often for nothing.
+            # Not the poll interval: for a native watch this is only how often it checks for a stop.
             return SafeWindowsApiObserver(
                 timeout=_STOP_CHECK_SECONDS,
                 on_overflow=partial(self._overflowed, root.id, loop),
@@ -792,26 +480,15 @@ class LibraryWatcher:
         return Observer()
 
     def _overflowed(self, root_id: str, loop: asyncio.AbstractEventLoop) -> None:
-        """The operating system had more changes than it could hold and threw some away.
-
-        Runs on the emitter's thread, so it hops to the loop like every other notification here.
-        What it asks for is the catch-up pass, which is exactly the right answer, because "some
-        changes were lost" and "find what changed while nobody was listening" are the same question.
-        Nothing new is needed for it.
-        """
+        """The OS dropped changes; the catch-up pass is the answer. On the emitter's thread."""
         loop.call_soon_threadsafe(lambda: asyncio.create_task(self._catch_up(root_id)))
 
     def _notice(self, root_id: str, path: Path, nameable: bool = True) -> None:
-        """A file changed. Push this folder's deadline out, and remember which file. On the loop.
-
-        `nameable` is `_can_be_named`'s answer: whether this change is about one file, or about the
-        shape of the library around it. False drops the burst to a walk of the folder, for good.
-        """
+        """A file changed: push this folder's deadline out, and remember which file. On the loop."""
         try:
             rel_dir = self._folder_of(root_id, path)
             rel_path = self._path_of(root_id, path) if nameable else None
         except (LookupError, ValueError):
-            # Outside the root, or a path that cannot be a library path. Nothing to scan.
             return
         key = (root_id, rel_dir)
         pending = self._pending.get(key)
@@ -822,23 +499,14 @@ class LibraryWatcher:
         pending.note(rel_path)
 
     def _path_of(self, root_id: str, path: Path) -> str:
-        """The changed file, relative to its root, as a library path.
-
-        Through `check_rel_path` like every stored path, so a name the library could never hold
-        cannot be handed to a job, and so the refusal happens here, on the loop, rather than in a
-        worker reading a payload somebody else built.
-        """
+        """The changed file, relative to its root, checked as a library path."""
         base = self._bases.get(root_id)
         if base is None:
             raise LookupError(f"no watched root {root_id}")
         return check_rel_path(str(path.relative_to(base).as_posix()))
 
     def _folder_of(self, root_id: str, path: Path) -> str:
-        """The folder a changed file sits in, relative to its root.
-
-        `relative_to` raises for a path outside the root, which is the check as well as the answer:
-        a symlink or a stray event cannot name a folder in a library it is not in.
-        """
+        """The folder a changed file sits in, relative to its root; outside the root raises."""
         base = self._bases.get(root_id)
         if base is None:
             raise LookupError(f"no watched root {root_id}")
@@ -854,8 +522,7 @@ class LibraryWatcher:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                # A watcher that dies takes every watched folder with it, silently, until Sift is
-                # restarted. Whatever went wrong with one folder, the loop keeps running.
+                # One folder's failure must not stop watching for every other.
                 log.error("library.watch_loop_error", error=str(exc))
 
     async def _sweep_pending(self) -> None:
@@ -864,66 +531,25 @@ class LibraryWatcher:
         for key in ready:
             pending = self._pending[key]
             last = self._last_scan.get(key)
-            # THE COOLDOWN IS A RATE LIMIT ON WALKS, and only on walks.
-            #
-            # It exists because a filesystem whose events never really settle would otherwise queue
-            # a scan of the same folder every few seconds, and a scan is a whole worker walking a
-            # whole subtree, so the pool fills with re-scans of one folder and nothing else runs.
-            # Every word of that is about the cost of a WALK.
-            #
-            # A named scan is not a walk. It is a `stat` per file, capped at `MOST_NAMED_PATHS`, and
-            # holding it behind a minute-long rate limit does not protect anything: it just makes
-            # a file that arrived take a minute to appear, waiting out the cooldown left over from
-            # a walk the paste itself triggered.
-            #
-            # What bounds a named scan instead is the settle-wait in front of it, which already
-            # collapses a burst into one, and the cap, which turns anything bigger into a walk,
-            # and a walk is what the cooldown then applies to.
+            # The cooldown limits walks only; a named scan is a stat per file and is not held behind
+            # it.
             if pending.paths is None and last is not None and now - last < self._cooldown:
-                # Too soon after the last one. Re-armed for the moment the cooldown ends rather
-                # than dropped, so whatever changed during it is still scanned (once, late)
-                # instead of either being lost or starting another walk on top of the last.
-                #
-                # The paths collected so far are KEPT across the wait rather than reset, which is
-                # what stops the cooldown turning a named scan into a walk: everything that arrived
-                # during it is named in the one scan that follows.
+                # Re-armed for when the cooldown ends, keeping the paths, so the change is scanned
+                # once, late.
                 pending.due = last + self._cooldown
                 continue
             root_id, rel_dir = key
-            # ONE PASS OVER THE DISK, answering both of the questions a named burst leaves open.
-            # None when there is nothing to ask: a walk has no path list, and needs neither.
+            # One pass over the disk for both open questions; None for a walk.
             look = await self._look_at(root_id, rel_dir, pending)
-            # IS THE FOLDER STILL THERE? Asked before the settle question and not after it, because
-            # a folder that has gone makes every file in it measure as absent, which reads as a
-            # burst that is still changing, and would spend a re-check to arrive here anyway.
+            # Asked first: a vanished folder makes every file read as still changing.
             if look is not None and not look.folder_is_there:
                 self._folder_went(key, now)
                 continue
-            # STILL BEING WRITTEN? Then it has not really settled, whatever the notifications say.
-            #
-            # The settle-wait alone would be enough if every folder were POLLED, because a poller
-            # sees a file grow on every pass. It is not enough with the platform's own
-            # notifications: NTFS defers a file's size and timestamp while it is held open, so
-            # Windows reports the create and then, for a writer that keeps the handle, may report
-            # nothing at all for seconds. The folder looks quiet and the file is half there.
-            #
-            # That matters: a half-written file hashes perfectly happily and the digest is of the
-            # half: an asset that is wrong for ever, which
-            # nothing revisits, because as far as Sift is concerned it was indexed. So the file
-            # itself is asked, rather than inferred from the silence.
+            # Native notifications can go quiet while a file is still being written, so the file is
+            # asked.
             if look is not None and look.sizes != pending.sizes:
                 pending.sizes = look.sizes
-                # A SHORT re-check, not another full settle-wait.
-                #
-                # The two are different questions, and one number for both would cost every arriving
-                # file twice the wait it needed: the settle-wait is the coarse signal that
-                # a burst has stopped, and this is a confirmation that the bytes have stopped too.
-                # Once the folder has already been quiet for a settle-wait, half a second of a file
-                # not changing size is what is left to establish, which roughly halves the time a
-                # file landing on a share takes end to end.
-                #
-                # Never longer than the settle-wait itself, so a test that shortens one shortens
-                # both and the arithmetic stays the same at every scale.
+                # A short confirmation, not another full settle-wait; never longer than it.
                 pending.due = now + min(_SETTLE_RECHECK_SECONDS, self._quiet)
                 continue
             del self._pending[key]
@@ -931,57 +557,31 @@ class LibraryWatcher:
             await self._scan(root_id, rel_dir, pending.paths)
 
     async def _look_at(self, root_id: str, rel_dir: str, pending: _Pending) -> _Look | None:
-        """Ask the disk about a burst, off the loop: its named files, and whether its folder is there.
-
-        A walk names no files but still asks about the folder: the source end of a move between
-        folders is a walk of a directory that has gone, and scanning it would record a folder row
-        for a path nothing is at. Gone, it is the folder above that is walked (`_folder_went`).
-
-        On a thread, because it is up to `MOST_NAMED_PATHS` `stat` calls plus one, and a library
-        sits on a share as often as on a disk.
-        """
+        """Ask the disk about a burst, off the loop: its named files, and whether its folder is
+        there."""
         base = self._bases.get(root_id)
         if base is None:
             return None
         return await asyncio.to_thread(_measure, base, rel_dir, sorted(pending.paths or ()))
 
     def _folder_went(self, key: tuple[str, str], now: float) -> None:
-        """The folder these files were in is gone, so what really changed is the folder ABOVE it.
-
-        A folder can disappear two ways and they need opposite answers: removed, and its rows should
-        go; renamed, and its row should MOVE, keeping its id, its shares and everything anybody
-        recorded about it. Nothing here can tell those apart, and neither can the notifications:
-        only the parent's own listing can, which is what `_reconcile_folders` compares. So the burst
-        stops naming files and becomes a walk of the folder above.
-
-        This is the same answer the catch-up pass already reaches for the same question: a folder
-        whose directory will not `stat` comes back from `_folders_that_moved` as a walk of its
-        parent, and for the reason written there.
-
-        Re-armed rather than scanned here, so the walk goes through every rule the ordinary path
-        applies: the cooldown that stops one folder being walked over and over, and the settle
-        wait. Both of those belong to the parent's key, and neither was ever consulted for this one.
-        """
+        """The folder these files were in is gone, so the folder ABOVE is re-armed for a walk.
+        Only the parent's listing can tell removed from renamed."""
         root_id, rel_dir = key
         del self._pending[key]
         if rel_dir == "":
-            # The ROOT's own directory: a drive that is not plugged in, or a share that went away.
-            # There is nothing above it to list, and nothing here can tell "unmounted" from
-            # "deleted", so the library is left exactly as it is. Marking half a million files
-            # missing because a USB disk was pulled out is the failure this refuses.
+            # The root's own directory: unmounted cannot be told from deleted, so nothing is marked
+            # missing.
             log.info("library.watch_root_missing", root_id=root_id)
             return
         above = str(PurePosixPath(rel_dir).parent)
         parent = (root_id, "" if above == "." else above)
         waiting = self._pending.get(parent)
         if waiting is None:
-            # Due immediately: the settle-wait has already been served, down here, by the burst that
-            # found this out.
+            # The settle-wait was already served.
             self._pending[parent] = _Pending(due=now)
         else:
-            # Something is still happening up there. Its deadline stands (this must not cut a
-            # settle-wait short), and `note(None)` is what turns it into the walk that is now
-            # needed, whatever it was going to be.
+            # Keep its deadline, but make it a walk.
             waiting.note(None)
         log.info("library.watch_folder_went", root_id=root_id)
 
@@ -1000,31 +600,14 @@ class LibraryWatcher:
             return
         if folder is None:
             return
-        # The payload carries the folder's id, never its path.
-        #
-        # Deduped, because this is the one enqueue in the app driven by something outside it. A
-        # filesystem whose events never settle (a network share, or a Windows drive seen through
-        # WSL, where every poll looks like a change) otherwise queues a scan of the same folder
-        # every few seconds for as long as Sift runs, and since a scan is a worker each, the pool
-        # fills with re-scans of one folder and nothing else in the queue ever runs.
-        #
-        # !! THE DEDUPE AND THE PATHS INTERACT, and the order matters. Dedupe is on the whole
-        # payload, so two scans naming different files are two different jobs and both run, which
-        # is right. What it does not collapse is two scans of the same folder naming different
-        # files, and that is also right: each names work the other does not do.
-        #
-        # !! AND A WALK OF THE ROOT'S OWN TOP FOLDER IS THE WHOLE ROOT, which is why this goes
-        # through `scan_shape` rather than spelling the payload out: a press names no folder at all,
-        # and the dedupe matches the payload exactly, so naming the top folder's id here would
-        # give the same walk two spellings that never collide, and one root would be walked twice
-        # at the same time, for one answer.
+        # Deduped on the whole payload, and shaped by `scan_shape` so a walk of the top folder
+        # matches a press.
         payload: dict[str, object] = scan_shape(root_id, folder)
         if paths:
             payload["paths"] = sorted(paths)
         try:
             await self._queue.enqueue(SCAN, payload, dedupe=True)
-        # Switched off. Caught here rather than left to the sweep loop's catch-all, which logs at
-        # ERROR and abandons the rest of the folders that were ready in the same tick.
+        # Caught here so the other folders ready this tick still go.
         except JobSwitchedOff:
             return
         log.info(
@@ -1035,21 +618,8 @@ class LibraryWatcher:
         )
 
     def _stop_observers(self) -> None:
-        """Let go of every observer, and never wait on one for ever.
-
-        `Observer.stop()` LOOKS instant and is not bounded at all. It joins its own emitter threads
-        inside itself with no timeout, and on Windows an emitter is parked in a directory-change
-        call against a handle that may belong to a folder which has just been deleted, which is
-        the ordinary case here, because this runs the moment a root is removed or a share goes
-        away. Such a stop can never return, so a bounded join after it would never run, and the
-        application's own shutdown would wait on it for ever. That shutdown is what closes the
-        database and folds the write-ahead log, so a watcher that will not let go holds the one
-        thing that must always finish.
-
-        So the asking is done on a thread of its own and abandoned if it will not answer. What is
-        left behind is a daemon thread with nothing to deliver to (the handlers are switched off
-        first, before anything is asked to stop), and daemon threads do not hold a process open.
-        """
+        """Let go of every observer, never waiting on one for ever: `Observer.stop()` can block
+        without bound."""
         watching = list(self._observers)
         handlers = list(self._handlers)
         self._observers.clear()
@@ -1059,9 +629,7 @@ class LibraryWatcher:
         _let_go(watching, handlers)
 
     async def stop(self) -> None:
-        # The attach first: it is the one that may still be walking a slow tree, and cancelling the
-        # sweep while an observer is still being handed to it leaves the observer running with
-        # nothing left to deliver to.
+        # The attach first: it may still be handing an observer to the sweep.
         if self._attaching is not None:
             self._attaching.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -1077,24 +645,17 @@ class LibraryWatcher:
 
 
 def _let_go(watching: list[BaseObserver], handlers: list[_Events]) -> None:
-    """Let go of these observers, and never wait on one for ever. Blocking; call it on a thread.
-
-    See `LibraryWatcher._stop_observers` for why the asking is done on a thread of its own and
-    abandoned if it will not answer. The one place that knows, for all of them together and for the
-    one watch a re-attach replaces.
-    """
+    """Let go of these observers, and never wait on one for ever. Blocking; call it on a thread."""
     if not watching:
         return
 
-    # FIRST, and not as part of the stopping: whatever happens below, nothing that is still
-    # running may reach the event loop again.
+    # First: nothing still running may reach the event loop again.
     for handler in handlers:
         handler.detach()
 
     def _ask() -> None:
         for observer in watching:
-            # A stop that raises is a stop: there is nothing to be done about an observer that
-            # cannot be shut down, and letting it through here would skip the ones after it.
+            # A stop that raises must not skip the ones after it.
             with contextlib.suppress(Exception):
                 observer.stop()
         for observer in watching:
@@ -1107,5 +668,4 @@ def _let_go(watching: list[BaseObserver], handlers: list[_Events]) -> None:
         log.warning("library.watch_stop_abandoned", observers=len(watching))
 
 
-#: Watched folders.
 WATCHER: Part[LibraryWatcher] = Part("watcher")

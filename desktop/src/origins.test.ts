@@ -1,8 +1,4 @@
-/* The shell's security boundary, tested as a boundary.
- *
- * Every case here is a way somebody could end up with the preload attached to a page that is not
- * Sift. That is the only thing this module can get wrong, so it is the only thing these assert.
- */
+/* The shell's security boundary, tested as a boundary. */
 
 import { describe, expect, it } from 'vitest';
 
@@ -69,8 +65,7 @@ describe('looksLikeSift', () => {
 		expect(looksLikeSift(401, marked, '{"detail":"sign in"}')).toBeNull();
 	});
 
-	/* The case that matters: some other program on the network answering 200. Without the mark
-	 * it would become a trusted origin with the whole bridge attached. */
+	/* The case that matters: some other program on the network answering 200. */
 	it('refuses a host that answers 200 without the mark', () => {
 		expect(looksLikeSift(200, new Headers(), '{"status":"ok"}')).toMatch(/was not Sift/);
 	});
@@ -97,9 +92,7 @@ describe('trustedOrigins', () => {
 		expect(trustedOrigins(settings('http://10.0.0.5:5171/browse'))).toContain('http://10.0.0.5:5171');
 	});
 
-	/* A hand-edited settings file can hold anything. A row that does not normalise is dropped and
-	 * the rest still work. The alternative is one bad line locking somebody out of every server
-	 * they saved. */
+	/* A hand-edited settings file can hold anything. */
 	it('drops a saved row that is not an address, and keeps the others', () => {
 		const trusted = trustedOrigins(settings('file:///etc/passwd', 'http://good:5171'));
 		expect(trusted).toContain('http://good:5171');
@@ -140,8 +133,8 @@ describe('the address a share is announced at', () => {
 	});
 });
 
-/* Plain http stays on the local network. Anywhere else, anyone on the way could change the page the
-   shell then gives part of its bridge to, so a server there needs https. */
+/* Plain http stays on the local network. Anywhere else, anyone on the way could change the page
+   the shell then gives part of its bridge to, so a server there needs https. */
 describe('plain http', () => {
 	it.each([
 		'http://10.0.0.5:5171',
@@ -172,8 +165,8 @@ describe('plain http', () => {
 		expect(plainHttpRefusal(origin)).not.toBeNull();
 	});
 
-	/* The URL parser writes an address given as a number or in hex as four decimals, so a spelling
-	   cannot slip a public address past the private ranges. */
+	/* The URL parser writes an address given as a number or in hex as four decimals, so a
+	   spelling cannot slip a public address past the private ranges. */
 	it('reads an address the way the network will, whatever its spelling', () => {
 		expect(plainHttpRefusal('http://3405803783:5171')).not.toBeNull();
 		expect(plainHttpRefusal('http://0xc0.0xa8.1.1:5171')).toBeNull();

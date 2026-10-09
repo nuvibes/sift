@@ -1,70 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What Sift does on a clock, declared where a person can be shown all of it together.
+"""What Sift does without being asked, declared here so one screen can show all of it.
 
-A backup runs every few days at a time of day, a sweep clears the quarantine folder every
-twenty-four hours, recognition may be held back to an overnight window: three answers to one question ("what runs
-without me, and when"), each owned by a different feature: Backup, Maintenance, Performance.
-Somebody who wants the answer should not have to know all three places.
-
-So a scheduled task declares itself here, the way a setting declares itself into the settings
-registry, and one screen is generated from what has been declared. The declaration is the feature's
-(it is the feature that knows what its cadence means), and the registration point is the
-kernel's, so no feature has to import another to be listed beside it.
-
-## What is NOT declared here, and why each is a deliberate absence
-
-This list is as load-bearing as the one below: without it the easy mistake is to widen
-"scheduled" until the screen lists things nobody can manage.
-
-**The process's own loops.** The write-ahead checkpoint, the statistics refresh, the job watchdog's
-sweep, a worker's heartbeat, the pool's reconfigure, the keep-awake request looked at again every
-half a minute, the look for a quiet moment, the settings pushed onto the running process, and two
-that run once at a start: the work after ready and the client's file list. Every one is a timer,
-none has a cadence anybody chooses, and none is a task: they are how the process stays alive.
-
-**Derived counts nobody chooses a time for.** Insights' adder-up (`slices/insights/rollup.py`) adds
-up each finished day of each User a piece at a time, beside the two database loops above and started
-and stopped with them. It is not a task for the same reason they are not: there is no right time for
-it other than "soon, and never in anybody's way", it takes no worker, and its adding-up gives way
-while work somebody pressed is queued. Listed here, it would be a row with a When nobody could
-sensibly set.
-
-**The settle waits.** The folder watcher's quiet period and the scan's settle pass re-arm
-themselves, and they re-arm only while work is arriving. They are the shape of one run rather than
-a cadence, and they stop when it stops.
-
-**The update check** is not an exception: it is a task that runs on its own clock and is recorded
-like any other. It is declared unshown (`shown=False`), as the two prunes are: nobody decides when
-upkeep like that runs, so no pane draws a When for it. Its retired on/off switch still reads and
-writes that When.
-
-**Log rotation.** Triggered by the file's SIZE, not by the clock.
-
-**The self-test.** Somebody presses it.
-
-## Each task has one When, and where it is read
-
-Every task declares a When: As files arrive (On a schedule, for a timed task), During quiet hours,
-Only when I press it, and this registry registers it as the setting `tasks.<id>.when`. The work
-it governs reads it in two
-places and nowhere else: the enqueue refuses work nobody pressed for a task that only runs when
-pressed (through the switchboard's switch, for the passes that have one), and the claim holds work
-nobody pressed for a task set to quiet hours until the range is open (`Switchboard.quiet_hold`). A
-press is marked on its row (`jobs.timing`) and is never held or refused by either.
-
-A timed task's next run is a row with a time on it, placed by the scheduler from the moment the last
-run ended (`quiet_hours.due_at`): the queue is still the authority on what is going to happen, and
-a device that was off comes back to a row whose time has passed and runs it.
-
-## Last ran
-
-A task whose run is one job writes a line in the history as that run settles (`JobQueue.
-record_runs_of`), so its last run is the newest line about it and is never forgotten. A long pass
-made of pages is written per family by the work ledger, and its task reads its last run there.
-
-The job rows keep each type's newest run as well, whatever its age (`_PRUNE_SETTLED`), because the
-scheduler places the next run from the last one it finds there and Activity's chores read theirs.
-
+Each task has one When (As files arrive or On a schedule, During quiet hours, Only when I press
+it), registered as the setting `tasks.<id>.when` and read by the enqueue and the claim; a press
+always runs. Not tasks: the process's own loops, derived counts, settle waits, log rotation and
+the self-test.
 """
 
 from __future__ import annotations
@@ -93,24 +33,21 @@ class ScheduleError(ValueError):
     """A scheduled task was declared wrongly. The message is meant to be read."""
 
 
-#: The settings values a task is judged against: every app setting, by key. Handed in rather than
-#: read, because the registry knows nothing about where a value is stored and must not learn.
+#: Every app setting's value, by key, handed in: the registry does not know where values live.
 Values = Mapping[str, Any]
 
-#: Where every task's When is filed. The Tasks screen draws the section; the owning section draws
-#: the same row beside the thing the task does: one setting, two doors.
+#: Where every task's When is filed; the owning section draws the same row too.
 SECTION = "Scheduled tasks"
 
 #: What a task's press says where the task names no verb of its own.
 RUN_NOW = "Run now"
 
-#: The reading of a task whose When is its children's, while they do not agree. Never stored and
-#: never offered: choosing an answer writes it to every child.
+#: How a task reads while its children's Whens disagree; never stored, never offered.
 WHEN_MIXED = "mixed"
 
 
 def when_key(task_id: str) -> str:
-    """The setting that holds a task's When. One per task, and named from its id so it cannot drift."""
+    """The setting that holds a task's When, named from its id so it cannot drift."""
     return f"tasks.{task_id}.when"
 
 
@@ -121,86 +58,50 @@ PER_FILE = ("file", "files")
 class ScheduledTask:
     """One kind of work Sift does over the library, and when it may start without being asked.
 
-    EVERY TASK HAS ONE WHEN, and it is a setting this declaration registers: As files arrive,
-    During quiet hours, or Only when I press it. What the task DOES (which pictures, how long to
-    keep a search, how often to back up) stays with the section that owns it; when it may start is
-    this one answer, drawn on the Tasks screen and again beside the thing on the owning section's
-    pane.
-
-    Two shapes. A task that WAITS FOR WORK (a file arriving, a scan settling) has its When read by
-    the work it governs: which job types those are is the composition root's to say, because the
-    types belong to several features and only it can name them all. A TIMED task says how often it
-    runs (`every`), and the scheduler places its next run from when the last one ended: in quiet
-    hours at the range's opening, never at all when only a press runs it.
-
-    A PRESS ALWAYS RUNS. Run now, the Build, a queue's Scan now and a file's Run task are somebody
-    answering the question for themselves, and neither the When nor any switch refuses them.
+    A task waits for work, or is timed (`every`) and placed from when its last run ended.
     """
 
-    #: The address of this task, in the route and on the screen. Never renamed once shipped.
+    #: The address of this task, in the route and on the screen; never renamed once shipped.
     id: str
-    #: What it is called. Sentence case, a few words, the way a setting's label is written.
+    #: What it is called, in sentence case.
     title: str
-    #: One line saying what it does. Not what the machinery is.
+    #: One line saying what it does.
     explain: str
-    #: The queue type that carries one run of it: what Run now queues where nothing better is
-    #: bound to the task, what a timed task puts in the queue on its clock, and what its runs are
-    #: recorded under.
+    #: The queue type that carries one run of it.
     job_type: str | None = None
-    #: What Run now's job carries, where it needs anything. Read, never mutated.
+    #: What Run now's job carries. Read, never mutated.
     payload: Mapping[str, Any] = field(default_factory=dict)
-    #: Whether Run now needs more than a job of `job_type`: a pass over the library that has to be
-    #: counted and told which products it is for. The composition root binds a starter for each such
-    #: task, and the boot refuses a task that says so and has none.
+    #: Whether Run now needs a starter the composition root binds, beyond a job of `job_type`.
     needs_starter: bool = False
-    #: The When a value never written reads as. Changing it moves no install that chose: a When
-    #: somebody set is a stored row (a save writes the value even where it equals the default), and
-    #: every install from before Whens existed had its answer written by the settings step that
-    #: brought them in. Only an install that never set this task's When takes a new default.
+    #: The When a value never written reads as; a When somebody chose is stored, so never moved.
     when_default: str = WHEN_WORK
     #: The Whens this task offers, in the reading order of `WHENS`.
     whens: tuple[str, ...] = WHENS
-    #: For a timed task: how many seconds between runs, from the values, or None where there is
-    #: nothing to do at all (a retention of zero days). None for a task that waits for work.
+    #: For a timed task, the seconds between runs, or None where there is nothing to do.
     every: Callable[[Values], int | None] | None = None
-    #: For a timed task that keeps a time of day: the `HH:MM` on the server machine's clock
-    #: (`kernel/when.py`) its run starts at, from the values, or None for none. Read only On a
-    #: schedule; during quiet hours the range's opening is the time. Its keys are named in
-    #: `setting_keys` or `also_reads`, as `every`'s are.
+    #: For a timed task, the `HH:MM` on the server's clock its run starts at On a schedule.
     at: Callable[[Values], str | None] | None = None
-    #: The settings that decide what the task does and how often, in reading order. The Tasks screen
-    #: draws each beside the task; each writes through the ordinary settings write.
+    #: The settings that decide what the task does and how often, drawn beside it in order.
     setting_keys: tuple[str, ...] = ()
-    #: Settings the answers below depend on that are NOT drawn as rows here. Named rather than
-    #: worked out, because `every` is a function and nothing can read a function to find out which
-    #: keys it touches: a key left out here is a value the route does not load.
+    #: Settings `every` and `at` read that are not drawn; named, as a function cannot be read.
     also_reads: tuple[str, ...] = ()
-    #: Which of `setting_keys` are drawn only under some Whens, by key (a cadence means nothing while
-    #: only a press runs the task); the server says which apply (`drawn_keys`), so no screen keeps a copy.
+    #: Which of `setting_keys` are drawn only under some Whens, by key.
     drawn_under: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    #: Where the rest of this task's controls live, as a settings section id: the door the owning
-    #: section draws. Empty when everything about it is here.
+    #: The settings section holding the rest of this task's controls, or empty.
     set_in: str = ""
-    #: Whether each run of `job_type` writes its own line in the history. True for a task whose work
-    #: is one job; a long pass made of pages has its run written per family by the ledger instead.
+    #: Whether each run of `job_type` writes its own History line; a paged pass's ledger does.
     records_runs: bool = False
-    #: What its press says. The three Importing stages name their own verb ("Scan now"); every
-    #: other task says Run now.
+    #: What its press says.
     press: str = RUN_NOW
-    #: False for upkeep nobody decides the timing of (pruning old records, the update check): it
-    #: keeps its default When, runs and shows in Activity, and no settings pane draws it.
+    #: False for upkeep nobody times: it keeps its default When and no pane draws it.
     shown: bool = True
-    #: The tasks whose Whens this task's When reads, for a stage that is several tasks' work. Its
-    #: When is then no setting of its own: it reads as their shared answer, or `WHEN_MIXED`, and
-    #: an answer written to it is written to each of them.
+    #: The tasks whose Whens this one reads as one and writes to each, for a stage of several.
     reads: tuple[str, ...] = ()
-    #: The setting that turns the feature on, for work that does nothing while it is off (face
-    #: recognition, Smart Search). The row then says so and names where it is turned on.
+    #: The setting that turns the feature on, for work that does nothing while it is off.
     switch: str = ""
     #: What one of its waiting rows is, one and many: a file, or a run for whole passes.
     unit: tuple[str, str] = ("run", "runs")
-    #: The When's own label and help where a pane draws it as something other than the task's row
-    #: (the update check's is a switch); the search and the docs read them. Empty: title and explain.
+    #: The When's own label and help where a pane draws it differently; empty for the task's own.
     when_label: str = ""
     when_help: str = ""
 
@@ -210,9 +111,7 @@ class ScheduledTask:
         return when_key(self.id)
 
     def when(self, values: Values) -> str:
-        """The stored When, or the default when nothing is stored or the stored word is not offered.
-
-        A task whose When reads its children's answers `WHEN_MIXED` while they disagree."""
+        """The stored When, the default for none or an unoffered word, or `WHEN_MIXED`."""
         chosen = str(values.get(self.when_key, self.when_default))
         if self.reads and chosen == WHEN_MIXED:
             return WHEN_MIXED
@@ -251,13 +150,7 @@ class ScheduledTask:
         return self.every is None or self.interval(values) is not None
 
     def when_labels(self, values: Values | None = None) -> dict[str, str]:
-        """What each When this task offers is called on screen. The first answer is "As files
-        arrive" for a task that waits for files and "On a schedule" for a timed one.
-
-        The interval is not in the answer: a task row is one line, and one task's longer answer
-        would make its choice wider than every other row's and push its press onto a second line.
-        How often is the task's own setting, and when it runs next is a fact on the row. `values`
-        is kept for the callers that hand it."""
+        """What each When this task offers is called on screen."""
         _ = values
         labels = dict(zip(WHENS, WHEN_LABELS, strict=True))
         if self.every is not None:
@@ -310,15 +203,8 @@ def _shared_when(values: tuple[Any, ...]) -> str:
 
 
 def _written_as_when(value: Any, current: tuple[Any, ...]) -> tuple[Any, ...]:
-    """A master over tasks' Whens, written into each of them.
-
-    A When is written to every one of them as it is. An on/off switch is read as one: off is
-    "Only when I press it", and on keeps whichever of the two starting answers is already chosen
-    (writing "on" to a task set to "During quiet hours" must not move it to the daytime) and is "As
-    files arrive" where it was off.
-    """
+    """A master over tasks' Whens, written into each; a switch's on keeps During quiet hours."""
     if isinstance(value, str):
-        # "mixed" is a reading and never an answer; any other word is a typo, not "on".
         if value not in WHENS:
             raise SettingError(f"{value!r} is not a When: choose one of {', '.join(WHENS)}")
         return tuple(value for _ in current)
@@ -331,12 +217,35 @@ _REGISTRY: dict[str, ScheduledTask] = {}
 
 
 def register_schedule(task: ScheduledTask) -> None:
-    """Declare a task and register its When.
+    """Declare a task and register its When; every mistake fails here, at its declaration."""
+    _refuse_declaration(task)
+    _refuse_wiring(task)
+    if task.reads:
+        retire_setting(
+            when_key(task.id),
+            into=tuple(when_key(one) for one in task.reads),
+            read=_shared_when,
+            write=_written_as_when,
+            why=f"{task.title} is when {', '.join(task.reads)} run, read as one",
+        )
+        _REGISTRY[task.id] = task
+        return
+    labels = task.when_labels()
+    register_setting(
+        # The key-maker, so the dead-setting gate sees `tasks.<id>.when`.
+        key=when_key(task.id),
+        scope="app",
+        default=task.when_default,
+        section=SECTION,
+        label=task.when_label or task.title,
+        help=task.when_help or task.explain,
+        choices=task.whens,
+        choice_labels=tuple(labels[one] for one in task.whens),
+    )
+    _REGISTRY[task.id] = task
 
-    Called at import time, by the slice that owns the work. Everything checkable is checked here
-    rather than on the screen, so a mistake fails at the declaration that caused it instead of
-    appearing as a blank row on somebody's settings pane.
-    """
+
+def _refuse_declaration(task: ScheduledTask) -> None:
     if task.id in _REGISTRY:
         raise ScheduleError(f"scheduled task {task.id!r} is registered twice")
     if not task.id.strip():
@@ -345,8 +254,6 @@ def register_schedule(task: ScheduledTask) -> None:
         raise ScheduleError(f"scheduled task {task.id!r} needs a title")
     if not task.explain.strip():
         raise ScheduleError(f"scheduled task {task.id!r} needs a line saying what it does")
-    # A task nothing can run cannot answer Run now, and a timed one would have nothing to put on
-    # its clock. Refused rather than drawn with a button that does nothing.
     if task.job_type is None:
         raise ScheduleError(f"scheduled task {task.id!r} has no job type, so nothing could run it")
     if not task.whens or any(one not in WHENS for one in task.whens):
@@ -355,6 +262,9 @@ def register_schedule(task: ScheduledTask) -> None:
         raise ScheduleError(f"scheduled task {task.id!r} starts on a When it does not offer")
     if task.id in task.reads or len(set(task.reads)) != len(task.reads):
         raise ScheduleError(f"scheduled task {task.id!r} reads a When twice or reads its own")
+
+
+def _refuse_wiring(task: ScheduledTask) -> None:
     if task.reads and task.every is not None:
         raise ScheduleError(
             f"scheduled task {task.id!r} reads other Whens and has a clock of its own"
@@ -372,32 +282,6 @@ def register_schedule(task: ScheduledTask) -> None:
             raise ScheduleError(
                 f"scheduled task {task.id!r} names setting {key!r}, which nothing has registered"
             )
-    if task.reads:
-        # Its When is its children's, through the same master rule as every retired switch: read
-        # as their shared answer, written to each. Nothing of its own is stored to disagree.
-        retire_setting(
-            when_key(task.id),
-            into=tuple(when_key(one) for one in task.reads),
-            read=_shared_when,
-            write=_written_as_when,
-            why=f"{task.title} is when {', '.join(task.reads)} run, read as one",
-        )
-        _REGISTRY[task.id] = task
-        return
-    labels = task.when_labels()
-    register_setting(
-        # Through the key-maker rather than the property, so a reader of the source can see every
-        # When is `tasks.<id>.when`: the shape the dead-setting gate follows.
-        key=when_key(task.id),
-        scope="app",
-        default=task.when_default,
-        section=SECTION,
-        label=task.when_label or task.title,
-        help=task.when_help or task.explain,
-        choices=task.whens,
-        choice_labels=tuple(labels[one] for one in task.whens),
-    )
-    _REGISTRY[task.id] = task
 
 
 def retire_into_whens(
@@ -410,16 +294,7 @@ def retire_into_whens(
 ) -> None:
     """Retire an on/off switch that answered "does this start on its own" into the tasks' Whens.
 
-    Read as "anything but Only when I press it": for a group master over several tasks, on while
-    any of them starts on its own. Written: off makes every one of them press-only, and on starts
-    those that were press-only as files arrive while leaving "During quiet hours" where it is.
-    Every caller and every folder's own answer stored under the old key goes on reading the one
-    stored value. Called by the composition root, which is the only place that knows both the old
-    key's feature and the task's.
-
-    A folder's own answer under the old key decides only whether a file arriving in that folder is
-    worked on; a press of the task reads every folder. `folder_label` and `folder_help` say that on
-    the folder's page, where the task's title alone would promise a run that never happens.
+    A folder's own answer under the old key decides only for files arriving there.
     """
     retire_setting(
         key,
@@ -433,12 +308,12 @@ def retire_into_whens(
 
 
 def registered_schedules() -> dict[str, ScheduledTask]:
-    """The registry, copied, in declaration order. Callers read it; nothing mutates it through here."""
+    """The registry, copied, in declaration order."""
     return dict(_REGISTRY)
 
 
 def shown_schedules() -> dict[str, ScheduledTask]:
-    """The tasks a settings pane draws, in declaration order: every one but the upkeep nobody times."""
+    """The tasks a settings pane draws, in declaration order."""
     return {task_id: task for task_id, task in _REGISTRY.items() if task.shown}
 
 

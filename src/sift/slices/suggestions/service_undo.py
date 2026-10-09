@@ -94,6 +94,13 @@ class UndoMixin(FolderRuleMixin):
             for namesake_id, _folder in written.namesakes:
                 await self._store.reopen_on(connection, namesake_id)
 
+        await self._unteach_after(written)
+
+        log.info("suggestions.taken_back", files=len(written.attributed), faces=len(written.faces))
+        return reopened
+
+    async def _unteach_after(self, written: Written) -> None:
+        """Undo what a confirmation taught from its faces, and withdraw the may-be cards it caused."""
         # And what `confirm` taught from the faces it named, after the transaction for the same
         # reason it was taught after one. The person the faces were named as is the one the folder
         # was remembered as: a person claim remembers exactly one, and only a person claim names a
@@ -109,9 +116,6 @@ class UndoMixin(FolderRuleMixin):
                 withdrawn += await self._faces.withdraw_proposals(folder_id, person_id)
         if withdrawn:
             announce_now(EVERY_ADMIN, About.LIBRARY)
-
-        log.info("suggestions.taken_back", files=len(written.attributed), faces=len(written.faces))
-        return reopened
 
     async def take_back_silent(self, viewer: Viewer, *, folder_id: str, person_id: str) -> bool:
         """The Undo on a silent write's own History line: the same act as the press on its row of

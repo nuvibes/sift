@@ -1,11 +1,4 @@
-/*
- * The Activity pane's state row, drawn and pressed.
- *
- * The source test beside this one says WHICH component draws the row; this one says the row does
- * its job on a real screen: every state with something in it is a tab with its count, the pile
- * waiting on a person wears the mark, and pressing a tab filters the list underneath to it, in
- * place, with no address changed, because this pane is inside the Settings sheet.
- */
+/* The Activity pane's state row, drawn and pressed. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { imports } from '$lib/library/imports.svelte';
@@ -67,8 +60,8 @@ const EVERYTHING = page([
 	job('j2', 'blocked', 'odile-fenwick-two.mp4'),
 	job('j3', 'failed', 'bex-corrow-three.mp4')
 ]);
-/* A row only the failed page carries, so a test can tell that page arrived from the list narrowed
-   in place while it was out. */
+/* A row only the failed page carries, so a test can tell that page arrived from the list
+   narrowed in place while it was out. */
 const FAILED = page(
 	[job('j3', 'failed', 'bex-corrow-three.mp4'), job('j4', 'failed', 'bex-corrow-four.mp4')],
 	4
@@ -115,8 +108,8 @@ async function open() {
 		expect(host.querySelector('.filters [role="tablist"]')?.textContent).toContain('9')
 	);
 	flushSync();
-	/* The state row, which filters the queue, under the screen's own tabs, which are a
-	   row of the same kind and are not what these tests are about. */
+	/* The state row, which filters the queue, under the screen's own tabs, which are a row of
+	   the same kind and are not what these tests are about. */
 	const tabs = () => [...host.querySelectorAll('.filters [role="tab"]')] as HTMLButtonElement[];
 	return {
 		tabs,
@@ -177,8 +170,7 @@ describe("the Activity pane's state row", () => {
 		expect(location.href).toBe(before);
 	});
 
-	/* One universe: every pill is the server's number, All included. On a state's tab the page's
-	   total is that state's number, so an All that read it would say 4 over Failed 4. */
+	/* One universe: every pill is the server's number, All included. */
 	it("keeps every number the server's while a state is chosen, All the sum of the states", async () => {
 		const row = await open();
 

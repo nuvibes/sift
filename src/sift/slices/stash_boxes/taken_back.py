@@ -200,21 +200,7 @@ async def clear_shells_on(connection: Connection, taken: TakenBack) -> None:
             continue
         kept_people.extend(await remove_shell_on(connection, "person", person_id))
         taken.removed.append(("person", person_id, str(row["name"])))
-    sites = list(
-        dict.fromkeys(
-            one.site_id for one in taken.rows if one.kind == "username" and one.site_id is not None
-        )
-    )
-    kept_sites: list[list[dict[str, object]]] = []
-    while sites:
-        site_id = sites.pop(0)
-        row = await (await connection.execute(_SITE_NAME, (site_id,))).fetchone()
-        if row is None or not await holds_nothing_on(connection, "site", site_id):
-            continue
-        kept_sites.append(await remove_shell_on(connection, "site", site_id))
-        taken.removed.append(("site", site_id, str(row["name"])))
-        if row["parent_id"] is not None and str(row["parent_id"]) not in sites:
-            sites.append(str(row["parent_id"]))
+    kept_sites = await _clear_sites_on(connection, taken)
     kept_tags: list[dict[str, object]] = []
     for tag_id in dict.fromkeys(one.target_id for one in taken.rows if one.kind == "tag"):
         row = await (await connection.execute(_TAG_NAME, (tag_id,))).fetchone()
@@ -230,6 +216,28 @@ async def clear_shells_on(connection: Connection, taken: TakenBack) -> None:
         *kept_usernames,
         *filed_rows(taken.rows),
     ]
+
+
+async def _clear_sites_on(
+    connection: Connection, taken: TakenBack
+) -> list[list[dict[str, object]]]:
+    """Remove the Sites these usernames leave holding nothing, then the networks above them."""
+    sites = list(
+        dict.fromkeys(
+            one.site_id for one in taken.rows if one.kind == "username" and one.site_id is not None
+        )
+    )
+    kept_sites: list[list[dict[str, object]]] = []
+    while sites:
+        site_id = sites.pop(0)
+        row = await (await connection.execute(_SITE_NAME, (site_id,))).fetchone()
+        if row is None or not await holds_nothing_on(connection, "site", site_id):
+            continue
+        kept_sites.append(await remove_shell_on(connection, "site", site_id))
+        taken.removed.append(("site", site_id, str(row["name"])))
+        if row["parent_id"] is not None and str(row["parent_id"]) not in sites:
+            sites.append(str(row["parent_id"]))
+    return kept_sites
 
 
 def _and(items: Sequence[str]) -> str:

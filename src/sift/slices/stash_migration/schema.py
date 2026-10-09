@@ -1,40 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What a Stash run could not import yet, kept until the file it belongs to arrives.
-
-A scene or an image whose file this library does not hold is not imported: nothing lands without
-its file. What the run would have written for it is kept here instead, in the run's own shape, and
-the pass that runs after new files are fingerprinted (`service.StashMigration.land`) applies it
-through the same writers the moment a file here carries one of its fingerprints or sits where it
-did. A person, a Site or a tag that only such a scene or image carries waits here too, as its
-whole record, and is made at that moment if it is still absent.
-
-## The five tables
-
-`stash_waiting` is one row per scene or image, with `package` holding what the run would have
-written (its fields, its rating and counts, its markers, the galleries a picture is in). `user_id`
-is whoever pressed Run, because a rating and a heart are theirs; it is set to nothing when that
-User goes, and the rest of the package still lands.
-
-`stash_waiting_files` is the file identity Stash kept for each: its path there, where that path is
-on this device by the read's folders (`here`), its OSHash and video fingerprint, its size and its
-length. The pass asks one question of these rows (which of them does a file here now carry), so
-they are narrow columns rather than a field inside the package.
-
-`stash_waiting_entities` is the record of each person, Site and tag that waits, by kind and name,
-because many scenes name one person and the record is written once.
-
-`stash_galleries` is which Photo Set each Stash gallery became, and which of its pictures are here,
-so a second run adds to that set instead of making another, and a picture that arrives later joins
-it. Keyed by the Stash database the read named as well as the gallery's id there, because two Stash
-databases number their galleries from one alike.
-
-`stash_groups` is the same for a Stash group (a movie, in older Stash): which Collection it became,
-and which of its scenes are here, so a second run or a scene that arrives later adds to that
-Collection rather than making another.
-
-A run replaces the first three whole: what waits is what the newest run found. The last two are
-kept.
-"""
+"""What a Stash run could not import yet, kept until its file arrives, and which sets and
+Collections it made."""
 
 from __future__ import annotations
 
@@ -92,12 +58,7 @@ CREATE TABLE IF NOT EXISTS stash_galleries (
 """
 
 
-#: Version 2: what waits is filed under Sift's own words (file, picture), not Stash's (scene, image).
-#: A CHECK constraint is the set of words Sift chose, and 0.1.204 shipped version 1 with Stash's, so
-#: a library at 1 is brought across by rebuilding the table: SQLite cannot change a CHECK in place.
-#: The child table is rebuilt with it, child first on the way down, because dropping the parent
-#: under it would cascade its rows away. Renaming the parent afterwards rewrites the child's
-#: reference to the new name (SQLite's own rename, 3.26 and later).
+#: Version 2: Sift's words in the CHECK; SQLite cannot alter one, so both tables are rebuilt.
 _TO_VERSION_2 = (
     _CREATE_WAITING.replace("stash_waiting (", "stash_waiting_v2 (", 1),
     "INSERT INTO stash_waiting_v2 SELECT id,"
@@ -114,7 +75,6 @@ _TO_VERSION_2 = (
 )
 
 
-#: Version 3: Stash's groups become Collections, remembered like its galleries.
 _CREATE_GROUPS = """
 CREATE TABLE IF NOT EXISTS stash_groups (
   source        TEXT NOT NULL,
@@ -140,5 +100,4 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CREATE_GROUPS)
 
 
-# `users` comes from the identity component, so it is built before `user_id` names it.
 register_schema_initializer(COMPONENT, VERSION, initialize, depends_on=["identity"], baseline=1)

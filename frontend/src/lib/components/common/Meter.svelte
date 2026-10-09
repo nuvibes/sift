@@ -11,20 +11,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * A reading, not a task.
-	 *
-	 * `ProgressBar` says how far through something is and only ever grows; this says where a value
-	 * stands between two ends and may go either way: how well somebody can be recognized, a level,
-	 * a share of a capacity. They look alike, and that is why they are two components rather than
-	 * one with a flag: a screen reader is told which kind of thing it is (`role="meter"` against
-	 * `role="progressbar"`), and a bar that can fall must never wear the sweep a bar that cannot
-	 * know its end wears.
-	 *
-	 * The fill is the caller's when the colour IS the reading: recognition strength draws a red-to-
-	 * green run and clips it, because a solid fill would hide the three thresholds behind the number.
-	 * Given no fill, it draws the accent, like the progress bar.
-	 */
+	/* A reading that may go either way (`role="meter"`), unlike ProgressBar; the caller's fill is
+	 * used where the colour is the reading. */
 	import type { Snippet } from 'svelte';
 	import { Meter } from 'bits-ui';
 
@@ -43,8 +31,7 @@
 	const fraction = $derived(max > 0 ? Math.min(1, Math.max(0, value / max)) : 0);
 </script>
 
-<!-- The width is set through `style:`, which compiles to a property set on the element rather than
-     a style attribute in the markup. The policy the app is served under refuses the attribute form. -->
+<!-- `style:` sets a property; the served policy refuses the style attribute. -->
 <Meter.Root {value} min={0} {max} aria-label={label} class="meter-track">
 	{#if fill}
 		{@render fill(fraction)}
@@ -54,9 +41,7 @@
 </Meter.Root>
 
 <style>
-	/* The element carrying this class is rendered by the primitive, which puts the class on its own
-	   div, so this rule is global. Nothing else in the app is inside this component. The same
-	   track the progress bar draws, so the two read as one family. */
+	/* Global: the primitive renders the element; the progress bar's track. */
 	:global(.meter-track) {
 		position: relative;
 		block-size: 4px;

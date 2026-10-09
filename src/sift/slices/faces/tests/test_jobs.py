@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The background work, and the one thing every handler does first.
-
-**Each job checks the switch and does nothing when it is off.** That is not the same as the service
-refusing: a job queued while the feature was on and claimed after somebody turned it off has to
-find it off and stop, quietly, rather than run the work its payload describes or fail loudly at
-nobody.
-"""
+"""The background work; each job checks the switch first and quietly stops when it is off."""
 
 from __future__ import annotations
 
@@ -49,9 +43,7 @@ class Recording:
     status: ScanStatus = ScanStatus.NO_FACES
     #: How many faces a re-match claimed.
     attributed: int = 3
-    #: The running byte count the stand-in transfer reports, chunk by chunk. Ten of them rather
-    #: than three so that "it stopped part-way" is a measurable claim: with three, a stop on the
-    #: last one lands exactly on the total and is indistinguishable from having finished.
+    #: Running byte counts, chunk by chunk; ten so a stop part-way is distinguishable from the end.
     chunks: tuple[int, ...] = (10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
     expected: int = 100
     stopped_at: int | None = None
@@ -108,9 +100,7 @@ class Recording:
     #: None makes `viewer_for` answer "that user has gone".
     viewer: Any = "viewer-1"
 
-    #: How many rows the access layer hands back at a time however many were asked for. None is no
-    #: cap. Set it to model the cap: a sweep that stepped by what it asked for would step over
-    #: every file between the cap and the request.
+    #: Rows the access layer hands back at a time, None for no cap.
     cap: int | None = None
 
     async def viewer_for(self, user_id: str) -> Any:
@@ -176,11 +166,7 @@ class Recording:
         )
 
     async def install_models(self, *, progress=None, session_factory=None, force=False):  # type: ignore[no-untyped-def]
-        """Stands in for the download, and drives the callback the way a real transfer would.
-
-        Several small calls rather than one, because what the job does between them is the whole of
-        what is being tested: it publishes on its own schedule and it stops when told to.
-        """
+        """Stands in for the download, driving the callback in several calls as a transfer would."""
         self.asked.append(("install_models", "force" if force else None))
         # Time passing before the first byte arrives: a connection being opened, a redirect being
         # followed. The ticker runs during it and has nothing yet to report.
@@ -196,14 +182,8 @@ class Recording:
 
 @dataclass
 class RecordingQueue:
-    """Stands in for the queue, recording what was asked for and WHICH WAY it was asked for.
-
-    The way matters as much as the type. Whole-library follow-up work has to go through
-    `enqueue_when_settled` (deduped, and delayed until the batch stops arriving) because queued
-    plainly it runs once per file during an import and never catches up. What that method does with
-    those two properties is the kernel's to prove; what these tests check is that the faces work
-    asks for it the right way.
-    """
+    """Stands in for the queue, recording what was asked for and which way: whole-library work
+    must go through `enqueue_when_settled`."""
 
     queued: list[tuple[str, str, dict[str, Any]]] = field(default_factory=list)
     #: The wait each settled request asked for, in order; None leaves the queue's own.
@@ -249,11 +229,7 @@ class RecordingQueue:
 
 @dataclass
 class Job:
-    """Just enough of a job row for a handler that needs to know its own id.
-
-    The sweep does: the first page of a run IS the run, so it is the page that writes down what the
-    run is running under and hands the id to everything it queues.
-    """
+    """Just enough of a job row for a handler that needs its own id (a sweep's first page)."""
 
     id: str = "the-run"
     #: Who pressed for it, or None for work the machine queued. See `scan`'s bell.
@@ -317,12 +293,7 @@ class Bell:
 async def test_a_scan_somebody_pressed_rings_the_screens_and_one_the_machine_queued_does_not(
     pressed_by: str | None, rings: bool
 ) -> None:
-    """A press of "Look for faces again" on a file's page: the strip under the file re-reads when the scan is
-    done. A scan that finds nobody new changes no person on the file and would ring nothing else.
-
-    A sweep's scans and an import's carry no requester, and one ring per file across a sweep would
-    have every open screen re-reading for the length of it, so only a press rings.
-    """
+    """A press of "Look for faces again" rings the screens; a machine-queued scan does not."""
     bell = Bell()
     changes.listens(bell)  # type: ignore[arg-type]
     try:
@@ -338,9 +309,7 @@ async def test_a_scan_somebody_pressed_rings_the_screens_and_one_the_machine_que
 async def test_a_pressed_scan_tells_the_pass_it_is_a_look_again(
     payload: dict[str, Any], again: bool
 ) -> None:
-    """The press carries `AGAIN` and the scan has to hand it on, or the pass cannot tell "look at
-    this file again" from a sweep's visit, and a finished deep pass pressed again would carry
-    on from its last moment and read one frame."""
+    """The press's `AGAIN` reaches the scan, or a finished pass would read on from its end."""
     service = Recording()
     context = Context(payload={"asset_id": "asset-1", **payload})
 
@@ -359,13 +328,7 @@ async def test_a_deeper_look_can_be_asked_for_on_one_file() -> None:
 
 
 async def test_a_scan_with_no_depth_asked_for_uses_whatever_the_settings_say() -> None:
-    """No default of fast, which would silently override the setting on every scan a sweep starts.
-
-    An install set to look deeply would never do so: the results would be produced fast and the
-    tuning recorded against them would say so, while the settings screen said deep. Nothing would
-    report it (a fast pass is a perfectly good pass, just not the one that was asked for), and it
-    would surface only as a library that re-queued itself every sweep.
-    """
+    """No default of fast, which would silently override the setting on every swept scan."""
     service = Recording()
     context = Context(payload={"asset_id": "asset-1"})
 
@@ -375,13 +338,7 @@ async def test_a_scan_with_no_depth_asked_for_uses_whatever_the_settings_say() -
 
 
 async def test_a_scan_with_no_models_yet_waits_rather_than_failing() -> None:
-    """A scan waits for models that have not arrived rather than failing.
-
-    A model family changed while a sweep is running takes minutes to download, and every scan the
-    sweep already queued would otherwise fail three times over about files that are fine. A file
-    cannot be read with a model that has not arrived, so no number of attempts helps: the job
-    waits, costs no attempt, and says what it is waiting for.
-    """
+    """A scan waits for models that have not arrived rather than failing, costing no attempt."""
     service = Recording(missing_models="The recognition models have not been downloaded yet.")
     context = Context(payload={"asset_id": "asset-1", "run": "the-run"})
 
@@ -543,12 +500,7 @@ async def test_a_rematch_after_every_face_was_measured_again_asks_for_a_grouping
 
 
 # --- the follow-up work ----------------------------------------------------------------------------
-#
-# Grouping and re-matching can be registered, tested and correct while nothing in the application
-# asks for either of them: faces are found and stored, the ones that match nobody are never piled
-# up, and naming somebody never goes back over the faces already found, while every test of the
-# grouping itself passes. So the tests below assert on what gets QUEUED, not on what the handler
-# computes once something queues it.
+# Asserted on what gets queued: the handlers can be right while nothing asks for them.
 
 
 async def test_a_scan_that_left_a_face_unclaimed_asks_for_grouping() -> None:
@@ -598,9 +550,7 @@ async def test_measuring_again_does_nothing_while_the_feature_is_off() -> None:
 async def test_measuring_again_asks_for_itself_while_any_remain_and_for_a_rematch_when_none_do() -> (
     None
 ):
-    """A page at a time, like the sweep. When the last page is done every stored face is the new
-    model's, so what arithmetic decided is decided again: the re-match, and the grouping it asks
-    for. Asked for straight away rather than after the settle window: nothing is arriving."""
+    """A page at a time; after the last, the re-match and grouping are asked for immediately."""
     service = Recording(left=[7, 0])
     first = Context()
 
@@ -646,9 +596,7 @@ async def test_the_first_page_of_measuring_again_is_the_opening_size() -> None:
 async def test_a_page_that_took_minutes_hands_the_next_one_a_smaller_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A page can take over ten minutes under a concurrent scan, and a page taking minutes is a
-    job that cannot report where it is. The clock of each page sizes the next.
-    """
+    """Each page's clock sizes the next."""
     monkeypatch.setattr(face_jobs, "monotonic", _clock(0.0, 635.0))
     service = Recording(left=[9999])
     context = Context(payload={"page": 100})
@@ -830,12 +778,7 @@ async def test_a_folder_import_that_held_somebody_asks_for_the_fingerprints_pass
 
 
 # --- fetching the models ------------------------------------------------------------------------
-#
-# The seam being tested here is the one between a transfer that reports through an ordinary
-# function called once per chunk, and a queue that is written to by waiting. The callback cannot
-# wait for anything, so it writes a number into a variable and reads a flag; a ticker beside the
-# transfer turns those into a progress row and a cancellation. What follows checks that the two
-# halves actually meet.
+# The callback cannot wait, so a ticker turns its number and flag into progress and a cancel.
 
 
 async def test_the_download_reports_where_it_got_to_and_finishes_at_the_end(
@@ -859,12 +802,7 @@ async def test_the_download_reports_where_it_got_to_and_finishes_at_the_end(
 async def test_cancelling_stops_the_transfer_rather_than_tearing_it_down(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A stopped transfer keeps its partial file, so pressing it again costs the remainder.
-
-    Stopped by a flag the callback reads, not by cancelling the task doing the writing: torn down
-    mid-write, the partial file has a length nobody can trust, and resuming from it would produce a
-    model file that fails its digest for a reason nothing could explain.
-    """
+    """A stopped transfer keeps its partial file, stopped by a flag, never torn down mid-write."""
     monkeypatch.setattr(face_jobs, "_PROGRESS_TICK", 0)
     service = Recording()
     context = Context(canceled=True)
@@ -898,11 +836,7 @@ async def test_a_release_that_found_nothing_parked_announces_nothing(
 async def test_the_models_arriving_releases_the_scans_that_were_waiting_for_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The only thing that can make the sentence those jobs are parked on stop being true.
-
-    Named by type, so a job parked on something quite different (a stash-box key, a stored site
-    login) is left exactly where it is.
-    """
+    """Releasing the jobs parked on the models, by type, so others stay parked."""
     monkeypatch.setattr(face_jobs, "_PROGRESS_TICK", 0)
     context = Context()
 
@@ -927,12 +861,7 @@ async def test_a_download_that_installed_nothing_releases_nothing(
 async def test_nothing_is_published_before_the_first_byte_arrives(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A connection being opened, a redirect being followed: time passes and no total is known yet.
-
-    Publishing a fraction then would mean dividing by a total of zero, and reporting one anyway
-    would put a bar at a made-up place. The tick simply passes, and the first real number is the
-    first thing the dashboard shows.
-    """
+    """Before the first byte no total is known, so the tick publishes nothing."""
     monkeypatch.setattr(face_jobs, "_PROGRESS_TICK", 0)
     service = Recording(warmup=3)
     context = Context()
@@ -946,11 +875,7 @@ async def test_nothing_is_published_before_the_first_byte_arrives(
 
 
 async def test_a_sweep_queues_one_scan_per_file_it_has_not_seen() -> None:
-    """The backlog, turned into ordinary per-file work.
-
-    The sweep scans nothing itself. Everything it finds becomes a scan job like any other, which is
-    what makes the whole thing visible in the queue, stoppable, and resumable.
-    """
+    """The sweep scans nothing itself: everything it finds becomes an ordinary scan job."""
     service = Recording(pages=(("a", "b", "c"),), total=3)
     context = Context(payload={"viewer": "u1", "offset": 0})
 
@@ -965,9 +890,7 @@ async def test_a_sweep_queues_one_scan_per_file_it_has_not_seen() -> None:
 
 
 async def test_a_sweep_asks_for_the_next_page_while_there_is_one() -> None:
-    """A page at a time, and the next one queued only while the library is longer than what has
-    been reached. Re-queuing unconditionally would put one wasted job at the end of every sweep;
-    not re-queuing at all would silently cover only the first page of a large library."""
+    """The next page is queued only while the library is longer than what was reached."""
     service = Recording(pages=((), ()), total=face_jobs.SWEEP_PAGE * 2)
     context = Context(payload={"viewer": "u1", "offset": 0})
 
@@ -988,10 +911,7 @@ async def test_a_sweep_asks_for_the_next_page_while_there_is_one() -> None:
 
 
 async def test_a_capped_page_moves_the_sweep_on_by_what_it_walked_not_by_what_it_asked() -> None:
-    """The access layer caps a page. A sweep that asks for five hundred, is handed two hundred and
-    then steps on by five hundred never offers the three hundred in between, and says nothing,
-    because from the outside it is a sweep that reached the end of the library exactly as it should
-    have."""
+    """The access layer caps a page, so the sweep steps by what came back."""
     service = Recording(pages=((), (), ()), total=600, cap=200)
     context = Context(payload={"viewer": "u1", "offset": 0})
 
@@ -1012,9 +932,7 @@ async def test_a_capped_page_moves_the_sweep_on_by_what_it_walked_not_by_what_it
 
 
 async def test_a_sweep_over_capped_pages_still_reaches_every_file() -> None:
-    """The whole of the point, end to end: run the sweep as the queue would, and every file the
-    library holds is offered. This is the test that fails when the arithmetic goes back to stepping
-    by the limit: the one above only proves the first hop."""
+    """End to end: run as the queue would, every file the library holds is offered."""
     service = Recording(pages=(("a", "b"), ("c",), ("d", "e")), total=600, cap=200)
     payload: Any = {"viewer": "u1", "offset": 0}
     scanned: list[str] = []
@@ -1038,9 +956,7 @@ async def test_a_sweep_over_capped_pages_still_reaches_every_file() -> None:
 
 
 async def test_a_page_that_walks_nothing_ends_the_sweep_rather_than_asking_again() -> None:
-    """A page that advanced nothing would be re-queued at the same offset forever. The library
-    total says there is more to come, and the page says there is nothing there. Believe the
-    page."""
+    """A page that advanced nothing ends the sweep rather than re-queue the same offset."""
     service = Recording(pages=((),), total=600, cap=0)
     context = Context(payload={"viewer": "u1", "offset": 0})
 
@@ -1059,12 +975,6 @@ async def test_a_sweep_stops_at_the_end_of_the_library() -> None:
 
 
 # --- what the sweep offers, and what it says about it --------------------------------------------
-#
-# A sweep that asked only whether a file had ever been looked at would scan every file once, ever,
-# and changing the depth or the quality bar afterwards would do nothing to anything already in the
-# library. The tuning each result was produced under is stored for exactly this comparison.
-#
-# These assert on what the sweep asks for and what it says.
 
 
 async def test_a_sweep_asks_only_for_what_the_current_settings_have_not_covered() -> None:
@@ -1077,10 +987,7 @@ async def test_a_sweep_asks_only_for_what_the_current_settings_have_not_covered(
 
 
 async def test_a_forced_sweep_offers_everything_and_carries_that_to_the_next_page() -> None:
-    """The answer to what the comparison cannot see: a model swapped underneath, crops that came
-    out badly, or scans that failed often enough to be given up on. It has to survive the hand-off
-    between pages, or a forced sweep quietly becomes an ordinary one after the first five hundred
-    files."""
+    """`force` must survive the hand-off between pages."""
     service = Recording(
         pages=((), ()), forced_pages=(("a", "b"), ()), total=face_jobs.SWEEP_PAGE * 2
     )
@@ -1105,9 +1012,7 @@ async def test_a_sweep_that_queued_nothing_says_so_rather_than_finishing_silentl
 
     await face_jobs.sweep(context, service=service)  # type: ignore[arg-type]
 
-    # The count of files walked is deliberately gone from this: it is bookkeeping about the sweep,
-    # and reported beside a job that finished instantly it says the machine looked at forty files,
-    # which it did not. The sweep opens nothing.
+    # The count of files walked is gone: the sweep opens nothing.
     assert context.note is not None
     assert "already been scanned" in context.note
     assert "40" not in context.note
@@ -1126,13 +1031,7 @@ async def test_a_sweep_says_how_much_it_queued_counting_across_every_page() -> N
 
 
 async def test_a_sweep_with_more_pages_to_come_gives_a_running_total_and_says_it_is_one() -> None:
-    """The running total while pages are still to come, in a sentence that says it is provisional.
-
-    A bare figure would read as the answer; no figure at all would leave the screen saying "working
-    out which files need a look" for hours on a large library while each page waits behind the
-    scans the one before it queued, which reads as a sweep that queued two hundred files and
-    stopped.
-    """
+    """The running total while pages are still to come, said as provisional."""
     service = Recording(pages=(("a",),), total=face_jobs.SWEEP_PAGE * 2)
     context = Context(payload={"viewer": "u1", "offset": 0})
 
@@ -1146,9 +1045,7 @@ async def test_a_sweep_with_more_pages_to_come_gives_a_running_total_and_says_it
 
 
 async def test_a_sweep_for_an_account_that_has_gone_does_nothing() -> None:
-    """A job outlives the request that started it, so the user it names may have been deleted
-    or turned off in between. It stops rather than running as nobody, which, for work whose whole
-    job list comes from what that user may see, would be work with no scope at all."""
+    """A sweep whose user has gone stops rather than running as nobody."""
     service = Recording(viewer=None, pages=(("a",),), total=1)
     context = Context(payload={"viewer": "gone", "offset": 0})
 
@@ -1206,11 +1103,7 @@ async def test_a_later_page_carries_the_run_rather_than_starting_another() -> No
 
 
 def test_a_page_size_that_is_larger_than_the_cap_would_be_a_number_nobody_gets() -> None:
-    """The sweep asks the access layer for a page and the access layer clamps it. Asking for more
-    than the cap is not a bigger page, it is a number written down here that never happens, and
-    the screen that watches a sweep works out how many pages a library will take from it: reading
-    500 against a real 200, it would count a nine thousand file library as nineteen pages when it
-    is forty-six."""
+    """The page is the access layer's cap, so the screen counting pages counts right."""
     assert face_jobs.SWEEP_PAGE <= MAX_PAGE_SIZE
 
 
@@ -1279,9 +1172,7 @@ async def test_a_starter_run_that_stops_part_way_still_records_what_it_filed() -
 
 
 async def test_a_person_who_could_not_be_asked_about_is_left_for_the_next_run() -> None:
-    """The door answers None for somebody it could not ask about and an
-    empty list for somebody no box holds a picture of. The first is not handed to `file_starters`,
-    which would remember her as having nothing; the second is, and is remembered."""
+    """None (not asked) is not handed to `file_starters`; an empty list is, and is remembered."""
     handed: list[tuple[str, Any]] = []
 
     class Service:
@@ -1318,9 +1209,7 @@ async def test_a_person_who_could_not_be_asked_about_is_left_for_the_next_run() 
 
 
 def test_the_starters_press_is_not_a_run_of_identify(clean_handlers: None) -> None:
-    """A press checking People's stash-box pictures is not an Identify run, so History does not
-    say "You ran Identify in 22 s: 1 file" and Identify's pace does not count it as a file read.
-    It is not a pass over files; its own receipt says what it did."""
+    """The starters press is not an Identify run: not a pass over files."""
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.worker_pool import family_of
     from sift.slices.faces.service import FACE_STARTERS
@@ -1424,9 +1313,7 @@ async def test_starters_wait_while_the_stash_box_keys_are_sealed() -> None:
 async def test_a_link_asks_after_everybody_linked_and_skips_who_no_longer_wants_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no People named, the door says who is linked and the feature says who still wants
-    starters; each is asked again on her turn, so a face confirmed since is not followed by
-    starters that would be retired immediately. Nothing passing the checks is said so."""
+    """With no People named, the door says who is linked, each asked again on her turn."""
     monkeypatch.setattr(face_jobs, "_PROGRESS_TICK", 0)
     service = _StarterService(wanting={"linked-two"})
     door = _Door()

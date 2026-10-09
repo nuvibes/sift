@@ -1,10 +1,4 @@
-/* The one piece of judgement on the client side of sharing.
- *
- * Everything else in that module is a request shaped and sent. `standingOf` is the exception: it
- * turns a set of rows into one of the three words the interface uses, and it has to reach the same
- * answer the server would. A row reading "Shared" on a screen where the server says no is the only
- * mistake in that file that would matter, so this is where it is pinned.
- */
+/* The one piece of judgement on the client side of sharing. */
 
 import { describe, expect, it, vi } from 'vitest';
 import * as client from '../api/client';
@@ -34,11 +28,7 @@ describe('what one account currently holds', () => {
 	});
 
 	it('is restricted when they hold BOTH, whichever order the rows arrive in', () => {
-		/* The whole model in one line. A share and a restrict on the same thing are separate rows
-		 * and both can exist; the server resolves them to restrict, every time, and this mirrors that
-		 * rather than holding an opinion. Getting it backwards would draw "Shared" beside an account
-		 * the server refuses, which is the one wrong answer here that would be believed.
-		 */
+		/* The whole model in one line. */
 		expect(standingOf([grant('sam', 'share'), grant('sam', 'restrict')], 'sam')).toBe('restricted');
 		expect(standingOf([grant('sam', 'restrict'), grant('sam', 'share')], 'sam')).toBe('restricted');
 	});
@@ -47,10 +37,7 @@ describe('what one account currently holds', () => {
 describe('whether one specific row exists', () => {
 	it('is not the same question as the resolved standing', () => {
 		/* The distinction the controls are lit from. Both rows exist, the resolved answer is
-		 * Restricted, and the share is still really stored. So a Share button reading the
-		 * resolution would sit dark over a row that is there, and pressing it would write what was
-		 * already written and appear to do nothing.
-		 */
+		 * Restricted, and the share is still really stored. */
 		const both = [grant('sam', 'share'), grant('sam', 'restrict')];
 
 		expect(standingOf(both, 'sam')).toBe('restricted');
@@ -73,8 +60,7 @@ describe('one answer across several things together', () => {
 	});
 
 	it('is mixed when they do not', () => {
-		// A real answer rather than a failure to compute one. Forty files do not have one standing,
-		// and picking the first would tell somebody the other thirty-nine say something they do not.
+		// A real answer rather than a failure to compute one.
 		expect(readingOf([[grant('sam', 'share')], []], 'sam')).toBe('mixed');
 	});
 

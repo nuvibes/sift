@@ -318,44 +318,27 @@ def brought_over(brought: Mapping[str, object], kind: str | None) -> tuple[str, 
     A merge from before that kept only the counts says the counts.
     """
 
-    def counted(key: str) -> int:
-        value = brought.get(key)
-        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
-
     kept = brought.get("named")
     named_by_kind = kept if isinstance(kept, Mapping) else {}
-
-    def with_names(phrase: str, key: str, count: int) -> str:
-        rows = named_by_kind.get(key)
-        names: list[str] = []
-        for row in rows if isinstance(rows, list) else []:
-            if not isinstance(row, Mapping) or not isinstance(row.get("name"), str):
-                continue
-            where = row.get("where")
-            names.append(f"{row['name']} on {where}" if isinstance(where, str) else row["name"])
-        return f"{phrase} ({brought_named(names, count)})" if names else phrase
-
     listed_now: list[str] = []
-    if count := counted("files"):
+    if count := _counted(brought, "files"):
         listed_now.append(files(count))
-    if count := counted("usernames"):
-        listed_now.append(with_names(usernames(count), "usernames", count))
-    if count := counted("aliases"):
+    if count := _counted(brought, "usernames"):
+        listed_now.append(_with_names(named_by_kind, usernames(count), "usernames", count))
+    if count := _counted(brought, "aliases"):
         phrase = "1 other name" if count == 1 else f"{many(count)} other names"
-        listed_now.append(with_names(phrase, "aliases", count))
-    if count := counted("links"):
-        if kind == "site":
-            phrase = "1 address" if count == 1 else f"{many(count)} addresses"
-        else:
-            phrase = "1 link" if count == 1 else f"{many(count)} links"
-        listed_now.append(with_names(phrase, "links", count))
-    if count := counted("tags"):
+        listed_now.append(_with_names(named_by_kind, phrase, "aliases", count))
+    if count := _counted(brought, "links"):
+        listed_now.append(_with_names(named_by_kind, _links(kind, count), "links", count))
+    if count := _counted(brought, "tags"):
         listed_now.append(
-            with_names("1 tag" if count == 1 else f"{many(count)} tags", "tags", count)
+            _with_names(
+                named_by_kind, "1 tag" if count == 1 else f"{many(count)} tags", "tags", count
+            )
         )
-    if count := counted("faces"):
+    if count := _counted(brought, "faces"):
         listed_now.append(counted_faces(count))
-    if count := counted("children"):
+    if count := _counted(brought, "children"):
         listed_now.append(
             "1 Site published under it" if count == 1 else f"{many(count)} Sites published under it"
         )
@@ -364,6 +347,28 @@ def brought_over(brought: Mapping[str, object], kind: str | None) -> tuple[str, 
     if keys:
         listed_now.append(f"{and_then(_filled_words(kind, keys))} filled in")
     return tuple(listed_now)
+
+
+def _counted(brought: Mapping[str, object], key: str) -> int:
+    value = brought.get(key)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _with_names(named_by_kind: Mapping[str, object], phrase: str, key: str, count: int) -> str:
+    rows = named_by_kind.get(key)
+    names: list[str] = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, Mapping) or not isinstance(row.get("name"), str):
+            continue
+        where = row.get("where")
+        names.append(f"{row['name']} on {where}" if isinstance(where, str) else row["name"])
+    return f"{phrase} ({brought_named(names, count)})" if names else phrase
+
+
+def _links(kind: str | None, count: int) -> str:
+    if kind == "site":
+        return "1 address" if count == 1 else f"{many(count)} addresses"
+    return "1 link" if count == 1 else f"{many(count)} links"
 
 
 def _filled_in(

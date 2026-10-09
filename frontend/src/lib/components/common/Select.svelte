@@ -9,17 +9,12 @@
 		states: ['closed', 'open', 'searchable', 'disabled']
 	} satisfies DesignEntry;
 
-	/** The chevron every chooser opens from, one size wherever it is drawn: a select, and the unit
-	 *  door on a number (`NumberInput`). Two sizes read as two kinds of control. */
+	/** The one chevron size for every chooser, a select or a number's unit door. */
 	export const CHOOSER_CHEVRON = 18;
 </script>
 
 <script lang="ts">
-	/*
-	 * A dropdown that wears the app's look instead of the operating system's, since a native <select>
-	 * cannot be restyled. Built on the library's Select, so the keyboard behaves as every menu does, and
-	 * shaped like a <select> (a bound value, a list of options).
-	 */
+	/* A dropdown in the app's look on the library's Select, shaped like a <select>. */
 	import NarrowBox from './NarrowBox.svelte';
 	import Scroller from './Scroller.svelte';
 	import PageShield from './PageShield.svelte';
@@ -38,10 +33,7 @@
 		label: string;
 		/** A quieter phrase beside a repeated name, just enough to tell it apart (`disambiguate`). */
 		detail?: string;
-		/**
-		 * A second line under the name, in small letters: what the row is measured against, or why it
-		 * is dimmed, as a menu row's `note`. It wraps and never widens the list.
-		 */
+		/** A small second line under the name; it wraps and never widens the list. */
 		note?: string;
 		disabled?: boolean;
 		/** A press rather than an answer (`Shuffle again`): it fires `onAction`, never `value`. */
@@ -57,10 +49,7 @@
 		id?: string;
 		/** For the one-way callers: told the new value, the way a native `onchange` was. */
 		onValueChange?: (value: string) => void;
-		/**
-		 * An ACTION row was pressed (`action`): its own door, since a caller hearing it as a value
-		 * would store it.
-		 */
+		/** An action row was pressed: its own door, so a caller never stores it as a value. */
 		onAction?: (value: string) => void;
 		disabled?: boolean;
 		/** Name it when it stands on its own. Inside a Field the label already names it. */
@@ -73,63 +62,31 @@
 		placeholder?: string;
 		/** An extra class on the trigger, for the rare caller that needs to place it. */
 		class?: string;
-		/**
-		 * Draw the trigger as one icon rather than as the chosen value and a chevron, where what is
-		 * chosen is visible on screen (the sort order); `label` still names it for a screen reader.
-		 */
+		/** The trigger as one icon, where the choice shows on screen; `label` still names it. */
 		icon?: IconName;
 		/**
-		 * Where the open list is drawn, when `document.body` is the wrong answer: in fullscreen only the
-		 * fullscreen element's subtree is drawn, so the list goes inside it.
+		 * Where the open list is drawn: inside the fullscreen element while one fills the screen.
 		 */
 		portalTo?: Element | null;
-		/**
-		 * Told when the list opens and closes, for a caller that closes on leaving: the portalled list is
-		 * not inside it.
-		 */
+		/** Told on open and close, for a caller that closes on leaving. */
 		onOpenChange?: (open: boolean) => void;
-		/**
-		 * Whether the list is showing, for a caller that OWNS that: the screen bar keeps exactly one of
-		 * its menus open.
-		 */
+		/** Whether the list shows, for a caller that owns it (the screen bar). */
 		open?: boolean;
-		/**
-		 * The one element an open list leaves pressable under its sheet: a row of pointed-at triggers,
-		 * so sliding along it moves between menus.
-		 */
+		/** The one element left pressable under the open sheet, for a row of triggers. */
 		spare?: HTMLElement | null;
-		/**
-		 * The pointer entered or left the open LIST, for a caller with a grace period that closes on
-		 * leaving: the same pair the screen bar's drawer reports.
-		 */
+		/** The pointer entered or left the open list, for a caller closing on leaving. */
 		onListPointer?: (inside: boolean) => void;
-		/**
-		 * A picture drawn beside each option, where the words are not the answer (Theater's layouts,
-		 * drawn from the wall's own `grid-template`). A snippet, since a picture is not always a glyph.
-		 */
+		/** A picture beside each option, where the words are not the answer. */
 		preview?: Snippet<[SelectOption]>;
 		/**
-		 * The option's WORDS, drawn by the caller, where the label must be seen (the appearance pane's
-		 * fonts, set in each face). A snippet, since a typeface is keyed on theme attributes only
-		 * `app.css` may use. The trigger draws it too, so closed and open agree.
+		 * The option's words drawn by the caller (fonts in each face); the trigger draws it too.
 		 */
 		optionLabel?: Snippet<[SelectOption]>;
-		/**
-		 * A box at the top of the open list, for typing a few letters and filtering it. Unset, the list
-		 * decides (past `NARROW_PAST` rows). It can only turn the box off (typeahead serves, or a touch
-		 * keyboard would cover the list); `true` does nothing.
-		 */
+		/** The filter box: past `NARROW_PAST` rows unless turned off. */
 		searchable?: boolean;
-		/**
-		 * Words the closed control is as wide as, besides its own answers, so a column of choosers (each
-		 * task's When) keeps one width.
-		 */
+		/** Words the closed control is as wide as, so a column of choosers keeps one width. */
 		sizeTo?: readonly string[];
-		/**
-		 * A list hanging from the top bar: it comes out from under the bar and goes back up under
-		 * it, as the Filter panel beside it does (`fromBar`), rather than rising as a small surface
-		 * and vanishing. Sort by and a screen's own menus on that row.
-		 */
+		/** Hang from the top bar, coming out from under it as the Filter panel does. */
 		fromTheBar?: boolean;
 	}
 
@@ -158,10 +115,7 @@
 		fromTheBar = false
 	}: Props = $props();
 
-	/*
-	 * How many rows is too many to read: ten is one glance under the control; past that typing three
-	 * letters beats scrolling. One figure for every chooser.
-	 */
+	/* Past ten rows, typing beats scrolling. */
 	const NARROW_PAST = 10;
 
 	/** The trigger element, so a pointer-driven close can take the ring back off it. */
@@ -172,8 +126,7 @@
 		label ?? (trigger as HTMLButtonElement | null)?.labels?.[0]?.textContent?.trim() ?? ''
 	);
 
-	/* The tap that opens the sheet must not also choose a row: the menu sheet's rule
-	   (`menu-touch.ts`). */
+	/* The opening tap must not also choose a row (`menu-touch.ts`). */
 	const sheet = sheetPresses();
 	$effect(() => {
 		if (!open) sheet.reset();
@@ -200,15 +153,12 @@
 		};
 	});
 
-	/* An option whose value is the empty string: the underlying Select reads "" as nothing chosen, so
-	 * it is swapped for a stand-in phrase here and back on the way out. */
-	/* Only where the list holds such an option: otherwise "" means nothing picked yet, and the
-	 * placeholder must show. */
+	/* The library reads "" as nothing chosen, so an empty-string option is swapped for a stand-in,
+	 * only where the list holds one. */
 	const NOTHING = 'no answer was chosen';
 	const answerable = $derived(options.some((o) => o.value === ''));
 	const inward = $derived(options.map((o) => (o.value === '' ? { ...o, value: NOTHING } : o)));
-	/* What has been typed into the box, while the list is open. Cleared when it closes, so the next
-	   opening is the whole list again. */
+	/* Typed into the box while open; cleared on close. */
 	let typed = $state('');
 	const listed = $derived(
 		typed.trim() === ''
@@ -221,8 +171,7 @@
 	/** Whether the filtering box is drawn: the length of the list, unless a caller said not to. */
 	const narrowing = $derived(searchable !== false && options.length > NARROW_PAST);
 
-	/* The answers the trigger can show (every row but a press, which never becomes the value), for
-	   a list short enough to read. See `.ui-select-sizer`. */
+	/* The answers the trigger can show, for a short list (`.ui-select-sizer`). */
 	const sizing = $derived(options.length <= NARROW_PAST);
 	const sized = $derived(options.filter((one) => !one.action));
 
@@ -233,15 +182,9 @@
 		)
 	);
 
-	/*
-	 * WHAT A ROW BEING PICKED MEANS: the primitive's one way of writing the value back, so a click,
-	 * Enter and typeahead all arrive here, and an action row works from the keyboard too.
-	 */
+	/* Every pick arrives here (click, Enter, typeahead), so action rows work from the keyboard. */
 	function chose(next: string): void {
-		/*
-		 * A PRESS, which never becomes the value: `value` is left alone, so the getter un-takes the row
-		 * and it can be pressed again.
-		 */
+		/* A press never becomes the value, so the row can be pressed again. */
 		if (acting.has(next)) {
 			onAction?.(next === NOTHING ? '' : next);
 			return;
@@ -252,11 +195,7 @@
 	}
 </script>
 
-<!--
-	The chosen value is read back on every render (`bind:` with a getter and a setter), so a set this
-	file declines (a press) is undone immediately. A caller whose value lands after a round trip
-	shows the old answer until then, the truthful direction.
--->
+<!-- The value read back every render, so a declined set is undone immediately. -->
 <Select.Root
 	type="single"
 	bind:open
@@ -286,8 +225,7 @@
 	>
 		{#if icon}
 			<Icon name={icon} size={18} />
-			<!-- Announced, not drawn: the value is the whole point of the control to somebody who
-			     cannot see the results it ordered. -->
+			<!-- Announced, not drawn. -->
 			<span class="ui-select-said"><Select.Value {placeholder} /></span>
 		{:else}
 			<!-- The chosen row's mark on the trigger, by the list's own snippet, where one is given. -->
@@ -303,9 +241,9 @@
 						<Select.Value {placeholder} />
 					{/if}
 				</span>
-				<!-- Every answer stacked unseen in one cell, so the control keeps its widest width; from
-				     an attribute, so the visible text stays the answer. A long list sizes by the chosen
-				     answer, sparing a node per row. -->
+				<!--
+				Every answer stacked unseen in one cell, so the control keeps its widest width.
+				-->
 				{#if sizing}
 					{#each sized as option (option.value)}
 						{#if optionLabel}
@@ -329,12 +267,10 @@
 	<Select.Portal to={portalTo ?? undefined}>
 		<PageShield up={open} {spare} />
 		{#if phoneWidth.yes}
-			<!-- AT A PHONE'S WIDTH, A SHEET FROM THE FOOT, as every menu is there: the same rows, the
-			     full width, headed with whose list it is, a finger's height each. Not floated, so the
-			     library measures nothing for it.
-			     DRESSED BY: .ui-menu (ContextMenu styles the one menu surface)
-			     DRESSED BY: .menu-sheet (ContextMenu styles the sheet every menu is at a phone width)
-			     DRESSED BY: .menu-sheet-head (ContextMenu styles the sheet's head beside the sheet) -->
+			<!-- At a phone's width, a sheet from the foot headed with whose list it is.
+			DRESSED BY: .ui-menu (ContextMenu styles the one menu surface)
+			DRESSED BY: .menu-sheet (ContextMenu styles the sheet every menu is at a phone width)
+			DRESSED BY: .menu-sheet-head (ContextMenu styles the sheet's head beside the sheet) -->
 			<Select.ContentStatic
 				class="ui-select-content ui-menu menu-sheet"
 				onpointerdowncapture={sheet.down}
@@ -351,8 +287,7 @@
 				{@render list()}
 			</Select.ContentStatic>
 		{:else if fromTheBar}
-			<!-- Kept in the document by this file, so the list can be seen going back under the bar, as
-			     `Popover` holds its panel; inside the library's positioned layer. -->
+			<!-- Held in the document so it can be seen going back under the bar. -->
 			<Select.Content
 				forceMount
 				class="ui-select-content from-bar"
@@ -385,8 +320,7 @@
 
 {#snippet row(option: SelectOption, selected: boolean)}
 	{#if preview}
-		<!-- Before the words, where a reader's eye lands first: on these lists the
-		     picture is the answer and the words confirm it. -->
+		<!-- The picture first: on these lists it is the answer. -->
 		<span class="ui-select-item-preview">{@render preview(option)}</span>
 	{/if}
 	<span class="ui-select-item-text" class:noted={Boolean(option.note)}>
@@ -406,11 +340,9 @@
 
 <!-- The list itself, drawn in the floating box or in a phone's sheet. -->
 {#snippet list()}
-	<!-- The list scrolls like every other region. The ceiling stays on the content box, which
-	     is what the floating layer measures against the window. -->
+	<!-- The ceiling stays on the content box, which the floating layer measures. -->
 	{#if narrowing}
-		<!-- Above the scrolling rows. Letters stay in the box; Escape empties it first (`NarrowBox`),
-		     and over an empty box closes the list. -->
+		<!-- Above the rows; Escape empties the box first, then closes the list. -->
 		<!-- svelte-ignore a11y_autofocus: the list opened to be typed into -->
 		<div class="ui-select-filter">
 			<NarrowBox
@@ -423,8 +355,7 @@
 			/>
 		</div>
 	{/if}
-	<!-- An arrow at each end while there is more list that way: this list opens over the page,
-	     where nothing else says there is more of it until somebody turns the wheel. -->
+	<!-- Arrows while there is more list that way. -->
 	<Scroller arrows>
 		<Select.Viewport>
 			{#each listed as option (option.value)}
@@ -460,8 +391,7 @@
 {/snippet}
 
 <style>
-	/* The picture beside an option. It carries no size of its own: what is drawn in it decides
-	   that, so this only stops it being stretched by the row it sits in. */
+	/* Not stretched by its row; its content sizes it. */
 	:global(.ui-select-item-preview) {
 		display: inline-flex;
 		flex: none;
@@ -469,8 +399,7 @@
 		color: var(--sift-ink-2);
 	}
 
-	/* Read out, never drawn. `display: none` would take it out of the accessibility tree with it,
-	   which is the opposite of what this is for. */
+	/* Read out, never drawn, so not `display: none`. */
 	.ui-select-said {
 		position: absolute;
 		inline-size: 1px;
@@ -486,12 +415,10 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-2);
-		/* As wide as its widest answer and the chevron (see `.ui-select-sizer`), and never wider
-		   than the place it sits in. A Field asks for that width by name. See the rule there. */
+		/* As wide as its widest answer and the chevron, never wider than its place. */
 		inline-size: auto;
 		max-inline-size: 100%;
-		/* The field height and no taller, so a press beside it (which takes the field's height)
-		   stands level with it. Block padding added to the line would make it 38. */
+		/* The field height, so a press beside it stands level. */
 		min-block-size: var(--control-height);
 		padding: 0 var(--space-3);
 		border: 1px solid var(--border);
@@ -509,8 +436,7 @@
 			background-color var(--dur-instant) var(--ease);
 	}
 
-	/* The hover layer on the trigger's own ground (see `--layer-hover`), and the edge a step up.
-	   No pressed state: a press opens the list, and the open list is the answer. */
+	/* The hover layer on the trigger's ground; no pressed state. */
 	:global(.ui-select:hover:not(:disabled)) {
 		border-color: var(--sift-line-strong);
 		background-color: color-mix(in srgb, currentColor var(--layer-hover), var(--sift-surface-3));
@@ -532,11 +458,7 @@
 		border-color: var(--sift-bad-text);
 	}
 
-	/*
-	 * The words take the free width, so with a mark in front they stay beside it rather than float
-	 * between the ends (`space-between` suits two children, not three). `min-inline-size: 0` lets the
-	 * ellipsis appear.
-	 */
+	/* The words take the free width beside the mark; min 0 lets the ellipsis appear. */
 	.ui-select-answers {
 		display: grid;
 		grid-template-columns: minmax(0, auto);
@@ -544,8 +466,7 @@
 		min-inline-size: 0;
 	}
 
-	/* One cell for the shown answer and every unseen one, so the widest decides the width. Each
-	   clips to an ellipsis where the place the control sits is narrower than that. */
+	/* One cell for every answer, so the widest decides the width. */
 	.ui-select-value,
 	.ui-select-sizer {
 		grid-area: 1 / 1;
@@ -565,11 +486,7 @@
 		content: attr(data-words);
 	}
 
-	/* The open list: the app's menu surface, no wider than its control (`--bits-select-anchor-width`). */
-	/*
-	 * It opens with the stylesheet's `rise`, as every small surface does; an animation, since the
-	 * element is the library's. Nothing moves under reduced motion.
-	 */
+	/* The open list: the menu surface, no wider than its control, rising as small surfaces do. */
 	:global(.ui-select-content) {
 		animation: rise var(--dur-fast) var(--ease);
 		z-index: var(--z-menu);
@@ -579,11 +496,7 @@
 			var(--bits-select-content-available-height, var(--menu-max-height)),
 			var(--menu-max-height)
 		);
-		/*
-		 * A flex column, not a grid: the library sets flex inline, which beats any class; the
-		 * scroller's definite height comes from `Scroller`. `overflow: hidden` clips, which
-		 * `check_capped_scroller.js` requires of a ceiling.
-		 */
+		/* A flex column; `overflow: hidden` clips, as `check_capped_scroller.js` requires. */
 		overflow: hidden;
 		padding: var(--space-1);
 		border-radius: var(--radius-lg);
@@ -591,28 +504,20 @@
 		box-shadow: var(--elev-3);
 	}
 
-	/* A list hanging from the top bar moves by the bar's transition alone (`fromTheBar`), at one width
-	   on every wall (`--menu-bar-width`). */
+	/* From the top bar: the bar's transition and `--menu-bar-width`. */
 	:global(.ui-select-content.from-bar) {
 		animation: none;
 		min-inline-size: max(var(--bits-select-anchor-width), var(--menu-bar-width));
 	}
 
-	/*
-	 * OVER A FILLED SCREEN, THE LIST IS THE SAME PANE THE BARS ARE, not an opaque grey card; `BarPanel`
-	 * follows this grey. Written with our own class first and the ancestor inside `:is()`, so it can
-	 * only reach a list this file drew, outweighing the plain rule above.
-	 */
+	/* Over a filled screen, the bars' pane, reaching only a list this file drew. */
 	:global(.ui-select-content:is(.screen-box:fullscreen *)) {
 		border: 1px solid var(--sift-line);
 		background: var(--sift-scrim);
 		backdrop-filter: blur(var(--blur-glass));
 	}
 
-	/*
-	 * Mark, then words, then the tick: the words take the free space, so every label shares one edge
-	 * and the tick sits at the end, as in the facet panel. The inset is `--menu-row-padding`.
-	 */
+	/* Mark, words, then the tick, at `--menu-row-padding`. */
 	:global(.ui-select-item) {
 		display: flex;
 		align-items: center;
@@ -623,8 +528,7 @@
 		color: var(--sift-ink);
 		cursor: pointer;
 		user-select: none;
-		/* The ground steps rather than snapping. `data-highlighted` is where the pointer
-		   or the keyboard is, so one transition covers both. */
+		/* The ground steps, for pointer and keyboard. */
 		transition: background var(--dur-instant) var(--ease);
 	}
 
@@ -692,8 +596,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* The narrowing box, at the list's own inset, with a hairline under it so the rows read as
-	   what it narrows. The box itself is `NarrowBox`: the same one the facet panel draws. */
+	/* The filter box at the list's inset, a hairline under it. */
 	.ui-select-filter {
 		padding: var(--space-2);
 		margin-block-end: var(--space-1);

@@ -11,19 +11,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * The answers a rating can have, as a list to pick from.
-	 *
-	 * Written once and rendered in two places (above the button in the selection bar, out to the
-	 * side in the right-click menu) for the same reason the verbs themselves are declared once:
-	 * two hand-built copies of the same rows are two lists that can stop agreeing, and the one
-	 * that would drift is the one nobody looks at.
-	 *
-	 * Rows rather than a live row of stars, because this is a chooser. Each row shows what the
-	 * rating would look like, so picking three stars means looking at three stars rather than
-	 * aiming at the third one, and the row that clears it is a row, with a word on it, instead of
-	 * the undiscoverable "click the star it already has".
-	 */
+	/* The answers a rating can have, as a list to pick from, written once for the bar's flyout and
+	 * the right-click submenu; rows, so each shows the rating it sets. */
 	import { ContextMenu } from 'bits-ui';
 	import Separator from './Separator.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -34,29 +23,20 @@
 		rating: number | null;
 		/** Chosen. Null clears the rating, which is a different thing from zero: there is no zero. */
 		onpick: (rating: number | null) => void;
-		/**
-		 * Draw these as rows of a menu rather than as a panel of buttons.
-		 *
-		 * Not cosmetic. Inside a menu the rows have to BE menu rows, or the menu never learns that
-		 * anything was chosen and stays open over the file it just rated. Set where this is rendered
-		 * into a submenu; left alone in the flyout above the selection bar, which owns its own open
-		 * state and closes itself.
-		 */
+		/** Rows of a menu, so a submenu hears the choice and closes. */
 		menu?: boolean;
 	}
 
 	let { rating, onpick, menu = false }: Props = $props();
 
-	/* Stored in, stored out: the same contract `Stars` has, and for the same reason. `rating` is
-	   always out of ten; how many rows there are is the account's scale. */
+	/* Stored out of ten; the row count is the account's scale. */
 	const outOf = $derived(ratingScale.stars);
 	const STARS = $derived(Array.from({ length: outOf }, (_, index) => outOf - index));
 
 	/** The stored rating as a number of stars. Every comparison below is against this. */
 	const set = $derived(ratingScale.shown(rating));
 
-	/* The group's value. A rating of nothing is a value no row carries, rather than the empty
-	 * string, so "none of them" cannot be mistaken for a row whose value happens to be blank. */
+	/* No rating is a value no row carries. */
 	const chosen = $derived(set === null ? 'none' : String(set));
 
 	function label(value: number): string {
@@ -64,17 +44,8 @@
 	}
 </script>
 
-<!--
-	One star and the number, not a row of stars drawn up to it.
+<!-- One star and the number, not a row of stars to count; the star fills to the chosen one. -->
 
-	A row of stars is ten glyphs per option, ten options, a hundred stars in a menu, and reading
-	it means COUNTING, which is the one thing a number is for. Worse, such rows differ from each
-	other by one glyph at one end, so telling four from five is a comparison of two nearly
-	identical bars rather than reading a digit.
-
-	The star is still here because the star is what says these are ratings rather than a list of
-	numbers, and it fills up to the chosen one so the row somebody is on still lights.
--->
 {#snippet face(value: number)}
 	<span class="row" aria-hidden="true">
 		<Icon name="star" size={16} filled={set !== null && value <= set} />
@@ -82,9 +53,7 @@
 	</span>
 {/snippet}
 
-<!-- The rows of a menu. Each one has to BE a menu row: a plain button inside a submenu is chosen
-     without the menu ever hearing about it, so the menu stays open over the file it just rated.
-     Radio rather than plain rows, because these are one value picked out of several. -->
+<!-- Menu rows, radio items, so the menu hears the choice. -->
 {#snippet menuRows()}
 	{#each STARS as value (value)}
 		<ContextMenu.RadioItem value={String(value)} textValue={label(value)}>
@@ -102,15 +71,8 @@
 		</ContextMenu.RadioItem>
 	{/each}
 
-	<!-- Not one of the stars. Taking a rating away is an action, not one more value.
+	<!-- Clearing is an action, after a separator element, which keeps the row's ground rounded. -->
 
-	     The line above it is an ELEMENT between the rows rather than an edge on the row itself. As a
-	     `border-block-start` it would be part of the row's own box, so the row's highlighted ground
-	     would be squared off at the top and ruled across while every other row in the flyout lights
-	     as a rounded block. The shared `Separator` rather than the menu's own, because these rows
-	     are drawn twice:
-	     in a submenu, and in the flyout above the selection bar, which has no menu around it for
-	     `ContextMenuSeparator` to find. -->
 	{#if rating !== null}
 		<Separator />
 		<ContextMenu.Item onSelect={() => onpick(null)} textValue="No rating">
@@ -122,8 +84,7 @@
 {/snippet}
 
 {#if menu}
-	<!-- The group renders THIS element rather than one of its own, so the panel's geometry stays
-	     scoped CSS in this file. A class handed to a component as a prop is not reached by it. -->
+	<!-- The group renders this element, so its geometry stays scoped here. -->
 	<ContextMenu.RadioGroup
 		value={chosen}
 		onValueChange={(next: string) => onpick(ratingScale.stored(Number(next)))}
@@ -149,8 +110,7 @@
 			</button>
 		{/each}
 
-		<!-- Only when there is something to take back. A permanent "no rating" row on something that
-		     is already unrated is a row that does nothing, at the end of every menu. -->
+		<!-- Only when there is a rating to take back. -->
 		{#if rating !== null}
 			<Separator />
 			<button type="button" class="choice" onclick={() => onpick(null)}> No rating </button>
@@ -159,16 +119,12 @@
 {/if}
 
 <style>
-	/* As wide as the widest row in it, which is the words "No rating", with no floor of its own: a
-	   column of a glyph and a digit drawn at a menu's floor would be half empty. The surface's
-	   floor is lifted by the `fit` prop on the row that opens this out. */
+	/* As wide as "No rating", with no floor (`fit`). */
 	.choices {
 		display: flex;
 		flex-direction: column;
 	}
 
-	/* The line between the stars and the row that takes a rating away. Room either side of it, the
-	   way a menu separates its groups. */
 	.choices :global(.separator) {
 		margin-block: var(--space-1);
 	}
@@ -177,8 +133,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
-		/* The app's row inset. See `--menu-row-padding` in `app.css`. These rows are a menu's rows
-		   and must be inset like them. */
+		/* The menu's row inset. */
 		padding: var(--menu-row-padding);
 		border: 0;
 		border-radius: var(--menu-row-radius);
@@ -189,16 +144,14 @@
 		cursor: pointer;
 	}
 
-	/* `data-highlighted` is the menu's own idea of where the keyboard is. Without it the rows only
-	   respond to a pointer, and arrow-keying down the flyout moves an invisible cursor. */
+	/* `data-highlighted` shows where the keyboard is. */
 	.choice {
 		transition:
 			background var(--dur-instant) var(--ease),
 			color var(--dur-instant) var(--ease);
 	}
 
-	/* A finger's height on a phone, as every menu row is there (`ContextMenu`): these are a menu's
-	   rows by another name, in the sheet a star opens. */
+	/* A finger's height on a phone. */
 	@media (max-width: 767px) {
 		.choice {
 			min-block-size: var(--touch-target);
@@ -227,8 +180,7 @@
 		gap: var(--space-2);
 	}
 
-	/* Tabular, so the column of numbers down the menu is a column rather than a ragged edge: the
-	   same reason every other figure in this interface is. */
+	/* Tabular figures. */
 	.count {
 		font-variant-numeric: tabular-nums;
 	}

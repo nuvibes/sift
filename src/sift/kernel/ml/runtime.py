@@ -1,22 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Loading a model and running it, on a device chosen when it is loaded.
 
-Two things about this module are deliberate and neither is obvious from the code.
-
-**The runtime and the vocabulary are loaded only in the model process** (`sift.kernel.ml.session`,
-through `loader`). A native library that crashes as it loads then costs a child, never the server.
-
-**A device that was asked for and is not there is a failure, not a fallback.** Falling back to the
-processor when a graphics card was requested turns "why is this taking nine hours" into a question
-with no answer anywhere on the machine: the work still happens, the result is still correct, and
-nothing anywhere says the reason. So it stops and says which device, and why not.
-
-**This is the kernel's copy, and it belongs to no feature.** It knows how to choose a device and
-how to hold a loaded model; it knows nothing about what any model is for. The words a person reads
-when a device is missing name the feature that asked, because "a device is unavailable" with no
-subject is not something anybody can act on, so the caller supplies that word and nothing else
-about itself.
-"""
+The runtime loads only in the model process; a missing device fails, never falls back."""
 
 from __future__ import annotations
 
@@ -45,18 +30,11 @@ class DeviceUnavailable(Exception):
 
 
 class DeviceLost(DeviceUnavailable):
-    """The device stopped answering underneath a session. Work that needs it waits rather than
-    spending attempts; the job queue holds this error for a while."""
+    """The device stopped answering under a session; the queue holds work that needs it."""
 
 
 def _device_errors(onnxruntime: Any) -> tuple[type[BaseException], ...]:
-    """The runtime's own failure classes, resolved from the module that is loaded.
-
-    They derive from `Exception` directly rather than from a common base, so they are named. A
-    backend that fails to open, a context that has died underneath a running session, and the
-    engine giving up all arrive as one of these, or as a plain `RuntimeError` from the runtime's
-    Python layer.
-    """
+    """The runtime's own failure classes, named as they share no base, plus `RuntimeError`."""
     state = getattr(getattr(onnxruntime, "capi", None), "onnxruntime_pybind11_state", None)
     named = tuple(
         getattr(state, name)
@@ -66,27 +44,17 @@ def _device_errors(onnxruntime: Any) -> tuple[type[BaseException], ...]:
     return (*named, RuntimeError)
 
 
-#: What each choice needs from the machine, and what it is called to the runtime. `cpu` is absent
-#: because it is always available: that is what makes it the guarantee rather than an option.
+#: What each device needs, as the runtime names it; `cpu` is always there, so absent.
 _DEVICES: dict[str, tuple[str, str]] = {
     "nvidia": ("CUDAExecutionProvider", "an NVIDIA graphics card"),
 }
 
-#: Every device a setting may offer, in the order a menu shows them, and what each is called on
-#: screen. Declared HERE, beside the table above that says what each one needs, because the two
-#: features that offer the choice would otherwise each hold their own copy of this pair: two lists
-#: that have to agree with a third, with nothing checking that they do.
-#:
-#: ONE mapping, and the two tuples the registry wants are read off it. Written as two tuples they
-#: would be a fourth and fifth list to keep in step, in the one place whose whole job is to stop
-#: that: a name added in one and not the other silently shifts every label by one.
+#: Every device a setting offers and its label, beside the table above so the features share it.
 _OFFERED: dict[str, str] = {"cpu": "CPU", "nvidia": "GPU"}
 DEVICES: tuple[str, ...] = tuple(_OFFERED)
 DEVICE_LABELS: tuple[str, ...] = tuple(_OFFERED.values())
 
-#: The two tables are written by hand and describe the same set, so they are checked against each
-#: other at import: a device that can be offered and has no entry saying what drives it would be a
-#: menu item that fails only when somebody picks it.
+#: Checked against each other at import, so no menu item fails only when picked.
 if set(_DEVICES) - set(_OFFERED):  # pragma: no cover - a declaration error, caught at import
     raise RuntimeError(f"devices with no menu entry: {sorted(set(_DEVICES) - set(_OFFERED))}")
 if set(_OFFERED) - set(_DEVICES) != {"cpu"}:  # pragma: no cover - same
@@ -94,23 +62,10 @@ if set(_OFFERED) - set(_DEVICES) != {"cpu"}:  # pragma: no cover - same
         f"menu entries with nothing driving them: {sorted(set(_OFFERED) - set(_DEVICES) - {'cpu'})}"
     )
 
-#: How a feature is named in a message when the caller did not say. Deliberately vague rather than
-#: wrong: every real caller passes its own word.
+#: Vague rather than wrong; every real caller passes its own word.
 _ANONYMOUS = "This feature"
 
-#: What somebody has to do to actually use a graphics card, written once and shown under BOTH
-#: settings that offer the choice.
-#:
-#: The refusal alone is not enough. Choosing the card is refused with a sentence saying the
-#: software is not installed, which answers "why did that not work" and leaves "then how DO I turn
-#: it on" unanswered, so the person who wanted the card would have to find out by trying, and then
-#: still not know.
-#:
-#: `sift.kernel.ml.accel` fetches the graphics-card runtime the same way a model is fetched, and the
-#: words below are what points somebody at it. The two have to move together: a disclosure that
-#: describes the wrong door is a worse answer than none.
-#: Where the person is sent: one string for the disclosure below and the refusal after it, so the
-#: two cannot point at different places. The path is the one the settings search takes pasted.
+#: Where to turn the card on, shared by the disclosure and the refusal so they point alike.
 _WHERE_TO_TURN_IT_ON = "under GPU in Settings > Performance"
 
 DEVICE_DISCLOSURE = (
@@ -130,16 +85,7 @@ def _unknown_device(device: str) -> str:
 
 
 def why_unusable(device: str, available: Sequence[str], *, feature: str = _ANONYMOUS) -> str | None:
-    """Why this device cannot be used on this INSTALLATION, or None if it can. No machine involved.
-
-    The half of the check below that is true before anything is plugged in: whether the software
-    that drives a device was shipped at all. Separated out because it is the half that can be
-    answered the moment somebody CHOOSES a device, rather than hours later inside the job that
-    finally tried to use it (see `device_validator`).
-
-    The other half, whether the card is actually in this machine, needs the hardware report and
-    stays in `resolve_provider`.
-    """
+    """Why this device cannot be used on this installation, or None; asked when it is chosen."""
     entry = _DEVICES.get(device)
     if entry is None:
         return None if device == "cpu" else _unknown_device(device)
@@ -160,14 +106,7 @@ def resolve_provider(
     *,
     feature: str = _ANONYMOUS,
 ) -> list[str]:
-    """Which runtime backend to load a model on, or a failure explaining why not.
-
-    Both halves are checked, because they fail for different reasons and only one of them is
-    visible from inside the application. The hardware report says whether the device is *there*;
-    the runtime's own list says whether the software that drives it was ever installed. A machine
-    with a graphics card and no driver libraries, and a machine with the libraries and no card,
-    produce the same silence and need different answers.
-    """
+    """The runtime backends to load on, or a failure: no device, or no driving software."""
     if device == "cpu":
         return ["CPUExecutionProvider"]
 
@@ -186,51 +125,25 @@ def resolve_provider(
     refusal = why_unusable(device, available, feature=feature)
     if refusal is not None:
         raise DeviceUnavailable(refusal)
-    # The processor stays on the list behind the device, as the runtime's answer for any single
-    # operation the device cannot do. That is not a silent fallback: the model still runs on the
-    # device that was asked for, and if it could not, loading it fails above.
+    # The processor behind the device covers single operations it cannot do; not a fallback.
     return [provider, "CPUExecutionProvider"]
 
 
-#: The most threads a session on a device is given, however many the machine has.
-#:
-#: A cap rather than the runtime's own answer, and the number is measured. See `session_threads`.
+#: A measured cap; see `session_threads`.
 MOST_DEVICE_THREADS = 4
 
 
 def session_threads(device: str, cpu_count: int) -> int:
-    """How many threads one loaded model may use, which is a question about the DEVICE.
+    """Threads per loaded model: one on the processor, half the machine up to four on a card.
 
-    **One thread is right on the processor and wrong on a card, and the reason is that the
-    setting reaches something different in each case.** On the processor it is the whole model:
-    Sift runs inference beside decoding, playback and the pages, and a model allowed the machine
-    is a person waiting on a video. One thread is a deliberate price: the picture model runs about
-    five times slower at one thread than at eight, and the choice buys back the machine.
-
-    On a card the setting reaches only the operators the card cannot run, which the runtime keeps
-    on the processor, and capping THOSE at one thread throttles the card behind them: the same
-    frames on the card take more than twice as long at one thread as at four, and eight or the
-    runtime's own choice (every logical processor) is barely faster than four. So the runtime's
-    own answer is past the knee, and the figure is capped rather than handed over.
-
-    Half the machine, capped at four: four is most of what eight gives, and it leaves the decoders
-    (which are what the model is waiting on for its next frame) the rest of the box. A model
-    whose whole graph is on the card is unaffected either way (the face recognizer runs the same
-    at one thread as at eight, within noise).
-
-    And never past the step back's share of the device (`kernel.budget.STEP_BACK_SHARE`): a
-    session's threads are fixed when the model loads and cannot follow the share from run to run,
-    so they are held to the smaller of the two from the start, and a person at the keyboard never
-    meets a runtime sized for an empty machine.
-    """
+    On a card they run what the card cannot, and one throttles it; never past the step back."""
     if device == "cpu":
         return 1
     stepped = cpu_count * STEP_BACK_SHARE // WHOLE_DEVICE
     return max(1, min(MOST_DEVICE_THREADS, cpu_count // 2, stepped))
 
 
-#: What loads the native libraries in this process (`sift.kernel.ml.session`): set by the model
-#: process alone, so `Runner` refuses here.
+#: Loads the native libraries; set only in the model process, so `Runner` refuses elsewhere.
 loader: ModuleType | None = None
 
 
@@ -245,33 +158,12 @@ def _runtime(settings: Settings) -> Any:
 
 
 def device_refusal(feature: str) -> Callable[[Any], str | None]:
-    """Why a `*.device` setting may not be set to this, or None. Registered as the `refuse` hook.
+    """Why a `*.device` setting may not take this value, or None: the `refuse` hook.
 
-    WHY THE REFUSAL IS HERE AND NOT IN THE JOB.
-
-    A card is one of the declared choices, so without this it would store, the screen would show
-    it, and the refusal would come later and somewhere else (inside the job that eventually loads
-    a model), with the settings screen saying the card is in use while every file is done on the
-    processor. A choice that cannot work has to be refused at the moment it is made, in front of the
-    person making it.
-
-    WHY IT IS A `refuse` AND NOT A `validator`, WHICH IS NOT A DETAIL. A validator also runs when a
-    stored value is read back, and a value it rejects is quietly replaced by the default. Written
-    as one, this would turn a stored "nvidia" into "cpu" on every read, so recognition, which
-    refuses to run on a device that is not there precisely so that nobody wonders why it took nine
-    hours, would read its own setting as the processor and run on the processor. See `Refusal` in
-    the registry.
-
-    Only the software half is checked. Whether the card is physically present is deliberately left
-    to `resolve_provider`: a machine can be given a card while Sift is not looking, and refusing to
-    even store the choice would make that unfixable without editing the database.
-    """
+    Not a validator, which would rewrite a stored card to the processor on every read."""
 
     def check(value: Any) -> str | None:
-        # The processor needs nothing looked up: it is the guarantee. It is also what keeps the
-        # inference runtime UNIMPORTED for any installation that never chooses a card: take this
-        # line out and the first settings write of any kind pays for a runtime almost nobody uses,
-        # which is the one thing the note at the top of this module exists to prevent.
+        # The processor needs no lookup, which keeps the runtime unimported for most installs.
         if value == "cpu":
             return None
         from sift.kernel.config import get_settings
@@ -298,16 +190,7 @@ class Loaded:
 
 
 class Runner:
-    """Holds the loaded models. One per feature per process, made when it is first used.
-
-    Sessions are kept rather than made per call: loading a large model reads and prepares hundreds
-    of megabytes, which is a hundred times the cost of running it once.
-
-    Inference is single-threaded per session on purpose. The work arrives as a queue of files
-    already running several at a time, so a session that spawned a thread per core would have every
-    worker fighting every other worker for the same processor, measurably slower than each doing
-    its own work on one core.
-    """
+    """Holds the loaded models, kept per feature per process, one thread per session."""
 
     def __init__(
         self,
@@ -324,9 +207,7 @@ class Runner:
         self._loaded: dict[str, Loaded] = {}
         self._vocabularies: dict[str, Any] = {}
         self._lock = threading.Lock()
-        #: Why the device cannot be used any more, once it has failed underneath a session. Set
-        #: for the life of the process: a lost context does not come back, and a session opened
-        #: after one would be opened on a card the runtime can no longer drive.
+        #: Why the device is dead, for the life of the process: a lost context never comes back.
         self._broken: str | None = None
 
     @property
@@ -335,16 +216,11 @@ class Runner:
 
     @property
     def broken(self) -> str | None:
-        """Why the device stopped answering, or None while it has not. What a screen says."""
+        """Why the device stopped answering, or None while it has not."""
         return self._broken
 
     def load(self, weight: Weight) -> Loaded:
-        """Load one model, verifying the file first. Repeated calls hand back the same session.
-
-        Refused outright once the device has died underneath this process (see `run`). Loading
-        again would open a session on a card the runtime can no longer drive, and the failure
-        would arrive as the next job's rather than as the reason it is.
-        """
+        """Load one verified model once; refused after the device has died."""
         with self._lock:
             if self._broken is not None:
                 raise DeviceUnavailable(self._broken)
@@ -378,16 +254,9 @@ class Runner:
         threads = session_threads(self._device, self._hardware.cpu_count)
         options.intra_op_num_threads = threads
         options.inter_op_num_threads = threads
-        # The runtime is chatty at startup about graph shapes it would rather were different. None
-        # of it is actionable by whoever is running Sift, and it lands in their log at every boot.
+        # Startup chatter nobody running Sift can act on.
         options.log_severity_level = 3
-        # NO FALLBACK, at either moment the runtime would make one. Left at its default, a backend
-        # that fails to open is quietly replaced by the processor at construction, and one that
-        # fails mid-run is replaced once at run time, with a `print`, which is nowhere. Either
-        # way the session, the log line and the settings screen would go on saying the card's name
-        # over work the processor was doing. A device that was asked for and is not there is a
-        # failure, not a fallback (the note at the top of this module), and this is where it
-        # holds.
+        # No fallback at either moment the runtime would make one; a missing device fails.
         try:
             session = onnxruntime.InferenceSession(
                 str(path), options, providers=providers, enable_fallback=False
@@ -399,8 +268,7 @@ class Runner:
                 f"{_DEVICES[self._device][1]} could not open a model ({error}). Set the device "
                 "to the processor, or check the card's driver."
             ) from error
-        # And read back, never assumed: the runtime is asked which backend it actually opened
-        # the model on, and the first one has to be the one asked for.
+        # Read back, never assumed: the first backend must be the one asked for.
         opened = tuple(session.get_providers())
         if not opened or opened[0] != providers[0]:
             raise DeviceUnavailable(
@@ -419,16 +287,7 @@ class Runner:
     def run(
         self, loaded: Loaded, blob: np.ndarray, *, outputs: Sequence[str] | None = None
     ) -> list[np.ndarray]:
-        """Run one input through a loaded model and hand back its outputs, in declared order or
-        in the order asked for.
-
-        A device that fails underneath a session has failed for the life of the process: a lost
-        context does not come back, and every later call on it fails the same way while the
-        process says nothing. So the first failure marks the device dead, drops every session,
-        and is raised as the reason: the job fails loudly, once, and the settings screen says
-        what to do. On the processor a failure is the model's or the input's, and is raised as it
-        came.
-        """
+        """Run one input through a model; a device failure marks it dead and drops every session."""
         try:
             names = list(loaded.outputs) if outputs is None else list(outputs)
             return list(loaded.session.run(names, {loaded.inputs[0]: blob}))

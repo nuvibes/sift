@@ -1,35 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Disagreements gathered by person: who the rows are about, one person's rows closest to
-her first, and a Yes or a No over a page of them, a pick or all of hers.
+"""Disagreements gathered by person: who the rows are about, one person's rows closest to her
+first, and a Yes or a No over a page of them, a pick or all of hers.
 
-**By person, because that is the shape the rows come in.** A disagreement is a name a pass filed
-(a folder, a filename, a stash-box) on a file whose one face is named as somebody else: recognized
-by Sift or confirmed by a person. A face that matches nobody is no evidence against the filing,
-since a covered or poorly lit face matches nobody whoever it is, so it is not one. A pass
-files a whole folder in one go, so its mistakes arrive by the hundred under one name, and a thousand
-rows are about a handful of people. One card per file would ask the same question about the same
-person a thousand times; one row per person asks it once, with her faces as a wall to be answered a
-page at a time.
-
-**Closest to her first,** so the faces that may be her after all (a name Sift added that is
-wrong) are the first page somebody sees, and what is left behind them is the part a No over all of
-it is for.
-The number is the one a re-match compares (`matching.likeness` against her pictures), taken for
-one person's rows at a time and never stored: it moves every time her pictures do.
-
-**Nothing is decided without a press.** A name on the face is a likeness, and taking her off a
-file she may well be in is not a guess to make on somebody's behalf.
-
-A Yes is the naming every faces screen already writes (`confirm_many`, a receipt under
-`IDENTIFIED_QUEUE`). The No takes her off the files and remembers it (`Store.take_filed_off`), with
-a receipt of its own under `DISAGREEMENTS_QUEUE` that puts every row back as it was.
-
-**Where the name came from is said by the server, folder and all.** "Added from a folder name"
-with no folder named leaves somebody weighing a hundred files unable to tell which filing to look
-at. A folder filing names the folder it was read from (the nearest folder above the file that was
-answered as her, the rule a file's History line reads), as a way to it in the folder view; several
-are counted and the first few named, the ones with the most of her files first. A folder this
-viewer may not see is never named: it is counted and stays nameless.
+A pass files a folder in one go, so its mistakes arrive by the hundred under one name; one row per
+person asks once. Nothing is decided without a press. Where the name came from is said by the
+server, naming only folders this viewer may see.
 """
 
 from __future__ import annotations
@@ -59,28 +34,19 @@ from sift.slices.faces.store import FiledFace, FiledOff
 
 @dataclass(frozen=True, slots=True)
 class DisagreeingPerson:
-    """One person the Disagreements tab is about: how many of her files, and where most came from.
-
-    `source` is the word the pass wrote on the most of them (`folder`, `stash_box` and the rest),
-    so the row can say where the name came from before anybody opens it.
-    """
+    """One person the Disagreements tab is about: how many of her files, where most came from."""
 
     person_id: str
     name: str
     count: int
     source: str
-    #: Where the name came from, as the line under her heading says it: the folders named and
-    #: linked where a folder's name gave it. See `filed_from`.
+    #: Where the name came from, as the line under her heading says it (`filed_from`).
     filed: Line = field(default=())
 
 
 @dataclass(frozen=True, slots=True)
 class NamingFolder:
-    """One folder that was answered as her, with how many of her files here it named.
-
-    `piece` is the folder as a way to it, or None where this viewer may not see it: counted,
-    never named.
-    """
+    """One folder answered as her, with how many of her files it named; `piece` None if hidden."""
 
     folder_id: str
     files: int
@@ -107,14 +73,8 @@ def folder_view(folder_id: str) -> str:
 
 
 def filed_from(source: str, folders: Sequence[NamingFolder], boxes: Sequence[str] = ()) -> Line:
-    """Where the name on her files came from, as one line: the folders named where it was folders.
-
-    One folder: "Added from the name of the folder <name>". Several: how many, then the first few
-    by name ("Added from the names of 7 folders: A, B, C and 4 more"). A folder the viewer may not
-    see is in the count and never in the names; with none to name, the words say only how many.
-    A stash-box's filing names the box ("Added by FansDB") wherever the filings say which.
-    Any other word the pass wrote reads as it always has.
-    """
+    """Where the name on her files came from, as one line: the folders, counted and the first few
+    named (never a hidden one), the stash-box, or the pass's own word."""
     if source == "stash_box" and boxes:
         return say.said(f"Added by {say.and_then(list(boxes))}")
     if source != "folder" or not folders:
@@ -149,9 +109,7 @@ def _taken_off_payload(person_id: str, rows: Sequence[FiledOff]) -> str:
 
 
 def filed_rows(payload: str) -> tuple[str, list[FiledOff]] | None:
-    """A No's receipt read back: the person and the rows it took off. None for one this build
-    cannot read, which is not a decision it can put back. A receipt written before filings named
-    their stash-box holds three fields a row, and puts each row back with no box."""
+    """A No's receipt read back: the person and the rows it took off, or None if unreadable."""
     try:
         recorded = json.loads(payload)
         person_id = str(recorded["person_id"])
@@ -177,12 +135,7 @@ class DisagreementsMixin(ReviewMixin):
     """The disagreements by person, and the two answers over a run of them."""
 
     async def disagreeing_people(self, viewer: Viewer) -> list[DisagreeingPerson]:
-        """Everybody the Disagreements tab is about, the most files first.
-
-        The same rows the tab counts (`_filed_in_reach`), so the people's counts add up to the tab's
-        number and cannot disagree with it. Ties go to the name, then the id, so the order is the
-        same on every read.
-        """
+        """Everybody the Disagreements tab is about, the most files first, from the tab's rows."""
         reach = await self._filed_in_reach(viewer)
         sources: dict[str, Counter[str]] = {}
         by_folder: dict[str, list[str]] = {}
@@ -220,13 +173,8 @@ class DisagreementsMixin(ReviewMixin):
     async def _naming_folders(
         self, person_id: str, asset_ids: Sequence[str], seen: Mapping[str, frozenset[str]]
     ) -> list[NamingFolder]:
-        """The folders that named her on these files, the most of them first.
-
-        Each file goes to its NEAREST folder answered as her, as its History line says it; a file
-        no answered folder holds any more (the folder deleted, the answer taken back) is in no
-        folder's count. A folder is named only where this viewer may see it all the way down,
-        the rule every place a location is said reads (`kernel.where`).
-        """
+        """The folders that named her on these files, the most first: each file to its nearest
+        folder answered as her, named only where visible all the way down (`kernel.where`)."""
         nearest = await nearest_naming_folders(self._store.database, person_id, asset_ids)
         about = {one[0]: one[1:] for one in nearest.values()}
         files = Counter(one[0] for one in nearest.values())
@@ -251,11 +199,7 @@ class DisagreementsMixin(ReviewMixin):
         return await self._as_disagreements(viewer, reach, hers[begin : begin + limit]), len(hers)
 
     async def _closest_first(self, person_id: str, rows: list[FiledFace]) -> list[FiledFace]:
-        """Her rows ordered by how much each face looks like her, the most first.
-
-        A face with no description, or a person with no picture in the gallery, has no number and
-        goes last; the face's id breaks every tie, so two reads of the same library agree.
-        """
+        """Her rows by how much each face looks like her, unmeasured last, the id breaking ties."""
         if len(rows) < 2:
             return rows
         configured = await self.configuration()
@@ -281,13 +225,8 @@ class DisagreementsMixin(ReviewMixin):
     ) -> RunAnswered:
         """Yes or No over some of one person's disagreements: the files named, or all of hers.
 
-        The files are NARROWED, never trusted: only a file still standing as one of her
-        disagreements for this viewer is acted on, so a row answered since the page was drawn, or
-        one that was never hers, is simply not part of the press. A file behind a shut vault is
-        left alone, as every bulk write leaves it.
-
-        Yes names each face as her, the naming every faces screen writes, with its receipt. No
-        takes her off the files and writes the receipt that puts her back.
+        The files are narrowed, never trusted; Yes names each face as her, No takes her off the
+        files, each with its receipt.
         """
         reach = await self._filed_in_reach(viewer)
         hers = [one for one in _hers(reach, person_id) if not reach.shown[one.track.asset_id]]
@@ -297,9 +236,7 @@ class DisagreementsMixin(ReviewMixin):
         if not hers:
             return RunAnswered(changed=0)
         if yes:
-            # Every face here is named as somebody else (`filed_but_unrecognised`): that name comes
-            # off first, refused, and goes into the naming's receipt, so the toast's Undo names the
-            # face as that person again as well as taking her name off.
+            # The other name comes off first, into the naming's receipt, so its Undo restores it.
             taught = Taught()
             for one in hers:
                 was = one.track
@@ -339,8 +276,7 @@ class DisagreementsMixin(ReviewMixin):
         subjects: list[Subject] = [Subject(kind="person", id=person_id)]
         subjects += [Subject(kind="asset", id=row.asset_id) for row in taken]
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             return await self._recorder.record_on(
                 connection,

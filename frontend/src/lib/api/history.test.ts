@@ -1,13 +1,4 @@
-/* Asking for a history, and taking one of its events back.
- *
- * Small, and it exists for one reason: the addresses are written here and nowhere else, so this
- * is the only place that can catch one being written wrongly, and a wrong address reaches
- * somebody as an empty panel with no error on it.
- *
- * The undo is here for a second reason on top of that. Which of the two doors a kind of event
- * opens is a mapping that has to stay in step with the server's, in a language that cannot check
- * it, and a mapping inside whichever screen draws a history is one a second screen would copy.
- */
+/* Asking for a history, and taking one of its events back. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,9 +50,7 @@ function event(over: Partial<HistoryEvent> = {}): HistoryEvent {
 
 describe('the address', () => {
 	it('is the file own history, with the id escaped', () => {
-		// An id is minted by Sift and has nothing in it to escape today. Escaping anyway is what
-		// stops that being a property anybody has to keep true: the day an id can hold a slash, a
-		// caller that trusted the shape is building a different address entirely.
+		// An id is minted by Sift and has nothing in it to escape today.
 		void historyOfAsset('01HX/0');
 
 		expect(mocked.get).toHaveBeenCalledWith('/assets/01HX%2F0/history', {
@@ -70,8 +59,7 @@ describe('the address', () => {
 	});
 
 	it('asks for a number of events only when the caller said one', () => {
-		// Left out, the server answers with its own default. Sending its default back would be a
-		// second copy of it here, drifting the day the server changes its mind.
+		// Left out, the server answers with its own default.
 		void historyOfAsset('a1', 10);
 
 		expect(mocked.get).toHaveBeenCalledWith('/assets/a1/history', { query: { limit: 10 } });
@@ -107,9 +95,7 @@ describe('the other subjects', () => {
 		expect(mocked.get).toHaveBeenCalledWith('/people/01HX%2F0/history', { query: { limit: 3 } });
 	});
 
-	/* The escaping rule holds on every address here: the file's first case proves it. A thing
-	   named rather than identified is where it matters most: `a/b` asking about itself and
-	   asking about something else are one character apart. */
+	/* The escaping rule holds on every address here: the file's first case proves it. */
 });
 
 describe('taking an event back', () => {
@@ -120,9 +106,7 @@ describe('taking an event back', () => {
 	});
 
 	it('and a decision through the workbench', async () => {
-		// The two doors are the whole reason the kind travels with the id. Sent to the wrong one,
-		// the server answers 404 and the screen says "that could not be undone" about a decision it
-		// never asked about.
+		// The two doors are the whole reason the kind travels with the id.
 		await undoHistoryEvent(event({ kind: 'decided', undo: { kind: 'decision', id: 'd1' } }));
 
 		expect(mocked.post).toHaveBeenCalledWith('/workbench/decisions/d1/undo', {});
@@ -140,7 +124,6 @@ describe('the four addresses beside a person', () => {
 	it('are each that entity own history, with the id escaped', () => {
 		// Written here and nowhere else, which is what makes this the only place a wrong one can be
 		// caught, and a wrong address reaches somebody as an empty panel with no error on it.
-		// `photo-sets` is the one a hand-written path gets wrong: the kind says `photo_set`.
 		void historyOfSite('pf/1');
 		void historyOfTag('t/1');
 		void historyOfCollection('c/1');

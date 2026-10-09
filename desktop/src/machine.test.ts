@@ -1,11 +1,4 @@
-/* What this computer is, for a window whose library lives on another one.
- *
- * The facts themselves come from Node and are not worth a test. What is worth one is the memory,
- * because it is asked twice over: the server's block reports what is INSTALLED, read out of the
- * firmware, and Node only knows what the operating system can ADDRESS, a little less than what is
- * fitted. Two blocks on one screen answering the same question two different ways is the
- * kind of small inconsistency that reads as one of them being broken.
- */
+/* What this computer is, for a window whose library lives on another one. */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as os from "node:os";
@@ -46,7 +39,7 @@ describe("the memory in this computer", () => {
   });
 
   /* Asked once. It cannot change while the machine is running, and the query starts a process,
-	   so a settings screen opened five times would start five of them for one known answer. */
+     so a settings screen opened five times would start five of them for one known answer. */
   it("asks the machine once and remembers the answer", async () => {
     const ask = answering("68719476736");
 
@@ -69,7 +62,7 @@ describe("the memory in this computer", () => {
   });
 
   /* Zero is not an answer about memory; it is the absence of one, and it must not become a row
-	   saying "0 GB". */
+     saying "0 GB". */
   it("does not take a zero as an answer", async () => {
     expect(await installedMemory(answering("0"))).toBe(os.totalmem());
   });
@@ -111,13 +104,7 @@ describe("what this computer is called", () => {
   });
 });
 
-/* The graphics adapters in THIS computer.
- *
- * None of them does work for Sift (every model, transcode and scan runs on the server), and they
- * are named anyway, because a block headed "This computer" that lists a processor and a memory size
- * and says nothing about the graphics is a description with a hole in it. The same two traps apply
- * as on the server's own probe, and they are the reason this is parsed rather than shown raw.
- */
+/* The graphics adapters in THIS computer. */
 /* Both platform branches on every platform, so the shell's coverage counts the same lines on
  * Windows and on the Linux runner: without this, one platform skipped a branch the other ran and
  * the ratchet read the difference as a move. */
@@ -163,8 +150,7 @@ describe("the platform each question is asked on", () => {
 
 describe("the graphics adapters in this computer", () => {
   /* THE ONE THIS EXISTS FOR. Read from `AdapterRAM`, a 16 GB card would have no memory beside it
-	   at all, because that field is 32 bits and stops at 4293918720. What the driver recorded is
-	   64 bits and is the real figure. */
+     at all, because that field is 32 bits and stops at 4293918720. */
   it("takes what the driver recorded over the field that stops counting", () => {
     expect(
       cardFrom("ACME GPU X16|30.0.1|17179869184|4293918720"),
@@ -181,7 +167,7 @@ describe("the graphics adapters in this computer", () => {
   });
 
   /* At the cap it means "four gigabytes or more" and nothing else, which is not a figure to put
-	   on a screen. */
+     on a screen. */
   it("does not believe that fallback at the cap", () => {
     expect(cardFrom("A big card|1.0||4293918720")?.vram_bytes).toBeNull();
   });

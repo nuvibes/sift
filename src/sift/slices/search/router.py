@@ -1,25 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The search endpoints: the dropdown, the parser, saved searches, and one user's history.
-
-**Results are not here, and that is deliberate.** A search is a filtered view of the library, not a
-different collection, so it is answered by the same address the grid is: one page shape, one
-total, one set of query parameters, and no way for two endpoints to come to different conclusions
-about who may see what. The box builds those parameters; the grid answers them.
-
-Three rules run through everything below, and each is here because search is the one screen that
-lets somebody guess.
-
-**Nothing is logged.** No route in this module writes the query anywhere but the asking user's
-own history. A structured log line saying how many terms a search had is still a record of when
-somebody searched and how hard, and there is no operator problem it solves that is worth it.
-
-**Every answer is scoped, including the ones that are not results.** The dropdown comes from the
-same access layer the grid reads, so a restricted asset is absent from both. A suggester that
-offered a hidden person's name would have answered the question before the search ran.
-
-**History belongs to the user, not to the instance.** It is written for the person who searched,
-read back only to them, and emptied by them. An admin has no route to anybody else's.
-"""
+"""The search endpoints: the dropdown, the parser, saved searches, and one user's history."""
 
 from __future__ import annotations
 
@@ -86,14 +66,7 @@ def _service(request: Request) -> SearchService:
 
 
 def _offered(row: Suggestion, *, field: str | None, art: str) -> SuggestionOut:
-    """One suggestion as the wire spells it: the dropdown's rows and the band's, written once.
-
-    Four routes' worth of rows spelled out four times would be a field added to one and forgotten by
-    three: a chip drawn from a row that cannot name its own cover. The cover's fields are copied
-    off the scoped row the suggester already read (`Suggestion.cover`); `art` is the user's token,
-    the same `face_version` every entity wall stamps its rows with, and it is sent only beside a
-    cover, since a folder or a file row has no cover address for it to name.
-    """
+    """One suggestion as the wire spells it, written once for every route that sends rows."""
     cover = row.cover
     return SuggestionOut(
         field=field,
@@ -119,32 +92,8 @@ async def suggest(
     field: Annotated[str, Query(max_length=40)] = "",
     prefix: Annotated[str, Query(max_length=200)] = "",
 ) -> Suggestions:
-    """What to show under the box, given everything typed into it so far.
-
-    ## The `field` and `prefix` form, which is not for the search box
-
-    A record form has boxes that name a THING the library already knows about (a site's other
-    names, the network it belongs to, a person's other names), and they complete from the same
-    lists this answers with, because a second list of what is in the library is a second answer to
-    one question.
-
-    They cannot use `q`. Composing `sites:Northlight Raw` means knowing where a value has to be
-    quoted, and that is the grammar: the one thing the client is not allowed a second copy of.
-    So the field and the prefix arrive apart and are never parsed. A field this version does not
-    know is an empty list rather than an error: an older client asking about a vocabulary that has
-    gone gets no completions and still works.
-
-    The whole line is sent rather than a token and a prefix worked out by the browser, so that the
-    one parser decides where the caret is: a second implementation of "which token am I in" in
-    the client would be a second grammar, and it would disagree about quoting first.
-
-    Three things it can be showing, in order of how specific the answer is:
-
-      - the caret is inside a token (`people:ja`): the matches for that one field;
-      - the caret is on a bare word (`ja`): the matches for it from across the catalog, each
-        carrying the field it would complete to, so a word alone becomes the right token;
-      - neither: this user's recent searches, narrowed to what has been typed.
-    """
+    """What to show under the box for the whole line typed so far, parsed here, never in a client.
+    `field` and `prefix` instead complete a record form's box for one field, unparsed."""
     art = face_version(viewer.cache_stamp)
     if field:
         named = next((one for one in SUGGESTED_FIELDS if one.value == field), None)
@@ -157,8 +106,7 @@ async def suggest(
 
     caret = token_prefix(q)
     if caret is not None:
-        # Inside a token: that field only, and said even with no matches (`rating:`), since the
-        # token is what the box needs to draw the filter as a chip.
+        # Inside a token: that field only, said even with no matches so the box can draw the chip.
         matches = (
             await service.suggest(viewer, caret.field, caret.prefix)
             if caret.field in SUGGESTED_FIELDS
@@ -171,22 +119,16 @@ async def suggest(
             matches=[_offered(row, field=caret.field.value, art=art) for row in matches],
         )
 
-    # Not inside a token, so a bare word could be the start of a filter's name, the name of
-    # something in the library, or neither. All three are answered together and the client draws
-    # them as three groups, which is what makes an empty box useful: clicking into one now lists the
-    # filters that exist, and nothing else in the interface ever said the language was there.
+    # A bare word: filters, library names and recents, answered together as three groups.
     word = word_prefix(q)
     prefix = word.prefix if word else ""
-    # With no word being typed, a chosen filter is inserted at the end rather than over anything.
+    # With no word being typed, a chosen filter is inserted at the end.
     at = word.at if word else len(q)
 
-    # Matched ANYWHERE in a name, as people type the part they remember (`solb` for Reya Solberg);
-    # the noise is paid for in order, exactly as the results band beneath orders it.
+    # Matched anywhere in a name, as people type the part they remember.
     across = await service.suggest_across(viewer, prefix, anywhere=True) if word is not None else []
 
-    # The whole trailing run of words FIRST, because names have spaces in them; the last word is
-    # the fallback (`beach sunset` still offers `sunset`). Whichever answered sets `matched_from`,
-    # the span a picked name replaces, apart from `replace_from`, which a picked filter replaces.
+    # The whole trailing run of words first, since names have spaces; the last word is the fallback.
     phrase = phrase_prefix(q)
     matched_at = at
     if phrase is not None:
@@ -223,18 +165,7 @@ async def named_by(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     q: Annotated[str, Query(max_length=1000)] = "",
 ) -> Named:
-    """The things in the library a plain word NAMES, as against the files it appears in.
-
-    Searching `reya` should answer with Reya Solberg as well as with the files whose names match,
-    and this is that half. It is presentation of a query that already existed rather than a new
-    one: the same scoped suggesters the dropdown reads, asked to match anywhere instead of only at
-    the start, because a band answers "what is called this" and a dropdown completes a word.
-
-    Nothing here is a second read of the library. A name offered by a list that a search would not
-    return is a leak (the answer to "is there somebody called that" would have been the band
-    rather than the results), so a restricted person is absent from this exactly as they are
-    absent from the dropdown.
-    """
+    """The things in the library a plain word names, through the dropdown's scoped suggesters."""
     found = await service.suggest_across(viewer, q, limit=MAX_BAND, anywhere=True)
     art = face_version(viewer.cache_stamp)
     return Named(
@@ -245,8 +176,7 @@ async def named_by(
     )
 
 
-#: The kinds a screen keeps by id and names through `/search/names-now`, in the screens' own words
-#: (the picker's and the swap drawer's), each to the filter field that resolves it.
+#: The kinds a screen keeps by id, in the screens' own words, each to the field that resolves it.
 _NAMED_KINDS: dict[str, Field] = {
     "tag": Field.TAGS,
     "person": Field.PEOPLE,
@@ -256,8 +186,7 @@ _NAMED_KINDS: dict[str, Field] = {
     "song": Field.SONGS,
 }
 
-#: The most ids one ask names. A picker remembers at most fifty of a kind and the swap drawer
-#: holds fewer; this is the ceiling that keeps one request from being a walk of the library.
+#: A ceiling so one request is never a walk of the library.
 _MOST_NAMED = 100
 
 
@@ -268,12 +197,7 @@ async def names_now(
     kind: Annotated[str, Query(max_length=20)],
     ids: Annotated[list[str], Query(alias="id")],
 ) -> NamesNow:
-    """What each of these ids of one kind is called now, for a screen that keeps things by id.
-
-    A kept id is the thing whatever it is called later, and a kept NAME is a copy that goes stale
-    at the first rename: this is how a screen that keeps ids draws today's names. An id this viewer
-    may not be shown is answered exactly as one that names nothing, by its absence.
-    """
+    """What each of these ids of one kind is called now; an unseen id is simply absent."""
     field_name = _NAMED_KINDS.get(kind)
     if field_name is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Unknown kind {kind!r}.")
@@ -291,16 +215,7 @@ async def parse_query(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     q: Annotated[str, Query(max_length=1000)] = "",
 ) -> ParsedQuery:
-    """What a typed query means, so the Filters modal can show what is already in force.
-
-    Pure: it reads no rows and takes no viewer beyond requiring one, because the answer is a
-    property of the text rather than of the library. It is a route only so that the client does not
-    have to parse, which is the one thing the client must never do, since a second parser
-    disagrees with this one and there is then nothing to say which is right.
-
-    Authenticated, like everything else here. It discloses nothing about the library, but an
-    endpoint that will parse arbitrary text for anybody is still not something to leave open.
-    """
+    """What a typed query means, so the Filters modal can show what is in force without a parser."""
     parsed = parse({"q": q})
     terms: dict[str, list[str]] = {}
     for leaf in parsed.leaves():
@@ -329,12 +244,7 @@ async def parse_query(
 
 
 def _remembered(row: Remembered) -> RecentOut:
-    """One row of the memory, on the wire.
-
-    THE DROPDOWN IS THE ONLY PLACE THIS LIST IS SHOWN, and that is a decision rather than a gap.
-    There is no read route of its own: recent searches are answered by `suggest`, filtered by
-    whatever is in the box, which is the only moment anybody wants them.
-    """
+    """One row of the memory, on the wire; it is only ever shown through `suggest`."""
     return RecentOut(kind=row.kind, subject=row.subject, label=row.label)
 
 
@@ -346,31 +256,13 @@ async def remember_search(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     _: Annotated[None, Depends(csrf_protect)] = None,
 ) -> Response:
-    """Note that this user did this: ran a search, or picked something out of the dropdown.
-
-    A submission rather than a page view, and that is the whole reason it is a route of its own.
-    The read behind it answers every screen made of tiles, so recording there would fill the list
-    with an entry for opening the library, and a history of blanks is one nobody looks at twice.
-
-    Both kinds through one address, because the memory is one list and the dropdown draws it as
-    one. An entry need not be typeable to be re-run: a picked person is re-run by going back to
-    them, which is what picking them did.
-
-    An unknown kind is refused rather than stored. The client is what turns a kind into somewhere
-    to go, so a kind nothing recognises is a row that can never be drawn, taking a place in a
-    fifty-row memory from something that works.
-
-    Written for the user who asked, read back only to them, and emptied by them. It is a
-    feature; nothing about a query reaches the structured log.
-    """
+    """Note that this user ran a search or picked something out of the dropdown."""
     if not is_rememberable(body.kind):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="That is not a kind of thing the box remembers.",
         )
-    # The window and device it came from, and whether the person's history is kept at all: the
-    # record of the search is theirs to pause (`kernel/use_history.py`); the box's Recent list is not
-    # the record and goes on working.
+    # The client it came from, and whether the person's search record is paused.
     client = client_of(request)
     keep_record = await keeps_history(part_of(request, SETTINGS_HUB), viewer.id)
     if body.kind == QUERY_KIND:
@@ -398,14 +290,7 @@ async def search_opened(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     _: Annotated[None, Depends(csrf_protect)] = None,
 ) -> Response:
-    """Note that this user opened a file from the wall a typed search narrowed.
-
-    The other click a search leads to. A pick out of the dropdown is written down on its own, and
-    without this "which of the results did I open" would have no answer for a search somebody
-    typed and entered, which is most of them. Written for the user who asked, about a file they
-    may open, and never while their history is paused. Answers nothing either way: a note about
-    what somebody did is not worth a refusal on their screen.
-    """
+    """Note that this user opened a file from the wall a typed search narrowed."""
     await service.opened(
         viewer,
         body.query,
@@ -423,11 +308,7 @@ async def clear_history(
     _: Annotated[None, Depends(csrf_protect)] = None,
     q: Annotated[str | None, Query(max_length=1000)] = None,
 ) -> Response:
-    """Forget the lot, or forget one entry, and the record of it with it.
-
-    A guest may clear their own history and only their own, so this is not admin-gated: it is
-    scoped, which is stronger: there is no id in the request that could name another user's row.
-    """
+    """Forget the lot, or one entry, and its record; scoped, so only the caller's own."""
     await service.forget(viewer, q)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -437,8 +318,7 @@ async def saved_searches(
     service: Annotated[SearchService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> SavedSearches:
-    """This user's saved searches, newest first, under the names things have today. There is no
-    route to anybody else's."""
+    """This user's saved searches, newest first, under the names things have today."""
     saved = await service.kept_filters(viewer)
     return SavedSearches(
         items=[
@@ -464,12 +344,8 @@ async def save_search(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     _: Annotated[None, Depends(csrf_protect)] = None,
 ) -> Response:
-    """Keep a query under a name. Saving under a name already used replaces its query, so this is
-    both 'save' and 'update'. Not admin-gated: a guest saves their own searches and only their own,
-    which is scoped rather than merely permitted: nothing in the request names another user."""
-    # A wall that exists, for the reason the memory refuses a kind nothing draws: a kept filter is
-    # offered back only on the wall its kind names, so a word no wall answers to is a filter stored
-    # against somebody's cap and shown to them nowhere.
+    """Keep a query under a name; saving under a used name replaces its query."""
+    # Only a wall that exists: a filter is offered back only on its own wall.
     if not is_a_wall(body.kind):
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -478,12 +354,10 @@ async def save_search(
     try:
         await service.save_search(viewer, body.name, body.query, body.kind)
     except TooMany as full:
-        # 409 rather than 422: nothing about the request is wrong, and sending it again with a
-        # different name will not help. The user's own state is what refuses it.
+        # 409: the user's own state refuses it, not the request.
         raise HTTPException(status.HTTP_409_CONFLICT, str(full)) from full
     except ValueError as exc:
-        # A name that is whitespace only passes the length check on the raw string and trims to
-        # nothing in the service. That is a bad request, not a server fault.
+        # A whitespace-only name trims to nothing in the service: a bad request, not a fault.
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -496,18 +370,11 @@ async def rename_saved_search(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     _: Annotated[None, Depends(csrf_protect)] = None,
 ) -> Response:
-    """Change a saved search's name, keeping the query it points at.
-
-    The half that saving cannot do: saving under a name already used replaces that name's query,
-    so the query can be edited by saving, and this is how a search is called something else.
-    Scoped to the asker, exactly as delete is: an id belonging to another user names no row, and
-    comes back as a plain not-found rather than as a refusal that would confirm the row exists.
-    """
+    """Change a saved search's name, keeping the query it points at."""
     try:
         renamed = await service.rename_saved_search(viewer, saved_id, body.name)
     except NameTaken as taken:
-        # An ordinary collision, not a fault: this user already keeps a search under that name,
-        # and merging two would lose one of them. The sentence is what somebody acts on.
+        # This user already keeps a search under that name; merging would lose one.
         raise HTTPException(
             status.HTTP_409_CONFLICT, f'You already have a saved search called "{taken}".'
         ) from taken
@@ -525,7 +392,6 @@ async def delete_saved_search(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     _: Annotated[None, Depends(csrf_protect)] = None,
 ) -> Response:
-    """Drop one saved search. Scoped to the asker: an id belonging to another user names no row
-    this touches, so a guessed id is a no-op rather than a way to delete somebody else's."""
+    """Drop one saved search of the caller's; another user's id touches nothing."""
     await service.delete_saved_search(viewer, saved_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

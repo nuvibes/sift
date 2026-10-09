@@ -538,6 +538,11 @@ def _file_scalar(term: Term) -> Constraint | None:
         if term.value.strip().lower() in _NO_AUDIO:
             return Not(Where("has_audio"))
         return Where("acodec", (_codec(term.value),))
+    return _named_or_measured(term)
+
+
+def _named_or_measured(term: Term) -> Constraint | None:
+    """What a file is called, and how big it is."""
     if term.field is Field.TITLE:
         return Where("title", (like_anywhere(term.value.strip()),))
     if term.field is Field.MUSIC:
@@ -597,6 +602,11 @@ def _person_scalar(term: Term) -> Constraint | None:
     if term.field is Field.NETWORK:
         # One site id, through the leaf `sites:` ALREADY uses, not a leaf of its own.
         return Where("sites", (term.value.strip(),))
+    return _by_id(term)
+
+
+def _by_id(term: Term) -> Constraint | None:
+    """The fields that take one id: the same music, an unnamed face, a file like another."""
     if term.field is Field.SAME_MUSIC:
         # The access layer decides the id's place in the predicate and refuses a value that is
         # not shaped like an ID with a `ConstraintError`. Turned into this module's own

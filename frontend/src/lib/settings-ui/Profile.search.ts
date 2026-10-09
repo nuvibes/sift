@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* What somebody can find on their own profile. None of these is a preference: one renames the
- * account and the other two set a credential, so none of them is in the registry.
- *
- * The PIN entry is here because the form is: Privacy has no search file of its own, so without it
- * somebody typing "PIN" would get the vault's preference rows and never the place a PIN is set.
- */
+ * account and the other two set a credential, so none of them is in the registry. */
 import type { Searchable } from './search';
 
 /** The three blocks of the pane, by the words on their headings and in a search result alike. */

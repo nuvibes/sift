@@ -1,20 +1,5 @@
 <script lang="ts">
-	/*
-	 * Saying which computer the library is on. The desktop client's first screen in client mode.
-	 *
-	 * It is the one screen in Sift with NO SERVER BEHIND IT. Nothing here calls the API, because
-	 * there is nothing to call until an address has been typed, which is why the layout leaves
-	 * this route alone rather than loading a session for it.
-	 *
-	 * A real route in this application rather than a page inside the shell, and that is deliberate:
-	 * a hand-written window in the shell would be a second set of buttons, fields and colours drawn
-	 * from nothing, and the first release that changed a token would leave it behind. Here it is the
-	 * same `DoorCard` the sign-in screen uses, the same `Field`, the same `Button`.
-	 *
-	 * In a browser it draws a plain explanation instead. Somebody who lands on /connect over the web
-	 * cannot save anything (there is no shell to save it to), and a form that silently does
-	 * nothing is worse than a sentence saying where the setting lives.
-	 */
+	/* Saying which computer the library is on. The desktop client's first screen in client mode. */
 	import { onMount } from 'svelte';
 
 	import { bridge } from '$lib/bridge';
@@ -35,9 +20,7 @@
 	let busy = $state(false);
 
 	const inTheApp = bridge.canSaveServer();
-	/* Whether there is a question BEFORE this one to go back to, which is the mode question. It is a
-	 * separate capability from saving an address: a shell that can do one has always been able to do
-	 * the other, but asking the right one is what keeps the button honest if that ever changes. */
+	/* Whether there is a question BEFORE this one to go back to, which is the mode question. */
 	const canGoBack = bridge.canSetUp();
 
 	/* Every address the shell has been told, for the case this screen is up because the one it
@@ -46,10 +29,7 @@
 	let servers = $state<SavedServer[]>([]);
 
 	/* Whatever was tried last, so a second attempt starts from the address rather than from
-	 * blank. Somebody who mistyped a port should be correcting four characters, not typing it all
-	 * again. And WHY it is being asked again, in the shell's words, when the shell sent the
-	 * window here because the saved address did not answer.
-	 */
+	 * blank. */
 	onMount(() => {
 		void (async () => {
 			const state = await shell.connectState();
@@ -131,8 +111,7 @@
 		</Button>
 
 		{#if servers.length > 0}
-			<!-- The addresses this computer has been pointed at. One press puts one in the box; the
-			     other takes it off the list, which is the whole way back from a server that has gone. -->
+			<!-- The addresses this computer has been pointed at. -->
 			<ul class="saved" aria-label="Saved addresses">
 				{#each servers as one (one.origin)}
 					<li>

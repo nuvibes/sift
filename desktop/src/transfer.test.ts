@@ -1,10 +1,4 @@
-/* The transfer itself: the file it writes, and the two markers a drag depends on.
- *
- * The behaviour worth pinning down is not "does it download" but the things that would each be a
- * real fault and would each look like nothing at all: a half-arrived file left where the next
- * drag hands it over as complete, and a dead transfer that says nothing, so the receiver waits
- * out its whole patience and then writes out whatever turned up.
- */
+/* The transfer itself: the file it writes, and the two markers a drag depends on. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -45,9 +39,7 @@ function answering(...answers: (Response | Error)[]): Fetch & { asked: string[] 
 /* --- the two markers, which are the whole contract with the drag ------------------------------ */
 
 /* A streamed drag hands the receiving application a stream over this very file while it is still
- * being written. That reader is in another process and cannot be told anything directly, so it
- * follows the file, and a reader that has caught up cannot tell "no more yet" from "no more at
- * all" by looking. These two files are how it is told. */
+ * being written. */
 
 describe('the markers', () => {
 	it('marks the file done, before it renames it into place', async () => {
@@ -110,7 +102,7 @@ describe('the transfer', () => {
 	});
 
 	/* The window's own credential travels with the request, because the process making it is not
-	   the one that is signed in. Without this every client-mode drag is a refusal. */
+	   the one that is signed in. */
 	it('sends the headers it was given', async () => {
 		const seen: Record<string, string>[] = [];
 		const fetchImpl: Fetch = async (_url, init) => {
@@ -135,8 +127,7 @@ describe('the transfer', () => {
 		expect(fetchImpl.asked).toHaveLength(1);
 	});
 
-	/* A fetch that dies half way must leave NOTHING a cache check would accept. Otherwise the next
-	 * drag hands the receiving application a truncated video and nothing anywhere says a word. */
+	/* A fetch that dies half way must leave NOTHING a cache check would accept. */
 	it('leaves nothing behind when the transfer fails', async () => {
 		const dies = {
 			ok: true,
@@ -156,11 +147,7 @@ describe('the transfer', () => {
 		expect(fs.readFileSync(retried as string, 'utf8')).toBe('whole');
 	});
 
-	/* NOTHING, and not only at the moment it gives up. The write stream asks for its file when it is
-	 * made, and that open may still be on its way when the fetch dies: left to land afterwards it
-	 * creates the partial file again, empty, after the cleanup has run, and under a retry it empties
-	 * the file the retry has just written, which is then renamed into place as a finished file of
-	 * no bytes. So giving up waits for the stream to close before it clears up. */
+	/* NOTHING, and not only at the moment it gives up. */
 	it('leaves nothing behind a moment after the transfer fails either', async () => {
 		const dies = {
 			ok: true,

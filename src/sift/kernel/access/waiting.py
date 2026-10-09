@@ -1,38 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The files waiting for a slice's work, as rows of the slice's own table, kept true by the database.
-
-A slice that does something to every file of some description (fingerprint every file with a
-sound track, say) wants the number still to do, per user and hiding what the vault hides.
-The visibility component counts per user whatever a slice registers (`register_counted`), but
-only over ROWS: a count of "files matching a rule" is a whole-library read on every draw. So the
-slice keeps one row per waiting file in a table of its own, and the count is kept over that.
-
-What decides whether a file is waiting reads `assets`, and a slice never writes SQL against the
-asset table: that is the access rule, and it has no exceptions for a statement that only reads a
-column. So the slice DECLARES the question here and the kernel writes every statement that names
-the file's row: the fill, the triggers that keep the table true wherever the question's inputs
-move, the comparison with the rule, and the boot check that puts the triggers back when a rebuild
-of either table has taken them away.
-
-The declaration is data, not SQL: the slice's waiting table, the slice's table whose row for a
-file means the work is done, and the columns of the file's row that must hold a value. Every name
-is checked to be a plain identifier, and every statement is composed in this module from those
-names and its own constant templates, the way the visibility component composes its triggers. No
-statement is built from anything read at run time.
-
-A file is waiting when every named column of its row holds a value, it has a copy that is there to
-read (`kernel.content.presence`), and the done-table has no row for it. The triggers apply that rule
-wherever its inputs move: a named column changing on a file, a file arriving already filled in, a
-copy arriving, going missing, coming back or leaving, a done row arriving by any path, one going,
-and one moving to another file. A file leaving the library takes its waiting row by the slice
-table's own cascade (its `asset_id` references the file), so nothing here watches a delete of a
-file.
-
-THE COPY IS PART OF THE RULE. A file whose every copy is marked missing is work no pass can do
-(the Build hands it nothing), so counting it would have a card say thousands of files to fingerprint
-while the run it starts hands out hundreds. The rule is the one the Build's page and count read,
-spliced from the same fragment.
-"""
+"""The files waiting for a slice's work, as rows of the slice's own table, kept true by triggers
+this module writes from a declaration."""
 
 from __future__ import annotations
 
@@ -53,14 +21,8 @@ _IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*")
 
 @dataclass(frozen=True)
 class Waiting:
-    """One slice's question: which files still want its work.
-
-    `table` is the slice's table of waiting files. It has one column, `asset_id`, the primary key,
-    referencing `assets(id)` with `ON DELETE CASCADE`; the slice creates it. `done` is the slice's
-    table whose row for a file (its `asset_id` column) means the work is done: an answer, empty or
-    not. `filled` is the columns of the file's row that must each hold a value before the file is
-    waiting at all: the probe having read it, say, and found a sound track.
-    """
+    """One slice's question: which files still want its work (`table`), answered by a row in `done`,
+    once every `filled` column holds a value."""
 
     table: str
     done: str
@@ -76,37 +38,31 @@ class Waiting:
             raise ValueError(f"the waiting table {self.table!r} names a column twice")
 
 
-# --- the templates ----------------------------------------------------------------------------
-#
-# Every statement below is one of these, filled by `splice` with names the declaration checked and
-# fragments this module composed. `{{FILE}}` is a trigger's own row reference or a table alias.
+# --- the templates, filled by `splice` with checked names; `{{FILE}}` is a trigger's row or an
+# alias.
 
-#: The rule, over the file `a`: every named column holds a value, a copy is there to read, and no
-#: done row exists.
+#: The rule over file `a`: every named column holds a value, a copy is there to read, no done row.
 _RULE = (
     "{{FILLED}} AND {{PRESENT}} AND NOT EXISTS (SELECT 1 FROM {{DONE}} d WHERE d.asset_id = a.id)"
 )
 
-#: The file named by `{{FILE}}` into the table when the rule holds and it is not there yet.
 _ENTER = (
     "INSERT INTO {{WAITING}} (asset_id) SELECT a.id FROM assets a"
     " WHERE a.id = {{FILE}} AND {{RULE}}"
     " AND NOT EXISTS (SELECT 1 FROM {{WAITING}} w WHERE w.asset_id = a.id)"
 )
 
-#: And out of it when the rule no longer holds.
 _LEAVE = (
     "DELETE FROM {{WAITING}} WHERE asset_id = {{FILE}}"
     " AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = {{FILE}} AND {{RULE}})"
 )
 
-#: One trigger, AFTER the change so the rule reads the row as it now is.
+#: AFTER the change, so the rule reads the row as it now is.
 _TRIGGER = (
     "CREATE TRIGGER IF NOT EXISTS {{NAME}} AFTER {{EVENT}} ON {{ON}}{{WHEN}} BEGIN {{BODY}}; END"
 )
 
-#: Every file the rule holds for and the table lacks, and every row the table has that the rule
-#: does not hold for: the repair's two halves, and what a test compares the table with.
+#: The repair's two halves, and what a test compares the table with.
 _MISSING = (
     "SELECT a.id AS asset_id FROM assets a WHERE {{RULE}}"
     " AND NOT EXISTS (SELECT 1 FROM {{WAITING}} w WHERE w.asset_id = a.id)"
@@ -119,14 +75,13 @@ _FILL_MISSING = "INSERT INTO {{WAITING}} (asset_id) {{MISSING}}"
 _DROP_EXTRA = "DELETE FROM {{WAITING}} WHERE asset_id IN ({{EXTRA}})"
 _DROP_TRIGGER = "DROP TRIGGER IF EXISTS {{NAME}}"
 
-#: The triggers one waiting table keeps, by the prefix every one of their names starts with. The
-#: prefix is a parameter, so this statement is a constant.
+#: The triggers one waiting table keeps, by name prefix.
 _TRIGGERS_PRESENT = (
     "SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND substr(name, 1, ?) = ?"
 )
 
 
-# --- composing them ---------------------------------------------------------------------------
+# --- composing them
 
 
 def _filled_on(row: str, columns: tuple[str, ...]) -> str:
@@ -177,8 +132,7 @@ def _statements(spec: Waiting) -> _Statements:
 
     stem = spec.table + "_"
     triggers = {
-        # A file's named columns written again: the rule may have started or stopped holding. Only
-        # when one of them really moved, so a re-read that found the same thing writes nothing.
+        # Only when a named column really moved.
         stem + "file_changed": _trigger(
             stem + "file_changed",
             "UPDATE OF " + ", ".join(spec.filled),
@@ -186,8 +140,7 @@ def _statements(spec: Waiting) -> _Statements:
             (leave("NEW.id"), enter("NEW.id")),
             when=_moved(spec.filled),
         ),
-        # A file arriving already filled in (a restore, or anything that writes a whole row at
-        # once). Here so that the next writer to take that path is counted without knowing to be.
+        # A file arriving already filled in, such as a restore.
         stem + "file_arrived": _trigger(
             stem + "file_arrived",
             "INSERT",
@@ -195,13 +148,10 @@ def _statements(spec: Waiting) -> _Statements:
             (enter("NEW.id"),),
             when=_filled_on("NEW", spec.filled),
         ),
-        # A copy arriving: the file may have its first copy that is there to read.
         stem + "copy_arrived": _trigger(
             stem + "copy_arrived", "INSERT", "asset_locations", (enter("NEW.asset_id"),)
         ),
-        # A copy marked missing or present again, or moved to another file: both files are decided
-        # again. Only when the status or the file really moved: a scan re-stamps `last_seen_at`
-        # on every present copy it walks, and that must fire nothing.
+        # Only when the status or the file moved: a scan re-stamps `last_seen_at` on every copy.
         stem + "copy_changed": _trigger(
             stem + "copy_changed",
             "UPDATE OF status, asset_id",
@@ -214,22 +164,17 @@ def _statements(spec: Waiting) -> _Statements:
             ),
             when="NEW.status IS NOT OLD.status OR NEW.asset_id IS NOT OLD.asset_id",
         ),
-        # A copy forgotten: the file's last copy may have been the one there to read.
         stem + "copy_gone": _trigger(
             stem + "copy_gone", "DELETE", "asset_locations", (leave("OLD.asset_id"),)
         ),
-        # A done row arriving, by whichever path: the file is answered for.
         stem + "done": _trigger(
             stem + "done",
             "INSERT",
             spec.done,
             (splice("DELETE FROM {{WAITING}} WHERE asset_id = NEW.asset_id", WAITING=spec.table),),
         ),
-        # One going: the file is waiting again if the rule holds. When the FILE is what went, the
-        # cascade that took this row finds no file and puts nothing back.
+        # When the file itself went, the cascade finds no file and puts nothing back.
         stem + "undone": _trigger(stem + "undone", "DELETE", spec.done, (enter("OLD.asset_id"),)),
-        # A done row moved to another file: both files are decided again, so a writer that starts
-        # doing it cannot leave the table behind.
         stem + "done_moved": _trigger(
             stem + "done_moved",
             "UPDATE OF asset_id",
@@ -255,7 +200,7 @@ def triggers(spec: Waiting) -> dict[str, str]:
     return dict(_statements(spec).triggers)
 
 
-# --- running them -------------------------------------------------------------------------------
+# --- running them
 
 
 async def _make_triggers(connection: Connection, spec: Waiting) -> None:
@@ -264,19 +209,13 @@ async def _make_triggers(connection: Connection, spec: Waiting) -> None:
 
 
 async def start(connection: Connection, spec: Waiting) -> None:
-    """The step that brings a waiting table in: its triggers, and its rows filled from the rule.
-
-    Called from the slice's own schema step, straight after it creates the table, so the fill
-    lands before the visibility component comes up and is counted by its rebuild once rather than
-    row by row through its triggers.
-    """
+    """Bring a waiting table in: its triggers, and its rows filled before visibility comes up."""
     await _make_triggers(connection, spec)
     await connection.execute(_statements(spec).fill_missing)
 
 
 async def differences(connection: Connection, spec: Waiting) -> list[tuple[str, str]]:
-    """Every file the table disagrees with the rule about: ('missing', id) or ('extra', id).
-    Empty is the only acceptable answer. A whole-library read, so a check and not a request."""
+    """Every file the table disagrees with the rule about: ('missing', id) or ('extra', id)."""
     built = _statements(spec)
     missing = await connection.execute_fetchall(built.missing)
     extra = await connection.execute_fetchall(built.extra)
@@ -284,23 +223,13 @@ async def differences(connection: Connection, spec: Waiting) -> list[tuple[str, 
 
 
 def _normal(ddl: str) -> str:
-    """A trigger's text with the IF NOT EXISTS the engine drops taken out, and the spacing
-    folded, so what this build writes and what the database kept compare equal when they are."""
+    """A trigger's text without the IF NOT EXISTS the engine drops, spacing folded."""
     return " ".join(ddl.replace("IF NOT EXISTS ", "").split())
 
 
 async def keep_true(connection: Connection, spec: Waiting) -> None:
-    """Every boot: the triggers say what this build says, or they are made again and the rows are
-    repaired from the rule.
-
-    A migration in another component that rebuilds `assets` takes the triggers on it with it,
-    silently, and the table then drifts with nothing failing. Cheap when nothing is wrong (one
-    read of the schema), and the repair moves only the rows that disagree, so any count kept over
-    the table moves by the same triggers any other change moves it by.
-
-    A trigger under this table's prefix that this build does not write is reported and left: this
-    module drops only names it composed, never one it read from the database.
-    """
+    """Every boot: the triggers match this build, or they are made again and the rows repaired. An
+    unknown trigger is reported, never dropped."""
     built = _statements(spec)
     rows = await connection.execute_fetchall(_TRIGGERS_PRESENT, (len(built.prefix), built.prefix))
     present = {str(row[0]): _normal(str(row[1])) for row in rows}
@@ -328,11 +257,7 @@ def registered() -> tuple[Waiting, ...]:
 
 
 def register_waiting(spec: Waiting) -> None:
-    """A slice declares a table of files waiting for its work, at import.
-
-    The slice creates the table and calls `start` from its own schema step; this registers the
-    boot check that keeps the table's triggers and rows true from then on.
-    """
+    """A slice declares a table of files waiting for its work, at import."""
     if spec.table in _registered:
         raise ValueError(f"a waiting table named {spec.table!r} is already declared")
     _registered[spec.table] = spec

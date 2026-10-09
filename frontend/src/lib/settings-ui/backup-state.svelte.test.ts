@@ -3,16 +3,8 @@ import { setCsrfToken } from '$lib/api/client';
 import { Backup, copyAddress, type ScheduleView } from './backup-state.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 
-/* Backup, as the settings screen sees it.
- *
- * The behaviour worth testing here is what the screen says when it does not know something. A
- * schedule it failed to read looks exactly like a schedule that is off, and telling somebody
- * automatic backups are off when the truth is that nobody could ask is the reassuring reading of
- * silence, which is the wrong one for a screen about not losing things.
- *
- * The other half is that restoring never happens by itself. It replaces the library's records and
- * cannot be undone from this screen, so nothing here calls it except the confirm.
- */
+/* Backup, as the settings screen sees it. The behaviour worth testing here is what the screen
+ * says when it does not know something. */
 
 const fetchMock = vi.fn();
 const clickMock = vi.fn();
@@ -83,8 +75,8 @@ describe('reading the schedule', () => {
 	});
 
 	it('does not claim backups are off when it could not ask', async () => {
-		/* The one that matters. `loaded` staying false is what lets the screen say "Sift could not
-		   read your backup settings" rather than drawing a form that says Never. */
+		/* The one that matters. `loaded` staying false is what lets the screen say "Sift could
+		   not read your backup settings" rather than drawing a form that says Never. */
 		answers({ ok: false, status: 500 });
 		const view = new Backup();
 
@@ -168,8 +160,8 @@ describe('saving a backup now', () => {
 
 describe('saving the schedule', () => {
 	it('reports back what the server stored rather than what was typed', async () => {
-		/* The server is what decides: it may refuse a folder, and the screen has to show the state
-		   that really took rather than the one somebody was in the middle of. */
+		/* The server is what decides: it may refuse a folder, and the screen has to show the
+		   state that really took rather than the one somebody was in the middle of. */
 		answers({ ok: true, body: { ...SCHEDULE, keep: 3, keep_days: 7 } });
 		const view = new Backup();
 		view.keep = 99;

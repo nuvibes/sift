@@ -25,14 +25,13 @@ from sift.kernel.jobs.families import PRODUCT_FAMILIES, PRODUCT_TYPES, Family
 from sift.kernel.jobs.switchboard import Switchboard
 from sift.kernel.jobs.worker_pool import WorkerPool, registered_families
 from sift.main import create_app
-from sift.slices.media_jobs.presses import Presses
-from sift.slices.media_jobs.router import (
-    FamilyOfWork,
-    KindOfWork,
+from sift.slices.media_jobs.activity_families import (
     _families,
     not_before_the_read,
     pictured_in_the_read,
 )
+from sift.slices.media_jobs.presses import Presses
+from sift.slices.media_jobs.router import FamilyOfWork, KindOfWork
 from sift.testing.auth import establish_session
 from sift.testing.library import seed_asset, seed_root, write_rows
 

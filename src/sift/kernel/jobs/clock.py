@@ -1,36 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Where a timed task's next run is placed: one scheduler, for every task that runs on a clock.
+"""The one scheduler placing each timed task's next run, from its declaration and its When.
 
-A timed task (the backup, the two clean-ups, the update check) is a row in the queue with a
-time on it. Three writers of that row (boot, the end of its own run, the route that saves its
-schedule), each with its own idea of the moment, would leave a backup changed from daily to weekly
-pending at its old time, and one switched off queued to wake up and log "off".
-
-So the moment is decided HERE and nowhere else, from the task's declaration and its When:
-
-* **After a run settles** (`settled`) the next is placed from when the last run THE SCHEDULE
-  STARTED ended, unless something is already waiting: a run the task put back itself, a retry.
-* **When its settings or quiet hours change** (`reschedule`) the waiting row is taken back and the
-  next is placed again, so the new answer is the one that runs, and "Only when I press it" leaves
-  nothing waiting at all.
-* **At boot** (`ensure_all`) every timed task is checked the same way `settled` checks it.
-
-A press is never touched: a Run now waiting in the queue is somebody's decision, not the schedule's.
-
-AND A PRESS NEVER MOVES THE SCHEDULE. "Every day at 3 PM" means 3 PM whatever was pressed in
-between, so every placement (a settle, a setting change, a boot) counts from the last run the
-schedule itself started: a head row nobody pressed (`requested_by` and `timing` both empty).
-Counted from a press, a backup pressed at four in the morning would put that afternoon's off to the
-next day, and a setting changed and put back would move it again. The one place a press counts is
-a run already due: a schedule that is behind (the device off at its time) or has never run catches
-up immediately, and a press that began after the run fell due IS that catch-up, so the schedule goes on
-from it rather than running a second one straight after.
-
-The scheduler holds no timer. The row with its `run_after` is still what is going to happen, and a
-device that was off comes back to a row whose moment has passed and runs it. Quiet hours hold it
-until the range opens if that is its When, which is what the claim already does for any work held
-to them.
-"""
+A press never moves the schedule: placements count from the last run the schedule started."""
 
 from __future__ import annotations
 
@@ -51,10 +22,10 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: Reads one app setting by key. The settings store's `get_app`, handed in.
+#: Reads one app setting by key.
 ReadSetting = Callable[[str], Awaitable[Any]]
 
-#: Reads quiet hours as the two `HH:MM` strings the person set.
+#: Reads quiet hours as two `HH:MM` strings.
 ReadRange = Callable[[], Awaitable[tuple[str, str]]]
 
 
@@ -74,8 +45,7 @@ class TaskClock:
         self._range = quiet_range
         self._clock = clock
         for task in self.timed():
-            # Always true of a registered task (`register_schedule` refuses one with no job type)
-            # and asked only because the declaration's type allows None.
+            # Always true of a registered task; the type merely allows None.
             if task.job_type is not None:  # pragma: no branch
                 queue.listen_for_settled(task.job_type, self.settled)
 
@@ -89,18 +59,7 @@ class TaskClock:
         return {key: await self._read(key) for key in task.keys_read()}
 
     async def next_run(self, task: ScheduledTask, *, since: int | None = None) -> int | None:
-        """When this task should next run on its own, or None: press-only, or nothing to do.
-
-        `since` is when the last run ended; left out, it is read from the queue's record of the
-        task's runs, and only of the runs its schedule started (the module's docstring says why).
-        A task the schedule has never run falls due immediately (in quiet hours, at the range's next
-        opening; with a time of day, at its next one), which is what somebody switching a daily
-        backup on this afternoon expects: tonight, not tomorrow night.
-
-        A run that is due NOW (behind, or never run, with no time of day to wait for) is the one
-        case a press is read: a press that began after the run fell due is that run, and the
-        next is placed from its end. A run still to come is never moved by a press.
-        """
+        """When this task next runs on its own, or None; a press counts only for a run due now."""
         values = await self.values(task)
         seconds = task.interval(values)
         job_type = task.job_type
@@ -131,8 +90,7 @@ class TaskClock:
         pressed = await self._last_finished(job_type, STARTED_BY_PRESS)
         if pressed is None or pressed.started_at is None or pressed.finished_at is None:
             return moment
-        # When the schedule's run fell due, unclamped: a run falls due at least half a cadence
-        # after the last one ended, so placing it "as of" that end never clamps it.
+        # When the schedule's run fell due, unclamped.
         if own_end is not None and pressed.started_at < placed(own_end, own_end):
             return moment
         return placed(pressed.finished_at, now)
@@ -140,13 +98,7 @@ class TaskClock:
     async def ensure(
         self, task_id: str, *, since: int | None = None, move: bool = False
     ) -> int | None:
-        """Put the next run in the queue if none is waiting. Returns its moment, or None.
-
-        A task that must not run on its own has anything waiting taken back instead, so switching a
-        task to "Only when I press it" by any door cannot leave a last run behind it. With `move`,
-        a run already waiting is moved to the moment worked out now. See `reschedule`; without
-        it, a run already waiting is left where it is (a run the task put back itself, a retry).
-        """
+        """Queue the next run if none waits; press-only withdraws it, `move` retimes the waiting."""
         task = get_schedule(task_id)
         if task is None or task.every is None or task.job_type is None:
             return None
@@ -156,7 +108,7 @@ class TaskClock:
             return None
         waiting = await self._queue.waiting_unpressed(task.job_type)
         if len(waiting) > 1 and move:
-            # Two of one schedule waiting is one too many however it happened; one is placed again.
+            # Two of one schedule waiting is one too many; one is placed again.
             await self._queue.withdraw_waiting(task.job_type)
             waiting = []
         if waiting:
@@ -164,21 +116,14 @@ class TaskClock:
                 await self._queue.retime_waiting(waiting[0].id, moment)
             return moment if move else waiting[0].run_after
         if await self._pending(task.job_type):
-            # A press is waiting, or a run is under way; the next run is placed once it has
-            # settled (`settled`). A run placed beside one already running is a second backup
-            # queued behind the one somebody pressed a moment ago.
+            # A press waits or a run is under way; the next is placed once it settles.
             return moment
         await self._queue.enqueue(task.job_type, dict(task.payload), run_after=moment)
         log.info("tasks.scheduled", task=task.id, run_after=moment)
         return moment
 
     async def reschedule(self, task_id: str) -> int | None:
-        """Place the next run again, from the settings as they are now, moving the one waiting.
-
-        What a schedule change, a When change, a change to quiet hours and every start call. The
-        run that was waiting was placed from the OLD answer; keeping it would run a daily-to-weekly
-        change once more at the daily time, and "Only when I press it" takes it back.
-        """
+        """Place the next run again from the settings now, moving the one waiting."""
         return await self.ensure(task_id, move=True)
 
     async def reschedule_reading(self, keys: set[str]) -> None:
@@ -188,34 +133,21 @@ class TaskClock:
                 await self.reschedule(task.id)
 
     async def reschedule_all(self) -> None:
-        """Reschedule every timed task: quiet hours moved, and every quiet-hours moment with them."""
+        """Reschedule every timed task, as quiet hours moved."""
         for task in self.timed():
             await self.reschedule(task.id)
 
     async def ensure_all(self) -> None:
-        """At boot: every timed task's next run placed from the settings as they are now.
-
-        Moved rather than only topped up, so a run placed by an older version of Sift (or before
-        quiet hours moved while Sift was closed) is at the moment the task's When says.
-        """
+        """At boot: every timed task's next run placed again from the settings now."""
         for task in self.timed():
             try:
                 await self.reschedule(task.id)
             except Exception:
-                # One task's settings failing to read must not leave every other task unscheduled.
+                # One task failing must not leave the others unscheduled.
                 log.exception("tasks.schedule_failed", task=task.id)
 
     async def settled(self, job_id: str) -> None:
-        """A run of a timed task has ended: place the next one from when the schedule's last ended.
-
-        A run the schedule started is that last run, so the next is placed from its end. A press
-        is not: the next is placed from the schedule's own record, as a boot or a setting change
-        places it (`next_run`), so a press settling leaves the schedule where it was.
-
-        A waiting row that was taken back before it ever ran is not a run: somebody cancelled the
-        coming backup, and the next is placed from NOW rather than put straight back where it was,
-        which would be a cancel that cancelled nothing.
-        """
+        """A timed run ended: place the next from the schedule's own record, a cancel from now."""
         job = await self._queue.get(job_id)
         if job is None:
             return
@@ -246,12 +178,7 @@ _INSTALLED: TaskClock | None = None
 
 
 def install(clock: TaskClock | None) -> None:
-    """Make this the scheduler a slice's own route reaches. Called once, by the composition root.
-
-    A slice may not import the one that builds this, and a route that saves a schedule of its own
-    (the backup's) has to be able to say "that moved", so it is installed here, the way the
-    landing step is, and a process that never installed one simply schedules nothing.
-    """
+    """Install the scheduler a slice's own route reaches; called once by the composition root."""
     global _INSTALLED
     _INSTALLED = clock
 

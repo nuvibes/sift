@@ -28,6 +28,7 @@ from sift.kernel.db import Database
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.jobs import (
     JobQueue,
+    registry,
     worker_pool,
 )
 from sift.kernel.media import Accelerator
@@ -468,7 +469,7 @@ async def test_the_shape_stored_on_performance_is_the_shape_each_queued_preview_
     stored = Stored()
     # The handlers this module's fixtures claimed are set aside, so the application's own can be
     # claimed in their place; the registry is put back after the test.
-    monkeypatch.setattr(worker_pool, "_HANDLERS", {})
+    monkeypatch.setattr(registry, "_HANDLERS", {})
     wiring_imports._register_media(
         settings,
         hardware,

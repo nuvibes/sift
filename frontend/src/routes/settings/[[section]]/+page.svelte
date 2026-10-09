@@ -1,22 +1,7 @@
 <script lang="ts">
 	/*
 	 * Settings, opened at its own address.
-	 *
-	 * There is no page form of this either. See the asset route, which does the same thing for
-	 * the same reason. Settings is a panel over whatever you were doing, so one address is one
-	 * screen.
-	 *
-	 * Reaching settings from inside the app never runs this route: it pushes the address and the
-	 * screen underneath stays mounted. This runs only on a direct hit or a refresh, and it puts the
-	 * panel up at the address that is already correct. Closing it goes to the library.
-	 *
 	 * WHY NOT FRAMED: for the asset route's reason, and for a second one that is this route's own.
-	 * Reached at a section that exists it draws nothing (the panel is the layout's), so a frame
-	 * would stand empty behind it. Reached at one that does not, the stub below is already inset by
-	 * the shell's own scrolling region: this route is NOT in `FULL_BLEED_ROUTES`, so `main` pads it
-	 * and scrolls it, and a frame inside that box would be a second scrolling region inside the
-	 * first with the page's inset counted twice. The stub's title stands exactly where a framed
-	 * screen's title stands.
 	 */
 	import { onMount } from 'svelte';
 	import { replaceState } from '$app/navigation';
@@ -46,9 +31,8 @@
 			enterSettings(first);
 			return;
 		}
-		/* The fragment names one setting and `?show=` a tab, and both survive a refresh and a pasted
-		   link the same way the section does. `slice(1)` because `hash` keeps the `#`. An old address
-		   is rewritten to the current one inside `enterSettings`, through the one resolver. */
+		/* The fragment names one setting and `?show=` a tab, and both survive a refresh and a
+		   pasted link the same way the section does. */
 		enterSettings(
 			section,
 			page.url.hash.slice(1) || undefined,
@@ -57,8 +41,7 @@
 	});
 </script>
 
-<!-- A section that does not exist is the one thing drawn here. Opening a panel onto nothing would
-     say less than the address being wrong does. -->
+<!-- A section that does not exist is the one thing drawn here. -->
 {#if !known}
 	<Empty scope="page" icon="settings">That address isn't a settings page.</Empty>
 {/if}

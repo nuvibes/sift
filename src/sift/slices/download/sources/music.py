@@ -1,27 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Reading the track a video is set to off the page it came from.
+"""Reading the track a video is set to off its page's `__NUXT_DATA__` island.
 
-For a large part of this kind of library the music IS what the file is: two edits of the same
-footage to two different songs are two different things, and the only place that fact exists is the
-page it was fetched from. Nothing else in Sift can work it out afterwards (there is no tag in the
-file and no stash-box to ask), so if it is not read here it is not read at all.
-
-**Read from the page's own data island, not from what is on screen.** PMVHaven is a Nuxt
-application: the anchor a person sees ("Kestrel Media - Hollowgrain", linking to a search) is
-built by the browser after the page loads, so it does not exist in the HTML a downloader fetches.
-What does exist is `__NUXT_DATA__`, the payload the page hydrates itself from, and the track is in
-there as structured data rather than as markup to scrape.
-
-**The payload is a flat array and every value is an index into it.** That is the devalue format
-Nuxt serialises with, and it is why nothing here can simply read a key: the video's `music` is a
-number, which points at a list, which holds a number, which points at `{artist, song}`, and each of
-those is a number pointing at a string. Resolving is what `_at` does, and it is depth-limited
-because a payload is free to contain a cycle and this runs inside somebody's download.
-
-**Best effort, always.** A page that will not load, a payload that will not parse, a shape that is
-not what was expected: all of them return nothing. This decorates a download that has already
-succeeded, and no failure here may cost somebody their file.
-"""
+Best effort: a failure here never costs somebody a download that already succeeded."""
 
 from __future__ import annotations
 
@@ -32,16 +12,13 @@ from urllib.parse import urlsplit
 
 from sift.slices.download.sources import curl
 
-#: How long the page fetch may take. The same figure the creator reader uses, and for the same
-#: reason: this runs after a download has landed and must never be what makes one feel slow.
+#: Runs after a download has landed and must never make one feel slow.
 _TIME_LIMIT = 12.0
 
-#: How much of a page is read. A Nuxt payload sits near the end of a large document, so this is
-#: deliberately generous: the creator reader's four megabytes would truncate the island itself.
+#: Generous: the payload sits near the end of a large document.
 _MAX_PAGE_BYTES = 8_000_000
 
-#: How deep a reference chain may be followed before the payload is called nonsense. Four is one
-#: more than the real shape needs (`music` -> list -> entry -> string).
+#: Above the real shape's depth (`music` -> list -> entry -> string).
 _MAX_DEPTH = 6
 
 _ISLAND = re.compile(
@@ -50,14 +27,7 @@ _ISLAND = re.compile(
 
 
 def music_in_page(html: str, *, url: str) -> str | None:
-    """The track this page's video is set to, as one line, or None.
-
-    The video is found by the id in its own address rather than by taking the first entry that has
-    a `music` key. A PMVHaven page carries the payload for everything it draws (the video, and
-    fifteen more down the side), and every one of those is a dict with a `music` key. Taking the
-    first would file this video under a suggestion's music, which is wrong in a way nobody would
-    ever catch: it is a real track name on a real record.
-    """
+    """The track this page's video is set to, found by the video's own id, or None."""
     wanted = _video_id(url)
     if not wanted:
         return None
@@ -81,11 +51,7 @@ def music_in_page(html: str, *, url: str) -> str | None:
 
 
 def _video_id(url: str) -> str | None:
-    """The id at the end of a `/video/some-title_<id>` address.
-
-    None for anything else, which is what makes this safe to call on every page: a site whose
-    addresses do not look like this reads as "no music here" rather than as an error.
-    """
+    """The id at the end of a `/video/some-title_<id>` address, or None."""
     parts = [one for one in urlsplit(url).path.split("/") if one]
     if len(parts) < 2 or parts[0] != "video":
         return None
@@ -94,14 +60,7 @@ def _video_id(url: str) -> str | None:
 
 
 def _written(payload: list[Any], reference: Any) -> str | None:
-    """One `music` value as the line to store, or None when there is no track on it.
-
-    An empty list is the ordinary case and is not a failure: most videos have no music recorded,
-    and `music: []` is the page saying so.
-
-    Only the FIRST track. A video can carry several and the record holds one line; joining them
-    would produce a value that matches nothing when somebody searches for either.
-    """
+    """The first track of one `music` value as a line to store, or None."""
     tracks = _at(payload, reference)
     if not isinstance(tracks, list) or not tracks:
         return None
@@ -112,18 +71,12 @@ def _written(payload: list[Any], reference: Any) -> str | None:
     song = _text(_at(payload, first.get("song")))
     if artist and song:
         return f"{artist} - {song}"
-    # One half is still worth keeping. A track with only a title is a track somebody can search for;
-    # refusing it because the artist is blank would throw away the more useful of the two.
+    # A title alone is still searchable.
     return song or artist or None
 
 
 def _at(payload: list[Any], reference: Any, depth: int = 0) -> Any:
-    """One value out of the payload, following references until something concrete is reached.
-
-    Depth-limited rather than trusting the document: the payload arrives from somebody else's
-    server, a reference is free to point back at its own entry, and an unbounded walk would be a
-    page that hangs a download worker rather than a page that fails to name a song.
-    """
+    """One payload value, following devalue references to a limited depth: a cycle must not hang."""
     if depth >= _MAX_DEPTH:
         return None
     if isinstance(reference, bool) or not isinstance(reference, int):
@@ -134,17 +87,11 @@ def _at(payload: list[Any], reference: Any, depth: int = 0) -> Any:
 
 
 def _text(value: Any) -> str:
-    """A payload value as a trimmed string, or empty for anything that is not one."""
     return value.strip() if isinstance(value, str) else ""
 
 
 async def music_of(url: str, *, proxy: str | None = None) -> str | None:
-    """Fetch `url` and read the track off it. Never raises.
-
-    The address goes through the same guard as every other fetch this slice makes, so a page that
-    resolves somewhere the server may not be pointed at is refused here exactly as it would be
-    anywhere else. Everything after that is swallowed, for the reason at the top of this file.
-    """
+    """Fetch `url` through the guard and read the track off it. Never raises."""
     try:
         fetched = await curl.guarded_get(url, proxy=proxy, time_limit=_TIME_LIMIT)
     except Exception:

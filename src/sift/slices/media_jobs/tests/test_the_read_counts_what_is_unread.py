@@ -10,8 +10,9 @@ from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.ledger import Estimate
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.switchboard import Switchboard
+from sift.slices.media_jobs.activity_families import NOT_KNOWN_UNTIL_COUNTED, _families
 from sift.slices.media_jobs.job_types import PROBE
-from sift.slices.media_jobs.router import NOT_KNOWN_UNTIL_COUNTED, KindOfWork, _families
+from sift.slices.media_jobs.router import KindOfWork
 
 pytestmark = pytest.mark.unit
 

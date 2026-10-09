@@ -1,5 +1,4 @@
-/* Backup, as the settings screen asks the server. A restore only ever follows the confirm; a copy
- * goes straight to the browser's download (`copyOf`), since the shared client parses JSON. */
+/* Backup, as the settings screen asks the server. */
 
 import { API_PREFIX, ApiError, api, type ApiPath } from '$lib/api/client';
 import { UNREACHABLE } from '$lib/shell/unreachable';
@@ -236,14 +235,13 @@ export type DuplicateStarted = components['schemas']['DuplicateStarted'];
 /** The task that makes a duplicate. `LIBRARY_DUPLICATE` in sift/slices/backup/libraries.py. */
 export const DUPLICATE_JOB = 'library_duplicate';
 
-/* What the Duplicate form says before anything is pressed. Asked when the form opens rather than
-   with the pane: the server walks the cache to measure the pictures. */
+/* What the Duplicate form says before anything is pressed. */
 export function readDuplicatePlan(): Promise<DuplicatePlan> {
 	return api.get<DuplicatePlan>('/libraries/duplicate');
 }
 
-/* Queue the copy. The server refuses a taken name, no room, and other work on the library with
-   a sentence of its own, which the form shows as it is. */
+/* Queue the copy. The server refuses a taken name, no room, and other work on the library with a
+   sentence of its own, which the form shows as it is. */
 export function startDuplicate(name: string, pictures: boolean): Promise<DuplicateStarted> {
 	return api.post<DuplicateStarted>('/libraries/duplicate', { body: { name, pictures } });
 }

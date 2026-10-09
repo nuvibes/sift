@@ -1,5 +1,6 @@
 import { expect, test } from './test';
 import { signInAsAdmin } from './admin';
+import { tileSizeSlider } from './tile-size';
 
 /* The grid, drawing real tiles, in a real browser.
  *
@@ -507,7 +508,7 @@ test('the heart goes at the smallest grid size, and only there', async ({ page }
 	await expect(page.locator('.tile').first()).toBeVisible();
 
 	const shownAt = async (step: string, selector: string) => {
-		await page.locator('.size input[type="range"]').fill(step);
+		await (await tileSizeSlider(page)).fill(step);
 		const frame = page.locator('.tile-frame').first();
 		await frame.hover();
 		const height = (await frame.boundingBox())!.height;

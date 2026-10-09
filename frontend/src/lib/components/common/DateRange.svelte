@@ -18,23 +18,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * Two dates, picked off a calendar.
-	 *
-	 * The query language takes a date range (`added:<from>..<to>` with ISO dates, and the spans
-	 * that go with it), and without this the only way to enter one is to type it, which is a dead
-	 * end for "everything from that week in August".
-	 *
-	 * bits-ui supplies what is invisible when done by hand: each part of the date is its own
-	 * segment, so arrow keys step the month without touching the year and typing `13` in a month
-	 * rolls into the next field; the grid is a real calendar with arrow keys, page keys and a live
-	 * region announcing the month; and it knows about locales and time zones rather than assuming
-	 * the machine's.
-	 *
-	 * It hands back strings, not date objects: a filter lives in the address, which is text. A
-	 * `CalendarDate` would make every caller convert it back, and the first to use `toISOString()`
-	 * would shift the day by the browser's offset for anybody east of UTC.
-	 */
+	/* Two dates picked off a calendar, for the query language's date ranges: bits-ui's segments and
+	 * grid, handed back as `YYYY-MM-DD` strings so no `toISOString()` shifts the day. */
 	import { DateRangePicker, Portal } from 'bits-ui';
 	import { CalendarDate, type DateValue } from '@internationalized/date';
 
@@ -42,12 +27,7 @@
 	import PageShield from './PageShield.svelte';
 
 	interface Props {
-		/**
-		 * A control drawn beside the box, on the box's own line rather than the label's (the filter
-		 * panel's Clear). Here rather than beside the whole field, because the label sits above the
-		 * box and anything aligned to the field's edge lands level with the label's bottom, not the
-		 * box's middle.
-		 */
+		/** A control beside the box, on the box's line rather than the label's. */
 		beside?: Snippet;
 		/** The span, as the address writes it. */
 		value?: DaySpan;
@@ -59,27 +39,16 @@
 
 	let { value = {}, onchange, label = 'A range of days', beside }: Props = $props();
 
-	/*
-	 * Whether the calendar is showing, held here so that pressing the DATE opens it.
-	 *
-	 * The library opens it from the trigger button and from nothing else, which is correct for a
-	 * field somebody is typing into, and wrong for this one, where the date is the thing being
-	 * pressed and the small glyph beside it is a second target for the same intention. Pressing a
-	 * segment still focuses that segment, so typing works exactly as it did; the calendar simply
-	 * comes up with it.
-	 */
+	/* Held here, so pressing the date opens the calendar too. */
 	let open = $state(false);
 
 	function openFromField(event: MouseEvent) {
-		// Not the trigger: that one toggles, and answering its press by forcing `true` would make the
-		// button open a calendar that is already open and never close it.
+		// Not the trigger, which toggles.
 		if ((event.target as HTMLElement | null)?.closest('.open')) return;
 		open = true;
 	}
 
-	/* `YYYY-MM-DD` in and out, with no `Date` anywhere in between. See the note above about the
-	   browser's offset. A malformed value is treated as no value rather than throwing: what is in the
-	   address is whatever somebody typed there, and a picker is not the place to refuse it. */
+	/* Text in and out; a malformed value is no value. */
 	function toValue(day: string | undefined): DateValue | undefined {
 		const parts = day?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
 		if (!parts) return undefined;
@@ -94,10 +63,7 @@
 	const picked = $derived({ start: toValue(value.from), end: toValue(value.to) });
 </script>
 
-<!--
-	`child` throughout, so this file's scoped styles reach the elements. Rendered by the library they
-	would be a stranger's elements and every rule below would match nothing, with no warning.
--->
+<!-- `child` throughout, so scoped styles reach the elements. -->
 <DateRangePicker.Root
 	weekdayFormat="short"
 	bind:open
@@ -109,27 +75,15 @@
 
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- The press is a shortcut to a control that is already here and already reachable: the trigger
-	     beside it is a real button, in the tab order, and every segment takes the keyboard on its own.
-	     This adds nothing a keyboard cannot already do. -->
-	<!-- `data-unfinished` while the calendar is up: the calendar is portalled out of the panel, so
-	     pointing at it reads to the panel as leaving, and the panel would fall shut under it. The panel's
-	     hover close vetoes anything it holds that is unfinished, and an open calendar is that. -->
+	<!-- A shortcut to controls already reachable by keyboard. `data-unfinished` while the calendar
+	is up, so the panel's hover close does not shut under it. -->
 	<div class="line">
 		<div class="date-field" data-unfinished={open ? '' : undefined} onclick={openFromField}>
 			{#each ['start', 'end'] as const as part (part)}
 				<DateRangePicker.Input type={part}>
 					{#snippet children({ segments })}
-						<!--
-						Keyed by POSITION, not by the segment's name.
+						<!-- Keyed by position: a date has several `literal` segments. -->
 
-						A date field has more than one `literal` (the separators between day, month and year
-						are segments too) so keying by name is a duplicate key, which Svelte throws on, and a
-						keyed-each failure unmounts everything above it: every screen that draws a date
-						picker would go blank together. The segments are positional and their order never
-						changes, so the index is
-						both correct and stable here.
-					-->
 						{#each segments as { part: segment, value: text }, at (at)}
 							<DateRangePicker.Segment part={segment} class="segment"
 								>{text}</DateRangePicker.Segment
@@ -151,10 +105,7 @@
 		{@render beside?.()}
 	</div>
 
-	<!-- Portalled: inside the facet panel's scrolling column the calendar would be laid out in the
-	     flow of the column and clipped by its overflow, far below the field and cut off.
-	     The picker has no portal of its own in this version of the library; the generic one is the
-	     same element every other floating surface in the app goes through. -->
+	<!-- Portalled, or the facet column would clip it. -->
 	<Portal>
 		<PageShield up={open} />
 		<DateRangePicker.Content sideOffset={6} class="date-content">
@@ -209,21 +160,14 @@
 </DateRangePicker.Root>
 
 <style>
-	/* The box and whatever stands beside it, centred on one line. The box may wrap onto two lines
-	   in a narrow column; what is beside it stays centred on the whole of it. */
+	/* The box and what stands beside it, centred on one line. */
 	.line {
 		display: flex;
 		align-items: center;
 		gap: var(--space-2);
 	}
 
-	/*
-	 * `:global` on everything the library renders. A scoped rule aimed at a component's own element
-	 * matches nothing at all, silently, which is the trap the `child` snippets above exist to
-	 * avoid wherever the library offers one, and this is where it does not. Every rule inside the
-	 * calendar starts at `.date-content`, a name only this file writes: `.day`, `.cell` and `.grid`
-	 * are names other screens use for their own elements, and a bare global rule would dress those.
-	 */
+	/* Global on everything the library renders, each rule starting at `.date-content`. */
 	:global(.date-label) {
 		display: block;
 		margin-block-end: var(--space-1);
@@ -231,12 +175,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* The box and the segments inside it are in the app's stylesheet, shared with `DateField`, which
-	   draws one date out of the same library and the same parts. It wraps rather than overflowing:
-	   this sits in one column of the filter panel, and `mm/dd/yyyy to mm/dd/yyyy` plus a button is
-	   wider than that with both ends empty, so the second date drops to its own line instead of
-	   running out over the column beside it.
-	 */
+	/* The box is app.css's (shared with DateField); it wraps rather than overflowing the column. */
 
 	.to {
 		margin-inline: var(--space-1);
@@ -265,8 +204,7 @@
 			color var(--dur-instant) var(--ease);
 	}
 
-	/* The hover layer (see `--layer-hover`) over no ground of its own, so it answers on the field
-	   and inside a filled bar's translucent panel alike. */
+	/* The hover layer over no ground. */
 	.open:hover,
 	.step:hover {
 		background-color: color-mix(in srgb, currentColor var(--layer-hover), transparent);
@@ -279,8 +217,7 @@
 		box-shadow: var(--focus-ring);
 	}
 
-	/* The floating calendar. Same surface and shadow as the select's menu and the tag list, because
-	   three things that float over the page must not be three designs. */
+	/* The floating surface every popup wears. */
 	:global(.date-content) {
 		z-index: var(--z-menu);
 		padding: var(--space-3);
@@ -338,27 +275,18 @@
 		background-color: color-mix(in srgb, currentColor var(--layer-hover), transparent);
 	}
 
-	/*
-	 * A day outside the month on show. Drawn rather than hidden, so the grid keeps its shape and the
-	 * weeks stay in the same place as the months change.
-	 *
-	 * The QUIET ink, not the decoration one. These are dates a person reads and can click, so the
-	 * fourth ink is not allowed here: it is under 3:1 on every surface above the canvas, which the
-	 * contrast gate refuses.
-	 */
+	/* Days outside the month drawn, in the quiet ink (the fourth fails 3:1). */
 	:global(.date-content .day[data-outside-month]) {
 		color: var(--sift-ink-3);
 	}
 
-	/* Genuinely unavailable, so the decoration ink IS right here: an unavailable day is not something
-	   a reader has to read. */
+	/* Unavailable days take the decoration ink. */
 	:global(.date-content .day[data-disabled]) {
 		color: var(--sift-ink-4);
 		cursor: default;
 	}
 
-	/* The two ends of the span are solid; everything between them is the quiet tint. A range drawn
-	   entirely in the accent is a block of colour with no way to see where it starts. */
+	/* Solid ends, a quiet tint between. */
 	:global(.date-content .day[data-selected]) {
 		background: var(--sift-accent-bg);
 	}

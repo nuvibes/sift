@@ -1,8 +1,6 @@
-/*
- * Activity's presses on a pass and a sub-task (Run now, pause, resume, cancel), the whole queue's
- * pause on Options, the Options labels that name both numbers, and what a paused or moving pass
- * draws: mounted, pressed, and the requests they make read back.
- */
+/* Activity's presses on a pass and a sub-task (Run now, pause, resume, cancel), the whole
+ * queue's pause on Options, the Options labels that name both numbers, and what a paused or
+ * moving pass draws: mounted, pressed, and the requests they make read back. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { imports } from '$lib/library/imports.svelte';

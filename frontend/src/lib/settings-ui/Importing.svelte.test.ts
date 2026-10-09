@@ -1,23 +1,4 @@
-/* Import tasks: what happens to a file as it arrives, and what is missing from the files here.
- *
- * ## What is worth pinning here
- *
- * The switches are drawn from the registry and are proved where the registry is. What this file
- * owns is the ARITHMETIC a person reads before pressing something that runs for a day, and the
- * arithmetic has one trap in it.
- *
- * **A file is one file however many things it lacks.** The sheet answers a count PER PRODUCT
- * (16,000 thumbnails, 6,500 hover previews), and adding those up is the number of pictures to
- * make, not the number of files to read: a library of nine thousand would be told it had "22,500
- * files", which is not a rounding error but a different question answered in the same words. So
- * the row beside the button names each product on its own and never totals them, and the sentence
- * after the press repeats the count the SERVER worked out, which is the union.
- *
- * ## And the row it is drawn on
- *
- * Each stage is its task's row on Tasks: its Edit before Run now, and what is missing after the
- * task's own facts on the foot line.
- */
+/* Import tasks: what happens to a file as it arrives, and what is missing from the files here. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { words as wordsOn } from '$lib/design/testing.svelte';
@@ -57,8 +38,7 @@ vi.mock('$lib/library/importing', async (importOriginal) => ({
 	fetchFolderAnswers: mocks.fetchFolderAnswers
 }));
 
-/* The task list the stages' rows are drawn from. Through the client rather than a mocked store, so
-   the rows are the real component reading the real store. */
+/* The task list the stages' rows are drawn from. */
 vi.mock('$lib/api/client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/api/client')>()),
 	api: { get: mocks.get, post: mocks.post }
@@ -192,16 +172,15 @@ async function draw(): Promise<void> {
 	drawn = mount(Importing, { target: host }) as Record<string, unknown>;
 	flushSync();
 	// One tick per awaited request in `load`, and one more for the render that follows the last of
-	// them. A tick short leaves the pane drawn from nothing, which reads as a component that ignores
-	// its data, so this count moves whenever `load` gains a call.
+	// them.
 	await tick();
 	await tick();
 	await tick();
 	flushSync();
 }
 
-/* Found by the id each stage's row carries (its task's When) rather than by its words, so a change
-   of wording is not a change of what is being tested. */
+/* Found by the id each stage's row carries (its task's When) rather than by its words, so a
+   change of wording is not a change of what is being tested. */
 function rowOf(id: string): HTMLElement {
 	const row = host.querySelector<HTMLElement>(`[id="${id}"]`);
 	if (row === null) throw new Error(`no row called ${id}`);
@@ -241,16 +220,16 @@ it('names each thing that is missing, and never adds them into a count of files'
 });
 
 it("says what could not be generated on the stage row's own foot line, never loose between rows", async () => {
-	/* A sentence dropped between two rows would leave the next row with no line above it; as the row's
-	   foot it sits under the row's help, inside the row, and the line rule holds. */
+	/* A sentence dropped between two rows would leave the next row with no line above it; as the
+	   row's foot it sits under the row's help, inside the row, and the line rule holds. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({ files: 40, rows: [row('thumbnails', 'Thumbnails', { files: 0, cannot: 2 })] })
 	);
 
 	await draw();
 
-	// And the count says nothing: "Nothing missing" beside two files that could not be made
-	// would contradict the line after it.
+	// And the count says nothing: "Nothing missing" beside two files that could not be made would
+	// contradict the line after it.
 	expect(await noteOf(GENERATE)).toBe('');
 	const foot = stageRow('generate').querySelector('.foot');
 	expect(foot?.textContent).toContain('2');
@@ -259,10 +238,8 @@ it("says what could not be generated on the stage row's own foot line, never loo
 });
 
 it('agrees with the number in front of it when there is only one', async () => {
-	/* The server declares each product's label once and in the plural, because that is how it reads
-	   everywhere else it is drawn; this is the one place a count goes in front of it. Left alone it
-	   would say "1 thumbnails". "Meaning" is here because it is the label with no "s" to take
-	   off, which is the case a rule about trailing letters gets wrong if it is written carelessly. */
+	/* The server declares each product's label once and in the plural, because that is how it
+	   reads everywhere else it is drawn; this is the one place a count goes in front of it. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			rows: [
@@ -293,12 +270,7 @@ it('leaves a label with nothing to take off exactly as it is', async () => {
 });
 
 it('says the WAIT, and what the wait assumes about the machine', async () => {
-	/* THE WALL TIME, NOT THE WORKER TIME. Worker-seconds (how hard the machine works per file)
-	   presented as how long somebody would be waiting differ by however many jobs run at
-	   once: faces at about four worker-seconds over 90,000 files would read as "4 days" for a run
-	   that gets through the same library in less than a day. The server sends wall seconds, and
-	   the number of jobs the measured run had travels with them, because that is what the
-	   estimate assumes it gets. */
+	/* THE WALL TIME, NOT THE WORKER TIME. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			rows: [
@@ -323,9 +295,7 @@ it('says the WAIT, and what the wait assumes about the machine', async () => {
 });
 
 it('and claims nothing about the machine when the run never recorded it', async () => {
-	/* A run from before the number was kept. The estimate is still the honest one; the clause that
-	   says what it assumes is simply not there, because "with null tasks at the same time" is worse
-	   than a sentence that stops. */
+	/* A run from before the number was kept. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			rows: [row('faces', 'Faces', { files: 100, quick_seconds: 600, slow_seconds: 600 })]
@@ -468,8 +438,7 @@ it('leaves the pane as it was when a read fails, rather than blanking every coun
 });
 
 /* The per-stage switches are not on the pane: each stage holds its task row and an Edit, and the
- * rows are drawn by the settings SHELL on a sub-page. So a test about a row mounts the shell's page
- * beside the pane and opens it, by the key, which is the same door a deep link uses. */
+ * rows are drawn by the settings SHELL on a sub-page. */
 async function drawAndOpen(key: string): Promise<void> {
 	await draw();
 	mount(DrilldownPage, { target: host, props: { behind: 'Importing' } });
@@ -492,9 +461,8 @@ it('files "Create Photo Sets from shoots" on the Scan page beside its sisters', 
 });
 
 it("opens Identify's page for a link to one of the three recognition switches", async () => {
-	/* Faces, Smart Search and Watermarks each point at their switch here ("Change in Importing").
-	   The switches sit on Identify's page, so the pane has to claim their keys for that page or
-	   the link opens Importing at its top and rings nothing. */
+	/* Faces, Smart Search and Watermarks each point at their switch here ("Change in
+	   Importing"). */
 	const { RECOGNITION_SWITCHES } = await import('./recognition-switches');
 	expect([...RECOGNITION_SWITCHES]).toEqual([
 		'faces.enabled',
@@ -565,9 +533,7 @@ it('keeps Try again on the line with the last word of its sentence', async () =>
 });
 
 it('makes the count of files a product left out open them, each with why, beside Try again', async () => {
-	/* A count of files nobody can see is a number with no way to act on it. The count opens a page
-	   of exactly those files, each by name with why in Sift's words, read through the wall's own
-	   filter; the key is the row's own, which the query language takes as itself. */
+	/* A count of files nobody can see is a number with no way to act on it. */
 	mocks.fetchBuildSheet.mockResolvedValue(
 		sheet({
 			files: 40,
@@ -646,8 +612,7 @@ it('says so when the left-out files cannot be read', async () => {
 });
 
 it('links the benchmark sentence to the row it runs from, by its breadcrumb', async () => {
-	/* Saying the benchmark has not run is not enough: the reader has to find where it is run.
-	   The link is a settings link, landing on the row. */
+	/* Saying the benchmark has not run is not enough: the reader has to find where it is run. */
 	mocks.fetchBuildSheet.mockResolvedValue(sheet({ measure_first: true }));
 
 	await draw();

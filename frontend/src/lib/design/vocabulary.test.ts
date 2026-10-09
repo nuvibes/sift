@@ -19,58 +19,18 @@ import {
 } from '../../../scripts/lib/vocabulary.js';
 import { compare, heldAtZero } from '../../../scripts/check_vocabulary.js';
 
-/*
- * One name per thing, and the name for where media came from is "Site".
- *
- * ## What goes wrong
- *
- * The rail says Sites. The filter panel says Sites. The delete question on a Site's own page says
- * Site. A group heading in the enrichment apply dialog, the pager under the wall, or an icon's name
- * in the gallery saying something else would let somebody read "1-20 of 34" of something else under
- * the wall, run an enrichment and be offered a group under a third word, with no way to know these
- * were all one thing.
- *
- * Nothing is broken and no test can fail, because a label is only wrong against the other labels.
- * That is exactly the kind of fault that needs a ratchet rather than a fix: the fix is three
- * strings, and without something holding them the fourth one gets written next month.
- *
- * ## "Platform" is the word that may not stand in
- *
- * The records in the library ARE websites, which is what everybody writing a label reaches for,
- * so the thing is a Site, and "Platform" is what may not stand in as the name of a thing on screen.
- * "Site" in the downloader's sense (which websites it supports, which you have signed in to)
- * means the same thing and is fine.
- *
- * ## Why the check is this narrow
- *
- * "Platform" is not banned outright here: the browser and the operating system are platforms, and
- * a sentence about either is fine. What is forbidden is the word standing ALONE as the name of a
- * thing on screen, because in that position it can only be naming the entity the rest of the app
- * calls a Site.
- *
- * So this reads the naming props and the bare headings, and nothing else. A sentence mentioning a
- * platform in passing is left alone, which keeps the check honest: every failure it can produce is
- * a real one, and there is no allow-list to quietly grow.
- */
+/* One name per thing, and the name for where media came from is "Site". */
 
 const SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** The word the app uses, and the words that must not stand in for it.
- *
- * Read from `tests/gates/data/vocabulary.json` (`wrong_words`), the one list every copy gate reads:
- * every word there whose replacement is the Site, matched as the WHOLE value. */
+/** The word the app uses, and the words that must not stand in for it. */
 const CORRECT = 'Site';
 const SITE_WORDS = loadVocabulary()
 	.wrong_words.filter((entry: { instead: string }) => /^Sites?$/.test(entry.instead))
 	.map((entry: { word: string }) => entry.word);
 const FORBIDDEN = new RegExp(`^(?:${SITE_WORDS.join('|')})$`, 'i');
 
-/**
- * Props whose value IS a name shown to somebody.
- *
- * `noun` is the one the pager takes ("34 sites"), `deleteWord` the one the delete question
- * takes, and `what` the one the gallery lists an icon under. The rest are the ordinary three.
- */
+/** Props whose value IS a name shown to somebody. */
 const NAMING_PROPS = ['label', 'noun', 'title', 'heading', 'deleteWord', 'what'];
 
 /** `label: 'Platforms'` and `noun="platforms"` alike: literal or attribute, either quote. */
@@ -88,7 +48,7 @@ function filesUnder(directory: string): string[] {
 			continue;
 		}
 		// The generated client description is not written by anybody, and a test double is not a
-		// screen. Neither can put a word in front of a person.
+		// screen.
 		if (entry === 'schema.d.ts' || entry.includes('.test.')) continue;
 		if (entry.endsWith('.svelte') || entry.endsWith('.ts')) found.push(path);
 	}
@@ -140,39 +100,14 @@ describe('where media came from is called a Site, everywhere it is named', () =>
 	});
 });
 
-/*
- * AND THE THING A SITE WANTS BEFORE IT WILL SHOW ITS FILES IS CALLED COOKIES.
- *
- * "Login" is not a second name for one thing here: it is the name of something Sift ALSO has.
- * Signing in to Sift is a person opening their own account, with a password and a session behind
- * it. Nothing on the downloads surface is that. What is there is a file of cookies exported from a
- * browser and pasted in, and "Add a login" over the box that takes it would say Sift wants a
- * username and a password, which it never asks for.
- *
- * ## Why this is here as well as in the Python gate, said plainly
- *
- * `tests/gates/test_one_word_per_thing.py` holds the same rule over the same tree, and two copies
- * of one rule can drift. The same is true of "Platform" above, and the reason is worth writing down
- * rather than repeating by accident: that file reads SENTENCES (text between tags, toasts, copy
- * attributes), and this one reads only the props whose value IS the name of a thing. They overlap
- * on `label` and `title` and nowhere else, and both are held to the same real strings so a drift
- * shows up as one of them going quiet rather than as the two disagreeing.
- *
- * ## Why it is scoped to four places and not banned
- *
- * Sign in, Log in and Signing in on the account screens are the right words for the right act. A
- * rule that could not tell those screens from this one would take the correct word off the correct
- * screen, which is a worse fault than the one being fixed rather than a version of it.
- */
+/* AND THE THING A SITE WANTS BEFORE IT WILL SHOW ITS FILES IS CALLED COOKIES. */
 
 /** The screens whose whole subject is what a Site wants before it hands over a file, read from
  *  the vocabulary file's `scopes`, the same list the Python gate reads. */
 const COOKIE_SCREENS: string[] = scope('cookie_screens');
 
-/** The words that may not name anything on them: the vocabulary's cookie-screen words that are one
- *  word long (the phrases are the Python gate's, which reads sentences). Anywhere in the value:
- *  "Saved logins" and "Add a login" are both the thing being misnamed, and neither of them is the
- *  bare word. */
+/** The words that may not name anything on them: the vocabulary's cookie-screen words that are
+ * one word long (the phrases are the Python gate's, which reads sentences). */
 const COOKIE_WORDS: string[] = loadVocabulary()
 	.scoped_wrong_words.filter(
 		(entry: { scope: string; word: string }) =>
@@ -217,19 +152,8 @@ describe('what a Site wants before it shows its files is called cookies', () => 
 	});
 });
 
-/*
- * A HEADING THAT WAS RENAMED STAYS RENAMED.
- *
- * The strip of files a model finds alike under a file's record is headed "Similar to this", not
- * "Looks like this". "Looks like" reads as a claim about how the picture LOOKS, which is the other
- * answer the same strip gives: the fingerprint match, once headed by its own name, the stronger claim
- * of the two. The model compares what the pictures are of, and "similar" is the word that says so
- * without promising a near copy.
- *
- * Read as a WHOLE quoted string or a whole element's text, never as words inside a sentence: "what
- * else looks like this file" is ordinary prose in a comment and is not a heading. A retired heading
- * written anywhere on screen again is the rename undone.
- */
+/* A HEADING THAT WAS RENAMED STAYS RENAMED. The strip of files a model finds alike under a
+ * file's record is headed "Similar to this", not "Looks like this". */
 const RETIRED_HEADINGS: { old: string; now: string }[] = loadVocabulary().retired_headings;
 
 /** Every place `heading` stands alone as a quoted string or as an element's whole text. */
@@ -267,14 +191,7 @@ describe('a renamed heading is not written again', () => {
 	}
 });
 
-/*
- * THE ONE LIST, READ THE SAME WAY ON BOTH SIDES.
- *
- * Every word the copy gates judge is in `tests/gates/data/vocabulary.json`; `scripts/lib/vocabulary.js`
- * loads it here and `tests/gates/vocabulary.py` in Python. Each pattern entry carries an example it
- * must match, and both sides prove every example with their own regular-expression engine, so a
- * pattern JavaScript and Python read differently fails on one side instead of passing a tree.
- */
+/* THE ONE LIST, READ THE SAME WAY ON BOTH SIDES. */
 describe('the vocabulary file is read the same way here as in Python', () => {
 	it('matches every entry to its own example', () => {
 		const missed = everyExample()
@@ -397,8 +314,8 @@ describe('the vocabulary file is read the same way here as in Python', () => {
 			'Turn on previews',
 			'Keep all 3 files',
 			'Save',
-			// Take is accepting what another source offers (Take theirs, Take these); the wrong word is
-			// taking something OFF, which `verbs.replaces` sends to Remove.
+			// Take is accepting what another source offers (Take theirs, Take these); the wrong
+			// word is taking something OFF, which `verbs.replaces` sends to Remove.
 			'Take theirs'
 		]) {
 			expect(startsWithAVerb(label, 'lib/components/organize/ReconcilePanel.svelte'), label).toBe(
@@ -411,14 +328,7 @@ describe('the vocabulary file is read the same way here as in Python', () => {
 	});
 });
 
-/*
- * THE WIDENED READER SEES WHAT A NARROWER ONE CANNOT, AND NOTHING THAT IS NOT COPY.
- *
- * `scripts/lib/copy.js` reads every string a person sees with the Svelte and TypeScript parsers.
- * Each known positive below is a shape a narrower reader misses (a dialog's `consequence`, a lookup
- * table, a toast chosen by a ternary, a `.ts` helper's return); each negative is a shape a reader
- * that collects everything would report as copy and then be exempted around.
- */
+/* THE WIDENED READER SEES WHAT A NARROWER ONE CANNOT, AND NOTHING THAT IS NOT COPY. */
 describe('the copy reader reads every string a person sees, and only those', () => {
 	const read = (source: string, where = 'lib/X.svelte') =>
 		copyIn(source, where).map((one: { text: string }) => one.text);
@@ -490,9 +400,8 @@ describe('the copy reader reads every string a person sees, and only those', () 
 	});
 
 	it('reads a value of words and substitutions as one string, never its last word alone', () => {
-		/* "Move {entry} up" read as "Move" and a bare "up" would have the verb check refuse the "up":
-		   the value is one label with a gap where the substitution is. One that opens with data
-		   keeps its leading gap, which is what says it names no verb. */
+		/* "Move {entry} up" read as "Move" and a bare "up" would have the verb check refuse the
+		   "up": the value is one label with a gap where the substitution is. */
 		const svelte = `<Button aria-label="Move {entry} up" onclick={go} />
 <Button aria-label="{count} more" onclick={go} />`;
 		const controls = copyIn(svelte, 'lib/X.svelte')
@@ -502,9 +411,8 @@ describe('the copy reader reads every string a person sees, and only those', () 
 	});
 
 	it('reads every string in a copy module, however short, and nothing beside it', () => {
-		/* A pane's words moved into its copy module must not leave the word checks: 'Tonight' under
-		   a key that names no words, and one word long, would be read by nobody. The object beside it
-		   holds the same word and is not a copy module, so it stays unread. */
+		/* A pane's words moved into its copy module must not leave the word checks: 'Tonight'
+		   under a key that names no words, and one word long, would be read by nobody. */
 		const module = `export const COPY = { title: 'Tasks', run: { action: 'Generate', short: 'Tonight' } } as const;
 const other = { mode: 'Tonight' };`;
 		expect(read(module, 'lib/settings-ui/X.search.ts')).toEqual(['Tasks', 'Generate', 'Tonight']);
@@ -682,8 +590,8 @@ describe('a busy state is the control mid-press, not what it does', () => {
 });
 
 it('reads a word trailing full stops as words, not as a dotted name', () => {
-	/* "Saving..." taken for an identifier would never be read, so neither the ellipsis rule nor the
-	   verb rule could see it. */
+	/* "Saving..." taken for an identifier would never be read, so neither the ellipsis rule nor
+	   the verb rule could see it. */
 	const texts = copyIn("export const COPY = { busy: 'Saving...' };", 'lib/x.ts', () => null).map(
 		(one) => one.text
 	);

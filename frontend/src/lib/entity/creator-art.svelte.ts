@@ -1,14 +1,4 @@
-/* Which names Sift has a picture for, asked once.
- *
- * A person with no chosen cover is drawn with the picture the site they were downloaded from shows
- * them with. Asking per card would be one request per person on a screen that draws a hundred of
- * them, nearly all answered "no picture": a slow screen built entirely out of correct answers. So
- * the set of names is fetched once and every card reads it.
- *
- * Admin-only, like everything about downloading. For anybody else the ask is refused and the set
- * stays empty, which is the same thing as having no pictures: every card falls through to its
- * monogram.
- */
+/* Which names Sift has a picture for, asked once. */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -55,13 +45,7 @@ class CreatorArt {
 
 export const creatorArt = new CreatorArt();
 
-/**
- * The picture a username wears beside its handle, or null where Sift keeps none.
- *
- * Asked by the Site as well as the name, because the same name on another Site may be somebody
- * else. Only for a name the one list says has a picture, so a column of handles asks nothing
- * about the many that have none.
- */
+/** The picture a username wears beside its handle, or null where Sift keeps none. */
 export function usernameArt(one: {
 	username: string;
 	site_name?: string | null;

@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * The Loops wall names its marks and can be searched by those names.
- *
- * A tile on this wall is a picture of the VIDEO, so the name under it is the only thing that tells
- * two marks of one video apart. The name is the mark's own (`name`), never the file's.
- *
- * The layout is arithmetic over the container's width, and jsdom reports every width as zero, so
- * the width and height are stubbed; the rows, the placing and the lines under them are real.
- */
+/* The Loops wall names its marks and can be searched by those names. */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -177,9 +169,8 @@ describe('the Loops wall', () => {
 	});
 
 	it('asks once for a name that matches nothing, however the empty page measures', async () => {
-		/* The pager and the count leave with the rows and come back while a request is out, so the
-		   box the rows are measured in changes height with every ask. Each change is a new measure,
-		   and a measure that asked again would keep the page asking for as long as it was open. */
+		/* The pager and the count leave with the rows and come back while a request is out, so
+		   the box the rows are measured in changes height with every ask. */
 		const watchers: ResizeObserverCallback[] = [];
 		vi.stubGlobal(
 			'ResizeObserver',
@@ -204,8 +195,8 @@ describe('the Loops wall', () => {
 			await new Promise((done) => setTimeout(done, 260));
 			await settle();
 			for (let measure = 0; measure < 6; measure += 1) {
-				/* Every watcher on the page hears the change, and a shared one walks the entries it
-				   is handed, so each is handed a list as the browser would. */
+				/* Every watcher on the page hears the change, and a shared one walks the entries
+				   it is handed, so each is handed a list as the browser would. */
 				for (const watch of watchers) watch([], {} as ResizeObserver);
 				await settle();
 			}

@@ -1,15 +1,6 @@
 <script lang="ts">
 	/* NOT ON THE GALLERY: it is drawn on Settings > Updates and Info, and its one press resets this install's real device id. */
-	/*
-	 * Settings > Updates and Info > Your device id: what another Sift is told about this one.
-	 *
-	 * Beside the version and the licence because it is a fact about this install rather than a
-	 * choice: a swap shows it to the other side, and resetting it changes what every later swap is
-	 * told. The swap itself starts from the Swap screen alone.
-	 *
-	 * Read again whenever a setting moves anywhere: resetting the id from another window announces
-	 * itself, and a stale id on this screen is the one thing it must not show.
-	 */
+	/* Settings > Updates and Info > Your device id: what another Sift is told about this one. */
 	import { onMount } from 'svelte';
 	import { ApiError } from '$lib/api/client';
 	import {

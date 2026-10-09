@@ -8,15 +8,9 @@
 	 * PIN box opening because somebody scrolled past a design page is the wrong kind of surprise.
 	 */
 
-	/* The PIN box. Every reveal of hidden things goes through this, every time.
-	 *
-	 * It is asked for again even when the vault is already open, and that is deliberate rather than
-	 * a missing optimisation: showing hidden things is the one act this whole feature exists to make
-	 * a decision rather than a side effect. There is no server route that opens the vault without a
-	 * PIN, so there is nothing here that could be relaxed into skipping it.
-	 *
-	 * The insistent flavour, for the reason the confirm dialog uses it: this is a box asking for a
-	 * credential, and assistive technology should be told it interrupted on purpose.
+	/*
+	 * The PIN box: asked every time, even with the vault open; insistent, since it asks for a
+	 * credential.
 	 */
 	import Modal from '$lib/components/common/Modal.svelte';
 	import CreatePin from './CreatePin.svelte';
@@ -25,20 +19,13 @@
 
 	interface Props {
 		open?: boolean;
-		/** Called once the vault is actually open. The screen reloads from here. */
 		onunlocked?: () => void;
-		/**
-		 * What the PIN is asked FOR, when it is an act waiting on it rather than showing hidden
-		 * items: the act's words ("Put it back"), said as the title, and the sentence says the PIN
-		 * lets Sift do it. Absent is the prompt's own reason. See `vaultPrompt.opened`.
-		 */
+		/** The act waiting on the PIN ("Put it back"), said as the title (`vaultPrompt.opened`). */
 		reason?: string | null;
 	}
 
 	let { open = $bindable(false), onunlocked, reason = null }: Props = $props();
 
-	/* The prompt's own words, or the waiting act's. Either way the PIN opens Hidden on this device,
-	   and the sentence says so, because that is what it does. */
 	const said = $derived(
 		reason
 			? {
@@ -60,20 +47,7 @@
 
 	let sheet = $state<HTMLElement | null>(null);
 
-	/* A refusal has to be felt as well as read.
-	 *
-	 * The message alone is easy to miss: the box does not move, the field simply empties, and
-	 * somebody who typed a digit wrong reads that as the app having eaten the entry rather than as
-	 * having been told no.
-	 *
-	 * Driven from script rather than from a class, because a class cannot do it. A CSS animation
-	 * runs when the class arrives and never again while it stays, so the second wrong PIN, which
-	 * is the one somebody most needs an answer to, would sit perfectly still. Every call here
-	 * starts a new animation.
-	 *
-	 * Silent for anybody who has asked their machine for less movement. Reduced motion is also the
-	 * escape hatch on a slow machine, and the message is already there and already announced.
-	 */
+	/* A refusal shakes the box, from script so every refusal shakes; still under reduced motion. */
 	function refuse() {
 		if (!sheet || motion.reduced) return;
 		sheet.animate(
@@ -88,8 +62,7 @@
 		);
 	}
 
-	// Cleared on the way in, not on the way out: a PIN left in the box is a PIN sitting on screen
-	// for whoever the vault was being hidden from.
+	// Cleared on the way in, so no PIN sits on screen.
 	$effect(() => {
 		if (open) {
 			pin = '';
@@ -107,9 +80,7 @@
 		try {
 			failure = await vault.unlock(pin);
 		} catch {
-			// Anything that is not a refusal: the network gone, the server down. Without catching
-			// it the throw escapes this handler as an unhandled rejection, `working` never goes back
-			// to false, and the box stays disabled with no message and no way out but a reload.
+			// Not a refusal: without this the box stays disabled with no message.
 			error = 'Sift could not be reached. Try again.';
 			pin = '';
 			working = false;
@@ -133,14 +104,7 @@
 	}
 </script>
 
-<!--
-	`onOpenAutoFocus` is this box saying where it would rather focus went. The library moves focus to
-	the sheet itself on open (that is what makes Escape and Tab work from the first render) and
-	that lands AFTER a plain `autofocus` on the input, so the native attribute never won on its own.
-	Here it goes to the field the whole box exists to collect.
-
-	`bind:sheet` is for the shake below, which needs the element the library drew.
--->
+<!-- `onOpenAutoFocus` puts focus in the field; `bind:sheet` is for the shake. -->
 <Modal
 	bind:open
 	bind:sheet
@@ -154,7 +118,6 @@
 >
 	{#snippet children({ Cancel })}
 		<form onsubmit={submit}>
-			<!-- The shared PIN control: `PinBox` owns the digit cells, the paste and the caret. -->
 			<PinBox
 				bind:element={pinInput}
 				label="PIN"
@@ -163,24 +126,14 @@
 				disabled={working}
 			/>
 
-			<!-- Announced when it appears: the person may already be reaching for the button. This is
-			     the message under a field rather than the banner at the top of a screen, so it is the
-			     form-field error and not the shared `Problem`. -->
+			<!-- Announced as it appears: a form-field error, not the shared `Problem`. -->
 			{#if error}
 				<p class="error" role="alert">{error}</p>
 			{/if}
 
 			<div class="buttons">
 				<!--
-					`type="button"`, and it is load-bearing.
-
-					A button in a form with no type IS a submit button, and the browser's implicit
-					submission (pressing Enter in the field) activates the FIRST one in the form.
-					That is this one. Without the type, typing a PIN and pressing Enter would press
-					Cancel: the box would vanish and the request go out anyway, leaving a lone 401 in
-					the console with nothing on screen to explain it. Pressing Show would work, so it
-					would read as the app eating a wrong PIN rather than as the keyboard doing
-					something different from the mouse.
+				`type="button"`, or Enter in the field would press Cancel, the form's first button.
 				-->
 				<Cancel type="button" class="cancel">Cancel</Cancel>
 				<Button tone="primary" type="submit" disabled={working || pin.length === 0}>
@@ -191,21 +144,11 @@
 	{/snippet}
 </Modal>
 
-<!-- Its twin, for somebody with no PIN to type: drawn beside this one so the one prompt the shell
-     mounts answers both questions. See `vaultPrompt.ask`. -->
+<!-- Its twin for somebody with no PIN (`vaultPrompt.ask`). -->
 <CreatePin />
 
 <style>
-	/*
-	 * `.veil`, `.sheet`, `.title`, `.consequence`, `.cancel` and `.confirm` are dressed once in
-	 * `app.css`: the same look, because this is the same kind of interruption and two dialogs that
-	 * differ slightly read as two different apps. These rules stay plain and scoped even though
-	 * `Modal` portals the sheet away: a snippet is compiled where it is written, so the form below
-	 * is this file's markup wherever it ends up on the page.
-	 *
-	 * The PIN box's height and digit spacing are `PinBox`'s own, not this screen's: they are what a
-	 * row of cells is.
-	 */
+	/* The dialog's own classes are dressed once in `app.css`; the PIN cells are `PinBox`'s. */
 
 	.error {
 		margin: var(--space-2) 0 0;

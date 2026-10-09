@@ -1,10 +1,4 @@
-/* The connect screen: the one screen in Sift with no server behind it.
- *
- * What matters is the two shapes it takes. In the desktop client it is a form that saves an
- * address; in a browser, where nothing could save one, it is an explanation instead. A form
- * that submits to nowhere would be the worst of the three outcomes, and it is what a screen written
- * without asking the bridge would be.
- */
+/* The connect screen: the one screen in Sift with no server behind it. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -114,14 +108,7 @@ describe('in the desktop client', () => {
 		});
 	});
 
-	/*
-	 * Back to the mode question, which is what makes choosing Client Install undoable.
-	 *
-	 * The button is drawn from `canSetUp` rather than from `canSaveServer`, and the two are asked
-	 * separately on purpose: this screen is reachable in a shell that can save an address, and going
-	 * back is a different capability. The test below is the one that would notice if it were ever
-	 * gated on the wrong one: a shell with no setup verbs draws no button.
-	 */
+	/* Back to the mode question, which is what makes choosing Client Install undoable. */
 	it('offers a way back to the mode question', async () => {
 		inTheApp();
 		const setupBack = vi.fn().mockResolvedValue({ ok: true, refusal: null });
@@ -207,7 +194,7 @@ describe('in the desktop client', () => {
 	});
 
 	/* The rules of a window onto another computer: everything that computer's app can do, acting
-	   there, with the one exception Windows makes. Not a read-only client. */
+	   there, with the one exception Windows makes. */
 	it('says a client can do everything, except approve Windows own prompt', () => {
 		inTheApp();
 		const where = render();

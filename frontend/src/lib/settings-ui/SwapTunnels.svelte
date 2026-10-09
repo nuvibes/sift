@@ -1,14 +1,6 @@
 <script lang="ts">
-	/*
-	 * Settings > Sites and Tunnels > Swap tunnels: the tunnel this Sift dials through when it JOINS
-	 * a swap (`swap.guest_tunnel`).
-	 *
-	 * Whether a tunnel can HOST one is a fact about the tunnel, said on its own row in Tunnels
-	 * above, so it is not listed a second time here. The join's tunnel is chosen on the swap
-	 * screen, in the open beside the join where the server is named, so this row says what is
-	 * chosen and opens that screen rather than being a second place to choose it. The swap screens'
-	 * sentences that name a tunnel link to this block: `/settings/sites#sites.swap_tunnels`.
-	 */
+	/* Settings > Sites and Tunnels > Swap tunnels: the tunnel this Sift dials through when it
+	 * JOINS a swap (`swap.guest_tunnel`). */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';

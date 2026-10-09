@@ -1,8 +1,4 @@
-/* The handle at the foot of Theater: the whole mark, in the band under the wall.
- *
- * jsdom lays nothing out, so the rule is read off the compiled stylesheet: the tab is as tall as
- * the page's inset under the wall, and the mark is a size that fits inside it.
- */
+/* The handle at the foot of Theater: the whole mark, in the band under the wall. */
 import { afterEach, expect, it } from 'vitest';
 
 import source from './+page.svelte?raw';

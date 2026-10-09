@@ -59,23 +59,7 @@ export interface paths {
         put?: never;
         /**
          * Delete Several
-         * @description Delete a selection, in ONE request. Admin-only, and refused at the door.
-         *
-         *     **One request for the selection, never one PER FILE.** A selection of a hundred files sent a
-         *     file at a time is a hundred round trips, each awaited before the next begins, each dropping its
-         *     own tile the instant it answers, so a bulk delete flickers its way down the wall one picture at
-         *     a time, and each one tells every screen holding a list that the library has changed. The work
-         *     itself is never the cost.
-         *
-         *     Every file is checked and removed exactly as the single route does it, and the index rows of
-         *     the whole selection go in one write with one announcement. See `Deleter.remove_many`. **It
-         *     is still not a transaction over the disk and must not become one**: deleting bytes cannot be
-         *     rolled back, so a set that fails partway has genuinely deleted what it deleted, and saying so
-         *     honestly is the only correct answer. The counts are that answer.
-         *
-         *     Refusals do not stop the run, for the same reason: one read-only folder in a selection of two
-         *     hundred should not refuse the other hundred and ninety-nine. A caller who may not delete
-         *     anything at all is refused outright instead, with a 403. See the note above this function.
+         * @description Delete a selection in one request; refusals are counted, not fatal. Admin-only.
          */
         post: operations["delete_several_api_assets_delete_post"];
         delete?: never;
@@ -95,11 +79,7 @@ export interface paths {
         put?: never;
         /**
          * Check Delete
-         * @description Says whether the sheet may offer the disk tier for these files. Admin-only; writes nothing.
-         *
-         *     Asked when the sheet opens, so a picture inside an archive is drawn as Remove from Sift only,
-         *     with the reason, rather than offered and then refused. The delete routes still refuse it on
-         *     their own: this is what the screen knows, never the guard.
+         * @description Whether the sheet may offer the disk tier for these files. Admin-only; writes nothing.
          */
         post: operations["check_delete_api_assets_delete_check_post"];
         delete?: never;
@@ -139,15 +119,7 @@ export interface paths {
         put?: never;
         /**
          * Set Favorite Many
-         * @description The heart, over a selection, in ONE request.
-         *
-         *     One target state for the whole set (see `FavoriteMany`), and one statement behind it. The
-         *     list form of the stars above sets out why the three of these exist, why they answer counts
-         *     rather than opinions, and why a file the caller cannot act on is skipped instead of failing the
-         *     call; none of it is different here.
-         *
-         *     It leaves the stars exactly as they were, as the single write does. Two upserts touching one
-         *     column each is what gives that, and it is asserted rather than reasoned about.
+         * @description The heart, over a selection, in one request; the stars are left as they were.
          */
         post: operations["set_favorite_many_api_assets_favorite_post"];
         delete?: never;
@@ -242,11 +214,7 @@ export interface paths {
         put?: never;
         /**
          * Set Asset Pinned Many
-         * @description Pin a selection, or take the pins off it, in ONE request.
-         *
-         *     One target state for the whole set rather than a toggle each (see `PinMany`), and one
-         *     statement behind it. Everything the list form of the stars above says about skipping, about
-         *     counts instead of opinions and about why the single route stays applies here unchanged.
+         * @description Pin a selection, or take the pins off it, in one request.
          */
         post: operations["set_asset_pinned_many_api_assets_pin_post"];
         delete?: never;
@@ -288,21 +256,7 @@ export interface paths {
         put?: never;
         /**
          * Set Rating Many
-         * @description The same stars, over a selection, in ONE request.
-         *
-         *     **One request for the whole selection, which is the whole reason this route exists.** One
-         *     request per file would be a round trip per file, each awaited before the next began, each its
-         *     own write transaction and each telling this user's other screens about one row, and a failure
-         *     part-way would leave a half-rated selection. The work is never the cost.
-         *
-         *     A file the caller cannot act on is SKIPPED and counted, exactly as bulk tagging skips one, and
-         *     the reply says how many and why. That is the one behaviour that differs from the single route,
-         *     where there is no partial answer to give and a refusal is the only honest one.
-         *
-         *     It answers counts and not opinions. The single route hands back the whole `AssetOpinion`
-         *     because a control is settling onto one file's truth; a selection has no one row to settle, and
-         *     every screen holding any of these is told what they now say over the live channel regardless.
-         *     See `UserStateStore._write_many`.
+         * @description The same stars, over a selection, in one request; files not acted on are counted.
          */
         post: operations["set_rating_many_api_assets_rating_post"];
         delete?: never;
@@ -322,36 +276,9 @@ export interface paths {
         put?: never;
         /**
          * Run Now
-         * @description Run one pass now, or a stage's every pass, for these files: what Importing's own press
-         *     does, narrowed to them.
+         * @description Run one pass now, or a stage's every pass (`<stage>:all`), for these files.
          *
-         *     THE ONE DOOR for doing a file's work again by hand, for every pass: without it a bad thumbnail,
-         *     a watermark read under an older model or a file that was replaced on disk could only be done
-         *     again by walking the whole library. This is that walk's task, handed the files a person
-         *     picked:
-         *
-         *     * **Every pass is refused the way Importing refuses it.** A switch that says no for a file
-         *       (the library's, or the folder's answer over it) leaves that file out, and a press where it
-         *       said no for every file is refused naming the switch. A pass that cannot run on this machine
-         *       at all (`Product.cannot_run`) is refused before anything is queued, with its own sentence.
-         *     * **A file already waiting for this is not queued twice**, whoever queued it: an arriving
-         *       file's own job, a pass over the library, an earlier press. Read once per press, never looped.
-         *       Work of it still WAITING is pulled forward: the press collapses onto that row and runs it
-         *       now, whatever the task's When held it for; only work already running is left as it is.
-         *     * **Again means again** where the maker can: the task carries `AGAIN`. A pass whose maker only
-         *       fills what is missing is offered only for the files that lack it. See `Product.again`.
-         *     * **Ahead of the library-wide work** (`WAITED_ON_PRIORITY`), because somebody pressed it and is
-         *       looking at the files, and **named for the presser** (`requested_by`), which is also what tells
-         *       a face scan to ring the screens when it lands. Each task writes its own History line.
-         *     * **`<stage>:all` ("Identify all") is every pass of that stage**, expanded HERE rather than
-         *       by the screen sending one request per pass: the server is the one place that knows which
-         *       passes a stage has, so a pass registered tomorrow joins "Identify all" by the declaration
-         *       that draws its row, and the press answers with one sentence about the lot. Each pass is the
-         *       single press above; one that a switch refuses or that cannot run here is left out and named,
-         *       and the press is refused only when no pass queued anything.
-         *
-         *     An id this admin may not open is the 404 a made-up one gets, and one such id refuses the press:
-         *     a selection is what the wall showed, so a stranger in it is a request nobody's screen made.
+         *     Refused as Importing refuses it; a file already waiting is pulled forward, never queued twice.
          */
         post: operations["run_now_api_assets_run_post"];
         delete?: never;
@@ -393,19 +320,7 @@ export interface paths {
         put?: never;
         /**
          * Assign Tags
-         * @description Attach or detach tags, for one asset or for a selection of them.
-         *
-         *     **No file is moved.** This writes rows in the join table and nothing else: every path, every
-         *     byte and every location row is exactly as it was. That is the promise the storage model is
-         *     making, and the test that asserts it is the one worth keeping.
-         *
-         *     An asset that cannot be resolved is SKIPPED and counted, and the reply says how many and why.
-         *     A silent partial success would be worse than a refusal, but a reported one is not: failing the
-         *     whole call would tag none of three files because one sits in the viewer's own locked vault.
-         *
-         *     The TAGS are still all-or-nothing, and that is a different question: a tag id that resolves to
-         *     nothing is a broken caller rather than a file somebody hid, and there is no useful half of
-         *     "put these two tags on" when one of them does not exist.
+         * @description Attach or detach tags on files, moving none; an unresolved file is skipped and counted.
          */
         post: operations["assign_tags_api_assets_tags_post"];
         delete?: never;
@@ -462,9 +377,7 @@ export interface paths {
         };
         /**
          * Get Asset
-         * @description One asset. A concealed one comes back as the placeholder, not as its contents,
-         *     unless this viewer has the vault open, in which case it is exactly as visible as anything
-         *     else on their Hidden screen.
+         * @description One asset; a concealed one is the placeholder unless this viewer's vault is open.
          */
         get: operations["get_asset_api_assets__asset_id__get"];
         /**
@@ -477,12 +390,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Asset
-         * @description Forget a file, or, on a folder Sift was given write access to, delete it. Admin-only.
-         *
-         *     `mode=sift` is the default and leaves every byte where it is, dropping only Sift's record of the
-         *     file. `mode=disk` removes the file for good: there is nowhere it goes and nothing to put it back
-         *     from, and it is refused for any folder that was not handed over read-write. A guest is refused
-         *     either mode, but only after visibility is settled, so the refusal never confirms a file exists.
+         * @description Forget a file, or, on a folder Sift may write to, delete it from disk. Admin-only.
          */
         delete: operations["delete_asset_api_assets__asset_id__delete"];
         options?: never;
@@ -540,11 +448,6 @@ export interface paths {
         /**
          * Edit Frame
          * @description How big this picture is as somebody sees it. Asked once, when the editor opens.
-         *
-         *     A GET, unlike everything else here, because it carries no body and asks about the file rather
-         *     than about anything that was sent. The ordinary viewer, and the service settles visibility, for
-         *     the reason every route naming an asset in its address does: "admins only" against a file the
-         *     user was not allowed to know about is the answer that confirms it is there.
          */
         get: operations["edit_frame_api_assets__asset_id__edit_frame_get"];
         put?: never;
@@ -567,9 +470,6 @@ export interface paths {
         /**
          * Edit Preflight
          * @description What this edit would produce, before it produces it. Re-asked as the numbers change.
-         *
-         *     A POST although it writes nothing, for the same reason the compression preflight is one: it
-         *     carries a body, and the answer changes with every number in it.
          */
         post: operations["edit_preflight_api_assets__asset_id__edit_preflight_post"];
         delete?: never;
@@ -613,9 +513,6 @@ export interface paths {
         /**
          * Set Favorite
          * @description The heart, per user, and independent of the stars.
-         *
-         *     Favouriting a three-star clip is allowed and is not a contradiction: one is a shortlist and
-         *     the other is a judgement about quality. Clearing it leaves the rating alone.
          */
         put: operations["set_favorite_api_assets__asset_id__favorite_put"];
         post?: never;
@@ -694,11 +591,7 @@ export interface paths {
         };
         /**
          * Hls Playlist
-         * @description The list of segments. None of them exist yet; they are made as they are asked for.
-         *
-         *     The plan arrives in this request's own query string and is written onto every URL in the
-         *     playlist, so the segment requests that follow act on the decision `/playback` made rather than
-         *     re-deriving it and landing on the default.
+         * @description The list of segments, made as they are asked for; the plan rides on every URL.
          */
         get: operations["hls_playlist_api_assets__asset_id__hls_index_m3u8_get"];
         put?: never;
@@ -718,16 +611,9 @@ export interface paths {
         };
         /**
          * Hls Master
-         * @description The ladder: every size this file can be watched at, for the player to choose between.
+         * @description The ladder for the player to choose between.
          *
-         *     DECLARED BEFORE the segment route below, and that is load-bearing rather than tidy. Routes are
-         *     matched in the order they are written, and `hls/{segment}` matches literally anything, so a
-         *     master playlist declared after it would be looked up as a segment called "master.m3u8", refused
-         *     by the strict name check there, and answered with a 404 that looks like a missing file.
-         *
-         *     It takes no query string of its own. Everything a variant needs is written into the variant's
-         *     own URL inside it, which is the same rule the media playlist already follows: nothing is held
-         *     between requests, so the decision travels in the address or it does not travel.
+         *     Declared before `hls/{segment}`, which would otherwise match "master.m3u8".
          */
         get: operations["hls_master_api_assets__asset_id__hls_master_m3u8_get"];
         put?: never;
@@ -747,11 +633,7 @@ export interface paths {
         };
         /**
          * Hls Segment
-         * @description One segment, transcoded on demand if it is not already cached.
-         *
-         *     Scoped exactly as tightly as `stream` is. It is a separate route and it gets a separate test:
-         *     two endpoints that return bytes are two endpoints that can leak, and testing one of them
-         *     proves nothing about the other.
+         * @description One segment, transcoded on demand if it is not already cached; scoped as `stream` is.
          */
         get: operations["hls_segment_api_assets__asset_id__hls__segment__get"];
         put?: never;
@@ -773,25 +655,8 @@ export interface paths {
          * Local File
          * @description Where the file is, so the desktop shell can drag it into another application.
          *
-         *     THE ONLY CALLER IS THE SHELL, and this exists because a real Windows drag hands over a path on
-         *     the local disk: there is no "stream it from over there" in the format Windows uses. So the
-         *     shell needs either a path it can open or a name to save a copy under, and this one route
-         *     answers both without the page ever being told either.
-         *
-         *     Rule 1 of this module still holds: the path comes from `Repository.locate`, which applies the
-         *     permission scope inside its SQL. The authority is exactly the authority to watch the thing:
-         *     somebody who can play an asset can already download it, so being able to drag it out is not
-         *     new. That is why this is not admin-only: a guest whom the app lets watch something would
-         *     otherwise get LESS out of the desktop application than out of a plain browser.
-         *
-         *     `path` is None for a caller on another machine, which is what makes the shell fetch a copy
-         *     instead. It is a correctness answer rather than a secrecy one: `is_local_request` says why.
-         *
-         *     `shared_path` is the way out of that copy: a library kept on a network share is reachable from
-         *     both machines, so the second one has no reason to fetch anything. See the field.
-         *
-         *     A guest is given neither. Where the library lives on this device or on the network is for
-         *     admins to know, so a guest's drag is always a copy.
+         *     The path comes from `Repository.locate`; `path` is None off this machine, and a guest is given
+         *     neither path, so their drag is always a copy.
          */
         get: operations["local_file_api_assets__asset_id__local_file_get"];
         put?: never;
@@ -811,10 +676,7 @@ export interface paths {
         };
         /**
          * Made From
-         * @description What Sift has made FROM this file: the other end of the line a copy carries.
-         *
-         *     Scoped the same way the copy's own line is: a copy this user may not see is left out of the
-         *     list rather than named, so the page cannot become a way of reading filenames sideways.
+         * @description What Sift has made FROM this file; copies the user may not see are left out.
          */
         get: operations["made_from_api_assets__asset_id__made_from_get"];
         put?: never;
@@ -835,27 +697,7 @@ export interface paths {
         get?: never;
         /**
          * Set O Count
-         * @description The O counter: one more, one fewer, or back to nothing.
-         *
-         *     Beside the stars rather than in a slice of its own, because it is the same kind of thing they
-         *     are: one row per user, one number, written by a control and read by every screen already
-         *     drawing the file. A feature of its own would be a second copy of the resolve-then-write shape
-         *     and a second place for the reply to fall out of step with `AssetOpinion`.
-         *
-         *     Per user and never anybody else's: two users on one install hold their own hearts, their own
-         *     stars and their own history. A tally is an opinion, so it goes where the rest of them are.
-         *
-         *     ONE route for the three acts rather than three routes, and the act is the body. Three addresses
-         *     would be three rows in the authz matrix saying the same policy about the same row, and the
-         *     thing that differs between them is one word.
-         *
-         *     `require_reachable` first, and it does more here than refuse a stranger's file: it RESOLVES the
-         *     id, so a state row can never be left hanging off an id that names nothing: the same reasoning
-         *     the pin below gives, and the cascade that would otherwise have nothing to cascade from.
-         *
-         *     It answers the whole opinion, as the stars and the pin do, because this file's opinions are one
-         *     row and one shape. See `changes.AssetOpinion`. That is what makes the reply to the tab that
-         *     pressed the control and the message to the tab that did not the same piece of code.
+         * @description The O counter, for this user: one more, one fewer, or back to nothing.
          */
         put: operations["set_o_count_api_assets__asset_id__o_count_put"];
         post?: never;
@@ -899,15 +741,7 @@ export interface paths {
          * Outgoing
          * @description The file as it may leave Sift: its own bytes, or a copy with every location taken out.
          *
-         *     What the desktop shell's drag out of the window fetches, and what Copy image puts on the
-         *     clipboard: two ways a picture leaves for a chat window, and neither may carry where it was
-         *     taken. `stream` is the original, for Sift's own player; this is the same file through the door
-         *     (`sift.kernel.places`). The file in the library is not touched: a copy is written into Sift's
-         *     own cache and removed once it has been sent, and a file with no place is sent as it is.
-         *
-         *     The same authority as `stream` (whoever may watch a file may take it), and its media type, so
-         *     a picture on the clipboard is a picture. A file whose location cannot be taken out is refused
-         *     with a sentence, and its HEAD says so too (`outgoing_head`).
+         *     What a drag out and Copy image fetch; same authority as `stream`.
          */
         get: operations["outgoing_api_assets__asset_id__outgoing_get"];
         put?: never;
@@ -946,20 +780,6 @@ export interface paths {
         /**
          * Set Asset Pinned
          * @description Keep this file at the top of whatever wall it is on, for this user.
-         *
-         *     The sixth opinion, and the file half of the pin the five named kinds already carry. Everybody's,
-         *     guests included, exactly as the heart below is: a pin changes where a file appears on this
-         *     viewer's wall and never whether it appears at all.
-         *
-         *     `_require_visible` first, and it is doing more here than refusing a stranger's file: it also
-         *     resolves the id. A state row hanging off an id that names nothing is one nothing will ever clean
-         *     up, because the cascade has nothing to cascade from: the same reasoning the entity pins give.
-         *
-         *     It answers the whole opinion rather than just the pin, unlike the five entity routes, because
-         *     this file's opinions are ONE row and one shape. See `changes.AssetOpinion`. The reply and the
-         *     message this write publishes to the user's other tabs are then the same thing, which is what
-         *     stops the tab that pressed the control and the tab that did not being served by two different
-         *     pieces of code.
          */
         put: operations["set_asset_pinned_api_assets__asset_id__pin_put"];
         post?: never;
@@ -980,12 +800,7 @@ export interface paths {
         put?: never;
         /**
          * Plan Playback
-         * @description Decide how this browser should play this file.
-         *
-         *     A POST rather than a GET because it carries a body and because its answer is specific to the
-         *     client that asked: there is nothing here a shared cache should ever hold. It carries the CSRF
-         *     token like every other unsafe method, so the SameSite cookie is not the only thing standing
-         *     between a cross-site page and it.
+         * @description Decide how this browser should play this file: a POST, as the answer is the client's own.
          */
         post: operations["plan_playback_api_assets__asset_id__playback_post"];
         delete?: never;
@@ -1044,11 +859,7 @@ export interface paths {
         get?: never;
         /**
          * Set Rating
-         * @description One to five whole stars, or null to clear it.
-         *
-         *     Per user: this writes the row belonging to the person asking and can reach no other. It
-         *     leaves the heart exactly as it was: the two are independent, and a rating is not a quiet way
-         *     to un-favorite something.
+         * @description One to five whole stars, or null to clear it, for this user; the heart is left as it was.
          */
         put: operations["set_rating_api_assets__asset_id__rating_put"];
         post?: never;
@@ -1089,14 +900,7 @@ export interface paths {
          * Rendition
          * @description A photograph as a JPEG, for a browser that cannot draw the original. No decoder runs.
          *
-         *     A phone's HEIC is a picture only Safari draws: everywhere else the original arrives whole and
-         *     the browser shows nothing. The copy is the whole picture, decoded once when the file was read
-         *     (`kernel.heif`), so this is bytes off a disk like `stream`. The viewer asks for it only after
-         *     the original failed to draw, and Save to device keeps handing over the original.
-         *
-         *     A JPEG or nothing. The same kind of derivative is an animated WebP's decoder copy, an MP4 that
-         *     no picture element draws, and a still's copy is the only one this answers with. A 404 covers
-         *     "not allowed", "no copy" and "not made yet" alike, as every picture route does.
+         *     Only a still's copy is answered; a 404 covers every kind of miss.
          */
         get: operations["rendition_api_assets__asset_id__rendition_get"];
         put?: never;
@@ -1116,15 +920,7 @@ export interface paths {
         };
         /**
          * Replay Curve
-         * @description The parts of this file this user keeps coming back to.
-         *
-         *     Per user, like the heart and the stars: what somebody else has replayed is not a fact about
-         *     the file. That is also what makes this honest on a self-hosted library where the whole audience
-         *     is one person: the sites draw this curve from millions of strangers and call it "most
-         *     replayed", and the same shape drawn from one person's own history is a more useful thing to be
-         *     handed, not a lesser one.
-         *
-         *     Scoped through `_open` like every other route here, so a curve cannot confirm that an id exists.
+         * @description The parts of this file this user keeps coming back to, per user.
          */
         get: operations["replay_curve_api_assets__asset_id__replays_get"];
         put?: never;
@@ -1144,23 +940,7 @@ export interface paths {
         };
         /**
          * Same Music
-         * @description The files sharing a song with this one, closest first: the file page's Same music strip.
-         *
-         *     **Anybody signed in**, like the lookalikes (`/assets/{asset_id}/similar`, whose rules this
-         *     copies): it is a way of browsing, not a control over the install.
-         *
-         *     A file this viewer may not see answers exactly as a file that does not exist (an EMPTY group,
-         *     not a refusal) and the answer is given before the group is read at all, so nothing about a
-         *     concealed file's partners is worked out on its behalf. That is the lookalikes' rule, and it is
-         *     written there with the reason: a reply that differed would be a way to ask whether a file
-         *     exists, and a group read for a file the viewer cannot have would describe it out of files they
-         *     can.
-         *
-         *     The group itself is scoped by the stored verdict (`MusicStore.same_music_of`: every file on
-         *     the path, the one reached and the one it was reached through), with a concealed file only
-         *     while this viewer's Hidden is open: the rule the lookalikes apply. And the ids it names are
-         *     then handed to the ordinary read (`assets_of`), so what is drawn is what that read says this
-         *     viewer may see, in the one statement every screen uses.
+         * @description Files sharing a song with this one that the viewer may see, closest first; none if hidden.
          */
         get: operations["same_music_api_assets__asset_id__same_music_get"];
         put?: never;
@@ -1200,30 +980,7 @@ export interface paths {
         };
         /**
          * Find Similar
-         * @description What else looks like this file.
-         *
-         *     **Not admin-only, unlike everything else here**, and the difference is the point: this is a way
-         *     of browsing rather than a control over the install. Anybody signed in may ask it.
-         *
-         *     Which is why the lookalikes are ranked among this user's own files, so a hidden one can neither
-         *     fill the strip nor shorten it, and the answer still goes back through the ordinary read, the
-         *     one opinion about concealment every other screen uses.
-         *
-         *     A file the viewer cannot see answers with nothing found rather than refusing, for the same
-         *     reason every per-asset route does: a refusal that differs from an empty answer is a way to ask
-         *     whether a file exists.
-         *
-         *     That answer is given HERE, before the lookalikes are worked out at all, and the order is the
-         *     whole of it. Asking first and resolving afterwards narrows the RESULTS correctly and still
-         *     answers the question that was asked: the arithmetic runs on a file the caller may not have, and
-         *     a populated page comes back for it while an invented id comes back empty. Those two replies
-         *     differ, so the pair of them is an existence oracle, and the page itself says which of the
-         *     files this user CAN see resemble one it cannot, which is a description of the concealed file
-         *     assembled out of visible ones.
-         *
-         *     `can_view` and not `get_asset`, so a concealed subject answers nothing while Hidden is shut.
-         *     That is the same rule the results are filtered by below; asking it of the subject by a looser
-         *     test would let the placeholder tile be used to describe what it is a placeholder for.
+         * @description What else looks like this file, ranked among this user's files once `can_view` says yes.
          */
         get: operations["find_similar_api_assets__asset_id__similar_get"];
         put?: never;
@@ -1264,11 +1021,6 @@ export interface paths {
         /**
          * Stream
          * @description The file itself, over HTTP range requests. No ffmpeg runs.
-         *
-         *     This is the majority path and the whole of its cost is reading bytes off a disk. There is a
-         *     test that counts ffmpeg processes across a direct-play request and asserts the count is zero,
-         *     because the day this route starts transcoding is the day the cheap path stops being cheap and
-         *     nobody notices.
          */
         get: operations["stream_api_assets__asset_id__stream_get"];
         put?: never;
@@ -1360,34 +1112,8 @@ export interface paths {
          * Record View
          * @description Record one sitting: the time, the place, whether it was a view, and which parts were played.
          *
-         *     Scoped like everything else here: somebody who cannot see an asset cannot record a view against
-         *     it, which would otherwise be a way to confirm an id exists. It writes state, so it carries the
-         *     CSRF token every other unsafe method does rather than resting on the SameSite cookie alone.
-         *
-         *     ## The client reports; this decides
-         *
-         *     Everything on `ViewReport` is a fact the browser is the only one able to observe: how long the
-         *     file was on screen, where the playhead stopped, whether it reached the end. Every CONCLUSION is
-         *     drawn here, against the file's own length and the user's own settings, because three separate
-         *     screens send this report and a rule that lives in one of them is not a rule.
-         *
-         *     Three separate things come out of that, and they are separate on purpose:
-         *
-         *     - **The time watched is always kept.** A sitting too short to be a view is still time that
-         *       really passed, and dropping it would leave `watched_ms` describing only the sittings that
-         *       happened to clear a threshold.
-         *     - **A view is counted when the sitting earns it** (see `policy.counts_as_a_view`, which asks a
-         *       different question of a picture than of a video). There is deliberately no dedup window:
-         *       watching something twice in five minutes is watching it twice, and it should read as two.
-         *       A sitting reported in pieces is counted on the piece that CROSSES the threshold, so it is
-         *       still one view: see `ViewReport.already_reported_ms`, which is what tells the two apart.
-         *     - **Where somebody got to is always kept**, view or not. The two are different questions and the
-         *       first does not wait on the second: opening a film, skipping two minutes in and leaving is
-         *       exactly the sitting somebody wants picked up again, and it is nowhere near the threshold.
-         *       `_resume_where` has already applied the user's own rule about what is worth keeping.
-         *     - **The replay curve takes whatever was played**, view or not. Ten seconds of a favourite moment
-         *       is exactly the thing that curve exists to show, and refusing it because the sitting was short
-         *       would erase the shortest and most repeated visits, which are the peaks.
+         *     The client reports facts; this draws every conclusion. Time, position and replays are kept
+         *     whatever the view; a view counts on the piece that crosses `policy.counts_as_a_view`.
          */
         post: operations["record_view_api_assets__asset_id__view_post"];
         delete?: never;
@@ -1409,26 +1135,8 @@ export interface paths {
          * Lock App
          * @description Shut this session, and say which way it was shut.
          *
-         *     The mark goes on the session row, so every path to the server is shut immediately: another tab,
-         *     a reload, the credential replayed at the API by hand. A lock drawn over the screen leaves all
-         *     three working, and that is the difference this route exists to make.
-         *
-         *     **Which way it shuts is decided here, not by the caller.** Whether a PIN may reopen a session
-         *     is a setting this server holds and a PIN it stores. A client deciding it has to read both
-         *     first, and asking before an answer had landed it would read "no PIN" for somebody who had one
-         *     and sign them out, intermittently, which is the hardest kind of fault to be believed about.
-         *     The answer names what happened so the screen knows where to send somebody, rather than
-         *     working it out a second time.
-         *
-         *     Offered to everybody, guests included, and **allowed on a session that is already locked**,
-         *     which is the fourth route that has to work while shut, alongside the two unlocks and signing
-         *     out. A panic control pressed twice must not be worse than pressed once, and every other route
-         *     refuses a locked session, so without the exception the second press would answer 423: the
-         *     client would read that as "shut" and bounce, which looks like the shortcut needing two presses
-         *     and, once the session had been reopened and shut again, like being signed out.
-         *
-         *     Locking never fails for the caller: a session that has already gone is already shut, and one
-         *     already locked is locked again to the same effect.
+         *     Decided here, where the setting and the PIN are. Allowed on a session already locked, so a
+         *     second press is not worse than the first; it never fails.
          */
         post: operations["lock_app_api_auth_lock_post"];
         delete?: never;
@@ -1448,14 +1156,7 @@ export interface paths {
         put?: never;
         /**
          * Login
-         * @description Sign in. The failure reply is the same whether the username is unknown or the password is
-         *     wrong, and takes the same time, so it cannot be read to learn which usernames exist.
-         *
-         *     There is no lockout here: a run of failures on a name is answered by making the next attempt on
-         *     it slower (the service tarpits it), never by refusing a correct password, so the one admin
-         *     cannot be shut out of their own instance by someone guessing at the login. The one 429 is for a
-         *     second sign-in on the same username from the same address while the first is still being
-         *     checked, with a `Retry-After`.
+         * @description Sign in; a failure answers the same, in the same time, whatever was wrong.
          */
         post: operations["login_api_auth_login_post"];
         delete?: never;
@@ -1475,11 +1176,7 @@ export interface paths {
         put?: never;
         /**
          * Logout
-         * @description Sign out. The session is revoked in the database, so the cookie that is being cleared is
-         *     already dead even if the client keeps a copy of it.
-         *
-         *     Reachable from a locked session, and it has to be: signing out is the stronger of the two ways
-         *     back and the one somebody reaches for when they have forgotten the PIN.
+         * @description Sign out, revoking the session in the database; reachable from a locked session.
          */
         post: operations["logout_api_auth_logout_post"];
         delete?: never;
@@ -1497,15 +1194,7 @@ export interface paths {
         };
         /**
          * Me
-         * @description Who the caller is, and the CSRF token to send with state-changing requests.
-         *
-         *     The username is read back from the user's row rather than trusted from anything the client
-         *     holds. The CSRF token is recomputed from the session cookie, so a page loads it once and echoes
-         *     it thereafter.
-         *
-         *     Answered from a locked session, and it says so: without it the lock screen could not tell whose
-         *     PIN it was asking for, and unlocking needs the CSRF token this hands back. It carries nothing
-         *     about the library: a name, a role and a token bound to a cookie the caller already holds.
+         * @description Who the caller is and the CSRF token, read from the row; answered while locked too.
          */
         get: operations["me_api_auth_me_get"];
         put?: never;
@@ -1527,9 +1216,7 @@ export interface paths {
         put?: never;
         /**
          * Change Password
-         * @description Change your own password. Every user may, guests included; the old password is required.
-         *     For a user who holds a master key it is re-wrapped, so saved logins survive. Every other
-         *     session is revoked; this one is kept, so the change does not sign you out of your own browser.
+         * @description Change your own password, the old one required; every other session is revoked.
          */
         post: operations["change_password_api_auth_password_post"];
         delete?: never;
@@ -1549,18 +1236,7 @@ export interface paths {
         put?: never;
         /**
          * Check Password
-         * @description What the policy makes of a password somebody is still typing.
-         *
-         *     It exists because of the one rule the browser cannot mirror. Length and variety are four lines
-         *     of Javascript; "is this one of a hundred thousand leaked passwords" is a file that ships with
-         *     the server, and putting it in the page would be a megabyte on every load to save one request.
-         *     Without this the meter would say "strong" about `Password123!` and the server would refuse it
-         *     a click later, with no way for the person typing to see it coming.
-         *
-         *     Signed out on purpose: the first screen anybody sees is the one that creates an admin, and
-         *     there is no session to have yet. It costs a set lookup, it names no user, it writes nothing,
-         *     and it tells a caller only what the bundled list (a public one) already says. The password
-         *     itself is not logged, here or anywhere.
+         * @description What the policy makes of a password being typed, leaked list included; never logged.
          */
         post: operations["check_password_api_auth_password_check_post"];
         delete?: never;
@@ -1579,8 +1255,7 @@ export interface paths {
         get?: never;
         /**
          * Set Pin
-         * @description Set or change the PIN that unlocks a locked screen. The current password is required, so an
-         *     unattended unlocked screen cannot be used to plant one.
+         * @description Set or change the PIN; the current password is required.
          */
         put: operations["set_pin_api_auth_pin_put"];
         post?: never;
@@ -1601,9 +1276,7 @@ export interface paths {
         put?: never;
         /**
          * Setup
-         * @description Create the one admin, on first run only. A second call is a 409: the instance already has
-         *     an owner, and that idempotency is what stops an exposed fresh instance being claimed by whoever
-         *     reaches it first.
+         * @description Create the one admin, on first run only; a second call is a 409.
          */
         post: operations["setup_api_auth_setup_post"];
         delete?: never;
@@ -1621,11 +1294,7 @@ export interface paths {
         };
         /**
          * Setup Status
-         * @description Whether the instance still needs its admin. The one thing a signed-out client may ask.
-         *
-         *     Without it the sign-in screen cannot tell a fresh instance from a configured one, and its only
-         *     alternative is to post a setup attempt and read the refusal, which means guessing, with a
-         *     write, on every cold load.
+         * @description Whether the instance still needs its admin; the one thing a signed-out client may ask.
          */
         get: operations["setup_status_api_auth_status_get"];
         put?: never;
@@ -1647,26 +1316,10 @@ export interface paths {
         put?: never;
         /**
          * Unlock App
-         * @description Open a locked session with the PIN.
+         * @description Open a locked session with the PIN, verifying and clearing the lock in one step.
          *
-         *     It verifies and clears the lock in one step. There is no route that answers "is this the PIN"
-         *     without doing anything, because a question with no side effect is an oracle: a caller could ask
-         *     it as often as the throttle allowed and learn the secret without ever having to spend a session.
-         *
-         *     It unlocks a session that exists and never mints one, which is what stops the PIN becoming a
-         *     weaker way in. A browser with no session has nothing here to unlock and is asked for the
-         *     password.
-         *
-         *     Hidden stays shut. The same secret opens two different things and it opens them one at a time:
-         *     coming back to the app does not come back to a screenful of hidden files.
-         *
-         *     A run of wrong PINs destroys the session, and the caller is at the password. The refusal is the
-         *     same 401 either way: saying "and that was your last one" would tell somebody guessing exactly
-         *     how much room they had left.
-         *
-         *     Only from the local network. A request that came through a tunnel or a proxy, or from an
-         *     address outside the private ranges, is refused with a 403 before the PIN is read, so it is
-         *     neither verified nor counted, and the screen switches to the password.
+         *     It never mints a session, and Hidden stays shut. A run of wrong PINs ends the session; only
+         *     from the local network.
          */
         post: operations["unlock_app_api_auth_unlock_post"];
         delete?: never;
@@ -1686,11 +1339,7 @@ export interface paths {
         put?: never;
         /**
          * Unlock Secrets
-         * @description Put this user's master key back in memory. The session is untouched.
-         *
-         *     Nothing new is authorized by it: the caller already holds a valid session, and the password is
-         *     the same one that would unwrap the key at sign-in. What it avoids is signing somebody out of a
-         *     working session to recover a key the process dropped when it restarted.
+         * @description Put this user's master key back in memory, keeping the session.
          */
         post: operations["unlock_secrets_api_auth_unlock_secrets_post"];
         delete?: never;
@@ -1710,17 +1359,7 @@ export interface paths {
         put?: never;
         /**
          * Unlock App With Password
-         * @description Open a locked session with the user's password.
-         *
-         *     Always available, and that is what makes locking safe to be the only shape. Locking shuts a
-         *     session rather than throwing it away, so the thing that has always opened one still does,
-         *     and somebody who never set a PIN, or turned that option off, types a password rather than a
-         *     username and a password.
-         *
-         *     It opens a session that exists and never mints one, exactly as the PIN route does: a browser
-         *     holding nothing has nothing here to unlock and is sent to the front door.
-         *
-         *     Hidden stays shut. The same secret opens two different things and it opens them one at a time.
+         * @description Open a locked session with the password, always available; Hidden stays shut.
          */
         post: operations["unlock_app_with_password_api_auth_unlock_password_post"];
         delete?: never;
@@ -1738,21 +1377,13 @@ export interface paths {
         };
         /**
          * List Users
-         * @description Every user on this instance.
-         *
-         *     Admin-only, and the list itself is the reason rather than what can be done from it: who has a
-         *     sign-in here is a fact about the household, and a guest asking who else was let in is asking
-         *     something that is not theirs to know.
+         * @description Every user on this instance, for an admin only.
          */
         get: operations["list_users_api_auth_users_get"];
         put?: never;
         /**
          * Create Guest
-         * @description Add a guest with a first password an admin chooses.
-         *
-         *     Creating an admin is not offered, here or anywhere: the one admin is made once, by first-run
-         *     setup, and a second one is a decision with consequences for what each can conceal from the
-         *     other. This route makes guests, and the role is not a parameter it accepts.
+         * @description Add a guest with a first password an admin chooses; this route makes no admin.
          */
         post: operations["create_guest_api_auth_users_post"];
         delete?: never;
@@ -1772,17 +1403,7 @@ export interface paths {
         put?: never;
         /**
          * Generate Guest
-         * @description Add a guest without deciding anything: Sift invents the name and the password.
-         *
-         *     **The password is in this reply and nowhere else.** It is not stored in the clear, not returned
-         *     by any later read, and not logged, so it is shown once, the screen says so, and losing it
-         *     means resetting the password rather than looking it up. That is the whole reason this is a
-         *     separate route from the one that takes a password: a route that could hand a password back
-         *     would have to be able to read one.
-         *
-         *     Both halves come from the operating system's random source. There is no expiry and no cleanup:
-         *     this makes an ordinary guest user that behaves like every other one, and a throwaway variant
-         *     would need rules about when it goes away that nobody has decided.
+         * @description Add a guest with an invented name and password; the password is in this reply only.
          */
         post: operations["generate_guest_api_auth_users_generate_post"];
         delete?: never;
@@ -1803,12 +1424,7 @@ export interface paths {
         post?: never;
         /**
          * Delete User
-         * @description Remove a guest user, their sessions, and every share and restrict made to it.
-         *
-         *     All three go together by foreign key. A grant left behind naming a deleted user would be
-         *     inert today and dangerous the moment an id is reused, and this is the one side of the access
-         *     model where the database can be trusted to do it: the subject of a grant really is a row in
-         *     the `users` table.
+         * @description Remove a guest, their sessions and every share and restrict made to them.
          */
         delete: operations["delete_user_api_auth_users__user_id__delete"];
         options?: never;
@@ -1826,11 +1442,7 @@ export interface paths {
         get?: never;
         /**
          * Set User Disabled
-         * @description Stop a user signing in, or let it again.
-         *
-         *     It takes effect on the user's very next request, not at their next login: the flag is read
-         *     from the row every time anybody resolves who is asking. The sessions they already have are
-         *     dropped as well, so turning them back on does not silently restore a browser left open.
+         * @description Stop a user signing in, or let them again, from their very next request.
          */
         put: operations["set_user_disabled_api_auth_users__user_id__disabled_put"];
         post?: never;
@@ -1851,12 +1463,7 @@ export interface paths {
         put?: never;
         /**
          * Reset User Password
-         * @description Set a guest's password without knowing their old one, and end their sessions.
-         *
-         *     Only a guest, which is what makes it safe to do without the old password: a guest holds no
-         *     wrapped key, so nothing is locked under the password being replaced. The same operation on an
-         *     admin would throw away their saved site logins, and the console tool that can do it says so
-         *     before it does.
+         * @description Set a guest's password without the old one, and end their sessions.
          */
         post: operations["reset_user_password_api_auth_users__user_id__password_post"];
         delete?: never;
@@ -1876,15 +1483,7 @@ export interface paths {
         put?: never;
         /**
          * Rename User
-         * @description Change what a user is called: your own always, anybody's if you are an admin.
-         *
-         *     The one route in this section that is not admin-only, and the one that acts on the caller. The
-         *     guard is written here rather than taken as a dependency because it is neither of the two shapes
-         *     a dependency offers: it is "you, or an admin".
-         *
-         *     Nothing is signed out. A name is a label, not a credential, and the user keeps their id, so
-         *     every share, rating and hidden row they have is untouched, and the saved site logins still open
-         *     because the key was never tied to the name.
+         * @description Change what a user is called: your own always, anybody's as an admin.
          */
         post: operations["rename_user_api_auth_users__user_id__username_post"];
         delete?: never;
@@ -1902,8 +1501,7 @@ export interface paths {
         };
         /**
          * Contents
-         * @description What the next backup would hold beside the database, with sizes, so the one sentence on
-         *     the screen that says what the file holds is read from the disk rather than written once.
+         * @description What the next backup would hold beside the database, with sizes read from the disk.
          */
         get: operations["contents_api_backup_contents_get"];
         put?: never;
@@ -1925,16 +1523,7 @@ export interface paths {
         put?: never;
         /**
          * Export Now
-         * @description Take a backup now, into the backup folder, and say where it went.
-         *
-         *     The same folder the automatic backups go to, NAMED AS SAVED BY HAND (`SAVED_MARK`), so no
-         *     rule ever deletes it; the pane lists it with the other backups no rule takes. The answer is
-         *     where it is, rather than the file: the desktop app on the computer running Sift opens that
-         *     folder, and a browser on another device asks for a copy by its name (`copy_of`) when the
-         *     person wants one there too.
-         *
-         *     A press that only handed the file to the browser would keep nothing on the computer running
-         *     Sift, and the backup folder is where a person looks for the backup they made.
+         * @description Take a backup now into the backup folder, kept as saved by hand, and say where it went.
          */
         post: operations["export_now_api_backup_export_post"];
         delete?: never;
@@ -1954,15 +1543,7 @@ export interface paths {
         put?: never;
         /**
          * Restore
-         * @description Put a backup back, having proved first that it is one and that this Sift can read it.
-         *
-         *     Everything that can refuse refuses before the live database is touched, so a rejected file
-         *     leaves the install exactly as it was. A backup from a newer Sift is refused rather than forced:
-         *     carrying a schema backwards would destroy the copy it was being restored from.
-         *
-         *     Afterwards the library's records are the backup's, and the media is whatever is on the disks,
-         *     which is the whole design. Re-scan the folders and the thumbnails, previews and search index
-         *     are built again from the files.
+         * @description Put a backup back, proving first that it is one and that this Sift can read it.
          */
         post: operations["restore_api_backup_restore_post"];
         delete?: never;
@@ -1980,11 +1561,7 @@ export interface paths {
         };
         /**
          * Copy Of
-         * @description A copy of one backup the pane lists, handed to the browser to save.
-         *
-         *     For a browser on another device, which cannot open a folder on the computer running Sift.
-         *     Only a name the list shows is handed out (`BackupService.left_alone_file`); anything else is a
-         *     404, so this route cannot hand out some other file in the folder.
+         * @description A copy of one listed backup for a browser on another device; any other name is a 404.
          */
         get: operations["copy_of_api_backup_saved__name__get"];
         put?: never;
@@ -2004,20 +1581,12 @@ export interface paths {
         };
         /**
          * Read Schedule
-         * @description The automatic-backup settings as they stand.
-         *
-         *     The folder is reported as it was saved rather than as it resolves, because that is what the
-         *     screen has to put back in the field. Whether it is Sift's own directory is reported separately,
-         *     so the screen can say that a backup living beside the database is not much of a backup.
+         * @description The automatic-backup settings as saved, and whether the folder is Sift's own.
          */
         get: operations["read_schedule_api_backup_schedule_get"];
         /**
          * Update Schedule
-         * @description Save the schedule, and queue the next backup if there is one to queue.
-         *
-         *     The folder is checked here rather than only when the job runs, so a folder that is read-only or
-         *     gone is a sentence on the screen now instead of a failure in the job log tonight. It is checked
-         *     again at run time regardless: a mount can go away between the two.
+         * @description Save the schedule, checking the folder now as well as at run time.
          */
         put: operations["update_schedule_api_backup_schedule_put"];
         post?: never;
@@ -2036,10 +1605,7 @@ export interface paths {
         };
         /**
          * Unmarked
-         * @description The backups in the backup folder whose names carry no library's mark.
-         *
-         *     No rule deletes them, so they are why a folder holds more than the number kept; listed with
-         *     their sizes so a person can delete them by hand.
+         * @description The backups whose names carry no library's mark, which no rule deletes, with sizes.
          */
         get: operations["unmarked_api_backup_unmarked_get"];
         put?: never;
@@ -2062,10 +1628,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Unmarked
-         * @description Delete one unmarked backup, by the name the list showed, and answer the list as it stands.
-         *
-         *     Only a name the list holds is deleted (`BackupService.delete_unmarked`); anything else is a 404,
-         *     so this route cannot delete some other file in the folder.
+         * @description Delete one unmarked backup by the name the list showed, and answer the list as it stands.
          */
         delete: operations["delete_unmarked_api_backup_unmarked__name__delete"];
         options?: never;
@@ -2156,43 +1719,14 @@ export interface paths {
          * List Collections
          * @description One page of the collections this viewer may know about, by name, each with a scoped count.
          *
-         *     A vaulted collection is absent rather than locked, and so is one holding nothing this viewer
-         *     may see. Absent is the point: a greyed-out row still says something is there.
-         *
-         *     `prefix` narrows to the names beginning with what somebody is typing, which is what a picker
-         *     wants: the list it draws is a PAGE of this one, so the narrowing has to happen here or the page
-         *     is the first fifty names alphabetically and the answer somebody is typing towards is not in it.
-         *
-         *     The total is what this viewer may see, counted over the whole scoped list rather than over the
-         *     page: the same figure and the same reasoning as the People listing.
-         *
-         *     A fresh install answers with an empty list. There is no starter set: every collection here
-         *     was made by somebody.
-         *
-         *     `from` names a row to start the page at, instead of an offset. The wall pages by whole rows, so
-         *     how many cards a page holds depends on the size of the screen, which means a page NUMBER is
-         *     not a durable thing to put in an address, and the row somebody was looking at is. It is resolved
-         *     against this same question (the same prefix, order and narrowing), because a position only
-         *     means anything in the list it was taken from.
-         *
-         *     A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-         *     rather than refusing: a row that has since been
-         *     renamed, hidden or deleted is a stale link and not an error. That also means a caller cannot
-         *     learn anything by trying ids: the answer for a row being kept back is the same as for one that
-         *     never existed, and both are the first page.
+         *     `prefix` narrows to names starting with what is typed. `from` starts the page at a row,
+         *     resolved in this same list; one that resolves to nothing serves `near`, or the top.
          */
         get: operations["list_collections_api_collections_get"];
         put?: never;
         /**
          * Create Collection
-         * @description Make an empty collection.
-         *
-         *     Names are not unique. Two shortlists can genuinely both be called "best of", and refusing the
-         *     second would be asserting something about the world that is not true.
-         *
-         *     It arrives visible and empty, and the answer is built from what was just written rather than
-         *     read back through the access layer. There is nothing to scope: it holds nothing, wears no
-         *     cover, and the name is the one the caller sent.
+         * @description Make an empty collection; names are not unique.
          */
         post: operations["create_collection_api_collections_post"];
         delete?: never;
@@ -2212,12 +1746,7 @@ export interface paths {
          * Collection Facets
          * @description What the collections this wall reaches are made of, along one dimension, with counts.
          *
-         *     Declared before `/collections/{collection_id}`: routes match in declaration order, and the
-         *     other way round this address would be read as a collection called "facets".
-         *
-         *     The counts are of COLLECTIONS, over the statement that decides which of them the wall holds,
-         *     with every narrowing the listing takes. See `people_facets` in the people slice for the
-         *     reasoning, which is written out once there.
+         *     Declared before `/collections/{collection_id}`, which would otherwise read this as an id.
          */
         get: operations["collection_facets_api_collections_facets_get"];
         put?: never;
@@ -2237,29 +1766,18 @@ export interface paths {
         };
         /**
          * Get Collection
-         * @description One collection's own row: its name, its cover, its scoped count and this user's O tally.
-         *
-         *     The tally is asked for HERE and nowhere else. It is a sum over the collection's files, so the
-         *     wall would pay one of these per card for a number no card draws.
+         * @description One collection's own row: its name, cover, scoped count and this user's O tally.
          */
         get: operations["get_collection_api_collections__collection_id__get"];
         /**
          * Update Collection
-         * @description Rename a collection. Concealing one is a separate request.
-         *
-         *     The count and the cover in the answer are read back through the access layer rather than
-         *     carried over from before the write, so a rename reports the same scoped numbers every other
-         *     read of this collection would.
+         * @description Rename a collection; the count and cover in the answer are read back, scoped.
          */
         put: operations["update_collection_api_collections__collection_id__put"];
         post?: never;
         /**
          * Delete Collection
-         * @description Delete a collection, its membership rows, and every grant that named it.
-         *
-         *     **The files are not touched.** `collection_items` names the asset with `ON DELETE CASCADE`
-         *     pointing at the collection, so this removes the rows joining a collection to files and never
-         *     the files. Deleting a shortlist is tidying up, not deleting media.
+         * @description Delete a collection, its membership rows, and every grant that named it; never a file.
          */
         delete: operations["delete_collection_api_collections__collection_id__delete"];
         options?: never;
@@ -2281,12 +1799,7 @@ export interface paths {
         get: operations["collection_cover_api_collections__collection_id__cover_get"];
         /**
          * Set Cover
-         * @description Wear one of the items as the cover, at whichever moment of it, or null for none.
-         *
-         *     The asset has to be something the collection already holds and something this viewer may open.
-         *     A cover pointing anywhere else is a second, weaker kind of membership that nothing else in the
-         *     model knows about, and it would put a picture of that asset on a screen by a route that never
-         *     checked whether it belonged there.
+         * @description Wear one of its items as the cover, at a moment, or null; it must be in it and visible.
          */
         put: operations["set_cover_api_collections__collection_id__cover_put"];
         post?: never;
@@ -2307,12 +1820,7 @@ export interface paths {
         put?: never;
         /**
          * Upload Collection Cover
-         * @description A picture from outside the library, as this shelf's cover. See `receive_cover`.
-         *
-         *     No membership check, unlike the route above, and the difference is the point: that one refuses
-         *     a cover pointing at a file the collection does not hold, because a cover that is a pointer at an
-         *     asset is a second, weaker kind of membership. This is not a pointer at an asset at all: it is
-         *     a picture of the shelf, which is exactly the case the membership rule had no answer for.
+         * @description A picture from outside the library as this shelf's cover, so no membership check.
          */
         post: operations["upload_collection_cover_api_collections__collection_id__cover_picture_post"];
         delete?: never;
@@ -2331,15 +1839,7 @@ export interface paths {
         get?: never;
         /**
          * Set Collection Favorite
-         * @description Heart a collection, or take the heart off, for this user.
-         *
-         *     Offered to everybody, guests included, and that is the point rather than an oversight: an
-         *     opinion is about the user holding it and reaches nobody else's screen. It changes where a row
-         *     appears on a wall and never whether it appears, so there is nothing here for a permission to
-         *     protect. Restricting is what keeps something from another user.
-         *
-         *     Resolved through the access layer first, the same as every other write here: that is what stops
-         *     a row being written against an id this user may not be shown, or one that names nothing.
+         * @description Heart a collection, or take the heart off, for this user; guests too.
          */
         put: operations["set_collection_favorite_api_collections__collection_id__favorite_put"];
         post?: never;
@@ -2358,15 +1858,7 @@ export interface paths {
         };
         /**
          * History Of A Collection
-         * @description What happened to this collection, oldest first.
-         *
-         *     Authenticated rather than admin, the same rule the collection's own row follows. The sharing
-         *     half is an admin's and the kernel withholds it, for the reason written there, and on a shelf
-         *     that half is most of the thread, because `collection_items` records no moment for a file going
-         *     in and there is therefore nothing else after the shelf was made.
-         *
-         *     Resolved through `_require_collection` first, so a shelf this viewer may not be shown answers
-         *     the same 404 an id that was never minted would.
+         * @description What happened to this collection, oldest first; one this viewer may not see is a 404.
          */
         get: operations["history_of_a_collection_api_collections__collection_id__history_get"];
         put?: never;
@@ -2386,34 +1878,13 @@ export interface paths {
         };
         /**
          * Collection Items
-         * @description A collection's contents, scoped to this viewer, in the order `sort`, `seed` and `meaning`
-         *     ask for as `/assets` takes them: a collection has no order of its own. What this user has
-         *     PINNED comes first under every order, as on every wall that offers the pin.
-         *
-         *     The rows and the total come from one statement in the access layer, so the count is the number
-         *     of items on the screen and never the number of rows in the table.
-         *
-         *     **Filtered by the query language, read off the raw address as `/assets` reads it**: the words
-         *     in `q` and the cards picked on the tabs narrow a collection's Files tab exactly as they narrow a
-         *     person's, inside the same statement as the scoping and the order, so the total counts the
-         *     narrowed set.
+         * @description A collection's contents, scoped, in `/assets` order with pins first; `q` filters it.
          */
         get: operations["collection_items_api_collections__collection_id__items_get"];
         put?: never;
         /**
          * Edit Items
-         * @description Add to or remove from a collection.
-         *
-         *     **No file is moved.** This writes rows in the join table and nothing else: every path, every
-         *     byte and every location row is exactly as it was. That is the promise the storage model makes,
-         *     and the test asserting it is the one worth keeping.
-         *
-         *     Both SKIP an asset that cannot be resolved, and the reply says how many were left out and why.
-         *
-         *     An asset can still go between being resolved and being written: two requests, one adding a file
-         *     and one deleting it. The membership row's foreign key catches that and the answer is the same
-         *     404 the resolve would have given a moment later, rather than the 500 an uncaught constraint
-         *     would surface. It is the same answer for the same reason: the asset is not there.
+         * @description Add to or remove from a collection, moving no file; unresolved files are counted.
          */
         post: operations["edit_items_api_collections__collection_id__items_post"];
         delete?: never;
@@ -2431,21 +1902,7 @@ export interface paths {
         };
         /**
          * Maker Of A Collection
-         * @description WHO MADE IT: Sift and the pass that did it, the user who asked, or nobody.
-         *
-         *     Its own route rather than a field on the row, and that is the one judgement here. `CollectionSummary` is
-         *     the shape the wall is drawn from as well as the page, so a maker on it would be filled for the
-         *     one and left null for the other: a field meaning "nothing recorded it" on a page and "nobody
-         *     asked" on a wall, with nothing on the wire to tell them apart. A page that wants the line asks
-         *     for it; a wall that does not, does not pay a point read a row for it.
-         *
-         *     Authenticated rather than admin, the same rule the collection's own row and its history follow.
-         *     The kernel read is unscoped and relies on the subject having been resolved first, which is what
-         *     `_require_collection` does, so a collection this viewer may not be shown answers the same 404 an id that was
-         *     never minted would, rather than saying who made a thing they cannot see.
-         *
-         *     Null is the ordinary answer and never an error: every row made before the catalog recorded this
-         *     says nothing, and a line drawn from nothing would be an invention.
+         * @description Who made it: Sift and the pass, the user who asked, or nobody (null, the ordinary answer).
          */
         get: operations["maker_of_a_collection_api_collections__collection_id__made_by_get"];
         put?: never;
@@ -2508,10 +1965,7 @@ export interface paths {
         put?: never;
         /**
          * Tag Collection
-         * @description Put a tag on a collection, or take it off.
-         *
-         *     Admin-only, unlike hiding one, and the difference is what the thing IS. Hiding is personal to a
-         *     user; a tag is shared vocabulary that changes what everyone else's searches return.
+         * @description Put a tag on a collection, or take it off; admin-only, as tags are shared vocabulary.
          */
         post: operations["tag_collection_api_collections__collection_id__tags_post"];
         delete?: never;
@@ -2530,22 +1984,7 @@ export interface paths {
         get?: never;
         /**
          * Set Vault
-         * @description Hide a collection, or bring it back, for this user.
-         *
-         *     Hiding conceals the collection and everything in it from the screens of the user who did
-         *     it, until they open Hidden. Nobody else is affected; to keep something from another user,
-         *     restrict it. There is no body to answer with: the row this describes is, by the time the answer
-         *     is written, one the caller may no longer be shown.
-         *
-         *     Resolved through the access layer first, the same as every other write here and the same as the
-         *     other object types. That is also what makes bringing one back reachable, without a rule of its
-         *     own: a collection this user hid resolves for them only while their Hidden is open, so it can
-         *     only be unhidden by somebody who has already entered the PIN. Before that the request gets the
-         *     404 an unknown id gets, because answering at all would confirm it is there and unhiding it would
-         *     put every item in it back on the grid with Hidden still shut.
-         *
-         *     Hiding requires a PIN to exist first. Without one there would be nothing to open it with again,
-         *     which is not concealment: it is losing the collection.
+         * @description Hide a collection, or bring it back, for this user; needs a PIN, or an open Hidden.
          */
         put: operations["set_vault_api_collections__collection_id__vault_put"];
         post?: never;
@@ -2586,10 +2025,7 @@ export interface paths {
         put?: never;
         /**
          * Preflight
-         * @description What compressing this selection would do, before anything is encoded.
-         *
-         *     A POST rather than a GET because the question carries a list of hundreds of ids and a target,
-         *     which is a body rather than a query string. It writes nothing.
+         * @description What compressing this selection would do. A POST for the long id list; it writes nothing.
          */
         post: operations["preflight_api_compress_preflight_post"];
         delete?: never;
@@ -2607,12 +2043,8 @@ export interface paths {
         };
         /**
          * Read Sample
-         * @description The few seconds a sample job produced.
-         *
-         *     The name of the file is built from the job's own id and nothing a caller sent, which is what
-         *     keeps this from being a way to read an arbitrary path: the id has to be a real one, in this
-         *     application's own id format, naming a job of this one type. A caller sending anything else gets
-         *     the same answer as a caller naming a job that finished and was swept.
+         * @description The few seconds a sample job produced, found by the job's own id and nothing else a caller
+         *     sent.
          */
         get: operations["read_sample_api_compress_samples__job_id__get"];
         put?: never;
@@ -2632,13 +2064,7 @@ export interface paths {
         };
         /**
          * Creators With A Picture
-         * @description Every name Sift has a creator picture for, in one answer.
-         *
-         *     So a screen full of People can ask once instead of once per card. Without it, a library with two
-         *     hundred People makes two hundred requests on every visit to that screen and nearly all of them
-         *     are answered "no picture", which is a slow screen built out of correct answers.
-         *
-         *     Names only: this says which names have a picture, never where any of them came from.
+         * @description Every name Sift has a creator picture for, so a screen of People asks once.
          */
         get: operations["creators_with_a_picture_api_creator_art_get"];
         put?: never;
@@ -2658,15 +2084,7 @@ export interface paths {
         };
         /**
          * Creator Art
-         * @description The picture Sift keeps for one creator, found by their name rather than by site.
-         *
-         *     For the screens that show People, which know a name and nothing about where a file came from. A
-         *     download files what it fetched under a person named by the username, so the two are the same
-         *     string, and a person with no picture is answered 404 and keeps their monogram.
-         *
-         *     With `site` (the Site's name) and, where known, `address` (the username's page), it is the
-         *     picture kept for that username ON that Site and no other: a screen drawing a username beside
-         *     its Site knows both, and the same name on another Site may be somebody else.
+         * @description The picture kept for one creator by name, or for that username on `site` alone.
          */
         get: operations["creator_art_api_creator_art__username__get"];
         put?: never;
@@ -2686,10 +2104,7 @@ export interface paths {
         };
         /**
          * Carry Totals
-         * @description How many copies in the whole library know less about themselves than a twin of theirs does.
-         *
-         *     The count comes before the press, and it is the same computation the press then makes, so the
-         *     number an admin is shown is the number of files that will change, not an estimate of one.
+         * @description How many copies know less about themselves than a twin: exactly what the press changes.
          */
         get: operations["carry_totals_api_dedup_carry_get"];
         put?: never;
@@ -2711,21 +2126,7 @@ export interface paths {
         put?: never;
         /**
          * Carry Everywhere
-         * @description Carry every offer the library holds, once. The count above is what it does.
-         *
-         *     **The whole library and not one group, and that is what the screen actually offers.** A group
-         *     on the queue is clustered at the READER's dial and an offer is read bit-for-bit, so a group in
-         *     front of somebody is regularly a superset of the one a carry would act on: a per-group press
-         *     would be pointed at a set of files that is not the set being written on. The count says how many
-         *     files change before the press, and a receipt per file is what makes a press this wide safe:
-         *     an admin who regrets it takes back as many of them as they disagree with, one at a time.
-         *
-         *     ## One transaction per group, never one for all
-         *
-         *     A carry over a hundred groups in one transaction is a write lock held for the length of a
-         *     hundred groups, and a failure halfway through would take back the ninety that had already
-         *     worked. They are independent decisions (separate groups, separate receipts), so they are
-         *     written one at a time, and a group that wrote nothing is simply a group that wrote nothing.
+         * @description Carry every offer in the library, one transaction and one receipt per group.
          */
         post: operations["carry_everywhere_api_dedup_carry_all_post"];
         delete?: never;
@@ -2743,27 +2144,7 @@ export interface paths {
         };
         /**
          * List Groups
-         * @description The review queue, as the groups somebody actually decides about.
-         *
-         *     A group is N files chained by pairs that are all under the closeness dial, never mixing two
-         *     fingerprint methods, and never longer than the cap. See the grouping module, where the whole
-         *     argument lives. The rule marks a keeper in most of them; the ones it could not separate are the
-         *     only ones that cost a real decision, and `needs_you` is what narrows the page to those.
-         *
-         *     ## Why the page is cut before the vault rather than after
-         *
-         *     A page here is a position in a list somebody is paging through, and the pager can always go to
-         *     the next one, so a page that comes back short because a file in it is vaulted is honest and
-         *     is not a queue that cannot empty. `concealed` says how many, which is the difference between a
-         *     short page and the end of the list.
-         *
-         *     ## `from`, the group a page starts at
-         *
-         *     The same `from` every paged list in Sift takes: the group the page was left at, by the one name
-         *     a group has (its method and its smallest file (`group_key`)), carried in the queue's address
-         *     so the way back lands on the same page. Deciding a group is what takes it off this list, so a
-         *     `from` naming nothing is the ordinary case and is answered with the page it was on (`near`),
-         *     or the top. See `resume_at`.
+         * @description The review queue as groups, paged before the vault is applied; `from` resumes at a group.
          */
         get: operations["list_groups_api_dedup_groups_get"];
         put?: never;
@@ -2785,13 +2166,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm Groups
-         * @description Keep one file of each of these groups and delete the rest. Permanent, and it says so.
-         *
-         *     A page at a time rather than the whole queue: a press that was all-or-nothing across everything
-         *     waiting could only be used by trusting a rule over thousands of files nobody had looked at. A
-         *     page is what somebody can actually have skimmed before pressing.
-         *
-         *     One receipt per GROUP, so History's Decisions lists each of them and can say what each one did.
+         * @description Keep one file of each group and delete the rest, permanently; one receipt per group.
          */
         post: operations["confirm_groups_api_dedup_groups_confirm_post"];
         delete?: never;
@@ -2811,11 +2186,7 @@ export interface paths {
         put?: never;
         /**
          * Dismiss Groups
-         * @description Say these files are not the same thing. Nothing is deleted, and the answer has to last.
-         *
-         *     Every pair inside each group is written down as answered and stays in the table for ever, which
-         *     is the only thing that makes it survive the next scan: that scan finds exactly the same pairs
-         *     and offers them again, and an insert that collides does nothing rather than resetting a row.
+         * @description Mark these groups' files as not the same; every pair is kept answered for good.
          */
         post: operations["dismiss_groups_api_dedup_groups_dismiss_post"];
         delete?: never;
@@ -2833,15 +2204,7 @@ export interface paths {
         };
         /**
          * One Group
-         * @description One group, by the only name a group has: its method and its smallest file.
-         *
-         *     For a chain opened on a screen of its own. A group is computed from the pair table at the
-         *     dials in force and has no row of its own, so it is found the way the list finds it (every
-         *     group at these dials, then the one that answers to the name), and a name that answers to
-         *     nothing is a 404: the dial moved, or somebody settled it in another window.
-         *
-         *     Every file in it has to be this user's to look at, the same rule the page applies. A
-         *     chain with a vaulted file in it is not a set anybody can judge, and is not shown.
+         * @description One group by method and smallest file; 404 when the dials moved or it was settled.
          */
         get: operations["one_group_api_dedup_groups__method___first__get"];
         put?: never;
@@ -3106,18 +2469,13 @@ export interface paths {
         get?: never;
         /**
          * Set Route
-         * @description Point a site (or everything, under the reserved scope) at a way out.
-         *
-         *     Both halves are checked. A scope naming no site would store a route nothing ever reads, and a
-         *     route naming no tunnel would refuse every download from that site with nothing on the screen
-         *     explaining why.
+         * @description Point a Site, or everything, at a way out; both the scope and the tunnel must exist.
          */
         put: operations["set_route_api_download_routes__scope__put"];
         post?: never;
         /**
          * Clear Route
-         * @description Put a site back to following the default. Idempotent, and the default itself cannot be
-         *     cleared: everything has to follow something.
+         * @description Put a Site back to following the default; the default itself cannot be cleared.
          */
         delete: operations["clear_route_api_download_routes__scope__delete"];
         options?: never;
@@ -3135,8 +2493,6 @@ export interface paths {
         /**
          * Download Tools
          * @description The download tools this install runs, and the version of each.
-         *
-         *     Admin, like the rest of the downloader. It reaches nothing outside this machine.
          */
         get: operations["download_tools_api_download_tools_get"];
         put?: never;
@@ -3158,8 +2514,7 @@ export interface paths {
         put?: never;
         /**
          * Check Latest
-         * @description Whether a tool has a newer release than the one Sift runs. Pressed by a person, never run on
-         *     its own (it is the one request here that leaves this machine), and it changes nothing.
+         * @description Whether a tool has a newer release; pressed by a person, never run on its own.
          */
         post: operations["check_latest_api_download_tools_latest_post"];
         delete?: never;
@@ -3177,35 +2532,13 @@ export interface paths {
         };
         /**
          * List Downloads
-         * @description A page of the download queue, narrowed and ordered, each row shown with its live status.
-         *
-         *     `show` is the state tab (`needs` is blocked or failed: the rows waiting on a person), `site`
-         *     a Site's name as `sites` lists it (repeated, either of them, which is how the filter panel's
-         *     Site column writes two ticks; a leading minus leaves that Site out), `q` the search box and `sort` the order. Every one of them
-         *     narrows the SERVER's list, so the pager's `matched` and the rows agree however deep the page.
-         *
-         *     The summary is worked out from everything in flight rather than from this page, because it
-         *     answers a question about the queue and not about what happens to be on screen: a five hundred
-         *     item paste shows twenty rows, and "how fast is this going" is about all five hundred.
-         *
-         *     The bounds are declared rather than checked in the body: same enforcement, and a schema that
-         *     says so, as the jobs listing's are.
+         * @description A page of the download queue, narrowed and ordered on the server, with its summary.
          */
         get: operations["list_downloads_api_downloads_get"];
         put?: never;
         /**
          * Submit Download
-         * @description Queue a download. The guards (the address check, the skip-a-re-drop check) run in the job
-         *     that follows, so a paste, a drop, and a re-run all go through the same checks in the same order.
-         *
-         *     A link dropped ON something also says what it was dropped on. That is resolved HERE, while there
-         *     is a request and a viewer to resolve it against: the job that files it runs minutes later with
-         *     neither, so a check made there would either be no check at all or a second permission model.
-         *
-         *     **The shape is checked here first, by the same rule and in the same words as the several-links
-         *     route** (`_not_an_address`), so a line that cannot be a download never gets a row. Only
-         *     the shape: whether the host is private or reachable is still the job's question, for both
-         *     routes, so a paste of one and a paste of many differ in nothing but how many they answer for.
+         * @description Queue a download; what it was dropped on is resolved here, while there is a viewer.
          */
         post: operations["submit_download_api_downloads_post"];
         delete?: never;
@@ -3225,14 +2558,7 @@ export interface paths {
         put?: never;
         /**
          * Queue Bulk
-         * @description Queue everything behind a playlist or channel address, one download per item.
-         *
-         *     Listed again rather than trusting a count sent back from a screen: what is queued has to be what
-         *     the site says is there now, and a list that arrived from a client is a list a client chose.
-         *
-         *     One download each, never one job for the lot. A failure is then one video rather than all of
-         *     them, each has its own progress and its own retry, and every other part of the slice (the
-         *     ledger, the pacing, the routing) works exactly as it does for a pasted link.
+         * @description Queue everything behind a playlist or channel address, listed again, one download each.
          */
         post: operations["queue_bulk_api_downloads_bulk_post"];
         delete?: never;
@@ -3252,13 +2578,7 @@ export interface paths {
         put?: never;
         /**
          * Preview Bulk
-         * @description Ask what is behind a playlist or channel address, without fetching any of it.
-         *
-         *     Nothing is queued here. Taking everything a creator has posted is a decision, and it is made by
-         *     somebody who has been told the number first, which costs one listing request and no media.
-         *
-         *     Goes out the same way a download from that site would: a site routed through a tunnel is asked
-         *     through it, and refuses by name if it is not up.
+         * @description Count what is behind a playlist or channel address without fetching or queueing any of it.
          */
         post: operations["preview_bulk_api_downloads_bulk_preview_post"];
         delete?: never;
@@ -3276,14 +2596,7 @@ export interface paths {
         };
         /**
          * Download Facets
-         * @description What the queue is made of along one dimension, with counts: the filter panel's column.
-         *
-         *     Declared before any `/downloads/{download_id}` route: routes match in declaration order, and the
-         *     other way round this address would be read as a download called "facets".
-         *
-         *     The Site column counts inside the lit tab and NOT inside the Site already chosen, for the reason
-         *     every wall's column does: each value is what ticking it would add. Admin-only with the rest of
-         *     the slice.
+         * @description The queue's counts along one dimension; declared before `/downloads/{download_id}`.
          */
         get: operations["download_facets_api_downloads_facets_get"];
         put?: never;
@@ -3303,15 +2616,7 @@ export interface paths {
         };
         /**
          * Downloads At A Glance
-         * @description What the Downloads row on the rail says: fetching, waiting for cookies, ended unseen.
-         *
-         *     From the download rows, one read, and NOT from the work queue's page, which is the newest fifty
-         *     jobs of every kind: a download that scrolled off it before it ended would never light the dot,
-         *     and one waiting behind a paused queue would turn the glyph as if it were fetching. Re-read when the
-         *     connection says the downloads, the queue or a setting moved: waiting for cookies is the
-         *     job's state, and the pause is a setting.
-         *
-         *     Declared before any `/downloads/{download_id}` route, for the reason `facets` gives.
+         * @description What the Downloads row on the rail says, read from the download rows.
          */
         get: operations["downloads_at_a_glance_api_downloads_glance_get"];
         put?: never;
@@ -3333,24 +2638,7 @@ export interface paths {
         put?: never;
         /**
          * Submit Links
-         * @description Queue several pasted addresses, one download each.
-         *
-         *     **Not the same thing as the bulk routes below.** Those take ONE address and ask the site what is
-         *     behind it; this one is handed the addresses already and asks nothing. Somebody who has copied a
-         *     list out of a page or a notes file has done the enumerating themselves.
-         *
-         *     **One download per link, exactly as a single paste makes.** Every guard, the ledger check, the
-         *     per-site naming and folder, the routing: all of it applies per link through the same call the
-         *     single route uses, so there is no second path to keep in step with the first.
-         *
-         *     **One bad line never loses the rest.** A pasted list has a stray word in it or a line that is
-         *     not an address, and refusing the whole paste over one of them is what makes somebody go back to
-         *     pasting them one at a time. Each line that cannot be an address is named and skipped.
-         *
-         *     Only the SHAPE is checked here. Whether a host resolves, whether it is reachable, whether it is
-         *     a private address: all of that is the job's business, exactly as it is for a single paste, and
-         *     doing it here would mean a paste of five hundred links making five hundred DNS lookups before
-         *     anything was queued.
+         * @description Queue several pasted links, one download each; a line that is not a link is skipped.
          */
         post: operations["submit_links_api_downloads_links_post"];
         delete?: never;
@@ -3370,12 +2658,7 @@ export interface paths {
         put?: never;
         /**
          * Mark Downloads Seen
-         * @description Somebody has looked at how the downloads ended: the dot goes out, in every window.
-         *
-         *     What opening the Downloads screen does, and what "Mark downloads as seen" on the rail row does.
-         *     Nothing is removed: every row stays where it is on the screen. On the rows rather than in one
-         *     window's memory, so a dot put out in one window is out in the others and does not come back on
-         *     a reload.
+         * @description Put out the dot on how downloads ended, in every window; nothing is removed.
          */
         post: operations["mark_downloads_seen_api_downloads_seen_post"];
         delete?: never;
@@ -3395,16 +2678,7 @@ export interface paths {
         put?: never;
         /**
          * Download Anyway
-         * @description Fetch a link that was skipped because it had been fetched before.
-         *
-         *     The record of what has already been downloaded is a convenience, not a rule: a file removed from
-         *     the library, or replaced at the other end, is a reason to want it again. Only that one check is
-         *     passed. The address is still checked, and a file the library already holds byte for byte is
-         *     still recognised as a duplicate when it arrives.
-         *
-         *     Idempotent, exactly as cancelling is: an id naming no row is a success and does nothing, and a
-         *     link that was never skipped in the first place simply runs. Answering differently for a row that
-         *     is not there would make this route a way of asking which download ids exist.
+         * @description Fetch a link skipped as fetched before; idempotent, so it never says which ids exist.
          */
         post: operations["download_anyway_api_downloads__download_id__anyway_post"];
         delete?: never;
@@ -3424,10 +2698,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel Download
-         * @description Cancel a download that is queued or running: it stops fetching and leaves the active queue.
-         *
-         *     Idempotent: cancelling one that has already finished, or is already cancelled, is a success (204),
-         *     not an error: a repeated click, or a click that races the download finishing, is harmless.
+         * @description Cancel a queued or running download; idempotent, so a repeated click is harmless.
          */
         post: operations["cancel_download_api_downloads__download_id__cancel_post"];
         delete?: never;
@@ -3445,11 +2716,7 @@ export interface paths {
         };
         /**
          * Files Of Download
-         * @description Every file one paste produced, named. Asked for when a row is opened rather than with the
-         *     list, because most rows produced one file and the list is read once a second.
-         *
-         *     The ids come from the ledger and the names from the access layer, which is the same division as
-         *     everywhere else here: this slice knows what it fetched, and the library decides who may see it.
+         * @description Every file one paste produced, named, asked for when a row is opened.
          */
         get: operations["files_of_download_api_downloads__download_id__files_get"];
         put?: never;
@@ -3471,11 +2738,7 @@ export interface paths {
         put?: never;
         /**
          * Promote Download
-         * @description Move a waiting download to the front of the queue.
-         *
-         *     Only one that is still waiting. A download already running cannot be made to have started
-         *     earlier, and this quietly does nothing rather than appearing to reorder something that is not in
-         *     the queue at all.
+         * @description Move a waiting download to the front of the queue; anything else is left as it is.
          */
         post: operations["promote_download_api_downloads__download_id__first_post"];
         delete?: never;
@@ -3495,16 +2758,7 @@ export interface paths {
         put?: never;
         /**
          * Pause Download
-         * @description Stop a download that is running or waiting, keeping what has already arrived.
-         *
-         *     What it is NOT is a cancel. The bytes stay where they are, the row holds its place, and Resume
-         *     picks the fetch up from where it stopped, which is why this refuses rather than shrugging:
-         *     every other verb on this row is idempotent because doing it twice is harmless, and telling
-         *     somebody a download is paused when it has in fact finished is a screen that is simply wrong.
-         *
-         *     Refused for everything else with the one sentence that is true of all of them. A download that
-         *     is done, failed, cancelled or waiting for cookies is already stopped, by itself or by something
-         *     that has to be fixed rather than resumed.
+         * @description Stop a running or waiting download, keeping what arrived; refused when it is not running.
          */
         post: operations["pause_download_api_downloads__download_id__pause_post"];
         delete?: never;
@@ -3524,20 +2778,7 @@ export interface paths {
         put?: never;
         /**
          * Remove Download
-         * @description Take a settled download out of the list. The row itself stays.
-         *
-         *     **Nothing is deleted and nothing about the file is touched.** The ledger row is what recognises
-         *     a re-pasted link, and the file it produced reads its own history from it; somebody tidying a
-         *     list has asked for neither of those to be undone. So this is a date on the row, and every later
-         *     read of the queue skips it.
-         *
-         *     Refused for anything still going. A queued, running or waiting download made to disappear is
-         *     something fetching with nowhere left to watch it or stop it, and the answer says the one thing
-         *     that gets there: cancel it, which settles it, and then it can be put away.
-         *
-         *     Idempotent otherwise. Removing a row twice, or removing one a second window has already removed,
-         *     is a success: the same reasoning the delete beside it gives for answering 204 to a row that
-         *     was never there.
+         * @description Take a settled download out of the list; the row and the file stay. 409 while still going.
          */
         post: operations["remove_download_api_downloads__download_id__remove_post"];
         delete?: never;
@@ -3557,13 +2798,7 @@ export interface paths {
         put?: never;
         /**
          * Restore Download
-         * @description Put a removed download back in the list. The undo of Remove from the list.
-         *
-         *     Answered 404 for a row that was not removed, which is the one place in this slice where a verb
-         *     is not idempotent about a row it cannot find, and deliberately. There is no screen listing
-         *     what has been put away, so the only way here is the message that says one just was: an answer
-         *     of "fine" to a press that restored nothing would leave somebody looking at a list for a row
-         *     that is not coming back.
+         * @description Put a removed download back in the list; 404 for a row that was not removed.
          */
         post: operations["restore_download_api_downloads__download_id__restore_post"];
         delete?: never;
@@ -3583,11 +2818,7 @@ export interface paths {
         put?: never;
         /**
          * Resume Download
-         * @description Start a paused download again, from what it had already fetched.
-         *
-         *     It goes back into the line with the priority and the attempts it had, so a download paused
-         *     halfway is not sent to the back for having been paused. Refused for anything that is not
-         *     paused, for the reason the pause beside it is: the answer has to be true.
+         * @description Start a paused download again from what it had, in its place; refused when not paused.
          */
         post: operations["resume_download_api_downloads__download_id__resume_post"];
         delete?: never;
@@ -3607,11 +2838,7 @@ export interface paths {
         put?: never;
         /**
          * Retry Download
-         * @description Put a failed, cancelled or quarantined download back in the queue, as itself.
-         *
-         *     Idempotent, exactly as cancelling is: one that is running, finished or simply not there is a
-         *     success that does nothing. Answering differently would make this a way of asking which download
-         *     ids exist and what state each is in.
+         * @description Put a failed, cancelled or quarantined download back in the queue; idempotent.
          */
         post: operations["retry_download_api_downloads__download_id__retry_post"];
         delete?: never;
@@ -4698,22 +3925,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Folder
-         * @description Delete a folder from the disk: every file Sift indexed under it, and then the directories.
-         *
-         *     Here rather than beside the other folder routes, and that is the architecture rather than an
-         *     accident. Removing a file somebody else put on a disk goes through one service and one file
-         *     (`Deleter`), which a static rule in the build enforces; a slice may not import another slice, so
-         *     a route in the library feature could not reach it. This is the second thing in Sift that can be
-         *     deleted, so it is declared beside the first. The vault feature already owns `/folders/{id}/vault`
-         *     on the same terms.
-         *
-         *     `current_viewer` and not `require_admin`, the same as the single-asset route above: the service
-         *     settles whether this user can SEE the folder before it asks whether they may delete it, so
-         *     somebody who cannot see one is told it is not there rather than that they are not allowed to
-         *     remove it. The second answer would confirm it exists.
-         *
-         *     There is no `mode`. Forgetting a folder without touching the disk is not a thing anybody can
-         *     want: the next walk finds the directory still there and puts the row straight back.
+         * @description Delete a folder from the disk: every file Sift indexed under it, then the directories.
          */
         delete: operations["delete_folder_api_folders__folder_id__delete"];
         options?: never;
@@ -5465,29 +4677,8 @@ export interface paths {
         };
         /**
          * Ledger
-         * @description Everything that has happened in this library, newest first.
-         *
-         *     Admin-only, like Activity and Logs beside it, and for the sharper reason: this is a picture of
-         *     the whole installation (every user's acts, every pass, every file) and no narrowing of it
-         *     would be a guest's own record. What a guest may be told about their own files is their file
-         *     histories, which are a different address and are scoped by the file.
-         *
-         *     Necessary and not sufficient. The read applies the vault to every event it hands back, because
-         *     an admin can conceal things from themselves and a feed built for "an admin" rather than for THIS
-         *     one would hand back what they hid.
-         *
-         *     `kind` narrows to the events that named a thing of that kind and `verb` to one act. A word
-         *     neither vocabulary knows matches nothing rather than being refused: the two lists live in the
-         *     kernel, and a copy of them here would be a second opinion about what a verb is. `decisions`
-         *     narrows to the acts a queue can take back: Organize's answers and Sift's own filings, each
-         *     with its Undo, which is the whole record of what was decided and has no list of its own. A
-         *     line there carries the picture its area draws for the decision (`still`), so the record can be
-         *     checked and not only read.
-         *
-         *     **No per-user "your year" here, and that is a decision rather than an omission.** A record of
-         *     what the installation did and a story about what one person did are different surfaces with
-         *     different audiences: this one is admin-only by its nature, and that one must not be. It gets
-         *     its own address when it is built.
+         * @description Everything that has happened in this library, newest first; admin-only, vault applied.
+         *     `kind`, `verb` and `decisions` narrow it; an unknown word matches nothing.
          */
         get: operations["ledger_api_ledger_get"];
         put?: never;
@@ -5509,13 +4700,7 @@ export interface paths {
         put?: never;
         /**
          * Undo All
-         * @description Put back every decision a folded line of the feed stands for: its Undo all.
-         *
-         *     The line is a PRESS (`history_feed.presses_recent`), which the narrowing it was drawn under
-         *     decides, so the same `kind` and `verb` come back here and the press is read again the same
-         *     way (`decisions` included): what is undone is exactly the acts that line said. Each goes through its own receipt's
-         *     undo (`WorkbenchService.undo_each`), so one already undone is skipped and a queue that refuses
-         *     one does not cost the rest. A line whose acts were not decisions has nothing to undo, and says so.
+         * @description Put back every decision a folded feed line stands for, each through its own undo.
          */
         post: operations["undo_all_api_ledger__event_id__undo_all_post"];
         delete?: never;
@@ -5706,20 +4891,8 @@ export interface paths {
         };
         /**
          * Browse
-         * @description The folders inside one of the places that were handed to Sift, so one can be picked.
-         *
-         *     Admin-only, read-only, and confined to the folders somebody granted. With no `path`,
-         *     the granted folders themselves. A `path` inside none of them is refused in the same sentence
-         *     whether it got there by `..`, by naming somewhere else outright, or through a symlink: the
-         *     reason is not told apart, because the three are the same request and telling them apart would
-         *     describe the machine to whoever was trying them.
-         *
-         *     The set it is rooted at comes from the DATABASE, not from configuration. The confinement is the
-         *     grant list, and a folder gets into that list by somebody choosing it in Windows' own dialog,
-         *     which no page can open, drive or read.
-         *
-         *     An install with no grants yet (a fresh one, before its first folder) lists nothing, and the
-         *     screen says how to hand a folder over.
+         * @description The folders inside a granted place, so one can be picked. Admin-only, read-only, confined to
+         *     grants.
          */
         get: operations["browse_api_library_browse_get"];
         put?: never;
@@ -5739,36 +4912,16 @@ export interface paths {
         };
         /**
          * List Folders
-         * @description The folder tree, flat, and only what this viewer may see.
-         *
-         *     With no parameters this is every folder in every library, which is what the browser opens on
-         *     and builds its tree from. Flat rather than nested, and all in one go rather than a level at a
-         *     time: folders are cheap where files are not, and the alternative is a request per row or a
-         *     second statement answering "has children the viewer may see", which is the scoping rule
-         *     written twice, and two copies of that rule can disagree.
-         *
-         *     Roots themselves are never listed here. A root is a path on somebody's disk; the folder row
-         *     standing for it is the same place with none of that attached, so a guest shown one folder of
-         *     one library learns nothing about where any of it lives.
-         *
-         *     `parent` narrows to one folder's direct children, `root` to one library. A folder somebody may
-         *     not see is absent, not a 403, which would confirm that it exists.
-         *
-         *     Both are handed down together rather than one being chosen between. They are narrowings of one
-         *     read, and passing them as such means a request naming a folder in a library it is not in gets
-         *     the honest empty answer instead of having half of what it asked silently dropped.
-         *
-         *     `writable` asks the disk which folders Sift may write in, for a chooser of where files land;
-         *     the tree does not ask, so a share that has gone silent never slows it.
+         * @description The folder tree, flat, and only what this viewer may see; a hidden folder is absent, not a
+         *     403.
+         *     `parent` and `root` narrow one read together. `writable` asks the disk, for a chooser of
+         *     where files land.
          */
         get: operations["list_folders_api_library_folders_get"];
         put?: never;
         /**
          * Make Folder
-         * @description Make a folder inside a library, so nothing has to be arranged anywhere but here.
-         *
-         *     Refused where the library was not handed over read-write, and refused for a name that is not a
-         *     name. Both come back as a 400 carrying the sentence written for the person who typed it.
+         * @description Create a folder inside a library; refusals are 400s with their sentence.
          */
         post: operations["make_folder_api_library_folders_post"];
         delete?: never;
@@ -5786,18 +4939,7 @@ export interface paths {
         };
         /**
          * Folder Facts
-         * @description What the folders directly inside one hold, so a screen can put them in an order.
-         *
-         *     ONE request for a screenful rather than one per row, which is the rule the folder tree already
-         *     follows, and it is asked for only when somebody chooses an order that needs it. Alphabetical
-         *     is what the view opens in and it needs none of this, so the ordinary case pays nothing.
-         *
-         *     Scoped to the DIRECT children of `parent`, or to the library folders when it is absent, because
-         *     that is what a screen draws. The numbers themselves are over each folder's whole subtree: a
-         *     folder is as big as everything under it, which is what somebody comparing two of them means.
-         *
-         *     Admin-only, like `folder_properties`, and for the same reason: these count what a folder
-         *     physically holds rather than what the caller may open.
+         * @description What the folders directly inside one hold, so a screen can order them. Admin-only.
          */
         get: operations["folder_facts_api_library_folders_facts_get"];
         put?: never;
@@ -5819,12 +4961,7 @@ export interface paths {
         put?: never;
         /**
          * Place Folder
-         * @description The folder with this name inside another, recorded if it is on the disk and made if not.
-         *
-         *     For choosing where downloads go: the person points at a place, and whether a scan has recorded
-         *     it yet is not theirs to know. `POST /folders` still refuses a name already taken, which is
-         *     right for "make a new folder". Refused where the library was not handed over read-write, and
-         *     for a name that is not a name or that a file already holds, each as a 400 with its sentence.
+         * @description The folder with this name inside another, recorded if on the disk and created if not.
          */
         post: operations["place_folder_api_library_folders_placed_post"];
         delete?: never;
@@ -5842,11 +4979,7 @@ export interface paths {
         };
         /**
          * Get Folder
-         * @description One folder, and (for an admin) how many files a move would carry.
-         *
-         *     This also serves the deep link: `/library/{folder_ulid}` is a real, refreshable URL, and the id
-         *     in it is opaque on purpose. A slug would put somebody's folder names in their browser history
-         *     and in every screenshot of the address bar, which is part of what the vault is concealing.
+         * @description One folder, and (for an admin) how many files a move would carry. Also serves the deep link.
          */
         get: operations["get_folder_api_library_folders__folder_id__get"];
         put?: never;
@@ -5856,11 +4989,7 @@ export interface paths {
         head?: never;
         /**
          * Change Folder
-         * @description Rename a folder or move it, on the disk and in the tree together.
-         *
-         *     **The folder keeps its id**, so a share, a restriction, a concealment and the rule saying whose
-         *     files land in it all survive being rearranged, which is the whole reason this exists rather
-         *     than leaving people to do it in a file manager and have Sift work out what happened afterwards.
+         * @description Rename a folder or move it, on the disk and in the tree together; it keeps its id.
          */
         patch: operations["change_folder_api_library_folders__folder_id__patch"];
         trace?: never;
@@ -5874,20 +5003,7 @@ export interface paths {
         };
         /**
          * Folder Properties
-         * @description What a folder is: where it sits, how big it is, what is in it, when it was made.
-         *
-         *     Admin-only, whole, and the reason is the one `FolderDetail.file_count` already gives. Every field
-         *     is either a fact about the server's disk or a count of what a folder PHYSICALLY holds, not of
-         *     what the person asking may open, which is a different and smaller number. Answering a guest with
-         *     the physical figures would tell them how much is in a folder they can see two files of.
-         *
-         *     The path is resolved through `_inside`, which is the same confinement every write to a library
-         *     goes through: a folder row can name an in-library link leading out of the root, and a properties
-         *     panel is no reason to be the one place that reads through one.
-         *
-         *     Three separate failures are all a 404, deliberately: no such folder, one this viewer may not see,
-         *     and one whose root has gone. Telling them apart would answer "does this id exist" for somebody
-         *     who may not see it.
+         * @description What a folder is: where it sits, how big it is, what is in it, when it was made. Admin-only.
          */
         get: operations["folder_properties_api_library_folders__folder_id__properties_get"];
         put?: never;
@@ -5913,12 +5029,8 @@ export interface paths {
         put?: never;
         /**
          * Add Grant
-         * @description Record a folder chosen in the operating system's folder dialog.
-         *
-         *     Every refusal (the folder is not there, it is a file, Sift cannot read it, it is one of Sift's
-         *     own directories, it overlaps a folder already granted) comes back as a 400 carrying the
-         *     sentence the kernel wrote for it. Those are written for the person looking at the screen, so
-         *     they are handed over unchanged.
+         * @description Record a folder chosen in the operating system's folder dialog; refusals are 400s with their
+         *     sentence.
          */
         post: operations["add_grant_api_library_grants_post"];
         delete?: never;
@@ -5936,18 +5048,7 @@ export interface paths {
         };
         /**
          * Quarantined
-         * @description Everything Sift refused, in the two piles it actually falls into.
-         *
-         *     A file can be quarantined with nowhere else in the application to see that it was. The reason
-         *     for a moved file is in the note beside it, not only a line in the security log, so the listing
-         *     can say *why* as well as what and when and how big, which is the one thing somebody opening
-         *     this screen wants.
-         *
-         *     Both piles together, deliberately. They have opposite answers to "where is my file": one is in a
-         *     folder of Sift's own and one is untouched in the reader's library, and a screen showing either
-         *     alone would leave somebody looking in the wrong place.
-         *
-         *     Admin-only, like everything else here: it names files on the server's disk.
+         * @description Everything Sift refused, in its two piles together: moved, and left where it was. Admin-only.
          */
         get: operations["quarantined_api_library_quarantine_get"];
         put?: never;
@@ -5970,20 +5071,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Quarantined
-         * @description Remove one quarantined file for good, and the note beside it.
-         *
-         *     The name is a bare filename and the store refuses anything else (see `quarantine.resolve`).
-         *     This is the one route in Sift whose whole job is deleting the file it is handed, so a name
-         *     carrying a separator would be a way to reach anything the process can write to.
-         *
-         *     The receipt is written after the file is gone and on a connection of its own, which is the only
-         *     order available: what happens here is an unlink, and no database transaction has ever been able
-         *     to contain one. Writing it first would record a deletion that may then fail.
-         *
-         *     NO SUBJECTS, and that is a fact about quarantine rather than an omission. A quarantined file was
-         *     refused on the way in, so it was never imported: there is no asset, no folder row and nothing
-         *     else in the library this decision could name. The only thing it has is a filename, and a
-         *     filename is not a subject anything could later look a history up by.
+         * @description Remove one quarantined file for good, and its note; the receipt follows the unlink and has no
+         *     subjects.
          */
         delete: operations["delete_quarantined_api_library_quarantine__name__delete"];
         options?: never;
@@ -6000,28 +5089,14 @@ export interface paths {
         };
         /**
          * List Roots
-         * @description Every library root. Admin-only: the list of them is a description of the server's disk.
-         *
-         *     Each row carries the sharing mark of its own top folder. Asked through the folder rather than
-         *     invented here, so a root and the folder directly under it in the tree cannot draw two different
-         *     answers to the same question.
+         * @description Every library root. Admin-only: the list describes the server's disk.
          */
         get: operations["list_roots_api_library_roots_get"];
         put?: never;
         /**
          * Add Root
-         * @description Point Sift at a folder.
-         *
-         *     Every way this can be refused (the folder is not there, it is a file, Sift cannot read it, it
-         *     overlaps a library that is already here, it is one of Sift's own directories) comes back as a
-         *     400 carrying the sentence the kernel wrote for it. Those messages are written for the person
-         *     who typed the path, so they are handed over unchanged rather than being replaced with something
-         *     about a constraint.
-         *
-         *     A library can be added straight out of sight, which conceals every file beneath it, on the
-         *     screens of the user who added it, and nobody else's. That needs a PIN to already exist:
-         *     without one there would be nothing to open it with again, and the whole library would be added
-         *     invisible.
+         * @description Point Sift at a folder; refusals are 400s with their sentence. Adding into the vault needs a
+         *     PIN.
          */
         post: operations["add_root_api_library_roots_post"];
         delete?: never;
@@ -6043,26 +5118,14 @@ export interface paths {
         /**
          * Remove Root
          * @description Forget a root and everything indexed under it. Deletes no file.
-         *
-         *     The confirmation in front of this says so in as many words, because it is the one destructive-
-         *     sounding thing here that is not destructive at all: the rows go, the files stay exactly where
-         *     they are, and pointing Sift back at the folder rebuilds the library from the digests with
-         *     everything anybody recorded about those files still attached.
          */
         delete: operations["remove_root_api_library_roots__root_id__delete"];
         options?: never;
         head?: never;
         /**
          * Change Root
-         * @description Change how a root behaves, which is whether this user keeps it in the vault. Neither its
-         *     name nor its path is changed here.
-         *
-         *     Hiding a library needs a PIN, the same as hiding anything else. Bringing it back needs Hidden
-         *     actually open, also the same as everything else, and that is the more important half. This
-         *     screen lists a library whether or not the user has hidden it, so without the check the whole
-         *     of Hidden could be undone from a signed-in browser with no PIN at all, which is precisely the
-         *     person it exists to stop. Nothing is stranded by it: a library can only have been hidden by
-         *     somebody who had a PIN, so the way back is the one they already hold.
+         * @description Change whether this user keeps a root in the vault: hiding needs a PIN, showing needs Hidden
+         *     open.
          */
         patch: operations["change_root_api_library_roots__root_id__patch"];
         trace?: never;
@@ -6079,15 +5142,6 @@ export interface paths {
         /**
          * Root Moved
          * @description Tell Sift where a library folder is now, after it was moved or renamed outside Sift.
-         *
-         *     A folder inside a library is recognised on the next walk, from what is inside it. The library
-         *     folder itself cannot be: Sift is pointed at it by its path, so when that path stops existing
-         *     Sift is not looking anywhere near the new one and there is nothing to recognise it by.
-         *
-         *     **Nothing under it is re-read.** Every file is recorded relative to its library folder, so one
-         *     stored path changes and the whole library is correct again, with every share, concealment and
-         *     attribution still attached to the folders that carry them. Removing the library and adding it
-         *     back recovers the files by their digests and loses all of that, and reads every byte to do it.
          */
         post: operations["root_moved_api_library_roots__root_id__moved_post"];
         delete?: never;
@@ -6107,19 +5161,7 @@ export interface paths {
         put?: never;
         /**
          * Allow Rejection
-         * @description Forget that this file was refused, so the next scan looks at it again.
-         *
-         *     Not "import it now", and the difference matters. The refusal is a *memory* (it is what stops
-         *     the scanner re-reading the same unreadable file on every pass), so removing the memory puts the
-         *     file back in front of the gate rather than past it. A file that is genuinely a disguised
-         *     executable is refused again, and says so again, which is the right outcome for somebody who
-         *     pressed this on a hunch.
-         *
-         *     NO SUBJECTS, for the same reason the quarantine route above has none: a refused file was never
-         *     imported, so there is no asset and no folder row to name. The library FOLDER it sits under is
-         *     not one either: `root_id` names a library root, which is a different table from `folders` and
-         *     a different id space, and writing it as a folder subject would file this decision against a
-         *     folder somebody else's history would then read.
+         * @description Forget that this file was refused, so the next scan puts it back in front of the gate.
          */
         post: operations["allow_rejection_api_library_roots__root_id__rejections_allow_post"];
         delete?: never;
@@ -6139,19 +5181,8 @@ export interface paths {
         put?: never;
         /**
          * Rescan Root
-         * @description Walk a root again now, or just one folder of it, rather than waiting for the watcher.
-         *
-         *     The root is looked up first so that a made-up id is a 404 rather than a job that starts, reads
-         *     nothing, and fails somewhere nobody is looking.
-         *
-         *     `folder_id` narrows the walk AND the sweep to that folder's subtree: what the watcher asks
-         *     for when a single file lands, and what a person asks for to pick up one folder that changed
-         *     without a whole-root rescan, which on a large library is minutes of work.
-         *
-         *     The folder is resolved here as well as in the job, so asking about one that is not there, or
-         *     one belonging to another library, is a 404 in front of somebody rather than a job that starts
-         *     and fails where only a log would say so. The job checks again regardless, because between this
-         *     line and the walk a folder can be removed.
+         * @description Walk a root again now, or one folder of it; an unknown root or folder is a 404, not a failed
+         *     job.
          */
         post: operations["rescan_root_api_library_roots__root_id__rescan_post"];
         delete?: never;
@@ -6202,23 +5233,7 @@ export interface paths {
         };
         /**
          * Recent
-         * @description The end of the log, oldest first. Narrowed, where asked, to a level and a search.
-         *
-         *     Oldest first because that is the order it was written in and the order anything quoting it will
-         *     be read in. A screen that wants the newest at the top can turn it over; a reader following a
-         *     sequence of events cannot put one back together.
-         *
-         *     ## Narrowed HERE, and not on the screen
-         *
-         *     A screen that filtered what it was sent would be filtering the last two hundred lines, so
-         *     "errors only" on a busy log would show the errors among the last two hundred lines, which is
-         *     usually none, while the error somebody is looking for sits a thousand lines up. Narrowing where
-         *     the file is read means the two hundred lines sent are two hundred ERRORS, and the rest of a
-         *     large log never crosses the wire. `level` keeps that level and everything louder; `search` keeps
-         *     a line whose event or fields contain the words, ignoring case.
-         *
-         *     Off the event loop, like every other file read in Sift: the log lives beside the database, which
-         *     on a self-hosted install may be a network mount, and a stat on one of those is not instant.
+         * @description The end of the log, oldest first, narrowed here rather than on the screen.
          */
         get: operations["recent_api_logs_get"];
         put?: never;
@@ -6238,8 +5253,7 @@ export interface paths {
         };
         /**
          * Archive
-         * @description `Download log`: the library's log whole and unfiltered, redacted whatever the setting says,
-         *     as the zip the desktop app makes of both its places (`sift.logbundle`).
+         * @description `Download log`: the library's log whole, redacted, zipped as the desktop app does.
          */
         get: operations["archive_api_logs_archive_get"];
         put?: never;
@@ -6259,44 +5273,14 @@ export interface paths {
         };
         /**
          * List Loops
-         * @description One page of the loops this viewer may see.
-         *
-         *     `asset_id` narrows to one file, which is what the player asks for when it draws the marks on a
-         *     timeline. `person`, `tag`, `site` and `collection` narrow to the loops cut from the files
-         *     that thing reaches, which is what makes this a related list as well as a wall.
-         *
-         *     `collection` is there for a collection's Loops tab; the kernel's `_LEAF` understands the word.
-         *     See `TABS_FOR` in the related slice for why the tab exists at all.
-         *
-         *     `from` names a mark to start the page at, instead of an offset. This wall is drawn by the media
-         *     grid, which pages by whole rows, so how many marks a page holds depends on the size of the
-         *     screen and a page NUMBER is not a durable thing to put in an address. It is resolved against
-         *     this same question, because a position only means anything in the list it was taken from.
-         *
-         *     A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-         *     rather than refusing: a mark that has since
-         *     been moved, deleted or concealed is a stale link and not an error. It is also why a caller
-         *     cannot learn anything by trying ids: a mark being kept back and one that never existed give
-         *     the same answer, and both are the first page.
-         *
-         *     **And by the query language**, which is what puts the bar's filters on this wall: every file
-         *     filter the library takes narrows the marks to those cut from matching files. See `_narrowing`.
-         *
-         *     `called` is the wall's search box: the marks whose own name, or whose file's name, holds the
-         *     words, in any case. A mark with no name of its own is drawn under its file's name, so the box
-         *     has to find it by that. Not `name`, which the query language already reads as a FILE's title
-         *     off this same address and which would narrow the named marks away with the rest.
+         * @description One page of the loops this viewer may see; `asset_id`, `person`, `tag`, `site`, `collection`
+         *     narrow it, `from` starts the page at a mark, `called` searches mark and file names.
          */
         get: operations["list_loops_api_loops_get"];
         put?: never;
         /**
          * Create Loop
-         * @description Save the stretch somebody marked in the player.
-         *
-         *     The file is resolved through the access layer first (`open_asset`, so a concealed one is a 404
-         *     rather than a placeholder), which is what stops a loop being written against a file this user
-         *     may not be shown. Its duration comes from that same read, so the service can refuse an end past
-         *     the end of the file without a second query.
+         * @description Save the stretch somebody marked in the player; a concealed file is a 404.
          */
         post: operations["create_loop_api_loops_post"];
         delete?: never;
@@ -6316,26 +5300,8 @@ export interface paths {
         put?: never;
         /**
          * Forget Loops
-         * @description Forget a selection of marks, in ONE request. No file is touched and no byte moves.
-         *
-         *     **This is the only way to forget a mark.** There is no per-row DELETE route: the wall forgets
-         *     in bulk, and a route nothing calls is one the reachability gate refuses. The shared Delete verb
-         *     is hidden on the Loops wall deliberately, because it removes the FILE; and a screen's extra menu
-         *     row is drawn per tile. Between them a selection of thirty marks had nothing at all to press,
-         *     which is what this route is for.
-         *
-         *     Answered as `BulkWriteDone`, the shape every other bulk write in Sift answers, so the screen
-         *     says what it says everywhere else: what went, what did not, and why. A mark that is not this
-         *     user's to remove is SKIPPED and counted rather than refusing the whole call: one row
-         *     somebody else made should not stop the twenty-nine they did.
-         *
-         *     "Not yours" and "no such loop" are one answer here, as they are on the single route: telling
-         *     them apart would say the mark exists.
-         *
-         *     !! `forget` is a literal segment where `{loop_id}` would match, and FastAPI resolves in
-         *     DECLARATION order, so this is only safe because no `POST /loops/{loop_id}` exists. If one is
-         *     ever added it must be declared after this, or a mark whose id was `forget` is the least of it:
-         *     every forget request would be read as a write to one loop.
+         * @description Forget a selection of marks in one request; marks not yours are skipped and counted.
+         *     Must stay declared before any `POST /loops/{loop_id}`, or that route would take `forget`.
          */
         post: operations["forget_loops_api_loops_forget_post"];
         delete?: never;
@@ -6377,11 +5343,7 @@ export interface paths {
         put?: never;
         /**
          * Set Loop Tag
-         * @description Tag the moment.
-         *
-         *     An admin's, like every other tag write in the application. Making a mark is not (it is closer
-         *     to a rating), but a TAG is shared vocabulary: it changes what everybody's searches return, and
-         *     it does that whoever put the mark there.
+         * @description Tag the moment; admin-only, as a tag is shared vocabulary.
          */
         post: operations["set_loop_tag_api_loops__loop_id__tags_post"];
         delete?: never;
@@ -6399,21 +5361,7 @@ export interface paths {
         };
         /**
          * Loop Thumb
-         * @description The mark's own picture: a frame of its video, at the moment the mark begins.
-         *
-         *     **The moment comes from the row, never from the caller.** A still is filed under `(asset_id,
-         *     kind, params)`, so a moment named in a query string would let anybody ask for an unbounded
-         *     number of distinct pictures of one file and fill the cache with them. Asked this way, the set of
-         *     stills a library can be made to hold is bounded by the number of marks somebody actually saved.
-         *
-         *     There is no permission rule here and there does not need to be one. `_require_loop` resolves the
-         *     mark through the join to the visible set, so a mark of a video this user may not see is a 404
-         *     before a picture is looked for, and the picture itself is then served by the same scoped read
-         *     the video's own still goes through, which checks the video again.
-         *
-         *     A 404 covers "not allowed", "no such mark" and "not built yet" alike, exactly as the asset
-         *     still's does. The last of those is ordinary rather than exceptional: the client falls back to
-         *     the video's own picture until the sweep has been round.
+         * @description The mark's own picture, at the moment the mark begins; the moment comes from the row only.
          */
         get: operations["loop_thumb_api_loops__loop_id__thumb_get"];
         put?: never;
@@ -6453,8 +5401,7 @@ export interface paths {
         };
         /**
          * Lookup State
-         * @description Whether the lookup is on, whether a key is set and ready, the route it goes through, and
-         *     how many files are still owed a lookup.
+         * @description Whether the lookup is on, its key and route, and how many files are still owed a lookup.
          */
         get: operations["lookup_state_api_music_lookup_get"];
         put?: never;
@@ -6476,14 +5423,7 @@ export interface paths {
         put?: never;
         /**
          * Ask Again
-         * @description Ask AcoustID again about the files it did not know: one press, queued as a walk of the
-         *     lookup task with a lookup per file under it (`LookupStarter.start_again`), counted before it
-         *     starts. Only the files last asked more than `ASK_AGAIN_AFTER_DAYS` days ago (the reason is
-         *     over the constant). Each file keeps its earlier answer until the new one lands.
-         *
-         *     Admin-only and refused in words while the lookup is off or has no key (409), as every press
-         *     that sends something outside the machine is. A file in Hidden is asked about as every walk of
-         *     the lookup task asks about it: nothing of a file is shown or counted to anybody by this press.
+         * @description Ask AcoustID again about files it did not know, past `ASK_AGAIN_AFTER_DAYS`. Admin-only.
          */
         post: operations["ask_again_api_music_lookup_again_post"];
         delete?: never;
@@ -6503,8 +5443,7 @@ export interface paths {
         put?: never;
         /**
          * Check Lookup
-         * @description Prove the key with one lookup of AcoustID's own documented example (nothing of the library
-         *     is sent) through the route that is set.
+         * @description Prove the key with AcoustID's own example via the set route; sends nothing of the library.
          */
         post: operations["check_lookup_api_music_lookup_check_post"];
         delete?: never;
@@ -6524,18 +5463,7 @@ export interface paths {
         put?: never;
         /**
          * Look Up Files
-         * @description Enrich some files with AcoustID: the lookup task pressed for THESE files.
-         *
-         *     AcoustID as a choice of Enrich on a file's menu, a selection's bar and a folder (whose files
-         *     the screen sends), beside the stash-boxes. One press of the lookup task, queued as its own walk with a
-         *     lookup per file under it (`LookupStarter.start_for_files`), so it runs now whatever the task's
-         *     When says, and Activity draws it as the press it is.
-         *
-         *     Admin-only, as every press that sends something about the library outside the machine is.
-         *     Every file is resolved through what this user may act on first: a file in Hidden while it is
-         *     shut, or one they may not see, is left out and counted, never sent. Refused in words while the
-         *     lookup is off or has no key (409), as the task's own press is. A file AcoustID was asked about
-         *     and did not know is not asked again by this press: asking again is a choice nothing here makes.
+         * @description Enrich files with AcoustID now; files this user cannot act on are counted, never sent.
          */
         post: operations["look_up_files_api_music_lookup_files_post"];
         delete?: never;
@@ -7235,46 +6163,14 @@ export interface paths {
         };
         /**
          * List Photo Sets
-         * @description One page of the photo sets this viewer may know about.
-         *
-         *     `person`, `tag` and `site` are what make this a related list as well as a wall: passed one,
-         *     the answer is the sets whose pictures that thing reaches, counted over the same narrowed set.
-         *     They are ids, resolved by the filter rather than by name, because a name is ambiguous and this
-         *     is called from a page that already holds the id.
-         *
-         *     `prefix` narrows to the names beginning with what somebody is typing. See the collection
-         *     listing beside this one for why a picker needs that of the server rather than of its own cache.
-         *
-         *     `count` is which tally a card prints: `whole` (every file under that row this viewer may see),
-         *     or `narrowed`, how many of them are on THIS wall. A press on a card carries the page it was
-         *     pressed from, so a card reached through somebody else opens the two together, and its number
-         *     has to be the size of THAT wall or it describes a set the press cannot reach. `whole` by
-         *     default, which is what a plain wall means.
-         *
-         *     `from` names a set to start the page at, instead of an offset. The wall pages by whole rows, so
-         *     how many cards a page holds depends on the size of the screen, which means a page NUMBER is
-         *     not a durable thing to put in an address, and the set somebody was looking at is. It is
-         *     resolved against this same question (the same prefix, order, narrowing and tally), because a
-         *     position only means anything in the list it was taken from.
-         *
-         *     A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-         *     rather than refusing: a set that has since been
-         *     renamed, hidden or deleted is a stale link and not an error. That also means a caller cannot
-         *     learn anything by trying ids: the answer for a set being kept back is the same as for one that
-         *     never existed, and both are the first page. The People wall says all of this too.
+         * @description One page of the photo sets this viewer may know about; `person`, `tag` or `site` narrow it
+         *     to sets reaching that id, `count` picks the tally, and `from` starts the page at a set.
          */
         get: operations["list_photo_sets_api_photo_sets_get"];
         put?: never;
         /**
          * Create Photo Set
-         * @description Make an empty set by hand.
-         *
-         *     Names are not unique. Two shoots can genuinely both be called "beach", and refusing the second
-         *     would be asserting something about the world that is not true.
-         *
-         *     It arrives visible, empty and with no cover, and the answer is built from what was just written
-         *     rather than read back through the access layer: there is nothing to scope: it holds nothing,
-         *     wears no cover, and the name is the one the caller sent.
+         * @description Make an empty set by hand; names need not be unique.
          */
         post: operations["create_photo_set_api_photo_sets_post"];
         delete?: never;
@@ -7293,12 +6189,6 @@ export interface paths {
         /**
          * Photo Set Facets
          * @description What the photo sets this wall reaches are made of, along one dimension, with counts.
-         *
-         *     Declared before `/photo-sets/{photo_set_id}`: routes match in declaration order, and the other
-         *     way round this address would be read as a set called "facets".
-         *
-         *     The counts are of SETS, over the statement that decides which of them the wall holds, with
-         *     every narrowing the listing takes. See `people_facets` in the people slice.
          */
         get: operations["photo_set_facets_api_photo_sets_facets_get"];
         put?: never;
@@ -7318,22 +6208,12 @@ export interface paths {
         };
         /**
          * Get Photo Set
-         * @description One set's own row: its name, its cover, where it came from and its scoped count.
-         *
-         *     With the sharing mark, because the page draws a badge from it, and a reply that omits a
-         *     restrict is a badge that stops being drawn while the grant is still in force.
+         * @description One set's own row: its name, its cover, where it came from, sharing, and its scoped count.
          */
         get: operations["get_photo_set_api_photo_sets__photo_set_id__get"];
         /**
          * Rename Photo Set
          * @description Rename a set. Hiding one is a separate request.
-         *
-         *     The word index is NOT told: a photo set's name is in no column the index gathers (a file's
-         *     title, its music, its filename, its paths, its tags, its people, its usernames, its collections
-         *     and its sites), so a rename changes nothing the index could be wrong about. A whole-index
-         *     rebuild would hold the write lock for many seconds on a large library and buy nothing. If a
-         *     set's name is ever gathered into that text, this needs a `touched_many` of the set's items
-         *     (which ARE nameable) and not a rebuild.
          */
         put: operations["rename_photo_set_api_photo_sets__photo_set_id__put"];
         post?: never;
@@ -7421,13 +6301,6 @@ export interface paths {
         /**
          * History Of A Photo Set
          * @description What happened to this Photo Set, oldest first.
-         *
-         *     Authenticated rather than admin, the same rule the set's own row follows. The sharing half is an
-         *     admin's and the kernel withholds it, for the reason written there, and on a set that half is
-         *     most of the thread, because `photo_set_items` records no moment for a file going in.
-         *
-         *     Resolved through `_require_set` first, so a set this viewer may not be shown answers the same
-         *     404 an id that was never minted would.
          */
         get: operations["history_of_a_photo_set_api_photo_sets__photo_set_id__history_get"];
         put?: never;
@@ -7449,11 +6322,7 @@ export interface paths {
         put?: never;
         /**
          * Edit Photo Set Items
-         * @description Add pictures to a set, or take them out. No file is moved.
-         *
-         *     A picture that cannot be resolved is SKIPPED and counted, and the reply says how many were left
-         *     out and why. See `sift.kernel.reach`: the case against a partial success is a case against a
-         *     SILENT one, and this one speaks.
+         * @description Add pictures to a set, or take them out; a picture that cannot be resolved is counted.
          */
         post: operations["edit_photo_set_items_api_photo_sets__photo_set_id__items_post"];
         delete?: never;
@@ -7471,21 +6340,7 @@ export interface paths {
         };
         /**
          * Maker Of A Photo Set
-         * @description WHO MADE IT: Sift and the pass that did it, the user who asked, or nobody.
-         *
-         *     Its own route rather than a field on the row, and that is the one judgement here. `PhotoSetSummary` is
-         *     the shape the wall is drawn from as well as the page, so a maker on it would be filled for the
-         *     one and left null for the other: a field meaning "nothing recorded it" on a page and "nobody
-         *     asked" on a wall, with nothing on the wire to tell them apart. A page that wants the line asks
-         *     for it; a wall that does not, does not pay a point read a row for it.
-         *
-         *     Authenticated rather than admin, the same rule the Photo Set's own row and its history follow.
-         *     The kernel read is unscoped and relies on the subject having been resolved first, which is what
-         *     `_require_set` does, so a Photo Set this viewer may not be shown answers the same 404 an id that was
-         *     never minted would, rather than saying who made a thing they cannot see.
-         *
-         *     Null is the ordinary answer and never an error: every row made before the catalog recorded this
-         *     says nothing, and a line drawn from nothing would be an invention.
+         * @description Who made this Photo Set: Sift and its pass, the user who asked, or nobody recorded.
          */
         get: operations["maker_of_a_photo_set_api_photo_sets__photo_set_id__made_by_get"];
         put?: never;
@@ -7559,8 +6414,7 @@ export interface paths {
         };
         /**
          * Photo Set Tags
-         * @description The tags on this set. The same address shape people, sites and collections use, so the one
-         *     client store reaches all four rather than each growing its own.
+         * @description The tags on this set, in the address shape every entity uses.
          */
         get: operations["photo_set_tags_api_photo_sets__photo_set_id__tags_get"];
         put?: never;
@@ -7585,17 +6439,7 @@ export interface paths {
         get?: never;
         /**
          * Set Photo Set Vault
-         * @description Hide the set from this user, or stop hiding it.
-         *
-         *     Behind the PIN, like every other hide: without one there would be nothing to unhide it with.
-         *     Hiding a set conceals its PICTURES as well, which is what somebody hiding it meant.
-         *
-         *     The PIN check is AWAITED here rather than declared as a dependency, and that is not a style
-         *     choice: it is the one shape that works. `require_vault_pin` takes a plain `Viewer`, so as a
-         *     `Depends` FastAPI reads that parameter as something the CALLER should send and answers every
-         *     request with a 422 before the handler is reached: declared that way, this route would refuse
-         *     everything, with an error toast as the only sign. Every caller of it in the application awaits
-         *     it inline.
+         * @description Hide the set and its pictures from this user, or stop hiding it; behind the PIN.
          */
         put: operations["set_photo_set_vault_api_photo_sets__photo_set_id__vault_put"];
         post?: never;
@@ -7614,28 +6458,7 @@ export interface paths {
         };
         /**
          * Reclaim Space
-         * @description Assets sitting in more than one place, and what dropping the extras would free.
-         *
-         *     No judgement involved: these are identical bytes that the content model already resolved into
-         *     one asset with several locations. The only question is which copies to keep, and that is the
-         *     admin's to answer: a second copy on a second disk may be deliberate.
-         *
-         *     ## A page, and two numbers about the whole
-         *
-         *     On a large library there are thousands of assets and twice as many paths, and the mark that
-         *     watches for new ones asks again on a timer. So this is a page, and `total` says what the page
-         *     is a part of.
-         *
-         *     `total` and `total_reclaimable_bytes` are whole-library and are NOT held to the vault, the same
-         *     way the review queue's own totals are not. What the vault conceals is a file's name and the
-         *     paths of its copies, and no page prints one it may not: `concealed` counts what this page
-         *     dropped for that reason. A count and a number of bytes describe a population rather than a
-         *     file, and scoping them would mean resolving permission for every asset in the library to draw
-         *     one sentence.
-         *
-         *     `from` names the file a page starts at: the row the tab was left at, carried in its address
-         *     so the way back lands on the same page. Letting a file's last extra copy go takes it off this
-         *     list, so a `from` naming nothing is answered with the page it was on (`near`), or the top.
+         * @description Assets stored in more than one place, a page at a time; totals are whole-library.
          */
         get: operations["reclaim_space_api_reclaim_get"];
         put?: never;
@@ -7657,13 +6480,7 @@ export interface paths {
         put?: never;
         /**
          * Release Many
-         * @description Let go of a page of copies in one press.
-         *
-         *     The exact-copies queue settles a page at a time, like the near-duplicate queue beside it: the
-         *     two are tabs of one job. Each copy goes through the same
-         *     `release` the single press uses, with the same refusals (the last copy of a file is never
-         *     let go), and a refusal counts rather than stopping the page: the copies after it are still
-         *     somebody's decision.
+         * @description Let go of a page of copies; a refusal counts rather than stopping the page.
          */
         post: operations["release_many_api_reclaim_release_many_post"];
         delete?: never;
@@ -7683,11 +6500,7 @@ export interface paths {
         put?: never;
         /**
          * Release Copy
-         * @description Let go of one copy, keeping the asset and everything recorded about it.
-         *
-         *     The asset survives because it still sits somewhere else: that is what makes this safe to
-         *     offer, and it is why a copy that is not one of several is not on this screen to begin with.
-         *     The copy itself is deleted from the disk, and cannot be put back.
+         * @description Let go of one copy, deleting it from disk; the asset stays where its other copies are.
          */
         post: operations["release_copy_api_reclaim__asset_id__release_post"];
         delete?: never;
@@ -7918,30 +6731,12 @@ export interface paths {
         put?: never;
         /**
          * Remember Search
-         * @description Note that this user did this: ran a search, or picked something out of the dropdown.
-         *
-         *     A submission rather than a page view, and that is the whole reason it is a route of its own.
-         *     The read behind it answers every screen made of tiles, so recording there would fill the list
-         *     with an entry for opening the library, and a history of blanks is one nobody looks at twice.
-         *
-         *     Both kinds through one address, because the memory is one list and the dropdown draws it as
-         *     one. An entry need not be typeable to be re-run: a picked person is re-run by going back to
-         *     them, which is what picking them did.
-         *
-         *     An unknown kind is refused rather than stored. The client is what turns a kind into somewhere
-         *     to go, so a kind nothing recognises is a row that can never be drawn, taking a place in a
-         *     fifty-row memory from something that works.
-         *
-         *     Written for the user who asked, read back only to them, and emptied by them. It is a
-         *     feature; nothing about a query reaches the structured log.
+         * @description Note that this user ran a search or picked something out of the dropdown.
          */
         post: operations["remember_search_api_search_history_post"];
         /**
          * Clear History
-         * @description Forget the lot, or forget one entry, and the record of it with it.
-         *
-         *     A guest may clear their own history and only their own, so this is not admin-gated: it is
-         *     scoped, which is stronger: there is no id in the request that could name another user's row.
+         * @description Forget the lot, or one entry, and its record; scoped, so only the caller's own.
          */
         delete: operations["clear_history_api_search_history_delete"];
         options?: never;
@@ -7958,17 +6753,7 @@ export interface paths {
         };
         /**
          * Named By
-         * @description The things in the library a plain word NAMES, as against the files it appears in.
-         *
-         *     Searching `reya` should answer with Reya Solberg as well as with the files whose names match,
-         *     and this is that half. It is presentation of a query that already existed rather than a new
-         *     one: the same scoped suggesters the dropdown reads, asked to match anywhere instead of only at
-         *     the start, because a band answers "what is called this" and a dropdown completes a word.
-         *
-         *     Nothing here is a second read of the library. A name offered by a list that a search would not
-         *     return is a leak (the answer to "is there somebody called that" would have been the band
-         *     rather than the results), so a restricted person is absent from this exactly as they are
-         *     absent from the dropdown.
+         * @description The things in the library a plain word names, through the dropdown's scoped suggesters.
          */
         get: operations["named_by_api_search_named_get"];
         put?: never;
@@ -7988,11 +6773,7 @@ export interface paths {
         };
         /**
          * Names Now
-         * @description What each of these ids of one kind is called now, for a screen that keeps things by id.
-         *
-         *     A kept id is the thing whatever it is called later, and a kept NAME is a copy that goes stale
-         *     at the first rename: this is how a screen that keeps ids draws today's names. An id this viewer
-         *     may not be shown is answered exactly as one that names nothing, by its absence.
+         * @description What each of these ids of one kind is called now; an unseen id is simply absent.
          */
         get: operations["names_now_api_search_names_now_get"];
         put?: never;
@@ -8015,12 +6796,6 @@ export interface paths {
         /**
          * Search Opened
          * @description Note that this user opened a file from the wall a typed search narrowed.
-         *
-         *     The other click a search leads to. A pick out of the dropdown is written down on its own, and
-         *     without this "which of the results did I open" would have no answer for a search somebody
-         *     typed and entered, which is most of them. Written for the user who asked, about a file they
-         *     may open, and never while their history is paused. Answers nothing either way: a note about
-         *     what somebody did is not worth a refusal on their screen.
          */
         post: operations["search_opened_api_search_opened_post"];
         delete?: never;
@@ -8038,15 +6813,7 @@ export interface paths {
         };
         /**
          * Parse Query
-         * @description What a typed query means, so the Filters modal can show what is already in force.
-         *
-         *     Pure: it reads no rows and takes no viewer beyond requiring one, because the answer is a
-         *     property of the text rather than of the library. It is a route only so that the client does not
-         *     have to parse, which is the one thing the client must never do, since a second parser
-         *     disagrees with this one and there is then nothing to say which is right.
-         *
-         *     Authenticated, like everything else here. It discloses nothing about the library, but an
-         *     endpoint that will parse arbitrary text for anybody is still not something to leave open.
+         * @description What a typed query means, so the Filters modal can show what is in force without a parser.
          */
         get: operations["parse_query_api_search_parse_get"];
         put?: never;
@@ -8066,16 +6833,13 @@ export interface paths {
         };
         /**
          * Saved Searches
-         * @description This user's saved searches, newest first, under the names things have today. There is no
-         *     route to anybody else's.
+         * @description This user's saved searches, newest first, under the names things have today.
          */
         get: operations["saved_searches_api_search_saved_get"];
         put?: never;
         /**
          * Save Search
-         * @description Keep a query under a name. Saving under a name already used replaces its query, so this is
-         *     both 'save' and 'update'. Not admin-gated: a guest saves their own searches and only their own,
-         *     which is scoped rather than merely permitted: nothing in the request names another user.
+         * @description Keep a query under a name; saving under a used name replaces its query.
          */
         post: operations["save_search_api_search_saved_post"];
         delete?: never;
@@ -8096,8 +6860,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Saved Search
-         * @description Drop one saved search. Scoped to the asker: an id belonging to another user names no row
-         *     this touches, so a guessed id is a no-op rather than a way to delete somebody else's.
+         * @description Drop one saved search of the caller's; another user's id touches nothing.
          */
         delete: operations["delete_saved_search_api_search_saved__saved_id__delete"];
         options?: never;
@@ -8105,11 +6868,6 @@ export interface paths {
         /**
          * Rename Saved Search
          * @description Change a saved search's name, keeping the query it points at.
-         *
-         *     The half that saving cannot do: saving under a name already used replaces that name's query,
-         *     so the query can be edited by saving, and this is how a search is called something else.
-         *     Scoped to the asker, exactly as delete is: an id belonging to another user names no row, and
-         *     comes back as a plain not-found rather than as a refusal that would confirm the row exists.
          */
         patch: operations["rename_saved_search_api_search_saved__saved_id__patch"];
         trace?: never;
@@ -8123,31 +6881,8 @@ export interface paths {
         };
         /**
          * Suggest
-         * @description What to show under the box, given everything typed into it so far.
-         *
-         *     ## The `field` and `prefix` form, which is not for the search box
-         *
-         *     A record form has boxes that name a THING the library already knows about (a site's other
-         *     names, the network it belongs to, a person's other names), and they complete from the same
-         *     lists this answers with, because a second list of what is in the library is a second answer to
-         *     one question.
-         *
-         *     They cannot use `q`. Composing `sites:Northlight Raw` means knowing where a value has to be
-         *     quoted, and that is the grammar: the one thing the client is not allowed a second copy of.
-         *     So the field and the prefix arrive apart and are never parsed. A field this version does not
-         *     know is an empty list rather than an error: an older client asking about a vocabulary that has
-         *     gone gets no completions and still works.
-         *
-         *     The whole line is sent rather than a token and a prefix worked out by the browser, so that the
-         *     one parser decides where the caret is: a second implementation of "which token am I in" in
-         *     the client would be a second grammar, and it would disagree about quoting first.
-         *
-         *     Three things it can be showing, in order of how specific the answer is:
-         *
-         *       - the caret is inside a token (`people:ja`): the matches for that one field;
-         *       - the caret is on a bare word (`ja`): the matches for it from across the catalog, each
-         *         carrying the field it would complete to, so a word alone becomes the right token;
-         *       - neither: this user's recent searches, narrowed to what has been typed.
+         * @description What to show under the box for the whole line typed so far, parsed here, never in a client.
+         *     `field` and `prefix` instead complete a record form's box for one field, unparsed.
          */
         get: operations["suggest_api_search_suggest_get"];
         put?: never;
@@ -8167,14 +6902,7 @@ export interface paths {
         };
         /**
          * Read Available
-         * @description Whether the search box should offer to search by meaning.
-         *
-         *     Open to anybody signed in, unlike the rest of this feature, because it is what a search box
-         *     needs and a search box is not an admin surface. It says yes or no and never why: the reason is
-         *     about models, devices and add-ons, which is admin business.
-         *
-         *     A client that ignores this and asks for the order anyway gets the ordinary one, so this is a
-         *     courtesy that stops a control being offered where it would do nothing, not a permission.
+         * @description Whether the search box should offer to search by meaning; yes or no, never why.
          */
         get: operations["read_available_api_semantic_available_get"];
         put?: never;
@@ -8194,20 +6922,7 @@ export interface paths {
         };
         /**
          * Read Coverage
-         * @description How much of what this user can see has been described.
-         *
-         *     Open to anybody signed in, for the reason the courtesy above is, and safely for a different
-         *     one: both counts are scoped to this viewer by the statement that produces them, so neither
-         *     says whether anything hidden exists.
-         *
-         *     Asked by the screen that shows a set of results found by meaning, and by nothing else. That is
-         *     where it earns its cost (one count over the library) and it is why this is a route of its
-         *     own rather than two more fields on the courtesy read: that one is asked once by every client
-         *     on every page load, including the many that never search by meaning at all.
-         *
-         *     Zero on an install that cannot run the feature. There is no model, so there is no revision to
-         *     count against, and a sentence about how much has been described is not one to draw at all,
-         *     which the caller decides from the numbers rather than from a third field saying so.
+         * @description How much of what this user can see has been described, scoped to this viewer.
          */
         get: operations["read_coverage_api_semantic_coverage_get"];
         put?: never;
@@ -8230,11 +6945,7 @@ export interface paths {
         post?: never;
         /**
          * Remove Index
-         * @description Throw the whole index away, as a job. Hands back how many moments go and the job.
-         *
-         *     Deliberately separate from switching the feature off, which keeps what was built, and
-         *     answered with the feature off, since removing what it left is what somebody does next. A job,
-         *     because on a large library it is minutes of batched writes that nothing else may wait on.
+         * @description Throw the whole index away, as a job: how many moments go, and the job.
          */
         delete: operations["remove_index_api_semantic_index_delete"];
         options?: never;
@@ -8253,23 +6964,7 @@ export interface paths {
         put?: never;
         /**
          * Fetch Models
-         * @description Fetch the models this install is set to use. Hands back the job doing it.
-         *
-         *     **Sift ships no models**, so this is how a fresh install becomes able to describe anything,
-         *     and it is a deliberate act by an admin rather than something that happens on enabling, because
-         *     what it downloads is published by somebody else on their own terms.
-         *
-         *     Queued, as several hundred megabytes outlast a request; a second press joins the download
-         *     already waiting or under way.
-         *
-         *     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
-         *     exactly the network call the switch exists to prevent.
-         *
-         *     `again=true` fetches files that are already on disk. A model is called installed if it EXISTS;
-         *     whether it is the RIGHT file is a separate, expensive question, and a damaged one refuses to
-         *     load with "delete it and fetch it again", which nobody running a container should have to do
-         *     at a shell. Without this the button that offers exactly that would download nothing and
-         *     report success, which is the worst of the three possible behaviours.
+         * @description Fetch the models this install is set to use, as a job; `again` fetches present files too.
          */
         post: operations["fetch_models_api_semantic_models_fetch_post"];
         delete?: never;
@@ -8287,12 +6982,7 @@ export interface paths {
         };
         /**
          * Read Status
-         * @description What this install can do, and why not when it cannot.
-         *
-         *     Answers on every install, including one whose SQLite cannot load the add-on: that is the
-         *     whole point of it. A screen that could not ask would have to guess, and guessing "unavailable"
-         *     for a feature that is merely switched off is how somebody ends up restarting a container to fix
-         *     a switch.
+         * @description What this install can do, and why not when it cannot; answers on every install.
          */
         get: operations["read_status_api_semantic_status_get"];
         put?: never;
@@ -8313,24 +7003,11 @@ export interface paths {
         /**
          * Read Settings
          * @description Every setting the caller may see, with its value, grouped into the screen's sections.
-         *
-         *     A guest sees their own per-user preferences; an admin also sees the instance-wide ones. The
-         *     sections are all present even when empty, so the screen renders the same shell for everyone.
          */
         get: operations["read_settings_api_settings_get"];
         /**
          * Update Settings
-         * @description Apply a batch of changes, all or none.
-         *
-         *     An unknown key is a 400: it is a bug or a probe, never a preference. A guest writing a global
-         *     setting is a 403, enforced here on the server. A value its validator rejects is a 422. Nothing
-         *     is stored unless every change in the batch is accepted.
-         *
-         *     Once the batch has landed, anything that has to act on a change the instant it is made (the
-         *     watcher rebuilding its observers when the polling setting flips) is told through an optional
-         *     application hook. The route does not know what listens or why; it names the keys that changed and
-         *     leaves the wiring to whoever installed the hook. Absent in a test that builds routes without
-         *     booting the app, so it is reached for rather than assumed.
+         * @description Apply a batch of changes, all or none, then tell the change hook which keys moved.
          */
         put: operations["update_settings_api_settings_put"];
         post?: never;
@@ -8350,20 +7027,11 @@ export interface paths {
         /**
          * Read Interface
          * @description How this user has arranged the interface, so it is the same on every machine.
-         *
-         *     Separate from the settings above and not a section of them. A setting is a preference chosen on
-         *     a screen and every one of them is drawn there; where somebody dragged a rail row to is not a
-         *     preference and would be a nonsense row in Settings.
-         *
-         *     Empty is the ordinary answer for a user that has never rearranged anything.
          */
         get: operations["read_interface_api_settings_interface_get"];
         /**
          * Update Interface
-         * @description Remember an arrangement, all of it or none of it.
-         *
-         *     Every signed-in user may write their own, guest included: this is where they put their own rail
-         *     and it reaches nobody else. An unknown key is a 400, and a value the store cannot hold is a 422.
+         * @description Remember an arrangement, all of it or none of it; every user may write their own.
          */
         put: operations["update_interface_api_settings_interface_put"];
         post?: never;
@@ -8382,20 +7050,12 @@ export interface paths {
         };
         /**
          * Grants On Object
-         * @description Who this thing is shared with, and who it is restricted from.
-         *
-         *     An empty list is the ordinary answer and means private, which is the default for everything
-         *     in the library, not an error and not a missing object.
+         * @description Who this thing is shared with, and who it is restricted from; empty means private.
          */
         get: operations["grants_on_object_api_sharing_get"];
         /**
          * Share
-         * @description Share this thing with somebody, or restrict it from them.
-         *
-         *     A PUT rather than a POST because it is idempotent by design: the body says what the state
-         *     should be, and saying it twice is one decision made twice. What comes back is the whole panel,
-         *     not the row just written: a restrict added inside a share has to be read next to the share it
-         *     beats.
+         * @description Share this thing with somebody, or restrict it from them; answers the whole panel.
          */
         put: operations["share_api_sharing_put"];
         post?: never;
@@ -8414,21 +7074,7 @@ export interface paths {
         };
         /**
          * Vault Sources
-         * @description What YOU have hidden that is keeping this off your screen, and where each one is set.
-         *
-         *     Hidden's half of the question the route above answers about sharing. A file can be concealed by
-         *     itself, by a folder above it, by the library it is in, by somebody it is attributed to, or by a
-         *     tag, collection or site it belongs to, and the thing that did it is, by definition, not on the
-         *     screen. Without this, working it out means unhiding one at a time until the file comes back.
-         *
-         *     Every user may ask, and every user gets their own answer. Hiding is personal, so the same
-         *     file can be gone for one user and perfectly ordinary for another; this names only what the
-         *     caller hid, which is the only list that explains what they are looking at.
-         *
-         *     **It answers only while Hidden is open.** These names are the thing being concealed: told
-         *     "hidden by the person Wren Hale", somebody who has not entered the PIN has learned that Wren
-         *     Hale is in the library, that she is hidden, and that this file is hers. Shut, the honest
-         *     answer is the same one the rest of the app gives: there is nothing here.
+         * @description What you have hidden that keeps this off your screen; only while Hidden is open.
          */
         get: operations["vault_sources_api_sharing_hidden_by_get"];
         put?: never;
@@ -8448,31 +7094,7 @@ export interface paths {
         };
         /**
          * Reach Report
-         * @description Who, other than you, can see this thing, and through what.
-         *
-         *     The route behind "can anybody else see this". `/sharing` says what was decided here and
-         *     `/sharing/sources` says where the decisions came from; neither answers the question somebody
-         *     actually asks, which is whether the thing is reachable at all and by whom: a file inside a
-         *     shared folder, carrying a shared tag, released by a label under a shared network has three
-         *     answers and nothing written on it.
-         *
-         *     **The yes comes from the stored verdict and the explanation comes from the grants.** One read
-         *     decides (`reach_of`, which probes `viewer_assets`) and the other only says why (`grant_sources`,
-         *     which lists the rows that reach it). Written the other way round (resolve the grants here and
-         *     report the result), it would be a second copy of the access rules living in a slice, and the
-         *     day it drifted the report would confidently describe a library that does not exist.
-         *
-         *     `decides` is settled by comparing each grant against that verdict rather than by re-running any
-         *     ladder: whatever the verdict says IS the answer, so a grant pointing the other way lost. That is
-         *     the same reasoning `/sharing/sources` uses and a stronger form of it: it asks the table both
-         *     are downstream of, so it is right for a tag and a Photo Set as well as for a file.
-         *
-         *     Admin-only, like almost everything in this slice, and here the reason is at its plainest: the
-         *     report is a list of what other users can see.
-         *
-         *     THE CALLER IS LEFT OUT. They are reading the report, so "you can see it" is the one row that
-         *     tells them nothing, and on a library with one user it would be the whole of it, which reads
-         *     as an answer when it is a mirror.
+         * @description Who else can see this thing and through what: the verdict decides, the grants explain.
          */
         get: operations["reach_report_api_sharing_reach_get"];
         put?: never;
@@ -8492,25 +7114,7 @@ export interface paths {
         };
         /**
          * Reach Through Files
-         * @description WHY one user can see one entity, when nothing was ever said about the entity.
-         *
-         *     The second half of the report above, and the answer to the one thing it could not say. A
-         *     person, a tag, a Site, a collection or a Photo Set is on somebody else's wall because ONE
-         *     file under it can be reached (that is the rule, and it is what `reach_of` asks), so the yes
-         *     is true and routinely has no grant naming the entity to put beside it. This names what does.
-         *
-         *     ITS OWN ROUTE AND ITS OWN CEILING, which is why it is not folded into the report. This reads a
-         *     page of an entity's files per user, where the report above is one statement for every
-         *     user together; asked for everybody on arrival it would turn a panel somebody opens to check
-         *     one thing into a read per user whether or not any of them needed it. The client asks it for
-         *     the users whose yes has nothing behind it, which is the only case it answers differently.
-         *
-         *     ONE USER AT A TIME, named as a parameter. The caller is an admin reading a report about
-         *     somebody else, exactly as with the rest of this slice: the user is the subject of the
-         *     question rather than whoever is asking it.
-         *
-         *     Admin-only, and here the reason is at its plainest twice over: it is a list of what another
-         *     user can see, and it names the folders and collections that let them.
+         * @description Why one user can see one entity when nothing was said about it; one user per request.
          */
         get: operations["reach_through_files_api_sharing_reach_through_get"];
         put?: never;
@@ -8532,10 +7136,7 @@ export interface paths {
         put?: never;
         /**
          * Revoke
-         * @description Take one grant back. It stops applying on the subject's very next request.
-         *
-         *     Not a DELETE, because what identifies the row is four fields and a delete carrying a body is a
-         *     request half the things between here and a browser will quietly drop.
+         * @description Take one grant back, effective on the subject's very next request.
          */
         post: operations["revoke_api_sharing_revoke_post"];
         delete?: never;
@@ -8554,14 +7155,6 @@ export interface paths {
         /**
          * Grant Sources
          * @description Every grant that reaches this thing, and where each one was made.
-         *
-         *     The route behind "why is this shared when I never shared it". The one above answers what was
-         *     written on this exact row, which is what the controls change; a file inside three folders,
-         *     carrying four tags and sitting in two collections has eight places a share could have come from,
-         *     and without this the only way to find which is to open all of them.
-         *
-         *     Admin-only, like everything else in this slice. A guest is told nothing about grants, including
-         *     the ones about them.
          */
         get: operations["grant_sources_api_sharing_sources_get"];
         put?: never;
@@ -8735,30 +7328,13 @@ export interface paths {
         };
         /**
          * List Connections
-         * @description Every site with saved cookies. Says that they exist, never what they are.
-         *
-         *     `state` is decided by the service and sent down already made up, so one rule about dates and
-         *     health lives in one place. A client handed the dates instead would be a second copy of it, going
-         *     wrong quietly, on the screen somebody is reading.
+         * @description Every Site with saved cookies: that they exist and their state, never what they are.
          */
         get: operations["list_connections_api_site_connections_get"];
         put?: never;
         /**
          * Save Connection
-         * @description Save a site's cookies, sealed under the master key.
-         *
-         *     Sealing needs the key, which exists only while an admin is signed in with their password. A
-         *     session resumed from a browser cookie after a restart has no key yet, so this asks for a
-         *     password first rather than storing something it cannot protect.
-         *
-         *     The jar is read before it is stored, and this is the only moment worth doing it: the downloader
-         *     tools disagree with each other about a malformed one and both end up reporting it days later as
-         *     a sign-in problem, which sends somebody to replace cookies that were never the fault. The short
-         *     form a browser's own tools hand out is converted rather than refused, because it is what most
-         *     people will try first.
-         *
-         *     What was read is kept beside the row (how many, and the two expiry dates), so the cookies
-         *     screen can say when they run out without ever unsealing them again.
+         * @description Save a Site's cookies, read first and sealed under the master key.
          */
         post: operations["save_connection_api_site_connections_post"];
         delete?: never;
@@ -8778,19 +7354,7 @@ export interface paths {
         put?: never;
         /**
          * Preview Connection
-         * @description Read pasted cookies back to whoever pasted them. Nothing is saved.
-         *
-         *     The read-back before Save: how many cookies, which sites they are for, and when they run out.
-         *     It exists because the two downloader tools are no help at all when the file is wrong (one
-         *     refuses it, the other carries on signed out), and both then report the failure days later as a
-         *     sign-in problem, which sends somebody to export cookies that were never the fault.
-         *
-         *     **It writes nothing, and it needs no master key.** There is nothing to seal, so this works
-         *     before anybody has unlocked anything, which matters, because pasting the wrong file and
-         *     unlocking are two separate problems and meeting both together is how a form becomes a wall.
-         *
-         *     The same reading `POST /site-connections` does, from the same function, so the numbers somebody
-         *     approves are the numbers that get stored rather than a second parse that could differ.
+         * @description Read pasted cookies back before Save, by the same reading Save uses; nothing is stored.
          */
         post: operations["preview_connection_api_site_connections_preview_post"];
         delete?: never;
@@ -8811,11 +7375,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Connection
-         * @description Forget a site's saved cookies and the sealed jar behind them.
-         *
-         *     Idempotent: forgetting cookies that are already gone is a success, not a 404. There is no reason
-         *     to distinguish the two for an admin, and answering 204 either way keeps a removed row from
-         *     lingering just because a first request was retried.
+         * @description Forget a Site's saved cookies and the sealed jar behind them; idempotent.
          */
         delete: operations["delete_connection_api_site_connections__connection_id__delete"];
         options?: never;
@@ -8834,28 +7394,7 @@ export interface paths {
         put?: never;
         /**
          * Check Connection
-         * @description Ask one site, now, whether it still accepts the cookies saved for it.
-         *
-         *     **What it proves, and what it cannot.** Sift sends the saved cookies to the site's own home
-         *     address and reads what comes back. A page means the site took them; a refusal means it did not,
-         *     which is the thing worth knowing and the thing nothing else can tell you until the next download
-         *     has already failed. It does NOT prove that any particular post will be served: a post can be
-         *     private, deleted or age-gated with the cookies working perfectly, and this asks the site about
-         *     the cookies rather than about a post. The cheapest request that would prove more is a request
-         *     for something specific, and there is nothing specific to ask for at the moment somebody presses
-         *     a button on a settings screen.
-         *
-         *     It goes out the way a download from that site goes out: through the same router, so a site
-         *     routed through a tunnel is asked through it, and refuses by name if the tunnel is not up. Asking
-         *     a site directly that somebody deliberately routes away from the machine's own address would be
-         *     the exact leak the routing exists to prevent.
-         *
-         *     One check a minute per site, because the answer cannot change faster than that and a button is
-         *     easy to lean on.
-         *
-         *     A site Sift could not reach is not a verdict and is not returned as one: it answers 502 with a
-         *     sentence, and the health written down is left exactly as it was. Condemning a jar of cookies for
-         *     a network that was down for a second is the failure this whole screen exists to avoid.
+         * @description Ask one Site now, the way its downloads go out, whether it still accepts its cookies.
          */
         post: operations["check_connection_api_site_connections__connection_id__check_post"];
         delete?: never;
@@ -8873,7 +7412,7 @@ export interface paths {
         };
         /**
          * Read Site Options
-         * @description What everything follows, what each site was given, and the tokens a template may use.
+         * @description What everything follows, what each Site was given, and the tokens a template may use.
          */
         get: operations["read_site_options_api_site_options_get"];
         put?: never;
@@ -8895,23 +7434,7 @@ export interface paths {
         put?: never;
         /**
          * Preview Name
-         * @description What a template would produce, checked at the setting rather than a hundred files later.
-         *
-         *     Against the newest download from the Site, as it was named (`newest_named`), so the example is
-         *     a real one from this library. A Site nothing has been downloaded from yet still needs one, and
-         *     gets a download made up in the Site's own shape (`_EXAMPLES`): a TikTok file arrives as a
-         *     twelve-character code and a file host's as whatever the uploader called it, so one example for
-         *     every Site would
-         *     teach a name no real download from it gets. Each word is filled only where the Site can fill it
-         *     (`words_filled`, the catalog's one answer, which the screen also offers the words from): a
-         *     template using `{posted}` on Instagram previews without a date because Instagram never says
-         *     when something was posted, which is exactly what the files will show.
-         *
-         *     A template the Site's settings would refuse is refused here in the same words
-         *     (`_refuse_a_creator_nobody_fills`), so the box says so while it is being typed in rather than
-         *     only when it is saved. An unknown scope falls back to the example for an address Sift has no
-         *     Site for rather than refusing: this is a preview, and the worst an unrecognised name should do
-         *     is show a less specific one.
+         * @description What a template would name a download from the Site, refused as saving would refuse it.
          */
         post: operations["preview_name_api_site_options_preview_post"];
         delete?: never;
@@ -8930,17 +7453,13 @@ export interface paths {
         get?: never;
         /**
          * Set Site Options
-         * @description Give a site (or everything, under the reserved scope) its naming rule and destination.
-         *
-         *     The scope is checked for the same reason a route's is: a scope naming no site would store a
-         *     rule nothing ever reads, which looks exactly like a rule that is being ignored.
+         * @description Give a Site, or everything, its naming rule, destination and downloader.
          */
         put: operations["set_site_options_api_site_options__scope__put"];
         post?: never;
         /**
          * Clear Site Options
-         * @description Put a site back to following the default. The default itself cannot be cleared: everything
-         *     has to follow something.
+         * @description Put a Site back to following the default; the default itself cannot be cleared.
          */
         delete: operations["clear_site_options_api_site_options__scope__delete"];
         options?: never;
@@ -10548,22 +9067,7 @@ export interface paths {
         };
         /**
          * List Suggestions
-         * @description The folders Sift thinks it can name, and what it thinks each one is.
-         *
-         *     The total is the total of what survived scoping rather than the number of rows there are. A
-         *     count larger than the list would publish, in the difference, how many folders this user is
-         *     not being told about, which is the one thing concealment exists to prevent.
-         *
-         *     `from` names a row to start the page at, instead of an offset. The wall pages by whole rows,
-         *     so how many cards fit depends on the size of the screen, which means a page NUMBER is not a
-         *     durable thing to put in an address and the row somebody was looking at is. Resolved against this
-         *     same scoped, narrowed list, because a position only means anything in the list it came from.
-         *
-         *     A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-         *     rather than refusing. Deleted, renamed out of
-         *     the current narrowing, answered by somebody else, or simply not this user's to see all give
-         *     the same answer, which is what stops a link being a way to ask whether something is there. On
-         *     a queue it is also the ordinary case: answering a question is what takes it off the list.
+         * @description The folders Sift thinks it can name, scoped to this viewer; `from` resumes at a row.
          */
         get: operations["list_suggestions_api_suggestions_get"];
         put?: never;
@@ -10584,10 +9088,6 @@ export interface paths {
         /**
          * Filed
          * @description What was filed under somebody without anybody being asked.
-         *
-         *     Its own route rather than a field on the list, because the list is outstanding work and this is
-         *     work already done, and an empty list of questions with a record of what was answered silently
-         *     beside it is the whole point.
          */
         get: operations["filed_api_suggestions_filed_get"];
         put?: never;
@@ -10609,12 +9109,7 @@ export interface paths {
         put?: never;
         /**
          * Take Back Folder
-         * @description Take back, on a row of Added without asking: the person comes off the files the folder pass
-         *     put them on under this folder, the folder is no longer theirs, and Sift never adds it to them
-         *     again without asking. One decision, recorded by whoever pressed, whose Undo puts it all back.
-         *
-         *     Nothing to take back (a second press, a folder or person this viewer cannot see) answers no
-         *     files and no record rather than an error, so none of those can be told apart.
+         * @description Take back one silent folder filing and refuse it from now on, as one undoable decision.
          */
         post: operations["take_back_folder_api_suggestions_filed__folder_id__people__person_id__undo_post"];
         delete?: never;
@@ -10632,20 +9127,7 @@ export interface paths {
         };
         /**
          * Filed From Filenames
-         * @description What a file's own name said about where it came from, grouped by the username it named.
-         *
-         *     Declared BEFORE `/suggestions/{claim_id}/...`, and that is load-bearing rather than tidy: those
-         *     are POSTs and this is a GET, so nothing collides today, and the ordering is what keeps that true
-         *     the day one of them grows a read.
-         *
-         *     A report and never a question: nothing on this page is waiting on anybody, and what it offers is
-         *     the undo of one file at a time, or of one whole username (`take_back_username`). See
-         *     `FiledFromFilenamesQueue` for why the pass applies itself.
-         *
-         *     `from` names the username a page starts at: the group the page was left at, carried in the
-         *     tab's address so the way back lands on the same page. Taking back every filing under a username
-         *     takes it off this list, so a `from` naming nothing is answered with the page it was on
-         *     (`near`), or the top. See `resume_at`.
+         * @description What files' own names said, grouped by username; declared before the `{claim_id}` routes.
          */
         get: operations["filed_from_filenames_api_suggestions_filenames_get"];
         put?: never;
@@ -10667,12 +9149,7 @@ export interface paths {
         put?: never;
         /**
          * Take Back Username
-         * @description No on one row of the filenames page: every file a name filed under this username comes off.
-         *
-         *     One decision, recorded by whoever pressed, so the toast's Undo and the record's put every
-         *     filing back as it was. Only the files this viewer may be shown, the files the row counted.
-         *     Nothing left to take back answers no files and no record rather than an error: a second
-         *     press finds the first one's work done.
+         * @description No on one filenames row: every name filing under this username comes off, as one decision.
          */
         post: operations["take_back_username_api_suggestions_filenames__username_id__undo_post"];
         delete?: never;
@@ -10692,15 +9169,7 @@ export interface paths {
         put?: never;
         /**
          * Say Who A Folder Is
-         * @description Name a folder the reader got wrong, or never asked about, as a person or as a site.
-         *
-         *     The other four routes all answer a question Sift asked. This is the only one that starts with a
-         *     person, and it is the only way a MISS is ever written down: a folder the reader misread or
-         *     walked past leaves no row at all, so without this the record holds every "you proposed X, wrong"
-         *     and not one "you missed Y".
-         *
-         *     It answers exactly as a confirmation does, because it IS one: the claim is written and then put
-         *     through the same path, so the attribution, the alias and the username are decided in one place.
+         * @description Name a folder the reader got wrong or missed, as a person or a site; answers as a confirm.
          */
         post: operations["say_who_a_folder_is_api_suggestions_folder__folder_id__post"];
         delete?: never;
@@ -10720,11 +9189,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm Suggestion
-         * @description Yes, and everything that follows from yes, in one press.
-         *
-         *     The files are attributed, the face group is named, the folder's spelling becomes an
-         *     also-known-as name, a username folder gets its username linked to the person, and the question
-         *     is never asked again. Making any of that a second press would be the point of this screen missed.
+         * @description Yes, and everything that follows from it, in one press.
          */
         post: operations["confirm_suggestion_api_suggestions__claim_id__confirm_post"];
         delete?: never;
@@ -10744,11 +9209,7 @@ export interface paths {
         put?: never;
         /**
          * Reject Suggestion
-         * @description Not a person. Remembered permanently, and by name rather than by folder.
-         *
-         *     Renaming a folder on disk makes it a different folder as far as Sift is concerned, so a no tied
-         *     to the folder would come straight back under the new name. Tied to the name it holds wherever
-         *     that name turns up, which is what "it never comes back" has to mean.
+         * @description Not a person: remembered for good, by name rather than by folder.
          */
         post: operations["reject_suggestion_api_suggestions__claim_id__reject_post"];
         delete?: never;
@@ -10766,10 +9227,7 @@ export interface paths {
         };
         /**
          * Supported Sites
-         * @description Every site Sift has a record for, and what it can do with each.
-         *
-         *     Reference material rather than a setting: it answers "what happens when I paste a link from
-         *     here", which is a question asked before anything is configured.
+         * @description Every Site Sift has a record for, and what it can do with each.
          */
         get: operations["supported_sites_api_supported_sites_get"];
         put?: never;
@@ -11075,37 +9533,10 @@ export interface paths {
         };
         /**
          * List Tags
-         * @description The tags this viewer may know about, most-used first.
+         * @description The tags this viewer may know about, most-used first, or those on one thing's files.
          *
-         *     Passed one of the four narrowing parameters, this is a RELATED list: the tags on that thing's
-         *     files, counted over the same narrowed set. The count is the count in that context (twelve of
-         *     Jane's files, not twelve in the library), because a scoped wall beside a global number is two
-         *     populations on one screen.
-         *
-         *     Both the chip editor and the autocomplete read this, and search will read the same thing. The
-         *     counts come out of the access layer already scoped, so a tag never reports assets the person
-         *     asking has not been shown.
-         *
-         *     A fresh install answers with an empty list. There is no starter set: every tag here was made
-         *     by somebody.
-         *
-         *     `count` is which tally a card prints: `whole` (every file under that row this viewer may see),
-         *     or `narrowed`, how many of them are on THIS wall. A press on a card carries the page it was
-         *     pressed from, so a card reached through somebody else opens the two together, and its number
-         *     has to be the size of THAT wall or it describes a set the press cannot reach. `whole` by
-         *     default, which is what a plain wall means. The People wall's `count` reads the same way.
-         *
-         *     `from` names a row to start the page at, instead of an offset. The wall pages by whole rows, so
-         *     how many cards a page holds depends on the size of the screen, which means a page NUMBER is
-         *     not a durable thing to put in an address, and the row somebody was looking at is. It is resolved
-         *     against this same question (the same prefix, order and narrowing), because a position only
-         *     means anything in the list it was taken from.
-         *
-         *     A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-         *     rather than refusing: a row that has since been
-         *     renamed, hidden or deleted is a stale link and not an error. That also means a caller cannot
-         *     learn anything by trying ids: the answer for a row being kept back is the same as for one that
-         *     never existed, and both are the first page.
+         *     `count` is which tally a card prints: `whole`, or `narrowed` to this wall. `from` starts the
+         *     page at a row, resolved in this same list; one that resolves to nothing serves `near`, or the top.
          */
         get: operations["list_tags_api_tags_get"];
         put?: never;
@@ -11131,12 +9562,7 @@ export interface paths {
          * Tag Facets
          * @description What the tags this wall reaches are made of, along one dimension, with counts.
          *
-         *     Declared before `/tags/{tag_id}`: routes match in declaration order, and the other way round
-         *     this address would be read as a tag called "facets".
-         *
-         *     The counts are of TAGS, over the statement that decides which tags the wall holds, with every
-         *     narrowing the listing takes. See `people_facets` in the people slice for the reasoning, which
-         *     is the same here and is written out once there.
+         *     Declared before `/tags/{tag_id}`, which would otherwise read this address as a tag's id.
          */
         get: operations["tag_facets_api_tags_facets_get"];
         put?: never;
@@ -11156,13 +9582,7 @@ export interface paths {
         };
         /**
          * Read Tag
-         * @description One tag, as its own page reads it.
-         *
-         *     404 for a tag this viewer may not be shown and 404 for an id that was never minted, from the
-         *     same rules, so a deep link cannot be used to ask whether a tag exists.
-         *
-         *     Built from the scoped lister the wall reads, not from the table: a tag's count and its vault
-         *     flag are both about the library, so an unscoped row here would publish what the wall does not.
+         * @description One tag, as its own page reads it; 404 alike for a hidden tag and an unknown id.
          */
         get: operations["read_tag_api_tags__tag_id__get"];
         /**
@@ -11173,16 +9593,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Tag
-         * @description Delete a tag, its assignments, and every grant that named it.
-         *
-         *     The assignments go by cascade and the assets do not: `asset_tags` names the asset with
-         *     `ON DELETE CASCADE` pointing the other way, so removing a tag removes the rows joining it to
-         *     files and never the files.
-         *
-         *     Resolved through the scoped read first, the rule a Site's delete and a Photo Set's keep: a tag
-         *     this user has hidden behind a locked Hidden section answers the 404 an unknown id does, and
-         *     with Hidden open it deletes like any other. Otherwise a write would reach a row the same user's
-         *     reads say is not there.
+         * @description Delete a tag, its assignments, and every grant that named it; never a file.
          */
         delete: operations["delete_tag_api_tags__tag_id__delete"];
         options?: never;
@@ -11200,26 +9611,11 @@ export interface paths {
         /**
          * Tag Cover
          * @description The still this tag is drawn as, at whichever moment was chosen.
-         *
-         *     GET beside the PUT of the same name, which is what makes the pair readable: one address is the
-         *     cover of this thing, written one way and read the other. The body is `serve_cover` in the
-         *     kernel: six things carry a cover and every one answers this identically; what differs is which
-         *     entity has to be resolved against the viewer first, which is the part that cannot be shared.
          */
         get: operations["tag_cover_api_tags__tag_id__cover_get"];
         /**
          * Set Tag Cover
-         * @description Choose the still a tag is drawn as, and which moment of it.
-         *
-         *     A tag carries a cover as People, Sites, Usernames, collections and photo sets do, and a wall of
-         *     tags is where a picture helps most, because a tag's name says less about what is under it than
-         *     a person's does.
-         *
-         *     Two locks, and both matter. The tag is resolved through the scoped read first, so a tag this
-         *     user may not be shown answers 404 rather than being written to. Then the ASSET is checked
-         *     against the same viewer: setting a cover to a file you may not see would publish that file to
-         *     everybody who can see the tag. The read side refuses to hand back a cover the asker may not
-         *     open regardless, so this is the second of two rather than the only one.
+         * @description Choose the still a tag is drawn as; both the tag and the file are checked for the viewer.
          */
         put: operations["set_tag_cover_api_tags__tag_id__cover_put"];
         post?: never;
@@ -11259,15 +9655,7 @@ export interface paths {
         get?: never;
         /**
          * Set Tag Favorite
-         * @description Heart a tag, or take the heart off, for this user.
-         *
-         *     Offered to everybody, guests included, and that is the point rather than an oversight: an
-         *     opinion is about the user holding it and reaches nobody else's screen. It changes where a row
-         *     appears on a wall and never whether it appears, so there is nothing here for a permission to
-         *     protect. Restricting is what keeps something from another user.
-         *
-         *     404 for a tag this viewer may not be shown, which is the answer an unknown id gets, so trying
-         *     ids teaches nothing about what exists.
+         * @description Heart a tag, or take the heart off, for this user; guests too: it reaches nobody else.
          */
         put: operations["set_tag_favorite_api_tags__tag_id__favorite_put"];
         post?: never;
@@ -11286,16 +9674,7 @@ export interface paths {
         };
         /**
          * History Of A Tag
-         * @description What happened to this tag, oldest first.
-         *
-         *     Authenticated rather than admin, the same rule the tag's own row follows: what has been done
-         *     with a tag is part of what the tag IS, and everybody who may be shown it may read it. The one
-         *     half that is not is the sharing, which is about other USERS rather than about the tag: the
-         *     kernel leaves it out for anybody but an admin, for the reason written there.
-         *
-         *     Resolved through the scoped lookup first, so a tag this viewer may not be shown answers the same
-         *     404 an id that was never minted would. An empty list would say it exists and nothing has happened
-         *     to it, which is a different answer and one this viewer is not entitled to.
+         * @description What happened to this tag, oldest first; a tag this viewer may not be shown is a 404.
          */
         get: operations["history_of_a_tag_api_tags__tag_id__history_get"];
         put?: never;
@@ -11316,15 +9695,7 @@ export interface paths {
         get?: never;
         /**
          * Set Tag Pinned
-         * @description Keep a tag at the top of the Tags wall, for this user.
-         *
-         *     Everybody's, guests included, exactly as the heart above is: a pin changes where a row appears
-         *     on this viewer's wall and never whether it appears at all.
-         *
-         *     Looked up first rather than relying on the write to fail, and that is the same reasoning the
-         *     heart gives: the write CANNOT fail. The state row is this user's own and would be created
-         *     happily against an id that names nothing, and a row hanging off an id that was never minted
-         *     is one nothing will ever clean up, because the cascade has nothing to cascade from.
+         * @description Keep a tag at the top of the Tags wall, for this user; looked up first.
          */
         put: operations["set_tag_pinned_api_tags__tag_id__pin_put"];
         post?: never;
@@ -11364,18 +9735,7 @@ export interface paths {
         get?: never;
         /**
          * Set Tag Vault
-         * @description Hide a tag, or bring it back, for this user.
-         *
-         *     Hiding a tag conceals every file carrying it and takes the tag off its own wall, on the screens
-         *     of the user who did it. Nobody else is affected; to keep something from another user,
-         *     restrict it. There is no body to answer with: the row this describes is, by the time the answer
-         *     is written, one the caller may no longer be shown.
-         *
-         *     Hiding needs a PIN to exist, because the PIN is the only thing that opens Hidden again:
-         *     without one this is not concealment, it is losing the tag and everything filed under it.
-         *     Bringing one back needs Hidden actually open, and that half is the more important one: a tag
-         *     this user hid is absent from their scoped list, so before the PIN is entered they get the 404
-         *     an unknown id gets. Answering at all would confirm the tag is there.
+         * @description Hide a tag, or bring it back, for this user; hiding needs a PIN, restoring an open Hidden.
          */
         put: operations["set_tag_vault_api_tags__tag_id__vault_put"];
         post?: never;
@@ -11676,11 +10036,7 @@ export interface paths {
         put?: never;
         /**
          * Import Tunnel
-         * @description Import a provider's configuration as a named tunnel. It is not started by importing it.
-         *
-         *     The configuration is checked with the tunnel client's own parser before anything is stored, so
-         *     a file that was never going to work is refused here rather than at the next download from a
-         *     site routed through it.
+         * @description Import a provider's configuration as a named tunnel, checked first; not started.
          */
         post: operations["import_tunnel_api_tunnels_post"];
         delete?: never;
@@ -11701,18 +10057,14 @@ export interface paths {
         post?: never;
         /**
          * Delete Tunnel
-         * @description Remove a tunnel and forget its configuration.
-         *
-         *     Sites routed through it keep pointing at it, and their downloads then refuse and say it is
-         *     gone. Idempotent: one that is already removed is a success. Refused while it hosts a swap.
+         * @description Remove a tunnel; Sites routed through it then refuse. Refused while it hosts a swap.
          */
         delete: operations["delete_tunnel_api_tunnels__tunnel_id__delete"];
         options?: never;
         head?: never;
         /**
          * Rename Tunnel
-         * @description Rename a tunnel. The name is what a site's route is chosen by on a screen, and nothing else
-         *     depends on it: the routes point at the id.
+         * @description Rename a tunnel; routes point at its id, so nothing else changes.
          */
         patch: operations["rename_tunnel_api_tunnels__tunnel_id__patch"];
         trace?: never;
@@ -11728,8 +10080,7 @@ export interface paths {
         put?: never;
         /**
          * Replace Tunnel Config
-         * @description Swap in a reissued configuration. A running tunnel restarts on it: the process it is running
-         *     now is still holding the old one.
+         * @description Swap in a reissued configuration; a running tunnel restarts on it.
          */
         post: operations["replace_tunnel_config_api_tunnels__tunnel_id__config_post"];
         delete?: never;
@@ -11749,10 +10100,7 @@ export interface paths {
         put?: never;
         /**
          * Start Tunnel
-         * @description Turn a tunnel on, and wait for the far end to answer before saying it is on.
-         *
-         *     Returning before the handshake would put a green control over a tunnel carrying nothing, which
-         *     is the one thing worse than an obviously broken one.
+         * @description Turn a tunnel on, answering only once the far end has answered.
          */
         post: operations["start_tunnel_api_tunnels__tunnel_id__start_post"];
         delete?: never;
@@ -11772,9 +10120,7 @@ export interface paths {
         put?: never;
         /**
          * Stop Tunnel
-         * @description Turn a tunnel off. By default the downloads already on it finish first and no new one may
-         *     take it; `now` stops it immediately, which fails those transfers on purpose. Refused while
-         *     it hosts a swap, with the words to show: the swap is ended first.
+         * @description Turn a tunnel off, letting its downloads finish unless `now`; refused while hosting.
          */
         post: operations["stop_tunnel_api_tunnels__tunnel_id__stop_post"];
         delete?: never;
@@ -11792,11 +10138,7 @@ export interface paths {
         };
         /**
          * Check For Update
-         * @description What is running, what has been published, and what changed in it.
-         *
-         *     Always answers. With no network, with the check turned off, or before the first check has
-         *     happened, the reply is the same shape with nothing published in it, so a screen renders the
-         *     same way whether or not Sift has ever reached the internet.
+         * @description What is running, what has been published, and what changed; always the same shape.
          */
         get: operations["check_for_update_api_update_check_get"];
         put?: never;
@@ -11836,18 +10178,7 @@ export interface paths {
         };
         /**
          * Running Version Report
-         * @description The version of Sift that is running.
-         *
-         *     Any signed-in user, unlike the update check beside it, which is admin-only because it is the
-         *     one route that makes the server open a connection to the internet. This reads the installed
-         *     package and reaches nothing, so there is nothing here for a caller to trigger, and the About
-         *     screen shows it to a guest as readily as to an admin.
-         *
-         *     Not public, though. A version number is the one fact that turns a general "some Sift is here"
-         *     into "this Sift has the flaws published against that release": it is the first thing worth
-         *     reading off an internet-exposed installation and the last thing worth handing over for free.
-         *     Nothing needs it before sign-in (the About screen is inside the app) so requiring a session
-         *     costs no feature and takes the fingerprint off the front door.
+         * @description The running version, for any signed-in user and never before sign-in.
          */
         get: operations["running_version_report_api_update_version_get"];
         put?: never;
@@ -12014,17 +10345,7 @@ export interface paths {
         put?: never;
         /**
          * Fetch Models
-         * @description Fetch the models. Hands back the job doing it.
-         *
-         *     **Sift ships no models**, so this is how a fresh install becomes able to read anything, and it
-         *     is a deliberate act by an admin rather than something that happens on enabling, because what it
-         *     downloads is published by somebody else on their own terms.
-         *
-         *     Answers 409 with the feature off. Downloading models for a feature nobody switched on is
-         *     exactly the network call the switch exists to prevent.
-         *
-         *     `again=true` fetches files that are already on disk, for a damaged model. A second press joins
-         *     the download already waiting or under way.
+         * @description Fetch the models (Sift ships none); 409 with the feature off; returns the job.
          */
         post: operations["fetch_models_api_watermarks_models_fetch_post"];
         delete?: never;
@@ -12045,16 +10366,7 @@ export interface paths {
         post?: never;
         /**
          * Forget Reads
-         * @description Throw away what was read, so the library is read again.
-         *
-         *     **The filings are left exactly where they are**, and that is the difference between this and
-         *     undoing them. What goes is the record of having looked, which is what makes the next sweep read
-         *     the library again: somebody who has changed a setting or suspects a bad pass wants that, and
-         *     they do not want every site Sift filed a file under to vanish with it. A filing is taken back
-         *     one file at a time, on that file, where the evidence for it is.
-         *
-         *     Answers on an install where the feature is off, because clearing what an earlier decision left
-         *     behind is exactly what somebody does after switching it off.
+         * @description Throw away what was read so the library is read again; the filings stay.
          */
         delete: operations["forget_reads_api_watermarks_reads_delete"];
         options?: never;
@@ -12069,10 +10381,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Read Status
-         * @description What this install can do, and why not when it cannot.
-         */
+        /** Read Status */
         get: operations["read_status_api_watermarks_status_get"];
         put?: never;
         post?: never;
@@ -12091,11 +10400,7 @@ export interface paths {
         };
         /**
          * Board
-         * @description What needs somebody. What was decided is the feed's, narrowed to Decisions.
-         *
-         *     Only the queues with something behind them. A feature that is switched off, or whose source of
-         *     work has never run, is absent rather than present and empty: an empty panel reads as a broken
-         *     one, and it is the difference between a screen that is finished and a screen that is failing.
+         * @description What needs somebody; a queue with nothing behind it is absent, never empty.
          */
         get: operations["board_api_workbench_get"];
         put?: never;
@@ -12117,10 +10422,7 @@ export interface paths {
         put?: never;
         /**
          * Undo
-         * @description Put back what one decision did, and only what it did.
-         *
-         *     Reversed from what the decision wrote down about itself at the time, so a person who already
-         *     existed is not deleted and an attribution that predates it is not detached.
+         * @description Put back what one decision did, and only what it did, from what it recorded.
          */
         post: operations["undo_api_workbench_decisions__decision_id__undo_post"];
         delete?: never;
@@ -12138,14 +10440,7 @@ export interface paths {
         };
         /**
          * Health
-         * @description Liveness for anyone; the hardware detail for an admin.
-         *
-         *     The status line has to answer an unauthenticated caller: a container's health probe and an
-         *     uptime monitor cannot log in, and "is it up" is not a secret. The hardware report is a
-         *     different thing (core count, RAM, GPU vendor, the exact encoder list), which identifies
-         *     nothing about the machine but is a fingerprint a stranger would use to size it up. So it
-         *     rides along only for an admin, whose question "which encoder am I actually using when this
-         *     is slow" it exists to answer, and is simply absent for everyone else.
+         * @description Liveness for anyone; the hardware detail, a fingerprint, for an admin only.
          */
         get: operations["health_health_get"];
         put?: never;
@@ -12162,13 +10457,7 @@ export interface components {
     schemas: {
         /**
          * About
-         * @description What a message is about.
-         *
-         *     Every socket costs a browser connection, a handshake and a permission read on every beat, so
-         *     every kind of live update arrives on one connection and is told apart by this.
-         *
-         *     Each one is a question a screen asks the server, never an answer. The client re-asks the
-         *     ordinary endpoint behind whichever of these arrives.
+         * @description What a message is about: one connection carries every kind, told apart by this.
          * @enum {string}
          */
         About: "library" | "arrivals" | "same_music" | "jobs" | "downloads" | "settings" | "mine" | "opinions" | "screens" | "remote";
@@ -12215,11 +10504,7 @@ export interface components {
         };
         /**
          * ActTaken
-         * @description What the app there said to an act that restarts Sift on that computer.
-         *
-         *     `ok` is taken on: the app answered first, and Sift restarts there a moment later, so the page
-         *     waits for a new run of the server. Otherwise `refusal` says why, in the app's own words, and
-         *     nothing stopped.
+         * @description What the app said to an act that restarts Sift there: `ok`, or the `refusal` in its words.
          */
         ActTaken: {
             /** Ok */
@@ -12248,10 +10533,7 @@ export interface components {
         };
         /**
          * AliasMatchView
-         * @description Who a typed term turns out to name.
-         *
-         *     `people` is empty when it names nobody, which is what the "is this another name for someone?"
-         *     prompt reads to decide whether to offer itself.
+         * @description Who a typed term names; `people` is empty when nobody.
          */
         AliasMatchView: {
             /** People */
@@ -12289,16 +10571,7 @@ export interface components {
         };
         /**
          * AppearancePage
-         * @description One person's appearances, and how many files they are on that this viewer may see.
-         *
-         *     `waiting`, `matched` and `confirmed` are the three ways a face came to carry this name, counted
-         *     over the WHOLE of what this viewer may see rather than over the page. They are what the tab row
-         *     on that screen is drawn from, and they travel with the page because the screen asks one
-         *     question: counts that arrived one at a time, as somebody pressed each tab, would leave two of
-         *     the three looking empty.
-         *
-         *     `total` is still the narrowing THIS page is of (what the pager needs), which is one of the
-         *     three, or their sum where nothing was narrowed.
+         * @description One person's appearances, and their counts over everything this viewer may see.
          */
         AppearancePage: {
             /**
@@ -12339,10 +10612,7 @@ export interface components {
              */
             waiting: number;
         };
-        /**
-         * Applied
-         * @description What a confirmation actually did. Every number is a write that landed.
-         */
+        /** Applied */
         Applied: {
             /**
              * Created
@@ -12372,21 +10642,7 @@ export interface components {
         };
         /**
          * ApplyMatches
-         * @description Yes, to these, and to exactly these names being invented.
-         *
-         *     `create` is per press and is never remembered. A stored "always make the people" is exactly the
-         *     automatic creation this feature refuses: the names are listed above the button, so it is a
-         *     decision somebody takes while looking at what it would do.
-         *
-         *     NAMES rather than a yes-or-no, and that is the whole point of it. One tick over a list of
-         *     thirty-one entries would offer two answers (make all of them, or make none and lose the four
-         *     that were wanted), so anybody who read the list carefully would be punished for it. Each name
-         *     is its own answer. An empty list means invent nothing, which is what the button does before
-         *     anybody ticks anything.
-         *
-         *     Capped, because it arrives from outside. A page settles at most `MATCH_PAGE` files and no
-         *     honest answer names thousands of entries; a longer list is a mistake or an attempt, and either
-         *     way it is refused rather than walked.
+         * @description Yes, to these matches and to exactly these names being created; never remembered.
          */
         ApplyMatches: {
             /** Create */
@@ -12462,9 +10718,7 @@ export interface components {
         };
         /**
          * ArtistsWrite
-         * @description The artists a song credits, in order, by name: the whole list, so adding, removing,
-         *     reordering and correcting one are all this one write. A name finds the artist of that name
-         *     (case aside) or makes one; an empty list credits nobody.
+         * @description The whole ordered artist list by name; a name finds its artist or creates one.
          */
         ArtistsWrite: {
             /** Names */
@@ -12484,10 +10738,7 @@ export interface components {
         };
         /**
          * AssetDetail
-         * @description The detail view. Everything the tile has, plus what a person might want to read.
-         *
-         *     No stored MIME type: the screen shows the container and the player chooses by codecs, and it is
-         *     ffprobe's guess rather than a fact.
+         * @description The detail view: everything the tile has, plus what a person might want to read.
          */
         AssetDetail: {
             /** Acodec */
@@ -12657,24 +10908,7 @@ export interface components {
         };
         /**
          * AssetOpinion
-         * @description What one user thinks of one file, as another of its own screens should draw it.
-         *
-         *     A wire shape rather than something the feed converts into one, so there is exactly one
-         *     description of it: the client's type is generated from the route that carries it, and a second
-         *     internal copy of the same three fields would be a second thing to keep in step.
-         *
-         *     The same shape the rating and heart routes reply with, and that is the point rather than a
-         *     coincidence. A reply and a message reach the same screens by two routes (the control that
-         *     was pressed answers this tab immediately, the connection tells this user's other browsers a
-         *     moment later) and the grid applies whichever arrives by naming the file and setting the row.
-         *     Two shapes would mean the tab that pressed the control and the tab that did not were served by
-         *     two different pieces of code, and the one that only runs for somebody else is the one nobody
-         *     would notice breaking.
-         *
-         *     So it names the file even in a reply, where the asker already knows which one it asked about,
-         *     and it carries the tally of how many times the file has been opened even from a control that
-         *     cannot change it. Both are the price of one description, and both are cheaper than the second
-         *     description would be.
+         * @description What one user thinks of one file: the same shape the rating and heart routes reply with.
          */
         AssetOpinion: {
             /** Asset Id */
@@ -12692,9 +10926,7 @@ export interface components {
         };
         /**
          * AssetPageResponse
-         * @description A page, and how many rows there are in all.
-         *
-         *     The total comes from the statement the rows did, so a pager cannot disagree with its page.
+         * @description A page, and how many rows there are in all, from the statement the rows came from.
          */
         AssetPageResponse: {
             /**
@@ -12721,11 +10953,7 @@ export interface components {
         };
         /**
          * AssetSummary
-         * @description One tile.
-         *
-         *     `width` and `height` lay out the justified grid and are null until the file is probed: a tile
-         *     is shown from the moment the file is accepted, as a skeleton. A concealed asset arrives with
-         *     `concealed` set and nothing else, the only shape a hidden file is ever described in.
+         * @description One tile; a concealed asset arrives with `concealed` set and nothing else.
          */
         AssetSummary: {
             /** Art */
@@ -12828,12 +11056,7 @@ export interface components {
         };
         /**
          * Attribution
-         * @description How a face came to be attached to a person.
-         *
-         *     MATCHED was decided by arithmetic, above the confidence at which Sift applies a match without
-         *     asking. SUGGESTED is the same arithmetic below that line, waiting for somebody to agree.
-         *     CONFIRMED is somebody having agreed, and is the only one of the three that makes the face
-         *     eligible to become a reference.
+         * @description How a face came to be attached to a person; only CONFIRMED may become a reference.
          * @enum {string}
          */
         Attribution: "matched" | "suggested" | "confirmed";
@@ -12977,7 +11200,7 @@ export interface components {
         };
         /**
          * BoxAnswer
-         * @description What one box said. A box that could not be asked answers with its own sentence and no records.
+         * @description What one box said; a box that could not be asked answers with its own sentence.
          */
         BoxAnswer: {
             /** Box Id */
@@ -13038,8 +11261,7 @@ export interface components {
         };
         /**
          * BringStash
-         * @description How to bring the last read in: whether with the pictures Stash kept on performers, studios
-         *     and tags, and from which folder where Stash keeps them as files.
+         * @description Bring the last read in, with or without Stash's pictures and from which folder.
          */
         BringStash: {
             /** Blobs */
@@ -13053,9 +11275,6 @@ export interface components {
         /**
          * BrowseEntry
          * @description A folder somebody could pick, and where it is.
-         *
-         *     Carries a path, since the picker exists so nobody types one; admin-only, inside folders
-         *     deliberately handed to Sift.
          */
         BrowseEntry: {
             /** Name */
@@ -13107,8 +11326,7 @@ export interface components {
         };
         /**
          * BuildRow
-         * @description One product on the Build sheet: what it is, whether the switches want it, and what it
-         *     would cost to make for every file that lacks it.
+         * @description One product on the Build sheet: what it is, whether wanted, and what making it would cost.
          */
         BuildRow: {
             /**
@@ -13191,9 +11409,7 @@ export interface components {
         };
         /**
          * BulkPreview
-         * @description What a playlist or channel holds, before anything is queued.
-         *
-         *     Asked first because taking a creator's whole output is a decision made knowing its size.
+         * @description What a playlist or channel holds, asked before anything is queued.
          */
         BulkPreview: {
             /** Count */
@@ -13227,17 +11443,7 @@ export interface components {
         };
         /**
          * BulkWriteDone
-         * @description How much a write over a selection changed, how much it left alone, and why.
-         *
-         *     `changed` counts what the write ALTERED, which is not always the number of items asked about:
-         *     putting two tags on three files changes up to six pairs, and putting a tag a file already
-         *     carries on it changes none. `skipped` counts ITEMS (the ones in the request that were not
-         *     acted on at all) because that is the number a person recognises as "one of the three I
-         *     picked", and it is what the message on screen is built from.
-         *
-         *     One reason rather than a list of them: a selection spanning one locked vault produces the
-         *     SAME sentence for every item in it, and thirty copies of one sentence is a screen nobody
-         *     reads. The count says how many; the sentence says why.
+         * @description How much a write over a selection changed, how many items it skipped, and one reason.
          */
         BulkWriteDone: {
             /**
@@ -13275,12 +11481,7 @@ export interface components {
         };
         /**
          * Capabilities
-         * @description What the browser reported it can decode and read.
-         *
-         *     Sent by the client because the client is the only party that knows. A server-side guess from
-         *     the user-agent string is wrong for somebody: an iPhone 15 Pro and an iPhone 14 give different
-         *     answers about AV1, and the same Chrome build plays HEVC on a machine with a hardware decoder
-         *     and not on one without.
+         * @description What the browser reported it can decode and read: only the client knows.
          */
         Capabilities: {
             /** Audio Codecs */
@@ -13294,10 +11495,7 @@ export interface components {
         };
         /**
          * CaptureAccepted
-         * @description A clipboard item was taken in one of two ways, and exactly one id says which.
-         *
-         *     A usable link becomes a download; anything else becomes an import of the pasted bytes. The
-         *     client watches whichever id came back.
+         * @description A clipboard item taken as a download or an import; exactly one id says which.
          */
         CaptureAccepted: {
             /** Download Id */
@@ -13346,10 +11544,7 @@ export interface components {
         };
         /**
          * CarryResult
-         * @description What a carry did.
-         *
-         *     `files` counts FILES and not rows, because a file that gained two attributions is one file that
-         *     changed and one thing to take back: the same grain the receipts are written at.
+         * @description What a carry did; `files` counts files, the grain receipts are written at.
          */
         CarryResult: {
             /** Carried */
@@ -13359,7 +11554,7 @@ export interface components {
         };
         /**
          * CarryTotals
-         * @description How much there is to carry across the whole library, counted before anything is offered.
+         * @description How much there is to carry across the whole library.
          */
         CarryTotals: {
             /** Files */
@@ -13369,12 +11564,7 @@ export interface components {
         };
         /**
          * CellBody
-         * @description One cell of a wall: what it draws from, and how it behaves. Never what it was playing.
-         *
-         *     Only the two lengths are capped here, and only because there is no reason to carry a megabyte of
-         *     text into the service to find out it is too long. What a value MEANS (a behaviour that exists,
-         *     a timer in range) is the service's to decide, so that saving a wall and loading one are judged
-         *     by the same code rather than by a model on one path and a check on the other.
+         * @description One cell of a wall: what it draws from and how it behaves; only lengths are capped here.
          */
         "CellBody-Input": {
             /**
@@ -13402,12 +11592,7 @@ export interface components {
         };
         /**
          * CellBody
-         * @description One cell of a wall: what it draws from, and how it behaves. Never what it was playing.
-         *
-         *     Only the two lengths are capped here, and only because there is no reason to carry a megabyte of
-         *     text into the service to find out it is too long. What a value MEANS (a behaviour that exists,
-         *     a timer in range) is the service's to decide, so that saving a wall and loading one are judged
-         *     by the same code rather than by a model on one path and a check on the other.
+         * @description One cell of a wall: what it draws from and how it behaves; only lengths are capped here.
          */
         "CellBody-Output": {
             /**
@@ -13479,12 +11664,7 @@ export interface components {
         };
         /**
          * ChoiceView
-         * @description One value a dial may be set to, and what it is called on screen.
-         *
-         *     One record for both dials rather than one each: a stored value is a word like `higher_res` or
-         *     `medium` and the reader is shown "Higher resolution" or "Medium - re-encoded", and both mappings
-         *     are declared in the settings registry. A screen holding either of them as its own list is a list
-         *     that drifts the first time a choice is added and nobody edits both.
+         * @description One value a dial may be set to, and its on-screen label, both from the settings registry.
          */
         ChoiceView: {
             /** Key */
@@ -13597,8 +11777,7 @@ export interface components {
         };
         /**
          * CodeAnswer
-         * @description They match (`true`) or They don't match (`false`). The guest of a swap that sends and
-         *     receives says with its They match what it sends (`chosen`) and whether stash-box ids go.
+         * @description They match (`true`) or They don't match (`false`), and what a two-way guest sends.
          */
         CodeAnswer: {
             /**
@@ -13617,8 +11796,6 @@ export interface components {
         /**
          * CollectionContents
          * @description A page of one collection's items, and how many of them this viewer may see.
-         *
-         *     `total` comes from the statement that produced the rows, so the count and the contents agree.
          */
         CollectionContents: {
             /** Items */
@@ -13632,11 +11809,7 @@ export interface components {
         };
         /**
          * CollectionItem
-         * @description One item inside a collection.
-         *
-         *     A concealed item is described by its concealment and nothing else, as a concealed grid tile
-         *     is. Whether it appears at all is the viewer's placeholder choice; either way the count agrees
-         *     with the list, because both come from one read.
+         * @description One item inside a collection; a concealed one is described by its concealment alone.
          */
         CollectionItem: {
             /** Art */
@@ -13679,8 +11852,6 @@ export interface components {
         /**
          * CollectionList
          * @description One page of the Collections wall, and how many there are for whoever asked.
-         *
-         *     The total comes from the statement the rows came from, so a pager cannot disagree with its page.
          */
         CollectionList: {
             /** Items */
@@ -13707,10 +11878,7 @@ export interface components {
         };
         /**
          * CollectionSummary
-         * @description One collection, as the person asking may know it.
-         *
-         *     `cover_asset_id` is empty both when there is no cover and when this viewer may not see it,
-         *     indistinguishably: naming a picture they cannot open would publish it.
+         * @description One collection; an unseen cover is reported as none, so it is never published.
          */
         CollectionSummary: {
             /** Art */
@@ -13787,10 +11955,7 @@ export interface components {
         };
         /**
          * CollectionWrite
-         * @description Making or renaming a collection.
-         *
-         *     No vault flag: concealing is its own request, or a create that concealed would have to answer
-         *     with something the caller may no longer be shown.
+         * @description Creating or renaming a collection; concealing is its own request.
          */
         CollectionWrite: {
             /** Name */
@@ -13820,10 +11985,7 @@ export interface components {
         };
         /**
          * CompressRequest
-         * @description What to compress, and to what.
-         *
-         *     A size target, a compatibility target, or both, and at least one of them, because a request
-         *     for neither is a request to re-encode a file into itself.
+         * @description What to compress, and to what: a size target, a compatibility target, or both.
          */
         CompressRequest: {
             /** Asset Ids */
@@ -13856,14 +12018,8 @@ export interface components {
         };
         /**
          * ConcealerType
-         * @description What kind of thing is hiding something from the user who hid it.
-         *
-         *     Not `ObjectType`, and the difference is the point rather than an inconvenience. `ObjectType` is
-         *     what a GRANT can name; this is what a HIDE can be attached to, and the two lists differ. A photo
-         *     set is one and not the other (it can be hidden and nothing can be shared on it), so a single
-         *     enum could only carry it by implying a grant that does not exist, and the mismatch would raise
-         *     deep inside the read that answers "why can I not see this", which is a screen somebody reaches
-         *     precisely when they are already confused.
+         * @description What kind of thing is hiding something: what a hide can attach to, which is not what a grant
+         *     can name.
          * @enum {string}
          */
         ConcealerType: "root" | "folder" | "item" | "tag" | "person" | "collection" | "site" | "photo_set" | "song";
@@ -13933,9 +12089,7 @@ export interface components {
         };
         /**
          * ConnectionCheck
-         * @description What one site said when Sift asked it whether the saved cookies still work.
-         *
-         *     `said` is written on the server, the one place that knows what was asked.
+         * @description What one site said when asked whether the saved cookies still work.
          */
         ConnectionCheck: {
             /** Accepted */
@@ -14004,9 +12158,6 @@ export interface components {
         /**
          * CookiePreview
          * @description What Sift understood of pasted cookies, before anything is saved.
-         *
-         *     The add form's read-back ("14 cookies for one site, until 2 December"): derived facts only, as
-         *     `SavedConnection` carries, nothing pasted returned and nothing written.
          */
         CookiePreview: {
             /** Cookies */
@@ -14043,20 +12194,7 @@ export interface components {
         };
         /**
          * CoverFrame
-         * @description The window of a cover's picture that it is drawn as: `x`, `y`, `w`, `h`, each 0..1.
-         *
-         *     `x` and `y` are the window's top-left corner and `w` and `h` its size, all as fractions of the
-         *     picture's own width and height. The whole picture is `(0, 0, 1, 1)`, and no frame at all means
-         *     the same thing: every cover chosen before there were frames is drawn exactly as it was.
-         *
-         *     One shape for the three places a frame travels (the PUT that writes it, the view that
-         *     carries it to the screens, and the row that stores it) because three copies of four numbers
-         *     and their bounds is two chances to accept on the way in what is refused on the way out.
-         *
-         *     The window's SHAPE is not checked here, and that is deliberate: the server does not know how
-         *     wide the picture is without reading it, and a frame of another shape is still a window of the
-         *     picture: the box it is drawn in cuts it to fit, exactly as it cut the whole picture before.
-         *     The editor keeps the window at the box's shape; this keeps it inside the picture.
+         * @description The window of a cover's picture it is drawn as: `x`, `y`, `w`, `h`, each 0..1.
          */
         CoverFrame: {
             /** H */
@@ -14104,10 +12242,7 @@ export interface components {
             /** Seek Seconds */
             seek_seconds: number;
         };
-        /**
-         * DeleteCheck
-         * @description The files a delete sheet is about to offer its two answers for.
-         */
+        /** DeleteCheck */
         DeleteCheck: {
             /** Asset Ids */
             asset_ids: string[];
@@ -14124,11 +12259,7 @@ export interface components {
         };
         /**
          * DeleteMany
-         * @description Several files, in one request.
-         *
-         *     The ids are a list and the mode is one word for all of them, because a selection is one act:
-         *     somebody picked a set and pressed a button once, and a per-file mode would be a screen nobody
-         *     has ever seen.
+         * @description Several files, in one request, with one mode for all of them.
          */
         DeleteMany: {
             /** Asset Ids */
@@ -14140,10 +12271,7 @@ export interface components {
              */
             mode: "sift" | "disk";
         };
-        /**
-         * DeleteReach
-         * @description What the sheet needs to know before it draws Delete from disk.
-         */
+        /** DeleteReach */
         DeleteReach: {
             /** Inside Archives */
             inside_archives: number;
@@ -14152,10 +12280,7 @@ export interface components {
         };
         /**
          * DesktopView
-         * @description The computer running Sift, as the desktop app there describes it.
-         *
-         *     `has_app` false is a backend no app started (run by hand, in a container): there is nothing to
-         *     ask, and every other field is null rather than a switch drawn off.
+         * @description The computer running Sift, as its desktop app describes it; all null with no app.
          */
         DesktopView: {
             /** Has App */
@@ -14168,9 +12293,7 @@ export interface components {
         };
         /**
          * DisagreeingPeople
-         * @description Everybody the Disagreements tab is about, the most files first, and the tab's own total.
-         *
-         *     `total` is the sum of the counts, which is the number on the tab: the same rows, gathered.
+         * @description Everybody the Disagreements tab is about, the most files first, and the tab's total.
          */
         DisagreeingPeople: {
             /**
@@ -14186,15 +12309,7 @@ export interface components {
         };
         /**
          * DisagreeingPersonView
-         * @description One person the Disagreements tab is about, as its row reads her.
-         *
-         *     `count` is how many of her files the tab holds; `source` is the word the pass wrote on the most
-         *     of them (`folder`, `stash_box` and the rest), so the row says where the name came from.
-         *
-         *     `filed` is that said in full, the line under her heading: the folders named where a folder's
-         *     name gave it ("Added from the name of the folder ..."), each in `filed_links` as the folder and
-         *     its way to the folder view, in the shape a History line's names travel in. A client draws the
-         *     words as they come and links each name it is handed; it builds no sentence of its own.
+         * @description One person the Disagreements tab is about, with the line saying where her name came from.
          */
         DisagreeingPersonView: {
             /**
@@ -14230,10 +12345,7 @@ export interface components {
              */
             disagreements: components["schemas"]["DisagreementView"][];
         };
-        /**
-         * DisagreementView
-         * @description One field two answers differ about, with both of them on it.
-         */
+        /** DisagreementView */
         DisagreementView: {
             /** Box Id */
             box_id: string;
@@ -14257,12 +12369,7 @@ export interface components {
         };
         /**
          * DisagreementsWrite
-         * @description A Yes or a No over one person's disagreements, and which of them it is about.
-         *
-         *     The scope is `RunScope`'s, word for word, with the rows named by their FILE: a disagreement is
-         *     a row about a file, and the file is what a No takes her off. A page or a pick names its files;
-         *     all of hers names none, because that set is the server's to know. The files are narrowed by the
-         *     server, never trusted (`FaceService.answer_disagreements`).
+         * @description A Yes or a No over one person's disagreements, scoped as `RunWrite`, by file.
          */
         DisagreementsWrite: {
             /** Asset Ids */
@@ -14313,10 +12420,7 @@ export interface components {
         };
         /**
          * DownloadFolder
-         * @description The folder a download goes into, by name and by where it is on disk.
-         *
-         *     Both: the name is what the chooser and Folders wall call it; the path tells two of one name
-         *     apart and is what somebody types into a file manager.
+         * @description The folder a download goes into, by name and by path on disk.
          */
         DownloadFolder: {
             /** Id */
@@ -14328,11 +12432,7 @@ export interface components {
         };
         /**
          * DownloadItem
-         * @description One download as the queue screen sees it. Carries the address; never a hash of one.
-         *
-         *     No hash of the address: it is what the ledger dedupes on, and anybody holding a list of links
-         *     could hash them to learn which this Sift was asked for. The address itself is shown: the slice
-         *     is admin-only, read by the person who pasted it.
+         * @description One download as the queue screen sees it; the address, never a hash anyone could match.
          */
         DownloadItem: {
             /** Asset Id */
@@ -14398,10 +12498,7 @@ export interface components {
         };
         /**
          * DownloadProgress
-         * @description How far along a running download is.
-         *
-         *     Absent, never zero, when unknown: no total draws no bar, a zero total a full one. A gallery
-         *     reports files, which is all its tool can say.
+         * @description How far along a running download is; absent, never zero, when unknown.
          */
         DownloadProgress: {
             /** Bytes Per Second */
@@ -14474,9 +12571,6 @@ export interface components {
         /**
          * DownloaderChoice
          * @description One tool a Site can be pointed at, and what to call it on the screen.
-         *
-         *     From the server, since which tools ship is a fact about Sift; a copy in the browser would
-         *     offer a tool after it had gone.
          */
         DownloaderChoice: {
             /** Help */
@@ -14489,9 +12583,6 @@ export interface components {
         /**
          * DownloadsAtAGlance
          * @description What the Downloads row on the rail says, from the download rows themselves.
-         *
-         *     `downloading` turns the glyph (running, plus waiting while not paused). The unseen counts drive
-         *     the dot, red over green. `waiting_for_cookies` is the number beside the row.
          */
         DownloadsAtAGlance: {
             /** Downloading */
@@ -14595,10 +12686,7 @@ export interface components {
             /** Job Id */
             job_id: string;
         };
-        /**
-         * EditBox
-         * @description Change what a box does. Only the fields actually sent are written.
-         */
+        /** EditBox */
         EditBox: {
             /** Enabled */
             enabled?: boolean | null;
@@ -14610,13 +12698,6 @@ export interface components {
         /**
          * EditFrame
          * @description How big the picture is as somebody SEES it, asked once when the editor opens.
-         *
-         *     Its own answer rather than part of the verdict, because the panel needs it before there is
-         *     anything to have a verdict about: a rectangle is dragged over a picture, and until the size of
-         *     that picture is known there is nothing to drag over.
-         *
-         *     For almost every file this is the size Sift already recorded. It is the other way round for a
-         *     photograph a camera turned, and that is the whole reason this is asked.
          */
         EditFrame: {
             /** Asset Id */
@@ -14628,18 +12709,7 @@ export interface components {
         };
         /**
          * EditRequest
-         * @description One Save, of one file, carrying everything that was done to it.
-         *
-         *     One file rather than a selection, and that is the difference from compressing. A compression is
-         *     the same instruction to four hundred files: make each of these smaller. An edit is a rectangle
-         *     over a particular photograph or a moment in a particular video, and there is no meaning to
-         *     applying one of those to the next file along.
-         *
-         *     **An ordered list rather than one operation, because every operation writes a new file.** Asked
-         *     one at a time, cropping a photograph and then turning it leaves two copies on the disk and the
-         *     first of them is something nobody wanted. So the steps arrive together, are refused or allowed
-         *     together, and produce one file, and a list whose third step is refused produces nothing at all
-         *     rather than a half-edited picture.
+         * @description One Save of one file: ordered steps that produce one copy, or nothing if any is refused.
          */
         EditRequest: {
             /**
@@ -14664,15 +12734,7 @@ export interface components {
         };
         /**
          * EditStep
-         * @description One thing to do to the picture, and the numbers it runs on.
-         *
-         *     Every operation's own numbers sit in this one shape rather than in five, with the rules about
-         *     which of them are required enforced below. Five shapes would be five routes or a discriminated
-         *     union in the address bar, and neither is worth it for what is at most four numbers.
-         *
-         *     All of them are in the picture as it is SEEN rather than as it is stored, which is the same
-         *     thing for almost every file and is not the same thing for a photograph a camera turned. See the
-         *     orientation module for why the editor works in one and not the other.
+         * @description One thing to do to the picture, measured in the picture as it is SEEN.
          */
         EditStep: {
             /** Duration Ms */
@@ -14734,21 +12796,14 @@ export interface components {
         };
         /**
          * Effect
-         * @description What a grant does.
-         *
-         *     Two effects, three states. The third state is the absence of a row, and it is not the same
-         *     as RESTRICT: it means private, which keeps a guest out by default but can still be overridden
-         *     by a share made somewhere else. RESTRICT means never, and nothing overrides it.
+         * @description What a grant does. No row is private, which a share elsewhere can override; RESTRICT never
+         *     can be.
          * @enum {string}
          */
         Effect: "share" | "restrict";
         /**
          * EnrichEntities
-         * @description Ask the stash-boxes about some people, sites or tags.
-         *
-         *     Ids rather than names, because a name is not an identity: two people can share one, and the
-         *     thing being enriched is a row. The name is looked up on the server from the id, which also
-         *     means a client cannot ask for one subject and have another one's name searched.
+         * @description Ask the stash-boxes about some people, sites or tags, by id: a name is not an identity.
          */
         EnrichEntities: {
             /**
@@ -14761,10 +12816,7 @@ export interface components {
             /** Subject */
             subject: string;
         };
-        /**
-         * EnrichStarted
-         * @description What was queued, so a screen can say so and go and look at it.
-         */
+        /** EnrichStarted */
         EnrichStarted: {
             /** Asked */
             asked: number;
@@ -14773,12 +12825,7 @@ export interface components {
         };
         /**
          * EnrichedBy
-         * @description One thing that wrote to a file without a person doing it, said as who did it.
-         *
-         *     `via` is the `enriched:` filter's own word (`stash`, `faces`, `folder`, `filename`,
-         *     `watermark`), so the mark cannot say what the filter would not find. `name` is which stash-box,
-         *     null where Sift did it or the box is unknown. One entry per box, so never key on `via` alone.
-         *     `box` is the box's slug the mark is painted in; the name is what it says.
+         * @description One thing that wrote to a file without a person; one entry per box, so never key on `via`.
          */
         EnrichedBy: {
             /** Box */
@@ -14790,11 +12837,7 @@ export interface components {
         };
         /**
          * EnrichmentRunView
-         * @description The last time ONE stash-box enriched one thing, and whether anybody pressed it.
-         *
-         *     What the "Last:" line under a menu item reads, and what the History's enrichment line says out
-         *     loud. The box's name is null where the box has since been removed, which is the honest drawing
-         *     of a row that says a box did this and no longer has one to name.
+         * @description The last time one stash-box enriched one thing, and whether anybody pressed it.
          */
         EnrichmentRunView: {
             /** At */
@@ -14814,9 +12857,6 @@ export interface components {
         /**
          * EnrichmentState
          * @description Where one file or record stands with enrichment from outside this machine.
-         *
-         *     Both halves of one question asked by one screen at one moment (may this be sent, and when was
-         *     it last sent), so they are one answer rather than two calls a menu has to wait on in turn.
          */
         EnrichmentState: {
             /** Id */
@@ -14844,10 +12884,7 @@ export interface components {
              */
             why: string;
         };
-        /**
-         * EntityStateView
-         * @description What the server ended up holding, handed back so an optimistic control can settle.
-         */
+        /** EntityStateView */
         EntityStateView: {
             /**
              * Favorite
@@ -14869,11 +12906,7 @@ export interface components {
         };
         /**
          * FaceSettingsView
-         * @description What the settings screen draws, and what the feature is currently able to do.
-         *
-         *     `ready` is not the same as `enabled` and the screen needs both: switched on with no model files
-         *     present is the ordinary state right after somebody turns it on, and it needs to read as "fetch
-         *     the models" rather than as a broken feature.
+         * @description What the settings screen draws; `ready` is apart from `enabled`, as models may be missing.
          */
         FaceSettingsView: {
             /** Depth */
@@ -14928,11 +12961,7 @@ export interface components {
         };
         /**
          * FacesDecided
-         * @description What a decision about several faces actually changed, and what it left alone.
-         *
-         *     `changed`, `skipped` and `reason` come from `BulkWriteDone` rather than being declared again,
-         *     so a face skipped for a locked vault is reported in the same words as a file skipped for one.
-         *     The two fields below are this route's own and have no counterpart anywhere else.
+         * @description What a decision about several faces changed and what it left alone.
          */
         FacesDecided: {
             /**
@@ -14968,10 +12997,7 @@ export interface components {
         };
         /**
          * FacesRefused
-         * @description What one No over a person's run of faces refused, and the receipt that takes it back.
-         *
-         *     `BulkWriteDone` plus the receipt, for the reason `FacesDecided` carries one: the screen that
-         *     pressed offers Undo off the reply, which a count alone cannot give it.
+         * @description What one No over a person's faces refused, and the receipt that takes it back.
          */
         FacesRefused: {
             /**
@@ -15006,11 +13032,7 @@ export interface components {
         };
         /**
          * FacetCounts
-         * @description What the things a wall reaches are made of, along one dimension.
-         *
-         *     In the kernel because walls in several slices answer with it and a slice may not import
-         *     another's models. A value this viewer may not be told about is absent, never listed with a
-         *     zero, which would say the thing exists.
+         * @description A wall's rows along one dimension; a value the viewer may not know of is absent.
          */
         FacetCounts: {
             /** Facet */
@@ -15021,12 +13043,6 @@ export interface components {
         /**
          * FacetValue
          * @description One value a dimension takes, and how many of the rows on screen carry it.
-         *
-         *     `count` counts the set the wall shows, from the same statement, in the wall's own noun (files,
-         *     people, sites); never the library's number. `value` is written as the wall reads it back, so a
-         *     row builds a filter finding exactly what it counted. `label` is filled only where the value is
-         *     an id (a network, a tag), with the row's name, so the client never looks names up through a
-         *     second read with its own permission rule.
          */
         FacetValue: {
             /** Count */
@@ -15212,10 +13228,7 @@ export interface components {
         };
         /**
          * FavoriteMany
-         * @description The heart, over a whole selection. One target state for all of them.
-         *
-         *     Not a toggle each, which would leave a mixed selection more mixed: the caller decides the value
-         *     once, as the pin and the stars do.
+         * @description The heart over a whole selection, one target state for all of them.
          */
         FavoriteMany: {
             /** Asset Ids */
@@ -15226,10 +13239,6 @@ export interface components {
         /**
          * FetchStarted
          * @description The job now downloading the models.
-         *
-         *     The id and nothing else. What a screen does with it is watch the bar the dashboard already
-         *     draws for every job, and offer the cancel that already exists, so there is nothing here for a
-         *     second progress mechanism to be built out of.
          */
         FetchStarted: {
             /** Job Id */
@@ -15237,10 +13246,7 @@ export interface components {
         };
         /**
          * FieldChange
-         * @description One field a match would change, before anything changes.
-         *
-         *     `outcome` is `write` when there is something new to put there and `conflict` when the two
-         *     disagree and neither wins, which is what the reconcile screen is a list of.
+         * @description One field a match would change; `conflict` when the two disagree and neither wins.
          */
         FieldChange: {
             /** Key */
@@ -15408,11 +13414,7 @@ export interface components {
         };
         /**
          * FileView
-         * @description One file of a group, and everything needed to tell it from the others beside it.
-         *
-         *     The facts arrive WITH the group rather than being fetched per file, and that is not a
-         *     micro-optimisation: asked per file, a page of a hundred pairs is two hundred requests, and every
-         *     one of them a permission walk on a self-hosted server that is often a small box.
+         * @description One file of a group, with the facts that tell it from the others, sent with the group.
          */
         FileView: {
             /** Added At */
@@ -15473,13 +13475,7 @@ export interface components {
         };
         /**
          * FiledUnder
-         * @description One filing: a file, a site, and the username that filing names.
-         *
-         *     One row per `asset_usernames` row, not per site: a file can hold the poster's row and a
-         *     poster-unknown row on one site, and one chip for both would remove something nobody was shown.
-         *     `username_id` names exactly what a removal removes. `site_id` can be null (a username can
-         *     outlive its site) and is still listed, so the filing can be taken off. `username` is None for
-         *     the stored empty string meaning "from here, poster unknown", a storage detail kept off the wire.
+         * @description One filing: a file, a site and its username; `username` None means poster unknown.
          */
         FiledUnder: {
             /** Art */
@@ -15599,9 +13595,6 @@ export interface components {
         /**
          * FilterOut
          * @description One filter the query language understands, described for somebody meeting it.
-         *
-         *     The language documenting itself where people look: an empty dropdown cannot be told from a box
-         *     that only does free text.
          */
         FilterOut: {
             /** Example */
@@ -15629,9 +13622,7 @@ export interface components {
         };
         /**
          * FingerprintOfferView
-         * @description A group that looks like somebody a facial fingerprints file holds: the question it asks
-         *     while making people from fingerprints is off ("This group looks like Liora Fenwick, from a
-         *     fingerprints file. Make her a person?"). `entry_id` is what the Yes sends.
+         * @description A group that looks like somebody a fingerprints file holds; a Yes sends `entry_id`.
          */
         FingerprintOfferView: {
             /** Confirmed */
@@ -15706,10 +13697,7 @@ export interface components {
         };
         /**
          * FolderAnswers
-         * @description One library folder, and where it disagrees with the library.
-         *
-         *     `answers` holds only the keys this folder overrides. An absent key is not "off": it is
-         *     "whatever the library says", which is a third state and the one almost every folder is in.
+         * @description One library folder, and where it disagrees with the library: an absent key follows it.
          */
         FolderAnswers: {
             /** Answers */
@@ -15731,9 +13719,7 @@ export interface components {
         };
         /**
          * FolderChange
-         * @description Renaming a folder, moving it, or both. Both are one act on a disk, so both are one request.
-         *
-         *     Every field is optional and None means "leave it alone", which is what makes this a PATCH.
+         * @description Renaming a folder, moving it, or both. None leaves a field alone.
          */
         FolderChange: {
             /** Name */
@@ -15743,13 +13729,7 @@ export interface components {
         };
         /**
          * FolderDeleted
-         * @description What deleting a folder actually did.
-         *
-         *     A body rather than a 204, because this is the one delete in Sift that can do most of what was
-         *     asked and not all of it. Sift indexes media and walks past everything else, so a folder can hold
-         *     files it never took: artwork, subtitles, somebody's notes. Those are not Sift's to remove, and
-         *     `left_behind` is how the screen says the folder is still on the disk with them in it rather than
-         *     reporting a success that was not one.
+         * @description What deleting a folder did; `left_behind` when files Sift never indexed keep it on disk.
          */
         FolderDeleted: {
             /** Directories */
@@ -15761,10 +13741,7 @@ export interface components {
         };
         /**
          * FolderDetail
-         * @description One folder, and what moving it would do.
-         *
-         *     `file_count` is None, not zero, for a non-admin: it counts what the folder physically holds,
-         *     not what the asker may open, so it goes only to the role that moves folders.
+         * @description One folder, and what moving it would do; `file_count` is None for a non-admin.
          */
         FolderDetail: {
             /** File Count */
@@ -15780,7 +13757,7 @@ export interface components {
         };
         /**
          * FolderFacts
-         * @description One folder, as much of it as an ORDER needs. See `FoldersFacts`.
+         * @description One folder, as much of it as an ORDER needs.
          */
         FolderFacts: {
             /** File Count */
@@ -15814,9 +13791,6 @@ export interface components {
         /**
          * FolderList
          * @description Every folder, and which switches may be answered per folder.
-         *
-         *     `keys` comes from the same map that gates the jobs, so the screen cannot offer a switch that
-         *     nothing reads or miss one that something does.
          */
         FolderList: {
             /** Folders */
@@ -15840,10 +13814,7 @@ export interface components {
         };
         /**
          * FolderProperties
-         * @description What a folder IS: the panel a file manager opens on right-click.
-         *
-         *     Admin-only, whole: every field is a fact about the server's disk or what a folder physically
-         *     holds. `created_at` is absent, never zero (1970), where the folder could not be read.
+         * @description What a folder IS, for the properties panel. Admin-only; `created_at` absent where unreadable.
          */
         FolderProperties: {
             /** Created At */
@@ -15896,11 +13867,7 @@ export interface components {
         };
         /**
          * FolderView
-         * @description A folder in the tree.
-         *
-         *     No `has_children`: it would have to mean children this viewer may see, a second copy of the
-         *     visibility rule that could disagree and point a disclosure triangle at something concealed. The
-         *     client asks for children on opening, and none means a leaf.
+         * @description A folder in the tree. No `has_children`: that would be a second copy of the visibility rule.
          */
         FolderView: {
             /**
@@ -15956,11 +13923,7 @@ export interface components {
         };
         /**
          * FoldersFacts
-         * @description The facts an order needs, for every folder directly inside one.
-         *
-         *     A second request, not columns on the tree: the tree is sent flat in one answer without counts,
-         *     because a right count needs the whole concealment rule (including a copy vaulted elsewhere),
-         *     which only this query carries. Admin-only, as `FolderProperties` is.
+         * @description The facts an order needs, for every folder directly inside one. Admin-only.
          */
         FoldersFacts: {
             /** Folders */
@@ -15982,9 +13945,6 @@ export interface components {
         /**
          * ForgetLoops
          * @description Which marks to forget, as one request.
-         *
-         *     A selection, so a wall of loops can forget many in one go: the shared Delete verb is hidden
-         *     there on purpose (it removes the FILE), and `DELETE /loops/{id}` is per row.
          */
         ForgetLoops: {
             /** Loop Ids */
@@ -15992,10 +13952,7 @@ export interface components {
         };
         /**
          * GeneratedUserResponse
-         * @description A guest Sift invented, and the password that goes with it.
-         *
-         *     The only time the password exists in the clear: never stored that way, returned or logged, so
-         *     a lost one is reset. Its own shape so no user listing is ever built from one carrying it.
+         * @description A guest Sift invented, with the only clear copy of its password.
          */
         GeneratedUserResponse: {
             /** Password */
@@ -16038,9 +13995,6 @@ export interface components {
         /**
          * GrantResponse
          * @description One grant as the panel draws it.
-         *
-         *     The username rides along because the panel's job is recognizing who you shared with, and a
-         *     user id is not something anybody recognizes.
          */
         GrantResponse: {
             /** Created At */
@@ -16054,10 +14008,6 @@ export interface components {
         /**
          * GrantSourceResponse
          * @description One grant that reaches this thing, and what it was made on.
-         *
-         *     `source_type` is the kind of thing the decision was made on, and `source_name` is what to call
-         *     it: absent for the global grant, which names nothing, and for a grant on the thing being asked
-         *     about, which the panel is already showing the name of.
          */
         GrantSourceResponse: {
             /** Decides */
@@ -16077,10 +14027,7 @@ export interface components {
         };
         /**
          * GrantView
-         * @description A folder somebody handed to Sift, as the screen that lists them needs it.
-         *
-         *     The whole path is sent: two folders whose names end alike need it. Admin-only, like every route
-         *     naming a directory on the server.
+         * @description A folder somebody handed to Sift, with its whole path so similar names are told apart.
          */
         GrantView: {
             /** Granted At */
@@ -16093,9 +14040,6 @@ export interface components {
         /**
          * GrantWrite
          * @description One share or restrict, made or taken back.
-         *
-         *     The same shape for both directions, because the caller is describing a decision rather than an
-         *     operation: which thing, for whom, and which of the two effects.
          */
         GrantWrite: {
             effect: components["schemas"]["Effect"];
@@ -16115,10 +14059,7 @@ export interface components {
         };
         /**
          * GroupCard
-         * @description A pile of faces that resemble each other.
-         *
-         *     `size` is how many of it this viewer may see, which is not always how many are in it. A pile
-         *     they may see none of does not come back at all.
+         * @description A pile of faces that resemble each other; `size` counts what this viewer may see.
          */
         GroupCard: {
             /**
@@ -16134,12 +14075,7 @@ export interface components {
         };
         /**
          * GroupChoice
-         * @description One group, and which of its files to keep.
-         *
-         *     The whole group is named rather than a group id, because a group has no id: it is computed from
-         *     the pair table at the dials in force, so the only durable name for one is the set of files in
-         *     it. The server clusters again and refuses anything that is not one of its own groups, which
-         *     is what stops a request naming an arbitrary set of files and having them deleted together.
+         * @description One group by its files, since a group has no id, and which of them to keep.
          */
         GroupChoice: {
             /** Ids */
@@ -16153,9 +14089,6 @@ export interface components {
         /**
          * GroupDetail
          * @description One pile, with a page of its faces and how many of them this viewer may see.
-         *
-         *     Separate from `GroupCard` because the two answer different questions: a card says enough to
-         *     recognise a pile among hundreds, this says everything needed to decide about part of one.
          */
         GroupDetail: {
             group: components["schemas"]["GroupCard"];
@@ -16172,11 +14105,7 @@ export interface components {
         };
         /**
          * GroupList
-         * @description A page of groups, and everything needed to read it honestly.
-         *
-         *     The numbers beside the list are not decoration. A near-duplicate screen showing nothing has
-         *     several completely different meanings (there are none, the dial is hiding them, half the
-         *     library has never been fingerprinted) and they read identically without these.
+         * @description A page of groups, with the counts that tell an empty page's causes apart.
          */
         GroupList: {
             /**
@@ -16260,10 +14189,6 @@ export interface components {
         /**
          * GroupPage
          * @description One page of piles, and how many of them this viewer may see altogether.
-         *
-         *     `total` counts the piles with an unanswered question in them that this user may see any of,
-         *     the same set the page is taken from, or the pager would describe a screen nobody is looking
-         *     at.
          */
         GroupPage: {
             /**
@@ -16284,14 +14209,7 @@ export interface components {
         };
         /**
          * GroupReasonView
-         * @description One reason a group may be somebody, on a `may_be` card.
-         *
-         *     `kind` is `likeness` (the group as a whole comes close to their pictures; the group's own
-         *     `likeness` is the number) or `folder`: most of a folder Sift filed as them is this group, and
-         *     the four folder fields say which and by how much, counted as THIS viewer may see the files
-         *     (the folder reader's proposal), or `stash-box`: they are known by a stash-box's starter pictures
-         *     alone, and `box_names` names the boxes those pictures came from (empty where none is recorded).
-         *     A reason leaves the other kinds' fields null.
+         * @description One reason a group may be somebody: `likeness`, `folder` or `stash-box`, each its fields.
          */
         GroupReasonView: {
             /** Box Names */
@@ -16310,10 +14228,6 @@ export interface components {
         /**
          * GroupSetAside
          * @description What setting a group of faces aside did, and the record it can be taken back from.
-         *
-         *     Named for the thing it is about rather than for the verb. Two response models called `Ignored`
-         *     cannot both be named that in the API description, and what a generator falls back to is the
-         *     module path, which publishes how this application is laid out inside.
          */
         GroupSetAside: {
             /**
@@ -16338,11 +14252,7 @@ export interface components {
         };
         /**
          * GroupSettleResult
-         * @description What the press actually did, which is not always what it was asked to do.
-         *
-         *     A folder Sift was never given write access to refuses one file and says nothing about the rest,
-         *     so the counts are reported rather than assumed. `refused` is how a screen can say "twenty-two
-         *     done, two could not be deleted" instead of claiming a success it did not have.
+         * @description What the press did, with refusals counted rather than assumed.
          */
         GroupSettleResult: {
             /**
@@ -16397,13 +14307,7 @@ export interface components {
         };
         /**
          * GroupsWrite
-         * @description An answer to a "these groups may be her" card: which groups, and for a Yes the faces shown.
-         *
-         *     `pile_ids` are the groups the press is about: the ones left ticked for a Yes, every one on
-         *     the card for a No. `track_ids` are the faces the card SHOWED of those groups, which a Yes
-         *     confirms: the server confirms only faces inside a group it still offers for this person, so a
-         *     stale card cannot confirm anything else, and it offers the rest of each group as questions.
-         *     A No sends none; it refuses every face of the groups.
+         * @description An answer to a may-be card: the groups, and for a Yes the faces the card showed.
          */
         GroupsWrite: {
             /** Pile Ids */
@@ -16413,10 +14317,7 @@ export interface components {
         };
         /**
          * GuestCreateRequest
-         * @description A new guest, named by an admin and given a first password by that admin.
-         *
-         *     No email field: users are local, so there is nowhere to send an invitation or a reset. The
-         *     admin tells the person the password, and they change it from their profile.
+         * @description A new guest, named and given a first password by an admin; users are local, so no email.
          */
         GuestCreateRequest: {
             /** Password */
@@ -16478,10 +14379,7 @@ export interface components {
         };
         /**
          * HeldFaces
-         * @description The face descriptions swaps brought for somebody this library already had.
-         *
-         *     Held, never used to name anybody, until an admin adds them from the person's page. `waiting` is
-         *     how many adding them would give that person now; `added` is how many the press just gave.
+         * @description Face descriptions swaps brought for somebody this library already had, held until added.
          */
         HeldFaces: {
             /**
@@ -16519,11 +14417,7 @@ export interface components {
         };
         /**
          * HistoryDetail
-         * @description One group of things a folded line stands for, with the words its sentence counted them in.
-         *
-         *     A line for a whole press counts its things ("19 people, the site and 7 tags") and opens to
-         *     them, grouped as the sentence grouped them. `words` is the phrase from the sentence itself, so
-         *     the heading and the count are one string and the client has no second vocabulary.
+         * @description One group of things a folded line stands for, headed by the sentence's own words.
          */
         HistoryDetail: {
             /**
@@ -16538,12 +14432,7 @@ export interface components {
         };
         /**
          * HistoryEvent
-         * @description One thing that happened to the subject of a history, ready to draw.
-         *
-         *     `what` is a finished sentence in the app's own voice, so the words match the rest of Sift.
-         *     `at` is epoch seconds, null for a row from before moments were recorded (drawn as such, sorted
-         *     oldest). `actor_name` is null when there is nothing to name, or the viewer is not an admin and
-         *     the actor is another user.
+         * @description One thing that happened to a history's subject, ready to draw.
          */
         HistoryEvent: {
             /** Actor */
@@ -16595,9 +14484,6 @@ export interface components {
         /**
          * HistoryLink
          * @description One thing a history sentence names, and where that thing lives.
-         *
-         *     The name travels with the id because the sentence is sent as words: a client links it by
-         *     finding that run of text, and one that draws no links reads the same sentence.
          */
         HistoryLink: {
             /**
@@ -16616,12 +14502,7 @@ export interface components {
         };
         /**
          * HistoryPiece
-         * @description ONE RUN OF A HISTORY LINE: plain words, or words standing for a thing, each where it sits.
-         *
-         *     A line is a list of these, built on the server one builder per act; the client draws and builds
-         *     nothing. A thing carries its kind, id, address and whether it has gone; plain words carry none.
-         *     Nothing searches a sentence for a name, which would link every "d" in "Added to d". `rest`
-         *     makes a run a fold: shut it reads " and 14 more", opened `rest` replaces that.
+         * @description One run of a history line: plain words, or words standing for a thing.
          */
         HistoryPiece: {
             /**
@@ -16652,20 +14533,7 @@ export interface components {
          * IdentifiedCard
          * @description Everything Sift has attached to one person, as one card.
          *
-         *     The counterpart of `GroupCard` on the other screen, and deliberately the same shape: a wall of
-         *     one card per face says nothing about who is on it, so thirteen appearances of one person would
-         *     read as thirteen separate answers to thirteen separate questions.
-         *
-         *     `waiting` is how many of them are proposals rather than settled decisions. It is the number the
-         *     card exists to show: a person with faces waiting is one press away from being finished, and
-         *     that cannot be seen when every face is its own card.
-         *
-         *     `matched` and `confirmed` are the other two, counted apart rather than folded into `size`,
-         *     because the question this screen could not answer was which of these Sift attached BY ITSELF:
-         *     "28 faces" reads the same whether a person agreed to every one of them or to none. `surest` is
-         *     the best confidence among the matched ones, and belongs to those alone: a confirmed face was
-         *     decided by somebody rather than by arithmetic, so a percentage beside it would be describing
-         *     the wrong thing.
+         *     `waiting`, `matched` and `confirmed` count apart; `surest` belongs to the matched alone.
          */
         IdentifiedCard: {
             /**
@@ -16741,10 +14609,7 @@ export interface components {
         };
         /**
          * ImportTunnelRequest
-         * @description A provider's WireGuard configuration, and the name to know it by.
-         *
-         *     Accepted, never returned: it carries the account's private key, so it is sealed on arrival and
-         *     read only to start the tunnel.
+         * @description A provider's WireGuard configuration and its name; sealed on arrival, never returned.
          */
         ImportTunnelRequest: {
             /** Config */
@@ -17011,25 +14876,14 @@ export interface components {
             /** Kept Out */
             kept_out: boolean;
         };
-        /**
-         * KeepLocal
-         * @description Keep this thing local, or let it be enriched again.
-         */
+        /** KeepLocal */
         KeepLocal: {
             /** Kept Local */
             kept_local: boolean;
         };
         /**
          * KeepPicture
-         * @description Keep one stash-box picture as the picture a subject here is shown with.
-         *
-         *     ## No address
-         *
-         *     A candidate's picture reaches the browser as Sift's own address (`/stash-boxes/{id}/
-         *     picture?url=...`), so the page can draw it under a policy that allows no remote host, and the
-         *     adapter rightly refuses that address because it is not on the stash-box's host. So nothing
-         *     about the address comes from the browser: the entry has just been linked, the link holds what
-         *     the box said, picture included, and the server reads the real address from its own copy.
+         * @description Keep a stash-box picture for a subject; the server reads its address from its own copy.
          */
         KeepPicture: {
             /** Local Id */
@@ -17061,10 +14915,6 @@ export interface components {
         /**
          * KeptNameOut
          * @description One value in a saved search that its chip cannot read from the query alone.
-         *
-         *     `field` is the parameter as the query spells it; `value` is what the query holds there (an id,
-         *     or a name nothing answers to any more); `name` is what the thing is called now, or null where
-         *     it is gone.
          */
         KeptNameOut: {
             /** Field */
@@ -17109,12 +14959,7 @@ export interface components {
         };
         /**
          * KnownPeople
-         * @description Who is already covered. Read before adding somebody, to answer "do I have them".
-         *
-         *     Names, counts and where each person's picture is. It is a list to search, not a gallery: a
-         *     page of face crops for several hundred People is a great deal of picture to send to answer a
-         *     yes-or-no question, so no picture travels here, only the cover columns a row is drawn from,
-         *     and the browser asks for a picture only as its row comes into view.
+         * @description Who is already covered, as a list to search; no picture travels here.
          */
         KnownPeople: {
             /**
@@ -17131,9 +14976,6 @@ export interface components {
         /**
          * KnownPerson
          * @description One person Sift can already recognize, and how many reference faces say so.
-         *
-         *     The id is here so the screen can link the name to that person's own page: "do I have them" is
-         *     one question short of what somebody reading it wants next.
          */
         KnownPerson: {
             /** Art */
@@ -17206,8 +15048,7 @@ export interface components {
         };
         /**
          * LatestAsked
-         * @description Which tool to look up. Only yt-dlp has a release feed Sift reads: it is the one that goes
-         *     stale in weeks, where the others move in months and ship with Sift's own updates.
+         * @description Which tool to look up: only yt-dlp, the one that goes stale in weeks.
          */
         LatestAsked: {
             /**
@@ -17232,16 +15073,7 @@ export interface components {
         };
         /**
          * LedgerActorView
-         * @description Who took an act, as the kind of doer it was and what it is called.
-         *
-         *     `kind` is `sift`, `user` or `box`. `id` means a different thing in each (the name of the
-         *     pass, a user id, a stash-box id), which is why the kind is beside it rather than inferred.
-         *
-         *     `name` is read when the feed is drawn and not snapshotted with the event, and that is the
-         *     OPPOSITE of the rule for the things an act was about. A user renamed last week is the same
-         *     user, and a feed calling them by an old name would answer "who did this" with a name nobody
-         *     recognises. Absent once that user is deleted: the event still says a user did it and
-         *     still says which, and the line says so in words rather than printing an id.
+         * @description Who took an act, as the kind of doer and its name, read live so a rename shows.
          */
         LedgerActorView: {
             /** Id */
@@ -17338,13 +15170,6 @@ export interface components {
         /**
          * LedgerReceiptView
          * @description The queue an event was decided on, where it was a decision at all.
-         *
-         *     Absent on every event that was not a judgement, which is most of them. Its presence is what says
-         *     a row can be taken back and where the undo lives; `reversed_at` says it already has been.
-         *
-         *     The sentence is the one written at the moment the decision was taken, because that is what a
-         *     receipt is. Every other line in this feed is assembled by the reader from the verb and the
-         *     names, which is what lets those lines stay true as the library moves.
          */
         LedgerReceiptView: {
             /** Detail */
@@ -17365,19 +15190,7 @@ export interface components {
         };
         /**
          * LedgerThingView
-         * @description One thing an event named, and the way to it.
-         *
-         *     `name` is what it was CALLED at the time, straight off the row: an event outlives its subject,
-         *     so a name looked up now would be empty for exactly the events somebody opened the record to
-         *     find. Absent only where the row wrote none down AND nothing could be read now: a row from
-         *     before names were snapshotted has none, and one naming something still in the library is named
-         *     live rather than drawn as the word for its category.
-         *
-         *     `href` is a screen in the client, built here because the server is the one place that knows
-         *     which screen a kind of thing belongs on. Absent where there is nowhere to go: a kind with no
-         *     page, and a thing that has since been deleted. A name with no address is drawn as plain words,
-         *     which is honest: the alternative is a link that lands on "no such person" and reads as a
-         *     broken screen rather than as a library that has moved on.
+         * @description One thing an event named, by its name at the time, and the screen it lives on.
          */
         LedgerThingView: {
             /**
@@ -17396,8 +15209,7 @@ export interface components {
         };
         /**
          * LeftOut
-         * @description A pick that wears a mark on its own row, and how many of its files the mark keeps back:
-         *     `local` is Kept local ("Don't enrich"), `swap` is "Don't swap".
+         * @description A pick that wears a mark on its own row, and how many of its files the mark keeps back.
          */
         LeftOut: {
             /** Files */
@@ -17527,12 +15339,7 @@ export interface components {
         };
         /**
          * LinkList
-         * @description Every stash-box that has been agreed to know this subject, newest first.
-         *
-         *     And WHO MADE IT, which is a different fact and is carried here because it is read on the same
-         *     screen from the same page load: a person five boxes know about may have been typed in by hand.
-         *     Null wherever nothing recorded it: most rows made before Sift wrote this down, everything
-         *     somebody created themselves, and a subject whose box has since been removed.
+         * @description Every stash-box agreed to know this subject, newest first, and who made it.
          */
         LinkList: {
             /**
@@ -17628,11 +15435,7 @@ export interface components {
         };
         /**
          * LockResponse
-         * @description Which way locking shut the session.
-         *
-         *     `locked`: alive, the PIN reopens it. `signed_out`: ended, the password comes back. `no_session`:
-         *     nothing to shut, not a failure, as a panic control must not need reading. Named, so the screen
-         *     does not re-decide where to land.
+         * @description Which way locking shut the session: `locked`, `signed_out` or `no_session`.
          */
         LockResponse: {
             /** Outcome */
@@ -17696,10 +15499,7 @@ export interface components {
             /** Username */
             username: string;
         };
-        /**
-         * LookUpResult
-         * @description Every box's answer to one question, in the order they are configured.
-         */
+        /** LookUpResult */
         LookUpResult: {
             /**
              * Answers
@@ -17716,9 +15516,7 @@ export interface components {
         };
         /**
          * LookupFiles
-         * @description A press of Enrich on a file, a selection or a folder's files: AcoustID asked about these.
-         *     `again` is a file's own Ask again: only the ones AcoustID did not know, whatever the age of
-         *     that answer.
+         * @description AcoustID asked about these files; `again` asks only ones it did not know.
          */
         LookupFiles: {
             /**
@@ -17734,10 +15532,7 @@ export interface components {
             /** Key */
             key: string;
         };
-        /**
-         * LookupPressed
-         * @description What an Enrich press did, counted, and the sentence the screen says about it.
-         */
+        /** LookupPressed */
         LookupPressed: {
             /** Job Id */
             job_id: string | null;
@@ -17756,12 +15551,7 @@ export interface components {
         };
         /**
          * LookupState
-         * @description What Settings draws for the lookup. Never the key: whether one is set, and whether it can be
-         *     opened now (a key set before a restart is locked until somebody signs in again).
-         *
-         *     And what the Enrich menu reads to offer AcoustID beside the stash-boxes: `source` and `label`
-         *     are its word and its name, and `ready` whether a press would send anything (the switch on and a
-         *     key saved), the same answer a press is refused by.
+         * @description What Settings and the Enrich menu read about the lookup; never the key itself.
          */
         LookupState: {
             /**
@@ -17811,9 +15601,6 @@ export interface components {
         /**
          * LoopList
          * @description One page of marks, in the shape every wall of tiles reads.
-         *
-         *     The asset listing's own shape, since the wall of loops IS the media grid at this address.
-         *     `complete` is always true (nothing here is ranked by meaning), sent so the reader need not know.
          */
         LoopList: {
             /**
@@ -17838,10 +15625,6 @@ export interface components {
         /**
          * LoopSummary
          * @description One loop, as the person asking may know it.
-         *
-         *     It carries the source file's shape because a loop is drawn as a still from that file and the
-         *     wall lays out before the picture arrives. `duration_ms` is the loop's own length, sent so no
-         *     reader computes it a second way.
          */
         LoopSummary: {
             /** Art */
@@ -17976,9 +15759,7 @@ export interface components {
         };
         /**
          * LoopWrite
-         * @description Marking a stretch of a file. The two ends in milliseconds, and an optional name.
-         *
-         *     Whether the end sits inside the file needs its duration, so that check lives in the service.
+         * @description Marking a stretch of a file: the two ends in milliseconds, and an optional name.
          */
         LoopWrite: {
             /** Asset Id */
@@ -17992,10 +15773,7 @@ export interface components {
         };
         /**
          * MadeBy
-         * @description WHO INVENTED a row, as against who has since described it.
-         *
-         *     Anything Sift makes says so, a box being one answer among several. In the kernel because
-         *     several kinds of row in several slices carry it, two with no stash-box at all.
+         * @description Who invented a row, as against who has since described it.
          */
         MadeBy: {
             /** Act */
@@ -18021,11 +15799,7 @@ export interface components {
         };
         /**
          * MadeCopy
-         * @description One copy made from a file, for the ORIGINAL's page.
-         *
-         *     The mirror of `Produced`: that says what a copy came from, this says what came from the file
-         *     you are looking at. Both are the same row read from opposite ends, and both are scoped: a
-         *     copy this user may not see is left out rather than named.
+         * @description One copy made from a file, for the original's page; copies the user may not see are left out.
          */
         MadeCopy: {
             /** Asset Id */
@@ -18077,10 +15851,7 @@ export interface components {
             /** Name */
             name?: string | null;
         };
-        /**
-         * MatchList
-         * @description What the pass found and nobody has answered, surest first.
-         */
+        /** MatchList */
         MatchList: {
             /**
              * Answered
@@ -18103,20 +15874,14 @@ export interface components {
              */
             total: number;
         };
-        /**
-         * MatchRef
-         * @description Which answer. Theirs and ours together, which is what names one.
-         */
+        /** MatchRef */
         MatchRef: {
             /** Asset Id */
             asset_id: string;
             /** Box Id */
             box_id: string;
         };
-        /**
-         * MatchView
-         * @description One stash-box's answer about one FILE, as the pile screen reads it.
-         */
+        /** MatchView */
         MatchView: {
             /** Art */
             art: string | null;
@@ -18150,17 +15915,7 @@ export interface components {
         };
         /**
          * MatchesAgreed
-         * @description What agreeing with everything Sift matched to one person did.
-         *
-         *     Two numbers rather than one, because they answer different questions and the second is the one
-         *     that is not guessable from the first. `confirmed` is how many appearances now carry somebody's
-         *     own answer; `references` is how many pictures of that person Sift learned from them, which is
-         *     always fewer: one appearance files one picture at most, a picture already held is refused by
-         *     its own identity, and a crop that cannot be read files none.
-         *
-         *     Its own shape rather than `FacesDecided`, whose `changed` would have to mean one of the two and
-         *     leave the other nameless. Nothing was skipped for the caller to be told about either: this press
-         *     names no faces, so there is no list of them to come back short.
+         * @description What agreeing with everything Sift matched to one person did: faces and pictures learned.
          */
         MatchesAgreed: {
             /**
@@ -18176,13 +15931,7 @@ export interface components {
         };
         /**
          * MayBeGroup
-         * @description One unnamed group on a "these groups may be her" card.
-         *
-         *     `size` is the group's unnamed faces this viewer may see. `likeness` is how close the group as
-         *     a whole comes to the person, on the group scale and not the single-face one, null where it
-         *     could not be measured. `ticked` is whether the card starts with the group chosen. `faces` are
-         *     the ones the card shows, which are the ones a Yes confirms; the rest of the group is offered as
-         *     questions.
+         * @description One unnamed group on a "these groups may be her" card; a Yes confirms the faces shown.
          */
         MayBeGroup: {
             /**
@@ -18231,8 +15980,6 @@ export interface components {
         /**
          * Membership
          * @description Which of one kind of thing the files asked about are already on.
-         *
-         *     `all` is a full tick, `some` a half one; anything in neither is on none of them.
          */
         Membership: {
             /**
@@ -18248,10 +15995,7 @@ export interface components {
         };
         /**
          * MembershipAsk
-         * @description Which files a picker is about to draw ticks for.
-         *
-         *     A POST, though a read: five hundred ids in an address passes what proxies carry (a 414 at the
-         *     edge). The body has the shape every bulk write uses, split the same way by the client.
+         * @description Which files a picker is about to draw ticks for; a POST, as the ids overflow an address.
          */
         MembershipAsk: {
             /** Asset Ids */
@@ -18260,9 +16004,6 @@ export interface components {
         /**
          * Memberships
          * @description What a set of files is already on, per kind, as the pickers draw it.
-         *
-         *     One answer for every kind plus the heart, so the pickers over one selection cannot disagree.
-         *     The heart is a word: there is only one of it.
          */
         Memberships: {
             collections: components["schemas"]["Membership"];
@@ -18277,10 +16018,7 @@ export interface components {
             songs: components["schemas"]["Membership"];
             tags: components["schemas"]["Membership"];
         };
-        /**
-         * MergeCounted
-         * @description How many of something one of the people going holds: their confirmed faces.
-         */
+        /** MergeCounted */
         MergeCounted: {
             /** Count */
             count: number;
@@ -18289,8 +16027,7 @@ export interface components {
         };
         /**
          * MergeFilled
-         * @description A box blank on the one kept that the merge fills: the record's word for it, what lands in
-         *     it, and whose it was. `value` is empty for the cover, which is a picture and not a word.
+         * @description A blank on the one kept that the merge fills; `value` is empty for the cover.
          */
         MergeFilled: {
             /** Key */
@@ -18304,10 +16041,7 @@ export interface components {
         };
         /**
          * MergeNamed
-         * @description One thing a merge moves, by name: a username, another name, a link, a Site published under.
-         *
-         *     `where` is the second word it is known by where there is one: a username's Site. `whose` is
-         *     the one going it belonged to, by name.
+         * @description One thing a merge moves, by name; `where` is its Site, `whose` its owner.
          */
         MergeNamed: {
             /** Name */
@@ -18319,10 +16053,7 @@ export interface components {
         };
         /**
          * MergeSeveral
-         * @description Several people folded into one, in a single act.
-         *
-         *     `into` survives and `people` go; the survivor may be in both, since the natural thing to send
-         *     is the whole selection.
+         * @description Several people folded into one; `into` may also be in `people`.
          */
         MergeSeveral: {
             /** Into */
@@ -18332,10 +16063,7 @@ export interface components {
         };
         /**
          * MergeSeveralSites
-         * @description Several sites folded into one, in a single act.
-         *
-         *     Its own model so the wire says `sites`, not `people` holding site ids; the survivor may be in
-         *     both, as above.
+         * @description Several sites folded into one; `into` may also be in `sites`.
          */
         MergeSeveralSites: {
             /** Into */
@@ -18345,10 +16073,7 @@ export interface components {
         };
         /**
          * MergeSongs
-         * @description Several songs that are one piece of music, folded into one in a single act.
-         *
-         *     `into` survives and `songs` go. The survivor may be named among them without it being an error:
-         *     somebody selects four cards and then says which of the four to keep.
+         * @description Several songs folded into one; `into` may be among `songs`.
          */
         MergeSongs: {
             /** Into */
@@ -18359,9 +16084,6 @@ export interface components {
         /**
          * MergeWeighed
          * @description What merging two people would move, counted before anything moves.
-         *
-         *     A merge cannot be taken back, so the counts are shown beside the two names BEFORE the press,
-         *     counted rather than estimated.
          */
         MergeWeighed: {
             /**
@@ -18418,10 +16140,7 @@ export interface components {
         };
         /**
          * MissingRef
-         * @description One row somebody ticked. Kind AND name, which is what names a row rather than a word.
-         *
-         *     Not the name alone: ticking the person Orla Tennant must never also invent a tag spelled the
-         *     same way, and a library that files anything by name has words in common between its kinds.
+         * @description One ticked row, by kind and name, so a person and a tag of the same name stay apart.
          */
         MissingRef: {
             /** Kind */
@@ -18431,11 +16150,7 @@ export interface components {
         };
         /**
          * MissingView
-         * @description One row an answer would have to invent, and what kind of row it is.
-         *
-         *     The kind is here because it is most of the decision. Thirty-one words in one alphabetical list
-         *     (a performer, a hair colour, a studio) is a hard question; the same thirty-one under three
-         *     headings is three easy ones.
+         * @description One row an answer would have to create, and its kind.
          */
         MissingView: {
             /** Kind */
@@ -18489,8 +16204,6 @@ export interface components {
         /**
          * ModelsFetchStarted
          * @description The job now downloading the models.
-         *
-         *     The id only: the screen watches the bar and cancel every job already has.
          */
         ModelsFetchStarted: {
             /** Job Id */
@@ -18506,11 +16219,7 @@ export interface components {
         };
         /**
          * MoveFacesWrite
-         * @description Some faces, and the group they belong in.
-         *
-         *     `pile_id` null means a group of exactly these: a split. A pile id means merge them into that
-         *     one. The two are one operation with two destinations, so they are one request rather than two
-         *     endpoints that would drift apart.
+         * @description Some faces and the group they belong in; a null `pile_id` splits them into a new one.
          */
         MoveFacesWrite: {
             /** Pile Id */
@@ -18518,10 +16227,7 @@ export interface components {
             /** Track Ids */
             track_ids?: string[];
         };
-        /**
-         * MoveManyRequest
-         * @description Where to put a selection. One folder for the whole of it.
-         */
+        /** MoveManyRequest */
         MoveManyRequest: {
             /** Asset Ids */
             asset_ids: string[];
@@ -18539,9 +16245,6 @@ export interface components {
         /**
          * MovedFaces
          * @description Where the moved faces ended up, so the screen can go there.
-         *
-         *     The counts and the reason come from `BulkWriteDone`, so a face left behind by a locked vault is
-         *     reported here in the same words every other bulk write uses. `pile_id` is this route's own.
          */
         MovedFaces: {
             /**
@@ -18600,11 +16303,7 @@ export interface components {
         };
         /**
          * NameFacesWrite
-         * @description Some faces, and who they are.
-         *
-         *     Either an existing person by id, or a name to create one under: exactly one of the two. A
-         *     call carrying both is refused rather than resolved by precedence, because the two orders of
-         *     precedence are equally defensible and whichever is chosen will surprise somebody.
+         * @description Some faces and who they are: an existing person or a new name, never both.
          */
         NameFacesWrite: {
             /** Name */
@@ -18631,9 +16330,7 @@ export interface components {
         };
         /**
          * NamePreview
-         * @description What a template would produce, so it can be checked at the setting rather than days later.
-         *
-         *     Empty means the file would keep its name, which the screen shows.
+         * @description What a template would produce; empty means the file keeps its name.
          */
         NamePreview: {
             /** Example */
@@ -18642,9 +16339,6 @@ export interface components {
         /**
          * NamePreviewRequest
          * @description A template, and optionally the Site to imagine it against.
-         *
-         *     Its own shape: a preview asks about one field, and a write body would make it say something
-         *     about a folder and a downloader.
          */
         NamePreviewRequest: {
             /** Naming */
@@ -18654,10 +16348,7 @@ export interface components {
         };
         /**
          * Named
-         * @description What a plain word names in this library: the people, sites, tags, collections and folders.
-         *
-         *     The other half of a search: the files come from the ordinary read, the things from here, each
-         *     carrying the field it filters on.
+         * @description What a plain word names in this library: people, sites, tags, collections and folders.
          */
         Named: {
             /** Items */
@@ -18714,9 +16405,6 @@ export interface components {
         /**
          * NamesNow
          * @description What each of a list of ids is called now, for the ones this viewer may be shown.
-         *
-         *     An id missing from the answer is a thing that is gone or one this viewer may not see; the two
-         *     are one answer, as they are on every read by id.
          */
         NamesNow: {
             /** Items */
@@ -18724,10 +16412,7 @@ export interface components {
         };
         /**
          * NarrowedToUsername
-         * @description The username a page was narrowed to (`?username=`), in the words its filter chip draws.
-         *
-         *     A username has no page: it opens the Files wall narrowed to an opaque id, so the page answers
-         *     with what the chip says rather than a by-id route existing only for that.
+         * @description The username a page was narrowed to, in the words its filter chip draws.
          */
         NarrowedToUsername: {
             /** Id */
@@ -18757,12 +16442,7 @@ export interface components {
         };
         /**
          * NewGrant
-         * @description A folder chosen in the operating system's own dialog.
-         *
-         *     A string, refused with a sentence, as `NewRoot.abs_path` is. Arriving from the client is not a
-         *     hole: an admin session can call anything, and what matters is that a folder must be NAMED,
-         *     which a page cannot do by opening the dialog. The picker can then only list inside folders
-         *     somebody chose deliberately.
+         * @description A folder chosen in the operating system's own dialog; a string, refused with a sentence.
          */
         NewGrant: {
             /** Path */
@@ -18778,10 +16458,7 @@ export interface components {
         };
         /**
          * NewRoot
-         * @description Where somebody's files are, and what to call the place.
-         *
-         *     `abs_path` is a string so it can be refused with a sentence, not a schema error; every check
-         *     runs in the kernel against the resolved directory, wherever the path came from.
+         * @description Where somebody's files are, as a string so a bad one is refused with a sentence.
          */
         NewRoot: {
             /** Abs Path */
@@ -18799,7 +16476,7 @@ export interface components {
         };
         /**
          * NewStashLibrary
-         * @description A library to make for the last read, by name. The folder it goes in is the server's.
+         * @description A library to create for the last read, by name.
          */
         NewStashLibrary: {
             /** Blobs */
@@ -18815,9 +16492,6 @@ export interface components {
         /**
          * OCountWrite
          * @description One press of the O mark, one press taken back, or the tally cleared.
-         *
-         *     Per user, like the heart and the stars. A closed set of words, so a wrong one is a 422 from the
-         *     model before this slice runs.
          */
         OCountWrite: {
             /**
@@ -18828,25 +16502,14 @@ export interface components {
         };
         /**
          * ObjectType
-         * @description What a grant can be attached to.
-         *
-         *     The physical objects nest (an asset sits in a folder, inside a root, inside everything),
-         *     so a grant on one is inherited by what is under it. A restrict anywhere above is absolute;
-         *     among shares, the nearest one wins.
-         *
-         *     The logical objects do not nest and do not inherit, with one exception: a Site can sit under
-         *     a network Site, and a grant on the network reaches the label (`sites.SITE_REACH`). An asset
-         *     either belongs to the tag or it does not.
+         * @description What a grant can be attached to. Physical objects nest and inherit; logical ones do not, but
+         *     a network Site reaches its labels.
          * @enum {string}
          */
         ObjectType: "global" | "root" | "folder" | "item" | "tag" | "person" | "collection" | "site" | "photo_set" | "song";
         /**
          * OfferScreen
-         * @description What the guest's offer screen draws.
-         *
-         *     `layout` is `rows` for up to ten offered people (a row each, Take or Skip) and `whole` above
-         *     that: the totals, the five largest in `rows`, and everybody in `everyone` for the collapsed list.
-         *     The totals count each file once, however many offered people it is under.
+         * @description What the guest's offer screen draws; the totals count each file once.
          */
         OfferScreen: {
             /**
@@ -18948,18 +16611,7 @@ export interface components {
         };
         /**
          * Operation
-         * @description The six verbs, and what the provenance row records.
-         *
-         *     `trim` and `clip` are one command underneath (a start and a length), framed two ways on
-         *     screen: dropping the ends against taking a piece out of the middle. They stay two names here
-         *     because the person chose between two ideas and the record should say which, but there is only
-         *     one cut and it is built once.
-         *
-         *     `gif` takes the same two numbers and is NOT that command. Everything else here keeps the file's
-         *     own format (a cut lands in the container it came from and a photograph keeps the format it was)
-         *     and this one changes it, which is why it has a table of its own below rather than an entry in
-         *     `MOVING_FORMATS`. That table is keyed by the SOURCE's format and answers "what does a piece of
-         *     this land in"; a GIF is a destination somebody asked for.
+         * @description The verbs the provenance row records. Trim and clip are one cut; gif changes the format.
          * @enum {string}
          */
         Operation: "crop" | "resize" | "rotate" | "trim" | "clip" | "gif";
@@ -18990,11 +16642,7 @@ export interface components {
         };
         /**
          * OrganizeDone
-         * @description What the file is called now, and what would take it back.
-         *
-         *     `move_id` is what the undo affordance holds on to. It is returned with the operation rather
-         *     than looked up afterwards, so the screen offering "undo" is naming the exact move it just made
-         *     and not whatever the most recent one happens to be by the time somebody clicks.
+         * @description What the file is called now, and the `move_id` its undo names.
          */
         OrganizeDone: {
             /** Asset Id */
@@ -19010,11 +16658,7 @@ export interface components {
         };
         /**
          * OrganizeOptions
-         * @description Whether the rename and move actions belong on screen for this asset at all.
-         *
-         *     The interface hides them rather than greying them out, so this is asked before the menu is
-         *     drawn. `reason` is filled in only when the answer is no, and it is a sentence, because the one
-         *     place it is worth showing is where somebody has asked why the folder cannot be changed.
+         * @description Whether rename and move belong on screen for this asset, with `reason` when not.
          */
         OrganizeOptions: {
             /** Can Organize */
@@ -19027,10 +16671,6 @@ export interface components {
         /**
          * OutsideReach
          * @description The two ways something about a thing can leave this device, and where each stands.
-         *
-         *     A stash-box lookup and another Sift in a swap. `*_here` is the switch on the thing itself; the
-         *     plain word is the whole rule (for a file, anything it is filed under; a swap also honours "Do
-         *     not enrich"), both through the kernel's one refusal (`catalog.refused_here` / `refused_over`).
          */
         OutsideReach: {
             /** Enrich Refused */
@@ -19048,9 +16688,8 @@ export interface components {
         };
         /**
          * PackExportRequest
-         * @description Which People and which people waiting for a matching face go in the file, and whether
-         *     their pictures do: both lists empty is everybody. Pictures are opt-in, so by default no
-         *     photograph of anybody leaves this machine.
+         * @description Which People and waiting entries go in the file (both empty is everybody), and whether
+         *     their pictures do, which is opt-in.
          */
         PackExportRequest: {
             /** Entry Ids */
@@ -19072,10 +16711,7 @@ export interface components {
         };
         /**
          * PackImported
-         * @description What taking in a facial fingerprints file did: how many faces it brought that were not held
-         *     already, and how many people it names. Nobody is made or given anything here: the pass after it
-         *     places each person by face, and says so in History. Importing the same file twice brings
-         *     nothing the second time, so a zero is the honest answer rather than a failure.
+         * @description What taking in a facial fingerprints file added, and how many people it names.
          */
         PackImported: {
             /**
@@ -19096,11 +16732,7 @@ export interface components {
         };
         /**
          * ParsedClause
-         * @description One of the things a query asks for, described so the client can draw it.
-         *
-         *     One row of the Filters screen and one chip in the box. `query` is its exact text spelled by
-         *     the SERVER, so a removed chip or an edited row rebuilds the rest character for character; a
-         *     client spelling it would be a second writer.
+         * @description One clause of a query, its exact text spelled by the server so no client composes it.
          */
         ParsedClause: {
             /** Field */
@@ -19128,9 +16760,6 @@ export interface components {
         /**
          * ParsedProblem
          * @description A filter whose value nothing could act on, and why, so the chip can say so.
-         *
-         *     By field and value, since one value of a multi-value clause can be the unreadable one, and
-         *     that is how the screen finds its chip.
          */
         ParsedProblem: {
             /** Field */
@@ -19142,10 +16771,7 @@ export interface components {
         };
         /**
          * ParsedQuery
-         * @description What a typed query turns out to mean, told to the client by the one parser.
-         *
-         *     So the Filters screen shows what is already in force, including what was typed in the box,
-         *     without a second parser in the client that would disagree about quoting.
+         * @description What a typed query means, told by the one parser so the client needs no second one.
          */
         ParsedQuery: {
             /**
@@ -19242,10 +16868,7 @@ export interface components {
         };
         /**
          * PasswordCheckRequest
-         * @description A password somebody is typing, sent to be judged rather than to be used.
-         *
-         *     No user named, nothing written: the policy's answer as it would be on submit, since the
-         *     browser's meter cannot check leaked passwords and would call `Password123!` strong.
+         * @description A password being typed, judged by the policy without being used.
          */
         PasswordCheckRequest: {
             /** Password */
@@ -19265,8 +16888,7 @@ export interface components {
         };
         /**
          * PasswordResetRequest
-         * @description A password set for somebody else. The old one is not asked for, because an admin does not
-         *     have it, which is the whole reason this exists and is admin-only.
+         * @description A password set for somebody else by an admin, who does not have the old one.
          */
         PasswordResetRequest: {
             /** New Password */
@@ -19282,10 +16904,7 @@ export interface components {
         };
         /**
          * PasteLinksRequest
-         * @description Several addresses together, and where they should land.
-         *
-         *     Its own route: a paste of many must say what it refused and took, which one ledger row's id
-         *     cannot.
+         * @description Several addresses together; its own route, since a paste names what it refused.
          */
         PasteLinksRequest: {
             /** Dest Folder Id */
@@ -19297,9 +16916,7 @@ export interface components {
         };
         /**
          * PastedLinks
-         * @description What a paste of several links did.
-         *
-         *     One bad line never loses the rest: what could be queued is, and each refused line is named.
+         * @description What a paste of several links did: one bad line never loses the rest.
          */
         PastedLinks: {
             /**
@@ -19336,9 +16953,7 @@ export interface components {
         };
         /**
          * PeopleList
-         * @description One page of the People wall, and how many there are for whoever asked.
-         *
-         *     The total comes from the statement the rows came from, so a pager cannot disagree with its page.
+         * @description One page of the People wall, with a total from the same statement.
          */
         PeopleList: {
             /** Items */
@@ -19352,10 +16967,7 @@ export interface components {
         };
         /**
          * PersonNotes
-         * @description Free text an admin wrote about somebody, on its own.
-         *
-         *     Its own reply from its own route: the card is read by every wall, suggester and guest, and notes
-         *     are the most identifying thing after a name, so widening the card cannot leak them.
+         * @description Notes on their own route, so widening the card cannot leak them.
          */
         PersonNotes: {
             /** Notes */
@@ -19363,11 +16975,7 @@ export interface components {
         };
         /**
          * PersonRow
-         * @description One offered person on the guest's screen: what taking them would bring, and who they are here.
-         *
-         *     `files` and `bytes` count what the guest would receive: the files under this person it does
-         *     not already have. `held` counts the ones it does. A file under two offered people counts under
-         *     both, which is why the screen also says how many do (`OfferScreen.shared`).
+         * @description One offered person on the guest's screen: what taking them would bring, and who they are.
          */
         PersonRow: {
             /** Bytes */
@@ -19497,11 +17105,7 @@ export interface components {
         };
         /**
          * PersonWrite
-         * @description A person, as a screen sends one.
-         *
-         *     `vault` and `notes` default to "not sent" and the routes tell the difference: the list screens
-         *     build from carries no notes and a rename form no vault flag, so treating silence as a value
-         *     would erase notes or unvault somebody as a side effect.
+         * @description A person as a screen sends one; unsent `vault` and `notes` are left alone.
          */
         PersonWrite: {
             /** Aliases */
@@ -19548,10 +17152,7 @@ export interface components {
         };
         /**
          * PhotoSetSummary
-         * @description One photo set, as the person asking may know it.
-         *
-         *     `cover_asset_id` is empty both when there is no cover and when this viewer may not see it,
-         *     indistinguishably: naming a picture they cannot open would publish it.
+         * @description One photo set; an unseen cover is reported as none, so it is never published.
          */
         PhotoSetSummary: {
             /** Art */
@@ -19642,10 +17243,7 @@ export interface components {
         };
         /**
          * PhotoSetWrite
-         * @description Making or renaming a set.
-         *
-         *     No vault flag, as for a collection: a create that concealed would have to describe something
-         *     the caller may no longer be shown.
+         * @description Creating or renaming a set; concealing is its own request.
          */
         PhotoSetWrite: {
             /** Name */
@@ -19653,18 +17251,13 @@ export interface components {
         };
         /**
          * PileStatus
-         * @description A group of unidentified faces is either waiting to be named or deliberately set aside.
-         *
-         *     Set aside is a status and not a deletion: it stays listed and it can be brought back.
+         * @description A group of unidentified faces, waiting to be named or set aside (still listed).
          * @enum {string}
          */
         PileStatus: "open" | "ignored";
         /**
          * PileTracks
-         * @description Every face in one pile this user may see, by id: what a verb over the WHOLE pile acts on.
-         *
-         *     The pile's own page holds two hundred faces at a time and the wall's card a handful; a
-         *     decision about all of a pile of two thousand needs the ids and nothing else about them.
+         * @description Every face in one pile this user may see, by id: what a verb over the whole pile acts on.
          */
         PileTracks: {
             /** Total */
@@ -19674,10 +17267,7 @@ export interface components {
         };
         /**
          * PinMany
-         * @description The pin, over a whole selection. One target state, for the reason `FavoriteMany` gives.
-         *
-         *     Its own shape: `content.PinWrite` is the body of five entity routes, and a list there would
-         *     reach all five.
+         * @description The pin over a whole selection, one target state for all of them.
          */
         PinMany: {
             /** Asset Ids */
@@ -19710,12 +17300,7 @@ export interface components {
         };
         /**
          * PinWrite
-         * @description Pin this, or take the pin off.
-         *
-         *     ONE shape for all five kinds rather than one per slice, which is what the heart next door has.
-         *     A slice may not import another slice, so four copies of `favorite: bool` is what that costs,
-         *     and four copies is how a fifth one ends up spelled differently. The kernel is the one place all
-         *     five may reach, and `kernel.changes` already publishes wire shapes from here.
+         * @description Pin this, or take the pin off; one shape for every kind, as slices cannot share one.
          */
         PinWrite: {
             /** Pinned */
@@ -19803,9 +17388,6 @@ export interface components {
         /**
          * PreviewConnectionRequest
          * @description Read cookies back to whoever pasted them, without saving anything.
-         *
-         *     Its own shape though the fields match: there `cookie` is about to be sealed, here described
-         *     and dropped, and one model would tie the two routes' validation together.
          */
         PreviewConnectionRequest: {
             /** Cookie */
@@ -19832,10 +17414,7 @@ export interface components {
         };
         /**
          * Produced
-         * @description Where a file came from, for the copy's own page.
-         *
-         *     `source_asset_id` is null when the original has since been deleted. The copy is still a copy
-         *     and still says so; there is simply nowhere for the link to go.
+         * @description Where a file came from, for the copy's own page; the source is null once deleted.
          */
         Produced: {
             /** Asset Id */
@@ -19975,10 +17554,8 @@ export interface components {
         };
         /**
          * QuarantineView
-         * @description Both piles, together, because a screen showing one of them is misleading.
-         *
-         *     One screen for both, since they answer "where is my file" oppositely: `moved` is in Sift's own
-         *     folder for it to clear; `left_alone` is still where somebody put it, and Sift will not touch it.
+         * @description Both piles together: `moved` is in Sift's folder; `left_alone` is still where somebody put
+         *     it.
          */
         QuarantineView: {
             /**
@@ -20023,8 +17600,6 @@ export interface components {
         /**
          * QueueSummary
          * @description How the queue as a whole is doing, for the strip above the list.
-         *
-         *     One figure for everything running, from a single read, whatever the queue's size.
          */
         QueueSummary: {
             /** By State */
@@ -20130,8 +17705,6 @@ export interface components {
         /**
          * RatingMany
          * @description One rating across a selection, or null to clear it across all of them.
-         *
-         *     The same bounds as the single write, zero refused for the same reason.
          */
         RatingMany: {
             /** Asset Ids */
@@ -20154,13 +17727,7 @@ export interface components {
         };
         /**
          * ReachReport
-         * @description Who can see one thing, and through what.
-         *
-         *     The panel behind "can anybody but me see this": a file is often handed over by a share on a
-         *     tag, collection, folder or network above it, none of which shows on the thing itself.
-         *     `hidden` and `concealed` are the caller's OWN vault, deliberately: hiding is personal, so
-         *     another user's hides are not an answer about permission and are theirs to keep. Both are false
-         *     while the caller's Hidden is shut, since the names of what conceals a thing are the concealment.
+         * @description Who can see one thing, and through what; hides are the caller's own and false while shut.
          */
         ReachReport: {
             /** Concealed */
@@ -20176,11 +17743,7 @@ export interface components {
         };
         /**
          * ReachThrough
-         * @description One decision that explains a user's answer, worded as the chain the panel reads out.
-         *
-         *     A RESHAPING of the `GrantSourceResponse` rows, never a second read, so it cannot disagree with
-         *     the sharing panel. `decides` keeps the losers honest: a share under a restrict is worth seeing,
-         *     but must not read as in force.
+         * @description One decision behind a user's answer, reshaped from the panel's rows so the two agree.
          */
         ReachThrough: {
             /** Decides */
@@ -20198,12 +17761,7 @@ export interface components {
         };
         /**
          * ReachThroughReport
-         * @description WHY one user can see one entity, when nothing was ever said about the entity.
-         *
-         *     Asked per user where the first half says yes with no grant behind it: an entity is on somebody's
-         *     wall because ONE file under it is reachable, through a folder or another tag never said about
-         *     the entity, so this names the files' reasons. `files` and `complete` say how many were looked at
-         *     and whether that was all, since a reason's count reads only beside its denominator.
+         * @description Why one user can see one entity when nothing was said about the entity itself.
          */
         ReachThroughReport: {
             /** Complete */
@@ -20233,8 +17791,7 @@ export interface components {
         };
         /**
          * ReadStash
-         * @description Stash's database file, or the folder Stash keeps it in, by where it is on the device Sift
-         *     runs on. A folder is what a browser can pick; the database is found in it by name.
+         * @description Stash's database file, or its folder on this device, where it is found by name.
          */
         ReadStash: {
             /** Path */
@@ -20372,8 +17929,6 @@ export interface components {
         /**
          * RecentOut
          * @description One thing this user's box remembers, and what picking it again does.
-         *
-         *     A typed search runs again; a thing picked from the dropdown is opened again, as picking it did.
          */
         RecentOut: {
             /** Kind */
@@ -20385,12 +17940,7 @@ export interface components {
         };
         /**
          * ReclaimView
-         * @description One page of the assets stored more than once, and what the whole of it comes to.
-         *
-         *     Three numbers over two populations, kept apart on purpose. `assets` is this page, held to the
-         *     vault. `total` and `total_reclaimable_bytes` are the whole library and are not: they describe
-         *     how many and how much, never which. `concealed` is how many of THIS page were dropped for the
-         *     vault, so a page that comes back short says why rather than looking like the end of the list.
+         * @description One page of assets stored more than once; the totals are whole-library and not vault-held.
          */
         ReclaimView: {
             /** Assets */
@@ -20412,15 +17962,7 @@ export interface components {
         };
         /**
          * RecognitionStrength
-         * @description How reliably Sift can recognize one person.
-         *
-         *     The target and the floor travel with the count. A screen that held its own copy of either would
-         *     go on drawing the same verdict after the number behind it moved.
-         *
-         *     `verdict` is a token and not a sentence: `none`, `few`, `unseen`, `weak`, `fair`, `good`,
-         *     `strong`. The bands belong here, beside the numbers that decide them; the wording a person
-         *     reads belongs to the screen drawing it. `fraction` is `rate`, the share of her faces named
-         *     outright, and `basis` what it rests on.
+         * @description How reliably Sift can recognize one person; `verdict` is a token the screen words.
          */
         RecognitionStrength: {
             basis: components["schemas"]["StrengthBasis"];
@@ -20537,11 +18079,7 @@ export interface components {
         };
         /**
          * RecordHeld
-         * @description What Sift holds for one subject now, by the record registry's own field keys.
-         *
-         *     What the chooser draws on the left of every row. Read through the subject's WRITER (the same
-         *     `current` every plan is compared against), so a sheet opened away from the record's own page
-         *     shows exactly what taking a field would be measured against, not a second assembly of it.
+         * @description What Sift holds for one subject now, read through the subject's writer.
          */
         RecordHeld: {
             /** Values */
@@ -20551,11 +18089,7 @@ export interface components {
         };
         /**
          * RecordWrite
-         * @description The editable half of a file's record: its title, where it came from, and when it came out.
-         *
-         *     Null and an empty string both mean "nothing here" (a cleared form sends one, an API client the
-         *     other). **A field left out is left alone, not blanked:** the route asks which fields were sent,
-         *     or a caller sending only a title would erase the address.
+         * @description The editable half of a file's record; a field left out is left alone, not blanked.
          */
         RecordWrite: {
             /** Details */
@@ -20602,10 +18136,7 @@ export interface components {
         };
         /**
          * ReferenceStrengths
-         * @description How many reference faces every person has, for a screen drawing several of them together.
-         *
-         *     The counts are keyed by person id and hold only the people who have any. A picker asking per
-         *     row would be one request per candidate per keystroke; this is the same numbers in one answer.
+         * @description How many reference faces every person has, in one answer for a screen of several.
          */
         ReferenceStrengths: {
             /**
@@ -20654,8 +18185,7 @@ export interface components {
         };
         /**
          * RefusedBy
-         * @description Something a file is filed under, or a folder it sits in, that keeps it out of swaps, named as the viewer may see it:
-         *     `local` is Kept local ("Don't enrich"), `swap` is "Don't swap".
+         * @description Something that keeps a file out of swaps, named as the viewer may see it.
          */
         RefusedBy: {
             /** Id */
@@ -20696,7 +18226,7 @@ export interface components {
         };
         /**
          * RejectWrite
-         * @description Saying an appearance is not somebody. Remembered, so it is not offered again.
+         * @description Saying an appearance is not somebody.
          */
         RejectWrite: {
             /** Person Id */
@@ -20704,11 +18234,7 @@ export interface components {
         };
         /**
          * RejectionView
-         * @description One file Sift walked past, and why.
-         *
-         *     The name is the point: somebody needs the file to judge whether Sift was right. Relative to the
-         *     root, as the rest of this module is. `reason` is the decision and `detected` what the file
-         *     turned out to be: one to group by, one to read.
+         * @description One file Sift walked past, and why: `reason` to group by, `detected` to read.
          */
         RejectionView: {
             /** Detected */
@@ -20764,8 +18290,7 @@ export interface components {
         };
         /**
          * ReleaseMany
-         * @description Let go of these copies, one press for a page: the same act `ReleaseRequest` is, over
-         *     the copies the screen marked as not the keeper of each file.
+         * @description Let go of these copies in one press, as `ReleaseRequest` does for one.
          */
         ReleaseMany: {
             /** Releases */
@@ -20791,8 +18316,7 @@ export interface components {
         };
         /**
          * Released
-         * @description What a page release did. A copy that could not go (its file already gone, the last
-         *     copy of something) is counted rather than failing the rest.
+         * @description What a page release did; a copy that could not go is counted, not fatal.
          */
         Released: {
             /** Refused */
@@ -20802,11 +18326,7 @@ export interface components {
         };
         /**
          * RememberSearchRequest
-         * @description One thing to put at the top of this user's own memory.
-         *
-         *     A posted body because it is a write: recorded from the results GET, another site could point a
-         *     browser at Sift and land an entry in somebody's history. The memory's own three fields, one way
-         *     to add a row (see `RecentOut`).
+         * @description One entry for the top of this user's own memory; posted, so no other site can plant one.
          */
         RememberSearchRequest: {
             /**
@@ -20847,27 +18367,15 @@ export interface components {
         };
         /**
          * RemoteAction
-         * @description What a phone may ask one of its screens to do.
+         * @description What a phone may ask a screen to do, spelled as the desktop's shortcut table names it.
          *
-         *     **Spelled exactly as the desktop names the same verb** (`player.*` and `theater.*` in the
-         *     client's table of shortcuts), because on the desktop one table of actions answers both the
-         *     keyboard and the phone: a key and a command reach the same line of code by the same name, so
-         *     a verb cannot work from one and not the other.
-         *
-         *     Where the key is a toggle, the command carries the state wanted (`value` 1 or 0) rather than
-         *     "flip it". Both sides act on the same player: somebody at the desk pausing a moment before
-         *     the phone presses pause would otherwise have the phone's press start it again.
+         *     A toggle carries the state wanted in `value`, never "flip it", as the desk may act first.
          * @enum {string}
          */
         RemoteAction: "player.playPause" | "player.back" | "player.forward" | "player.seekTo" | "player.previous" | "player.next" | "player.volumeTo" | "player.mute" | "player.fill" | "player.favorite" | "player.count" | "theater.pauseAll" | "theater.muteAll" | "theater.cell" | "theater.previous" | "theater.next" | "player.repeat" | "player.shuffle" | "player.loop" | "player.saveLoop" | "player.clip" | "player.random" | "player.quality" | "player.corner" | "theater.pause" | "theater.mute" | "theater.back" | "theater.forward" | "theater.seekTo" | "theater.volumeTo" | "theater.repeat" | "theater.shuffle" | "theater.loop" | "theater.saveLoop" | "theater.random" | "theater.quality" | "theater.solo" | "theater.timer" | "theater.everyCell" | "theater.layout" | "theater.preset" | "theater.corner";
         /**
          * RemoteCommand
-         * @description One command from a phone, as the screen it names receives it.
-         *
-         *     Safe to carry for the reason an opinion is: none of it is a permission. The screen named is
-         *     one this user offered, the verb is one it said it can do, and it travels only to this user's
-         *     own connections. Every connection of the user receives it and only the tab that offered the
-         *     screen acts, which costs one small message per tab and needs no second address on the socket.
+         * @description One command from a phone; safe to carry, as none of it is a permission.
          */
         RemoteCommand: {
             action: components["schemas"]["RemoteAction"];
@@ -20895,10 +18403,7 @@ export interface components {
         };
         /**
          * RenameBatchDone
-         * @description What a batch rename did, or the task carrying it out.
-         *
-         *     `receipt_id` is the one record the whole batch is undone by. `job_id` is set instead when the
-         *     batch runs as a task, and the counts are then zero until it has run.
+         * @description What a batch rename did, or its `job_id` when it runs as a task.
          */
         RenameBatchDone: {
             /** Job Id */
@@ -20914,10 +18419,7 @@ export interface components {
         };
         /**
          * RenameBatchRequest
-         * @description A template to name a set of files by, and what a name that clashes does.
-         *
-         *     The files are named by id, in the order they are shown, which is the order `{n}` counts in:
-         *     a selection on a wall, or every file a folder shows.
+         * @description A template to name files by, in shown order (which `{n}` counts), and what a clash does.
          */
         RenameBatchRequest: {
             /** Asset Ids */
@@ -20933,11 +18435,7 @@ export interface components {
         };
         /**
          * RenamePreview
-         * @description A batch rename planned in full and written nowhere.
-         *
-         *     `rows` is the start of the batch, in order; the counts are the whole of it. `as_task` says
-         *     carrying it out runs as a task with progress rather than while the screen waits. `words` is
-         *     what each naming word means for a file in the library, for the chips that put one in.
+         * @description A batch rename planned in full and written nowhere; `rows` is only the start of it.
          */
         RenamePreview: {
             /** As Task */
@@ -20961,10 +18459,7 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /**
-         * RenameRequest
-         * @description The new name for a file. A name, never a path: the service refuses anything else.
-         */
+        /** RenameRequest */
         RenameRequest: {
             /** Location Id */
             location_id?: string | null;
@@ -20973,12 +18468,7 @@ export interface components {
         };
         /**
          * RenameRow
-         * @description One file of a batch rename: its name now, the name it would get, and what the plan says.
-         *
-         *     `state` is one of `renamed`, `numbered` (the name clashed, so it takes the next number),
-         *     `same` (it keeps its name), `taken` (the name is another file's in that folder, and clashes are
-         *     being left alone), `twice` (an earlier file of this batch takes that name) or `refused`, with
-         *     `reason` saying why.
+         * @description One file of a batch rename and its planned `state`, with `reason` when refused.
          */
         RenameRow: {
             /** After */
@@ -20997,10 +18487,7 @@ export interface components {
         };
         /**
          * RenameSearchRequest
-         * @description A new name for a saved search. The query is not in it, and that is the whole point.
-         *
-         *     Saving already replaces a name's query, and a rename that could rewrite it is one an empty field
-         *     turns into a wipe.
+         * @description A new name for a saved search; the query is not in it, so a rename can never wipe it.
          */
         RenameSearchRequest: {
             /** Name */
@@ -21021,13 +18508,7 @@ export interface components {
         };
         /**
          * ReplayCurve
-         * @description How much of each slice of a file this user has watched, across every sitting.
-         *
-         *     Sent as a normalised curve rather than as milliseconds, because milliseconds is not what the
-         *     reader is being asked. The question a curve under a scrubber answers is "which parts of this
-         *     have I come back to", which is entirely about the peaks relative to each other, and raw times
-         *     would make every consumer divide by its own maximum, which is three places to disagree about
-         *     what the tallest point is.
+         * @description How much of each slice of a file this user has watched, as a normalised curve.
          */
         ReplayCurve: {
             /** Buckets */
@@ -21085,11 +18566,7 @@ export interface components {
         };
         /**
          * RootChange
-         * @description What may be changed about a root after it exists. Neither its name nor its path is here.
-         *
-         *     A root is named by its directory, so renaming the directory is the only rename. Moving a library
-         *     is its own request (`RootMoved`), with every check adding one needs. None leaves a field alone.
-         *     Every root is watched, and handing a folder over is the permission, so only the vault is left.
+         * @description What may be changed about a root after it exists: only the vault. None leaves it alone.
          */
         RootChange: {
             /** Vault */
@@ -21097,24 +18574,13 @@ export interface components {
         };
         /**
          * RootKind
-         * @description Where a root's files actually live.
-         *
-         *     It decides how the library list asks whether the folder is there (every share together, each
-         *     held to its own timeout, where a local folder is one `stat`), and whether the list names the
-         *     device a folder is on. It does NOT decide how the folder is watched: a share on Windows
-         *     reports its own changes through the file server, so every root gets a native
-         *     watch, and one that will not attach falls back to polling on that observation rather than on
-         *     this word. See `watcher._observe`. Repeating the values of the CHECK constraint is unavoidable
-         *     (SQLite takes no placeholder in one) and a test compares the two, so a drift is caught here
-         *     rather than by an insert failing months later.
+         * @description Where a root's files live: how presence is asked, not how it is watched; a test pins it.
          * @enum {string}
          */
         RootKind: "local" | "nas" | "other";
         /**
          * RootMoved
          * @description A library folder that is not where Sift last saw it, and where it is now.
-         *
-         *     Its own request, not a `RootChange` field, so it passes every check adding a library passes.
          */
         RootMoved: {
             /** Abs Path */
@@ -21139,10 +18605,7 @@ export interface components {
         };
         /**
          * RootView
-         * @description A library root, as a screen is allowed to see it.
-         *
-         *     The path is the one field not for everybody: listing roots is admin-only, and an admin typed it.
-         *     It tells apart two folders with similar names, which a generic phrase could not.
+         * @description A library root, as a screen is allowed to see it; the path only reaches an admin.
          */
         RootView: {
             /** Created At */
@@ -21198,9 +18661,7 @@ export interface components {
         };
         /**
          * RoutesResponse
-         * @description The default every site follows, the sites given one of their own, and what can be chosen.
-         *
-         *     The sites come back with the routes, or a screen could show only the ones already set.
+         * @description The default route, the sites given their own, and the sites that can be chosen.
          */
         RoutesResponse: {
             /** Available */
@@ -21252,11 +18713,7 @@ export interface components {
         };
         /**
          * RunNowPasses
-         * @description Every pass a press on a file or a selection can start, grouped the way Importing draws them.
-         *
-         *     Only the passes that run PER FILE. The rest of what Importing's stages do (walking the folders,
-         *     looking for near duplicates, grouping faces, suggesting people) is a question about the whole
-         *     library, and one file is not a smaller copy of it.
+         * @description Every pass a press on a file can start, grouped the way Importing draws them.
          */
         RunNowPasses: {
             /** Groups */
@@ -21277,10 +18734,7 @@ export interface components {
         };
         /**
          * RunNowStarted
-         * @description What one press did, counted, and the sentence the screen says about it.
-         *
-         *     A stage's every-pass press counts FILES, never tasks: a file handed three passes is one file
-         *     queued, and a file left out of any pass for a reason is counted once under that reason.
+         * @description What one press did, counted in files, and the sentence the screen says about it.
          */
         RunNowStarted: {
             /**
@@ -21335,18 +18789,9 @@ export interface components {
         };
         /**
          * RunScope
-         * @description Which of one person's faces a bulk answer on their own screen is about.
+         * @description Which of one person's faces a bulk answer is about: a page and a pick send their ids.
          *
-         *     The three a person's screen offers under its Yes and its No, in the order its menu draws them:
-         *     the faces on the page somebody is looking at, the ones they picked, and every face on the tab.
-         *
-         *     **A page is sent as its faces, not as an offset**, and that is the one judgement here worth
-         *     stating. The screen sizes its pages to the window, so an offset means nothing the server could
-         *     reproduce, and even a reproducible one would be read AFTER the press, by which time answering
-         *     one face has moved every face behind it up a place. Re-reading "page three" would then act on
-         *     faces nobody was shown. The faces that were drawn are the only honest description of what was
-         *     drawn, so `page` and `picked` both carry ids and differ in what the ids ARE; `all` carries
-         *     none, because the tab is the server's to know and a list sent back could be a stale one.
+         *     The ids drawn are the honest description of what was drawn; the whole tab sends none.
          * @enum {string}
          */
         RunScope: "page" | "picked" | "all";
@@ -21380,14 +18825,7 @@ export interface components {
         };
         /**
          * RunWrite
-         * @description A bulk answer about one person's faces, and which of them it is about.
-         *
-         *     Every field has a default so an empty body is the whole tab: what the card on the People Sift
-         *     can recognize wall sends.
-         *
-         *     The ids are NARROWED by the server, never trusted: only a face standing on this tab for this
-         *     person is acted on, so an id answered since the page was drawn, or one that was never theirs,
-         *     is simply not part of the press.
+         * @description A bulk answer about one person's faces; the server narrows the ids, never trusts them.
          */
         RunWrite: {
             /** @default all */
@@ -21482,7 +18920,7 @@ export interface components {
         };
         /**
          * SaveSearchRequest
-         * @description Keep a query under a name. Both are trimmed of surrounding whitespace server-side.
+         * @description Keep a query under a name, trimmed server-side.
          */
         SaveSearchRequest: {
             /**
@@ -21513,9 +18951,7 @@ export interface components {
         };
         /**
          * SavedConnection
-         * @description A site's saved cookies, and what Sift understood of them.
-         *
-         *     Derived facts only, enough to tell a jar saved wrong from right; nothing saved is returned.
+         * @description A site's saved cookies as derived facts; nothing saved is returned.
          */
         SavedConnection: {
             /** Cookies */
@@ -21536,11 +18972,7 @@ export interface components {
         };
         /**
          * SavedSearchOut
-         * @description One saved search, as the client sees it.
-         *
-         *     `query` reads as it would be written today: each thing it names by id is given back by the
-         *     name it has now, so the filter applies and reads under today's names without being rewritten
-         *     when something is renamed. `named` carries what the query cannot say for itself.
+         * @description One saved search, its query read back under today's names.
          */
         SavedSearchOut: {
             /** Id */
@@ -21567,15 +18999,7 @@ export interface components {
         };
         /**
          * ScanStarted
-         * @description The sweep that was queued, so a screen can watch it, and what was left out of it.
-         *
-         *     The last four fields are about the named-files form of the request, where somebody pointed at a
-         *     selection rather than asking for the whole library. A file this user cannot open is not asked
-         *     about, and the reply says so: silence would look exactly like a file that was sent and matched
-         *     nothing.
-         *
-         *     They stay at their defaults for a whole-library or one-folder sweep, which has nothing to
-         *     report yet: it has not worked out which files it will ask about.
+         * @description The sweep that was queued, and which named files were left out of it.
          */
         ScanStarted: {
             /**
@@ -21612,11 +19036,7 @@ export interface components {
         };
         /**
          * ScanWhat
-         * @description What a sweep should cover. Absent means the whole library, which is what it always was.
-         *
-         *     Optional rather than a second route: asking the stash-boxes about a folder and asking them
-         *     about everything is one verb with a scope, and two routes would be two sets of rules about
-         *     who may ask, drifting apart quietly.
+         * @description What a sweep should cover; absent means the whole library.
          */
         ScanWhat: {
             /**
@@ -21641,11 +19061,7 @@ export interface components {
         };
         /**
          * ScheduleUpdate
-         * @description The automatic-backup settings, saved together because they only make sense together.
-         *
-         *     How often and the time of day are left out to keep what is stored: the Backup pane saves the
-         *     folder and the count and does not draw them (they are the task's rows on Tasks). Whether the
-         *     backup starts on its own at all is the task's When, and is not saved here.
+         * @description The automatic-backup settings, saved together; how often and when are the task's.
          */
         ScheduleUpdate: {
             /** At */
@@ -21832,8 +19248,6 @@ export interface components {
         /**
          * SearchOpenedRequest
          * @description A file opened from the wall a typed search narrowed: the words, and the file.
-         *
-         *     A posted body for the reason `RememberSearchRequest` is one.
          */
         SearchOpenedRequest: {
             /** Asset Id */
@@ -21933,10 +19347,6 @@ export interface components {
         /**
          * SemanticAvailable
          * @description Whether searching by meaning can answer anything right now.
-         *
-         *     One boolean for anybody signed in, apart from the admin-only status, whose reasons nobody else
-         *     needs: whether the search box offers the control. Asking anyway is safe and gets the ordinary
-         *     order.
          */
         SemanticAvailable: {
             /** Available */
@@ -21944,11 +19354,7 @@ export interface components {
         };
         /**
          * SemanticCoverage
-         * @description How much of the library a search by meaning can currently reach.
-         *
-         *     Two counts and no percentage, which nobody could check. Scoped to what the asker may see, so
-         *     readable by anybody signed in: the denominator of the honest sentence under results, since
-         *     meaning can only answer from files the background pass has reached.
+         * @description How much of the library a search by meaning can currently reach, for this viewer.
          */
         SemanticCoverage: {
             /**
@@ -21964,8 +19370,7 @@ export interface components {
         };
         /**
          * SemanticStatus
-         * @description What the settings screen draws, and what the feature can currently do. Enabled without
-         *     ready is the ordinary moment after turning it on, and reads as "fetch the models".
+         * @description What the settings screen draws, and what the feature can currently do.
          */
         SemanticStatus: {
             /**
@@ -22028,13 +19433,7 @@ export interface components {
         };
         /**
          * SessionReport
-         * @description One report of a Theater session: the wall opening, or the wall closing.
-         *
-         *     Facts only, the way a sitting's report is. The wall sends one when it opens, with nothing on it
-         *     but the time, and one when it closes, with what it was: the layout, how many cells, what each
-         *     was drawing from, the saved wall it came from, and how many different files it showed. Every
-         *     field is optional so that the opening report is the same shape as the closing one, and so a
-         *     route answering a keepalive from a closing page never refuses the whole report over one field.
+         * @description One report of a Theater session opening or closing; every field is optional.
          */
         SessionReport: {
             /** Arrangement */
@@ -22082,8 +19481,7 @@ export interface components {
         };
         /**
          * SetSiteOptionsRequest
-         * @description What one site (or everything) should do. Absent means "no opinion", which is not the same
-         *     as an empty template: that is the deliberate choice to keep the name the fetcher gave it.
+         * @description What one site (or everything) should do; absent is no opinion, empty keeps the name.
          */
         SetSiteOptionsRequest: {
             /** Dest Folder Id */
@@ -22095,8 +19493,7 @@ export interface components {
         };
         /**
          * SettingsUpdate
-         * @description A batch of changes: setting key to new value. Values are whatever the setting holds (a
-         *     boolean, a number, a string) and are validated against the registered declaration, not here.
+         * @description A batch of changes, setting key to new value, checked against each declaration.
          */
         SettingsUpdate: {
             /** Values */
@@ -22106,11 +19503,7 @@ export interface components {
         };
         /**
          * SettleDisagreement
-         * @description Which answer to keep, for ONE box's row. Keeping your own writes no field.
-         *
-         *     A row is a field on a record as one box sees it, so the box is part of what names it: a record
-         *     two boxes disagree about carries two rows under one field. Required rather than defaulted, since
-         *     a press that does not say which row it is could only be guessed at.
+         * @description Which answer to keep for one box's row; keeping your own writes nothing.
          */
         SettleDisagreement: {
             /** Box Id */
@@ -22129,13 +19522,7 @@ export interface components {
         };
         /**
          * SettleField
-         * @description One conflict, answered on the row it was shown on.
-         *
-         *     A conflict on a file is settled here because the reconcile screen reads linked people, sites
-         *     and tags, never files.
-         *
-         *     Which answer, never the value. The value is re-derived from the same plan the row was drawn
-         *     from, so this cannot be used to write something neither side ever said.
+         * @description One conflict, answered by naming the side; the value is re-derived on the server.
          */
         SettleField: {
             /** Asset Id */
@@ -22153,12 +19540,7 @@ export interface components {
         };
         /**
          * Settled
-         * @description What settling one disagreement did, and the sentence its receipt says.
-         *
-         *     `said` is the receipt's own title, handed back so the toast that confirms the press says what
-         *     the History line says: which value was taken, what it replaced, and (when a second box offered
-         *     a third value) which box's answer the same press set aside. Only the server knows that last
-         *     part, because the second box's row exists only once the first value has been written.
+         * @description What settling one disagreement did, and the receipt's sentence.
          */
         Settled: {
             /**
@@ -22203,10 +19585,7 @@ export interface components {
         };
         /**
          * SetupStatusResponse
-         * @description Whether this instance still needs its one admin created.
-         *
-         *     Public: the sign-in screen must choose its form before anyone signs in, and posting to setup
-         *     reveals the same fact anyway.
+         * @description Whether this instance still needs its one admin created; public by necessity.
          */
         SetupStatusResponse: {
             /** Needs Setup */
@@ -22214,11 +19593,7 @@ export interface components {
         };
         /**
          * ShapeBody
-         * @description A wall's grid, and where each cell sits in it.
-         *
-         *     Only the sizes are bounded here, and only so that a nonsense number never reaches the service.
-         *     Whether the slots actually FIT (inside the grid, one to a square, as many as there are cells)
-         *     is the service's, so that saving a wall and updating one are judged by the same code.
+         * @description A wall's grid, and where each cell sits in it; whether they fit is the service's.
          */
         ShapeBody: {
             /** Cols */
@@ -22231,9 +19606,6 @@ export interface components {
         /**
          * ShareableUserResponse
          * @description A user the share control can offer.
-         *
-         *     The role lets the control grey out an admin with a reason, where leaving them off would read as
-         *     "no such user".
          */
         ShareableUserResponse: {
             /** Id */
@@ -22351,11 +19723,7 @@ export interface components {
         };
         /**
          * SightingView
-         * @description One appearance of one face, with the moment to seek to.
-         *
-         *     `person_id` and `person_name` are absent together. An appearance attributed to somebody the
-         *     viewer has hidden comes back as a face with no name: handing over the id while withholding
-         *     the name would be handing over the fact that a hidden person is in this file.
+         * @description One appearance of one face; `person_id` and `person_name` are withheld together.
          */
         SightingView: {
             /** Art */
@@ -22425,9 +19793,6 @@ export interface components {
         /**
          * SimilarPage
          * @description What looks like this file, and which of the two ways found it.
-         *
-         *     `tier` is reported, never smoothed over: nearly matching perceptual hashes and a model's
-         *     resemblance are different answers, and a screen must not present them alike.
          */
         SimilarPage: {
             /**
@@ -22440,10 +19805,7 @@ export interface components {
         };
         /**
          * SiteAssignment
-         * @description Which files came from which sites, and whether they are being put on or taken off.
-         *
-         *     Both directions: the pickers show a tick, and a tick that cannot be undone lies. The per-file
-         *     `FiledUnder` routes remain where a wrong username (WHO posted it) is corrected.
+         * @description Which files came from which sites, put on or taken off.
          */
         SiteAssignment: {
             /**
@@ -22468,11 +19830,7 @@ export interface components {
         };
         /**
          * SiteDetailsWrite
-         * @description The fields a site gained so a card could be more than a word.
-         *
-         *     The URLs are checked here, not where drawn: more than one place renders them, and `javascript:`
-         *     and `data:` both run as the page. The address is the first of `links` (`sites.SITE_ADDRESS`);
-         *     a `site_url` still sent is ignored like any unknown field.
+         * @description A site's extra fields; URLs are checked here since several places draw them.
          */
         SiteDetailsWrite: {
             /** Aliases */
@@ -22486,9 +19844,7 @@ export interface components {
         };
         /**
          * SiteList
-         * @description One page of the Sites wall, and how many there are for whoever asked.
-         *
-         *     The total comes from the statement the rows came from, so a pager cannot disagree with its page.
+         * @description One page of the Sites wall, with a total from the same statement.
          */
         SiteList: {
             /** Items */
@@ -22516,10 +19872,7 @@ export interface components {
         };
         /**
          * SiteOptionsResponse
-         * @description The answers everything follows, the sites given their own, and the tokens a template may use.
-         *
-         *     The tokens come back with the values, each explained: a template box with no list of what goes
-         *     in it cannot be filled.
+         * @description The answers everything follows, the sites given their own, and the template tokens.
          */
         SiteOptionsResponse: {
             default: components["schemas"]["SiteOptionItem"];
@@ -22534,10 +19887,7 @@ export interface components {
         };
         /**
          * SiteRecordWrite
-         * @description A Site's whole record in one write: its name, and whichever details the caller sent.
-         *
-         *     One body, so every refusal is answered before anything is written and a save lands whole. An
-         *     absent detail is left alone, so a rename alone renames.
+         * @description A Site's whole record in one write, so every refusal comes before anything is written.
          */
         SiteRecordWrite: {
             /** Aliases */
@@ -22690,11 +20040,7 @@ export interface components {
         };
         /**
          * SongSummary
-         * @description One song, as the person asking may know it.
-         *
-         *     The covers are scoped as a Photo Set's are (`PhotoSetSummary`): a cover the viewer may not open
-         *     comes back empty, the same answer a song with no cover gets, and a song with no cover is drawn
-         *     as the music glyph.
+         * @description One song as the person asking may know it; a cover they may not open comes back empty.
          */
         SongSummary: {
             /** Art */
@@ -22770,8 +20116,7 @@ export interface components {
         };
         /**
          * SongsMerged
-         * @description What a merge of songs moved, or would move: the files that change songs, by the songs
-         *     going and the one kept, counted before anything moves (`/songs/weigh-merge`) and after.
+         * @description What merging songs moves, counted before and after.
          */
         SongsMerged: {
             /**
@@ -22787,9 +20132,6 @@ export interface components {
         /**
          * SpriteSheet
          * @description How the scrub strip's frames are laid out on the one image that holds them.
-         *
-         *     Every scrub frame is a tile on one image, and the layout cannot be read off the image (tile
-         *     height follows the video's shape), so it is recorded when built and reported, never assumed.
          */
         SpriteSheet: {
             /** Columns */
@@ -22804,8 +20146,6 @@ export interface components {
         /**
          * StartSwap
          * @description Start a swap: what is offered, through which tunnel, and whether stash-box ids travel.
-         *     With `two_way` (Send and receive), the guest offers too, and what this side takes from it
-         *     goes in `dest_folder_id`.
          */
         StartSwap: {
             /** Chosen */
@@ -22835,7 +20175,7 @@ export interface components {
         };
         /**
          * StarterPerson
-         * @description One of the People the starters press is for: the name to read and the page it opens.
+         * @description One of the People the starters press is for.
          */
         StarterPerson: {
             /** Id */
@@ -22845,10 +20185,7 @@ export interface components {
         };
         /**
          * StartersOffer
-         * @description How many People the press "Use stash-box pictures as starters" would act on, shown first.
-         *
-         *     Linked to a stash-box and holding no reference of any kind. Zero is an answer the pane draws as
-         *     nothing to offer, not an error.
+         * @description How many People "Use stash-box pictures as starters" would act on, shown first.
          */
         StartersOffer: {
             /**
@@ -22861,7 +20198,7 @@ export interface components {
         };
         /**
          * StartersQueued
-         * @description The press, done: the task that fetches and checks the pictures, and how many People it has.
+         * @description The press, done: the task that fetches the pictures, and how many People it has.
          */
         StartersQueued: {
             /** Job Id */
@@ -22871,12 +20208,7 @@ export interface components {
         };
         /**
          * StartersShow
-         * @description Which People the People Sift can recognize wall shows, by what Sift knows them from.
-         *
-         *     A person known only from STARTER pictures (a stash-box's photos, `Origin.SEED`) is one
-         *     Sift may only ask about and never names on its own (`Gallery.starters_only`). A library
-         *     linked to a stash-box holds hundreds of them beside the few with pictures of their own, so the
-         *     wall sets them apart: ONLY is them alone, WITHOUT is everybody else. No value is everybody.
+         * @description Which People the recognize wall shows: those known by starters alone, or everybody else.
          * @enum {string}
          */
         StartersShow: "only" | "without";
@@ -22892,10 +20224,7 @@ export interface components {
         };
         /**
          * StashRead
-         * @description What a Stash database holds, counted, and which folder here each of its folders is.
-         *
-         *     `summary` is every count the screen shows before a run (`reader.Summary`). `mapping` is Stash's
-         *     folder beside the folder in this library it matched, for each one that matched.
+         * @description What a Stash database holds, counted, and which folder here each of its folders matched.
          */
         StashRead: {
             /** Blobs */
@@ -22928,8 +20257,7 @@ export interface components {
         };
         /**
          * StashSwitch
-         * @description The new library is made and the switch to it is arranged: the screen waits for Sift to
-         *     come back on it, as it does for any library it opens.
+         * @description The new library is created and the switch to it arranged.
          */
         StashSwitch: {
             /** Library */
@@ -22939,8 +20267,7 @@ export interface components {
         };
         /**
          * StashUnattached
-         * @description How many People, Sites and Tags a Stash library made here that Stash attached to nothing
-         *     are still here, by kind: the rows each wall lists under `created=stash_unattached`.
+         * @description How many People, Sites and Tags from Stash attached to nothing are still here, by kind.
          */
         StashUnattached: {
             /**
@@ -22961,8 +20288,7 @@ export interface components {
         };
         /**
          * StashWaitingMarker
-         * @description A marker that waits with its video: its title (its first tag where it has none), where it
-         *     starts and where it ends, in milliseconds; no end for a moment.
+         * @description A marker waiting with its video: title, start and end in milliseconds.
          */
         StashWaitingMarker: {
             /** End Ms */
@@ -22986,10 +20312,7 @@ export interface components {
         };
         /**
          * StashWaitingRow
-         * @description One scene or picture that waits for its file, and what waits on it.
-         *
-         *     `paths` are where Stash had its files, as Stash spelt them. `kind` is `scene` or `image`, in
-         *     Stash's words; the screen calls them files and pictures.
+         * @description One scene or picture waiting for its file, with Stash's own paths and kind.
          */
         StashWaitingRow: {
             /** Id */
@@ -23102,9 +20425,6 @@ export interface components {
         /**
          * StopTunnelRequest
          * @description Whether to stop a tunnel now or let the downloads on it finish first.
-         *
-         *     Draining by default: a started transfer cannot be re-routed. Now is for when the traffic itself
-         *     is the reason.
          */
         StopTunnelRequest: {
             /**
@@ -23163,8 +20483,7 @@ export interface components {
         };
         /**
          * StorageView
-         * @description Where Sift keeps its two folders on the computer running it, and what the last move asked
-         *     from another computer came to (null: none was asked since the app started).
+         * @description Where Sift keeps its two folders there, and what the last move came to (null: none).
          */
         StorageView: {
             /** Cache Bytes */
@@ -23183,8 +20502,7 @@ export interface components {
         };
         /**
          * StrengthBasis
-         * @description What a person's strength rests on: her pictures by where they came from (`turned` are kept
-         *     for her and never compared), and her faces Sift found, by what it did with them.
+         * @description What a person's strength rests on: her pictures by origin, and her faces by outcome.
          */
         StrengthBasis: {
             /**
@@ -23228,10 +20546,7 @@ export interface components {
              */
             yes: number;
         };
-        /**
-         * StudioAnswered
-         * @description One answer about a studio, with the receipt its Undo is pressed on.
-         */
+        /** StudioAnswered */
         StudioAnswered: {
             /** Pieces */
             pieces: components["schemas"]["HistoryPiece"][];
@@ -23242,7 +20557,7 @@ export interface components {
         };
         /**
          * StudioQuestionView
-         * @description A Site a stash-box made that may be one person's own store, with the signs behind asking.
+         * @description A Site a stash-box made that may be one person's own store.
          */
         StudioQuestionView: {
             /** Credited */
@@ -23338,10 +20653,6 @@ export interface components {
         /**
          * Suggestions
          * @description What the dropdown should show: the filters, matches for what is being typed, and recents.
-         *
-         *     One response because the dropdown is one list. Inside a `people:ja` token only `matches`
-         *     answers; elsewhere a bare word may start a filter's name or name a thing, so filters, matches
-         *     and recent searches are offered together, in that order.
          */
         Suggestions: {
             /**
@@ -23427,8 +20738,7 @@ export interface components {
         };
         /**
          * SwapDevice
-         * @description This install's device id, or null before the first swap made one; and whether the saved
-         *     keys are locked (a device id cannot be made or reset until an admin signs in again).
+         * @description This install's device id, or null before the first swap; and whether the keys are locked.
          */
         SwapDevice: {
             /** Device Id */
@@ -23441,8 +20751,7 @@ export interface components {
         };
         /**
          * SwapDirection
-         * @description One direction of a swap that sends and receives, from this side: what was offered, what
-         *     was wanted, what has moved (sent or received), and the pace while it moves.
+         * @description One direction of a two-way swap from this side: offered, wanted, moved, and the pace.
          */
         SwapDirection: {
             /**
@@ -23485,12 +20794,6 @@ export interface components {
         /**
          * SwapRefusal
          * @description Where one thing stands with swaps: its own switch, whether it is out at all, and why.
-         *
-         *     `kept_out_here` is the switch on the thing itself; `kept_out` is the whole rule, which takes in
-         *     "Do not enrich" and, for a file, anything it is filed under. `why` is empty when the thing's
-         *     own switch is the reason or when it is not out at all. `kept_local_here` is its own "Don't
-         *     enrich" switch, and `by` names what a file is filed under that keeps it out (what a press on
-         *     a file swap mode will not send says it by), never anything this viewer may not see.
          */
         SwapRefusal: {
             /**
@@ -23520,10 +20823,6 @@ export interface components {
         /**
          * SwapSession
          * @description One session as the swap screen draws it: its state, the code, the counts, the rate.
-         *
-         *     `sent_files` on the guest's side counts files received. `token` is the host's own, while it is
-         *     waiting for somebody to join, and null otherwise. `code` is null until the two devices have
-         *     said hello. `offer` is the guest's offer screen once the offer has arrived.
          */
         SwapSession: {
             /**
@@ -23617,10 +20916,7 @@ export interface components {
         };
         /**
          * SwapTunnel
-         * @description One tunnel as the swap screens choose from it: its name, its server, whether it can host.
-         *
-         *     `can_host` is null until a swap has been started on it, which is the only way to find out: the
-         *     provider answers the question when asked for a port, and not before.
+         * @description One tunnel as the swap screens choose from it; `can_host` is null until a swap has tried.
          */
         SwapTunnel: {
             /** Can Host */
@@ -23634,13 +20930,7 @@ export interface components {
         };
         /**
          * SwapWeight
-         * @description How many files and how many bytes: what the picks would offer (the sender's side, read as
-         *     the offer reads them, Hidden open), or what an answer to an offer would bring (the receiver's
-         *     side).
-         *
-         *     Ahead of the press that starts it, what the picks leave out and why (`weight.left_out`): every pick that wears a
-         *     mark, by name, and how many more files a mark on something they are filed under keeps back.
-         *     Empty for an answer to an offer.
+         * @description How many files and bytes the picks would offer, or an answer would bring, and what is out.
          */
         SwapWeight: {
             /**
@@ -23692,11 +20982,7 @@ export interface components {
         };
         /**
          * TagAssignment
-         * @description Which assets, and which tags, and whether they are going on or coming off.
-         *
-         *     Both sides are lists, so one call covers one chip on one clip and a selection. `add=False`
-         *     reverses it rather than being another endpoint, which would be another place to miss the
-         *     permission check.
+         * @description Which assets, which tags, and whether they are going on or coming off.
          */
         TagAssignment: {
             /**
@@ -23712,8 +20998,6 @@ export interface components {
         /**
          * TagList
          * @description One page of the Tags wall, and how many there are for whoever asked.
-         *
-         *     The total comes from the statement the rows came from, so a pager cannot disagree with its page.
          */
         TagList: {
             /** Items */
@@ -23728,8 +21012,6 @@ export interface components {
         /**
          * TagOnCollection
          * @description One tag, as a collection carries it.
-         *
-         *     This slice's own model rather than another's import: two fields are not worth coupling features.
          */
         TagOnCollection: {
             /** Id */
@@ -23739,9 +21021,7 @@ export interface components {
         };
         /**
          * TagOnEntity
-         * @description One tag, as a person or a site carries it.
-         *
-         *     Its own model rather than the tags slice's: two fields are not worth coupling two slices.
+         * @description One tag as a person or a site carries it.
          */
         TagOnEntity: {
             /** Id */
@@ -23765,10 +21045,7 @@ export interface components {
         };
         /**
          * TagStateView
-         * @description One person's opinion of one TAG, handed back so an optimistic control can settle.
-         *
-         *     A type of its own though the fields match the asset view: different questions, so a shared
-         *     model would be a shared model to change.
+         * @description One person's opinion of one tag, handed back so an optimistic control can settle.
          */
         TagStateView: {
             /**
@@ -23782,8 +21059,6 @@ export interface components {
         /**
          * TagView
          * @description A tag, and how many assets the person asking can see under it.
-         *
-         *     The count is theirs, not the library's: two users asking get different numbers.
          */
         TagView: {
             /** Art */
@@ -23868,7 +21143,7 @@ export interface components {
         };
         /**
          * TagWrite
-         * @description Creating a tag, or renaming one. The same fields either way.
+         * @description Creating a tag, or renaming one.
          */
         TagWrite: {
             /** Aliases */
@@ -23884,11 +21159,7 @@ export interface components {
         };
         /**
          * TakeFields
-         * @description Which of a linked box's fields to take onto the record, by field key.
-         *
-         *     Empty is a real answer: somebody linked the entry and took none of its fields, and the run is
-         *     written down as having filled nothing in, which is the difference between "filled nothing"
-         *     and "Sift has no record of this" on the ledger.
+         * @description Which of a linked box's fields to take onto the record; empty records that none was.
          */
         TakeFields: {
             /** Keys */
@@ -23896,8 +21167,7 @@ export interface components {
         };
         /**
          * TakeOffer
-         * @description The guest's answer to the offer screen: the offered people it skipped, by their index in the
-         *     offer, and the files it unticked, by the offer's key. Everything else not already held is taken.
+         * @description The guest's answer to the offer screen: the people it skipped and the files it unticked.
          */
         TakeOffer: {
             /**
@@ -23911,10 +21181,7 @@ export interface components {
              */
             unticked: string[];
         };
-        /**
-         * Taken
-         * @description What taking a box's fields actually wrote. Every number is a field that landed.
-         */
+        /** Taken */
         Taken: {
             /**
              * Fields
@@ -24140,17 +21407,7 @@ export interface components {
         };
         /**
          * ToCheckCard
-         * @description One item of the review list: a person's proposals, a group of faces nobody has named, or a
-         *     file whose one face is not the person already filed on it.
-         *
-         *     One shape for all three because they are one list (what is left to check, in the order of how
-         *     much one press settles), and `kind` says which of the three questions this card asks. Several
-         *     shapes in one list would be a client working out which it was holding from which fields
-         *     happened to be filled in, which is the reading that goes wrong the day a group carries a name.
-         *
-         *     `size` is what one press settles, as this viewer may see it: the proposals standing for a
-         *     person, or the faces in a pile. `best` belongs to a proposal alone (a pile carries no
-         *     measurement of who it might be), and `status` to a pile alone.
+         * @description One item of the review list, its `kind` saying which of the questions it asks.
          */
         ToCheckCard: {
             /** Best */
@@ -24186,29 +21443,13 @@ export interface components {
         };
         /**
          * ToCheckKind
-         * @description What one item of the review list is a question about.
-         *
-         *     The list is one list on purpose (what is left to check, in the order of how much one press
-         *     settles), and it holds three different questions. PERSON is "do these faces look like somebody
-         *     Sift already knows", which one press answers for every proposal standing for them. GROUP is
-         *     "who is this", asked about a pile of faces that resemble each other and nobody yet. MISMATCH is
-         *     the one that runs the other way: "is the name already on this file the person in it".
-         *
-         *     Named rather than worked out from which fields are filled in. A reader that decided from the
-         *     presence of a name would call a group whose faces carry no name a person the day a group gains
-         *     one, and the two cards are drawn differently.
+         * @description What one item of the review list is a question about; named, never inferred from fields.
          * @enum {string}
          */
         ToCheckKind: "person" | "may_be" | "group" | "mismatch";
         /**
          * ToCheckPage
-         * @description One page of the review list, how long it is, and how many groups the floor holds back.
-         *
-         *     `small_groups` is the count of unnamed groups under the floor: not listed and not counted in
-         *     `total`, said in one line at the foot of the list, and opened by asking for them. It is answered
-         *     beside the page rather than by a second request so the line and the list are one reading of the
-         *     library: a count taken a moment later would disagree with the list above it as soon as
-         *     anything was decided.
+         * @description One page of the review list, its total, and the groups under the floor counted beside it.
          */
         ToCheckPage: {
             /**
@@ -24234,24 +21475,13 @@ export interface components {
         };
         /**
          * ToCheckShow
-         * @description Which part of the review list is being asked for.
-         *
-         *     WAITING is the list itself: the proposals, then the groups big enough to be worth a question.
-         *     SMALL is what the floor holds back, opened from the line at the foot of that list: the same
-         *     cards, so nothing is hidden and nothing is a different screen. IGNORED is what somebody set
-         *     aside, which is a filter on this list rather than a tab of its own: it is the same question
-         *     answered no, and it belongs beside the question.
+         * @description Which part of the review list is asked for: the list, the small groups, or set aside.
          * @enum {string}
          */
         ToCheckShow: "waiting" | "small" | "ignored";
         /**
          * TunnelItem
-         * @description One tunnel as the settings screen sees it.
-         *
-         *     No public key: it names the provider account and nobody acts on it. The server's address is
-         *     carried (admin-only, mostly covered until asked): it tells a tunnel to the wrong country apart.
-         *     `enabled` is what was asked for, `up` that the far end answered recently; the gap between them
-         *     is worth seeing.
+         * @description One tunnel as the settings screen sees it; no public key, which names the account.
          */
         TunnelItem: {
             /** Can Host */
@@ -24288,16 +21518,7 @@ export interface components {
         };
         /**
          * Turn
-         * @description Which way round the picture goes. Quarter turns, and the two mirrors.
-         *
-         *     Turns are quarters rather than an angle in degrees, because these are the only ones that cost
-         *     nothing in quality on a decoded frame and the only ones anybody asks for. An arbitrary angle has
-         *     to invent pixels in the corners, which is a different feature and a worse one.
-         *
-         *     A mirror is not a turn and is kept here anyway. It is the same shape of request (one named way
-         *     of putting the picture round, no numbers, no refusals of its own), and separating them would
-         *     mean a second operation, a second verb in the record and a second branch everywhere, to say a
-         *     thing the person experiences as the fourth button in the same row.
+         * @description Which way round the picture goes: quarter turns, and the two mirrors.
          * @enum {string}
          */
         Turn: "right" | "left" | "half" | "mirror" | "flip";
@@ -24331,10 +21552,7 @@ export interface components {
         };
         /**
          * UndoPoint
-         * @description What would take one event back.
-         *
-         *     The kind travels with the id because there are two doors (a move through the organizer, a
-         *     decision through the workbench), and a client must not keep its own copy of that mapping.
+         * @description What would take one event back; the kind names which of two doors.
          */
         UndoPoint: {
             /** Id */
@@ -24344,11 +21562,7 @@ export interface components {
         };
         /**
          * UndoneFoldView
-         * @description What taking back a whole folded row did: how many were put back, out of how many there were.
-         *
-         *     Two numbers rather than one, because the difference is a real state and a common one: a run
-         *     where somebody has already undone a few by hand comes back with fewer put back than there were,
-         *     and that is not a failure. A single count could not tell it from one.
+         * @description What taking back a whole folded row did: how many were put back, out of how many.
          */
         UndoneFoldView: {
             /**
@@ -24365,10 +21579,6 @@ export interface components {
         /**
          * UndoneView
          * @description Whether anything was put back, and for a decision of many acts, how many of them.
-         *
-         *     `undone` is true when any went back. The counts say whether that was all of them: a batch of
-         *     renames where some files were renamed again since goes back only in part, and a screen that
-         *     read the yes alone would tell somebody every name was back.
          */
         UndoneView: {
             /**
@@ -24411,8 +21621,7 @@ export interface components {
         };
         /**
          * UnmarkedBackupView
-         * @description One backup in the folder no rule deletes: one whose name says nothing about which library
-         *     made it, or one this library saved by hand.
+         * @description One backup no rule deletes: unmarked by library, or saved here by hand.
          */
         UnmarkedBackupView: {
             /** Name */
@@ -24439,8 +21648,7 @@ export interface components {
         };
         /**
          * UpdateTaken
-         * @description What the app there said to an update: the version whose installer it is opening THERE, or
-         *     the reason it installs nothing (`none` is no release newer than the one running).
+         * @description What the app said to an update: the version it is installing, or why it installs nothing.
          */
         UpdateTaken: {
             /** Ok */
@@ -24462,8 +21670,7 @@ export interface components {
         };
         /**
          * UserDisabledRequest
-         * @description Whether the user may sign in. Sent as the state it should be in rather than as a verb,
-         *     so pressing the same switch twice is not two different requests.
+         * @description Whether the user may sign in, as a state, so pressing twice is one request.
          */
         UserDisabledRequest: {
             /** Disabled */
@@ -24471,10 +21678,7 @@ export interface components {
         };
         /**
          * UserResponse
-         * @description One user on the management screen.
-         *
-         *     Nothing derived from the password or PIN: whether somebody set a PIN is their business, and
-         *     the vault it opens is theirs.
+         * @description One user on the management screen; nothing derived from the password or PIN.
          */
         UserResponse: {
             /** Created At */
@@ -24490,10 +21694,7 @@ export interface components {
         };
         /**
          * UsernameChangeRequest
-         * @description A new name for a user. Nothing else about it changes.
-         *
-         *     No password field: the master key is wrapped by the password against a stored salt, never the
-         *     name, so nothing is re-proved, and an admin renaming somebody else does not have it.
+         * @description A new name for a user; no password, since the key is never wrapped by the name.
          */
         UsernameChangeRequest: {
             /** Username */
@@ -24501,11 +21702,7 @@ export interface components {
         };
         /**
          * UsernameMerge
-         * @description Say who a username belongs to: somebody who already exists, or somebody new.
-         *
-         *     Exactly one of the two: attaching and creating somebody new have different consequences, and a
-         *     field meaning either would make the dangerous one the accident. `as_alias` (on by default)
-         *     keeps the person findable by the username's spelling; off for a stage name nobody would type.
+         * @description Say who a username belongs to: an existing person or a new one, exactly one.
          */
         UsernameMerge: {
             /**
@@ -24518,10 +21715,7 @@ export interface components {
             /** Person Id */
             person_id?: string | null;
         };
-        /**
-         * UsernamePageView
-         * @description A page of usernames, and how many there are for whoever asked.
-         */
+        /** UsernamePageView */
         UsernamePageView: {
             /** Items */
             items: components["schemas"]["UsernameView"][];
@@ -24549,12 +21743,7 @@ export interface components {
         };
         /**
          * UsernameView
-         * @description One username on one site, as the lists that show it read it.
-         *
-         *     A username has NO PAGE: it is drawn under its person and on a site's People tab, and a press
-         *     opens its person or Browse narrowed to it, so the count and the site's logo ride on those lists
-         *     (`list_usernames`). One identity on one site, never a second Person; it can outlive whoever was
-         *     behind it. `person_id` null is the ordinary state, what the Organize queue exists to answer.
+         * @description One username on one site; it has no page of its own and `person_id` is often null.
          */
         UsernameView: {
             /**
@@ -24596,10 +21785,7 @@ export interface components {
         };
         /**
          * UsernameWrite
-         * @description The editable half of a username: what it is called, its page, its ID and who it belongs to.
-         *
-         *     A field left out is left alone, not blanked: the route asks which fields were sent, or a caller
-         *     sending only a display name would detach the person.
+         * @description A username's editable fields; one left out is left alone, not blanked.
          */
         UsernameWrite: {
             /** Display Name */
@@ -24646,9 +21832,6 @@ export interface components {
         /**
          * VaultSourceResponse
          * @description One thing the caller has hidden that is concealing this, and what to call it.
-         *
-         *     Beside the grants, not among them: a hide is about the caller's own screen, withheld from them
-         *     alone, so the panel draws it as its own block.
          */
         VaultSourceResponse: {
             /** Here */
@@ -24689,11 +21872,7 @@ export interface components {
         };
         /**
          * ViewReport
-         * @description What one sitting with one file actually consisted of.
-         *
-         *     Facts, and only facts. Not one field here says "this was a view" or "this is finished": those
-         *     are conclusions, and the server draws them, because three screens send this and a rule enforced
-         *     in a browser is enforced three times. See `record_view`.
+         * @description What one sitting with one file consisted of: facts only; the server draws conclusions.
          */
         ViewReport: {
             /** Already Reported Ms */
@@ -24752,11 +21931,7 @@ export interface components {
         };
         /**
          * ViewerResponse
-         * @description Who the caller is, plus the token they must echo on state-changing requests.
-         *
-         *     The role and `can_save_to_device` are courtesies for laying out the screen (an admin may always
-         *     save, a guest when an admin allows), never trusted back: the server re-reads the role on every
-         *     request and the save endpoint decides for itself.
+         * @description Who the caller is and the CSRF token; the role is a layout courtesy, never trusted back.
          */
         ViewerResponse: {
             /** Boot */
@@ -24984,12 +22159,7 @@ export interface components {
         };
         /**
          * WorkLeft
-         * @description What a running scan still has to get through.
-         *
-         *     Two numbers because the second cannot be got from the first. Files left is what a bar counts
-         *     down; moments are what those files COST (one seek, one decode, one look), and unlike a file,
-         *     one moment costs about the same as the next whatever it was cut from. An estimate of the time
-         *     remaining built on files lurches every time the queue reaches a run of long videos.
+         * @description What a running scan still has to get through: files, and the moments they cost.
          */
         WorkLeft: {
             /**
@@ -25005,9 +22175,7 @@ export interface components {
         };
         /**
          * CoverWrite
-         * @description Which item to wear as the cover, or null to go back to none.
-         *
-         *     The asset must be in the collection, or a cover would be a second, weaker kind of membership.
+         * @description Which item to wear as the cover (it must be in the collection), or null for none.
          */
         sift__slices__collections__models__CoverWrite: {
             /** Asset Id */
@@ -25020,8 +22188,7 @@ export interface components {
         };
         /**
          * FavoriteWrite
-         * @description The heart. Independent of the stars: favouriting a three-star collection is not a
-         *     contradiction, and clearing the heart leaves the rating alone.
+         * @description The heart, independent of the stars.
          */
         sift__slices__collections__models__FavoriteWrite: {
             /** Favorite */
@@ -25029,8 +22196,7 @@ export interface components {
         };
         /**
          * ItemsWrite
-         * @description Adding to or removing from a collection: one body with a named action, so the two cannot
-         *     drift in what they accept.
+         * @description Adding to or removing from a collection: one body, so the two cannot drift.
          */
         sift__slices__collections__models__ItemsWrite: {
             /**
@@ -25044,9 +22210,7 @@ export interface components {
         };
         /**
          * RatingWrite
-         * @description Whole stars, or null to clear them.
-         *
-         *     Zero is refused: a caller means "unrated" by it, and stored it would sort as a real rating.
+         * @description Whole stars, or null to clear; zero is refused so it never sorts as a real rating.
          */
         sift__slices__collections__models__RatingWrite: {
             /** Rating */
@@ -25055,8 +22219,6 @@ export interface components {
         /**
          * VaultWrite
          * @description Put a collection in the vault, or take it back out.
-         *
-         *     Answered with no body: describing what was just concealed would contradict it.
          */
         sift__slices__collections__models__VaultWrite: {
             /** Vault */
@@ -25064,7 +22226,7 @@ export interface components {
         };
         /**
          * CoverWrite
-         * @description The still a person or a site is drawn as, or None to go back to having none.
+         * @description The still a person or a site is drawn as, or None for none.
          */
         sift__slices__people__models__CoverWrite: {
             /** Asset Id */
@@ -25080,10 +22242,7 @@ export interface components {
             /** Favorite */
             favorite: boolean;
         };
-        /**
-         * LinkView
-         * @description Somewhere a person can be found, as a screen reads it.
-         */
+        /** LinkView */
         sift__slices__people__models__LinkView: {
             /** Id */
             id: string;
@@ -25100,11 +22259,7 @@ export interface components {
         };
         /**
          * LinkWrite
-         * @description A link being added.
-         *
-         *     Checked for shape and scheme, then stored as written: normalising would decide that two
-         *     spellings are one address, and sometimes lose a link. Only http and https, one rule rather than
-         *     a list of dangerous schemes (a `javascript:` link is the oldest trick).
+         * @description A link, stored as written; only http and https.
          */
         sift__slices__people__models__LinkWrite: {
             /** Label */
@@ -25114,9 +22269,7 @@ export interface components {
         };
         /**
          * RatingWrite
-         * @description Stars, or None to clear them.
-         *
-         *     Zero is refused, as for an asset: stored it would sort and filter as a real rating.
+         * @description Stars, or None to clear them; zero is refused.
          */
         sift__slices__people__models__RatingWrite: {
             /** Rating */
@@ -25124,9 +22277,7 @@ export interface components {
         };
         /**
          * VaultWrite
-         * @description Put a site in the vault, or take it back out.
-         *
-         *     Answered with no body: describing what was just concealed would contradict it.
+         * @description Put a site in the vault or take it out; no body, which would describe what was hidden.
          */
         sift__slices__people__models__VaultWrite: {
             /** Vault */
@@ -25168,8 +22319,7 @@ export interface components {
         };
         /**
          * RatingWrite
-         * @description Stars, or null to clear them. Zero is not a rating: clearing is null, so a query for
-         *     "rated at all" is a null check rather than a magic number somebody has to remember.
+         * @description Stars, or null to clear them; zero is not a rating.
          */
         sift__slices__photo_sets__models__RatingWrite: {
             /** Rating */
@@ -25182,8 +22332,7 @@ export interface components {
         };
         /**
          * CoverWrite
-         * @description The picture the song is drawn as. Null takes the cover off, and the music glyph is drawn.
-         *     The same fields as `PhotoSets.CoverWrite`, for the same reasons.
+         * @description The picture the song is drawn as, or null for none, as `PhotoSets.CoverWrite`.
          */
         sift__slices__songs__models__CoverWrite: {
             /** Asset Id */
@@ -25223,10 +22372,7 @@ export interface components {
             /** Vault */
             vault: boolean;
         };
-        /**
-         * LinkView
-         * @description One stash-box's kept record of one subject, as a screen reads it.
-         */
+        /** LinkView */
         sift__slices__stash_boxes__models__LinkView: {
             /** Box Id */
             box_id: string;
@@ -25247,10 +22393,7 @@ export interface components {
             /** Remote Id */
             remote_id: string;
         };
-        /**
-         * LinkWrite
-         * @description Which entry in a stash-box a subject is. The id is theirs, not Sift's.
-         */
+        /** LinkWrite */
         sift__slices__stash_boxes__models__LinkWrite: {
             /** Remote Id */
             remote_id: string;
@@ -25258,9 +22401,6 @@ export interface components {
         /**
          * CoverWrite
          * @description The still a tag is drawn as, or None to go back to having none.
-         *
-         *     Each slice declares its own copy rather than reaching into another slice's models: the copies
-         *     are identical only as long as the features agree, which nobody can promise.
          */
         sift__slices__tags_ratings__models__CoverWrite: {
             /** Asset Id */
@@ -25273,8 +22413,7 @@ export interface components {
         };
         /**
          * FavoriteWrite
-         * @description The heart. Independent of the rating: favouriting a three-star clip is not a contradiction,
-         *     and clearing the heart leaves the stars alone.
+         * @description The heart, independent of the rating.
          */
         sift__slices__tags_ratings__models__FavoriteWrite: {
             /** Favorite */
@@ -25282,10 +22421,7 @@ export interface components {
         };
         /**
          * RatingWrite
-         * @description Whole stars, or null to clear it.
-         *
-         *     Zero is refused: a caller means "unrated" by it, and stored it would sort and filter as a real
-         *     rating, so clearing says null.
+         * @description Whole stars, or null to clear; zero is refused so it never sorts as a real rating.
          */
         sift__slices__tags_ratings__models__RatingWrite: {
             /** Rating */
@@ -25294,8 +22430,6 @@ export interface components {
         /**
          * VaultWrite
          * @description Put a tag in the vault, or take it back out.
-         *
-         *     Answered with no body: describing what was just concealed would contradict it.
          */
         sift__slices__tags_ratings__models__VaultWrite: {
             /** Vault */

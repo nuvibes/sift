@@ -1,22 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Turning a folder somebody chose for downloads into the library folder the server files them in.
- *
- * The default downloads folder is a LIBRARY folder: the server files every download into one, by
- * its id, so a download is imported the moment it lands. A person choosing one points at a place on
- * the disk instead, with the operating system's picker or by typing it. This answers which of three
- * things that place is, and makes it a library folder where it is not one yet:
- *
- *   - already a folder of the library: it is used as it is;
- *   - inside a library, below folders the library has not recorded: each is placed, one level at a
- *     time, through the same door every other new folder uses: made where the disk has nothing by
- *     that name, and recorded where it has an empty folder no scan has reached yet;
- *   - outside every library: it is added as a library folder of its own, and read, so what is
- *     already in it arrives too. The row says so before anybody chooses.
- *
- * Every refusal is the server's own sentence (a folder Sift may not write in, one that overlaps a
- * library, a name already taken), handed back as it came.
- */
+/* Turning a folder somebody chose for downloads into the library folder the server files them
+ * in. */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -55,9 +39,7 @@ export interface FolderSteps {
 const NOT_FOUND_AFTER_ADDING =
 	"Sift added that folder but couldn't find it in your library. Choose it from the list instead.";
 
-/* A path as its separate names, so `C:\Media\` and `C:/Media` are one place. A Windows path (a
-   drive letter, or a share written with two backslashes) is compared without regard to case,
-   because Windows treats it that way; any other path keeps its case. */
+/* A path as its separate names, so `C:\Media\` and `C:/Media` are one place. */
 function segments(path: string): string[] {
 	return path
 		.trim()
@@ -130,8 +112,7 @@ export const LIBRARY_STEPS: FolderSteps = {
 		try {
 			await api.post('/library/grants', { body: { path } });
 		} catch {
-			/* Already handed over, or inside a folder that was. Anything genuinely wrong with the
-			   folder is said again by adding it, in a sentence about what was asked for. */
+			/* Already handed over, or inside a folder that was. */
 		}
 	},
 	addRoot: async (path) => {

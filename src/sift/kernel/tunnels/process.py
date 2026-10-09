@@ -1,40 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Named ways out to the internet, and the processes behind them.
+"""Named ways out to the internet, and the WireGuard client processes behind them.
 
-A tunnel is a WireGuard configuration from a VPN provider, run by a userspace client that needs no
-root, no network adapter and no driver install. The client exposes an ordinary HTTP proxy on a
-loopback port, and that port is the whole of what the rest of Sift knows about it: a site routed
-through a tunnel is fetched with that proxy set, by every one of the ways Sift reaches the network.
-
-In the kernel rather than in the download slice because two features run through the same client:
-downloads go OUT of it, and a swap is HOSTED on it: a listener inside the tunnel that the
-VPN provider forwards one public port to (see `Listener`). One VPN key cannot run twice, so both
-live in the one process, and the thing that owns that process cannot belong to either feature.
-
-Three properties are the point of this module, and each is a way the feature can be worse than
-useless if it is got wrong.
-
-**Up means a handshake happened.** A process that started is not a tunnel that works: a wrong key,
-a dead endpoint or a blocked port all leave the client running and answering. So a tunnel does not
-read as up until the far end has actually replied, and it stops reading as up when the last reply
-gets old.
-
-**Turning one off drains rather than kills.** A transfer cannot be re-routed mid-stream, so stopping
-a tunnel under a running download would either cut the download off or, far worse, leak the rest of
-it out of another path. Disabling therefore stops new work from taking the tunnel and waits for what
-is already using it. Stopping it outright is a separate, deliberate act for when the point is to
-stop the traffic now.
-
-**The configuration is a private key.** It is sealed in the secret store and only ever written to
-disk while a tunnel is starting, into a file only this process can read, and removed once the client
-has parsed it. That the client needs the key in a file at all is its interface; how long the file
-exists is not.
-
-Who owns what, where both sides could have an opinion: Sift owns which sites use which tunnel, and
-when a tunnel starts and stops. The client owns the tunnel itself (the handshake, the rekeying,
-the keepalive), because it is the side holding the socket. Sift asks it how it is doing and does
-not second-guess the answer.
-"""
+Up means a handshake happened; turning one off drains; the configuration is a private key."""
 
 from __future__ import annotations
 
@@ -66,53 +33,34 @@ from sift.kernel.tunnels.client import client_fault
 
 log = get_logger(__name__)
 
-#: The WireGuard client that carries a tunnel, found beside Sift's other vendored tools before it is
-#: looked for on PATH, like every other program Sift ships. A bare name is right only where a
-#: package puts it on PATH; on Windows nothing does, so starting a tunnel would raise
-#: FileNotFoundError out of asyncio and reach the browser as "Something went wrong." See
-#: scripts/vendor_manifest.json.
+#: Found beside Sift's other vendored tools first; on Windows nothing puts it on PATH.
 TUNNEL_BINARY = vendored_tool("wireproxy")
 
-#: How long to wait for a tunnel's far end to answer before calling the tunnel dead. Generous: a
-#: handshake is one round trip, but a machine that has just woken or a provider under load can take
-#: several attempts, and the client retries on its own.
+#: Generous: a woken machine or a loaded provider can take several attempts.
 TUNNEL_HANDSHAKE_TIMEOUT_SECONDS = 20.0
 
-#: How old the last answer may be before a tunnel stops reading as up. WireGuard rekeys every two
-#: minutes under traffic and the keepalive is far shorter, so nothing older than this is a tunnel
-#: still carrying anything.
+#: WireGuard rekeys every two minutes under traffic, so anything older carries nothing.
 TUNNEL_STALE_HANDSHAKE_SECONDS = 300.0
 
-#: Where the VPN provider's port-forwarding service answers, INSIDE the tunnel: the gateway address
-#: and the NAT-PMP port the protocol fixes (5351). It is the address the one provider Sift has
-#: measured answers on through this client, and it is a fact about that provider rather than about
-#: WireGuard: a provider that answers somewhere else simply never replies, and hosting then says the
-#: tunnel cannot host rather than guessing.
+#: The provider's NAT-PMP service inside the tunnel; a provider elsewhere simply never replies.
 NATPMP_GATEWAY = "10.2.0.1:5351"
 
 _CONFIGTEST_TIMEOUT = 15.0
 _HEALTH_TIMEOUT = 3.0
 _POLL_INTERVAL = 0.5
-#: How many pairs of ports one start tries before it gives up. A pair is free when the operating
-#: system hands it over and is taken a moment later only if another program binds that exact port
-#: in the few milliseconds before the client does, so a second pair is a remedy, and a third
-#: failure says something on this device is taking ports as fast as they are freed.
+#: A second pair remedies a race for a port; a third failure means something takes them all.
 _PORT_ATTEMPTS = 3
-#: What every tunnel client's configuration folder is named from. The rest of the name is the
-#: store's token and a random tail (see `TunnelProcess._token`).
+#: Every client's configuration folder starts with this (see `TunnelProcess._token`).
 _FOLDER_PREFIX = "sift-tunnel-"
 #: How long a client gets to close its socket after being asked to stop, before it is killed.
 _STOP_GRACE_SECONDS = 5.0
-#: The client redacts its own keys before answering. Two fields are read out of what is left; the
-#: rest (public keys, byte counters, allowed ranges) reaches no screen and no log.
+#: The client redacts its keys; only two fields are read, and nothing else reaches a log.
 _HANDSHAKE_FIELD = "last_handshake_time_sec="
 
 #: The server this tunnel is talking to, as `address:port`. Only the address half is kept.
 _ENDPOINT_FIELD = "endpoint="
 
-#: Where a tunnel's exit is asked, through the tunnel's own proxy: an echo that answers with the
-#: IPv4 address the request arrived from and nothing else. The provider's server is what it sees,
-#: never this device.
+#: An echo answering with the IPv4 address a request came from: the provider's server.
 EXIT_ECHO_URL = "https://api.ipify.org"
 #: How long the echo is given, and the most of its answer read: an IPv4 address is 15 characters.
 _EXIT_TIMEOUT = 5.0
@@ -128,23 +76,10 @@ class TunnelConfigInvalid(TunnelError):
 
 
 class TunnelClientLost(TunnelError):
-    """The tunnel program is gone from where the pack put it, or is not the file it shipped. The
-    words are `client.CLIENT_REMOVED` or `client.CLIENT_CHANGED`, already logged once by the check,
-    so a caller that logs its failures leaves this one out."""
+    """The tunnel program is gone or altered; the check already logged it once."""
 
 
-#: What to say when the WireGuard client itself is not on the machine.
-#:
-#: A SENTENCE AND NOT A STACK TRACE. Sift launches the client as a process, and a process that is
-#: not there raises FileNotFoundError from deep inside asyncio, which, uncaught, reaches the
-#: browser as a 500 and the words "Something went wrong.". That is the least actionable thing a
-#: screen can say about a fault with exactly one cause and one fix.
-#:
-#: AND IT NAMES THE ANTIVIRUS, because that is the other way the program goes. A tunnel client is
-#: the kind of small network program a virus scanner can flag and take off a disk without
-#: asking, and "the installation is incomplete" alone sends somebody looking for a fault in an
-#: install that was complete the day it finished. Both causes have the one fix, so the sentence
-#: names both and gives it once. Said with a semicolon and no dash: this is drawn on screen.
+#: A sentence, not a stack trace, naming the antivirus as the other way the program goes.
 _NO_CLIENT = (
     "Sift cannot find the tunnel program it runs, so no tunnel can be started. It is shipped with "
     "Sift, so either the installation is incomplete or your antivirus removed it; installing Sift "
@@ -153,44 +88,30 @@ _NO_CLIENT = (
 
 
 def _program() -> str:
-    """The client as it is found at the moment it is run, rather than when Sift started: a program
-    an antivirus took before the start and that somebody restored since is found again, with
-    nothing restarted, which is what the sentence telling them to restore it promises."""
+    """The client as found when run, so a program restored since is found with no restart."""
     return vendored_tool("wireproxy")
 
 
 def _client_is_present() -> bool:
-    """Whether the tunnel program is on the machine at all. Blocking, so it is called off the loop."""
+    """Whether the tunnel program is on the machine at all; blocking."""
     program = _program()
     return Path(program).is_file() or shutil.which(program) is not None
 
 
 def _client_is_missing(exc: Exception) -> TunnelError:
-    """Turn "the program is not there" into something a person can act on, and record which one.
-
-    The operating system's own words are the cause the launch was raised from, when there is one.
-    """
+    """Turn "the program is not there" into something a person can act on, and log the cause."""
     log.warning("tunnel.client_missing", binary=TUNNEL_BINARY, detail=str(exc.__cause__ or exc))
     return TunnelError(_NO_CLIENT)
 
 
 def _is_the_client_program(holder: ports.PortHolder) -> bool:
-    """Whether a process is running the tunnel program Sift ships. By its program name, which says
-    WHAT is running and nothing at all about whose it is."""
+    """Whether a process runs the shipped tunnel program, by name, which says nothing of whose."""
     return Path(holder.name).stem.lower() == Path(TUNNEL_BINARY).stem.lower()
 
 
 @dataclass(frozen=True, slots=True)
 class TunnelSpec:
-    """What identifies one tunnel: its row and the name a person gave it.
-
-    NO PORT. A fixed port from the database row, handed out from the same first number in every
-    library, would give two Sifts on one device (a second install, a copy made for testing) the same
-    port for their first tunnels, and each would take the other's client for its own leftover and
-    end it. Ports are asked of the operating system each time the client starts (`ListenPorts`), and
-    nothing needs them stable: a download is handed the proxy address when it takes the tunnel,
-    never before.
-    """
+    """What identifies one tunnel; no port, as two Sifts on one device would share it."""
 
     id: str
     name: str
@@ -198,20 +119,14 @@ class TunnelSpec:
 
 @dataclass(frozen=True, slots=True)
 class ListenPorts:
-    """The two loopback ports one run of a client listens on: the proxy, and its status beside it."""
+    """The two loopback ports one run of a client listens on: its proxy and its status."""
 
     proxy: int
     status: int
 
 
 def _free_ports() -> ListenPorts:
-    """Two loopback ports nothing is listening on, chosen by the operating system.
-
-    Both are held open until both are chosen, so the two cannot be the same port, and then let go
-    for the client to bind. Between the letting go and the binding another program could take one;
-    `TunnelProcess.start` proves which process is listening before it trusts either, and takes a
-    fresh pair when it is not the client.
-    """
+    """Two free loopback ports chosen by the system; `start` proves the client then holds them."""
     with socket.socket() as proxy, socket.socket() as status:
         proxy.bind(("127.0.0.1", 0))
         status.bind(("127.0.0.1", 0))
@@ -220,30 +135,19 @@ def _free_ports() -> ListenPorts:
 
 @dataclass(frozen=True, slots=True)
 class TunnelHealth:
-    """What a screen may know about a tunnel.
-
-    Not the public key the client also reports: it names the provider account, it is the same for
-    every install using that account, and nobody acts on it.
-
-    The endpoint IS reported: "which
-    server am I actually on" is the question somebody asks of a tunnel they are relying on, and it
-    is the one thing that tells a working tunnel from a working tunnel to the wrong country. It is
-    admin-only like everything else here, and the screen shows only the first part of it until it is
-    asked to show the rest.
-    """
+    """What a screen may know about a tunnel: the endpoint, never the public key."""
 
     name: str
     running: bool
     up: bool
     draining: bool
     last_handshake_at: int | None
-    #: The address of the server on the far side, without its port. None while nothing has answered.
+    #: The far server's address without its port; None while nothing has answered.
     endpoint: str | None = None
 
 
 def _http_section(port: int) -> str:
-    """The proxy listener appended to a provider's configuration. Loopback only: a tunnel bound to
-    anything else is an open proxy on the network the machine sits on."""
+    """The proxy listener appended to a configuration; loopback only, or it is an open proxy."""
     return f"\n[http]\nBindAddress = 127.0.0.1:{port}\n"
 
 
@@ -254,22 +158,9 @@ def _is_a_port(value: object) -> bool:
 
 @dataclass(frozen=True, slots=True)
 class Listener:
-    """What a tunnel needs to HOST a swap: a port inside the tunnel, and a way to ask for it.
+    """What a tunnel needs to host a swap: a port inside the tunnel, and a way to ask for it.
 
-    Two sections, both Sift's, appended after its own `[http]` only while a swap is being hosted and
-    gone with the process that carried them:
-
-    - `[TCPServerTunnel]` listens on `internal_port` INSIDE the tunnel (in the client's own
-      network stack, never on this device's), and hands each connection to `127.0.0.1:target_port`,
-      the swap's own listener on loopback. The provider forwards one public port to that inside
-      port, which is how a connection reaches Sift with nothing opened on the home router.
-    - `[UDPProxyTunnel]` binds `127.0.0.1:natpmp_port` on loopback and carries what is sent there to
-      the provider's port-forwarding service inside the tunnel (`NATPMP_GATEWAY`), which is how Sift
-      asks for that public port (see `natpmp`).
-
-    Every field is checked to be a port number, because each is written into the client's
-    configuration as text: a value that was anything else could add a line, and a line is a section.
-    """
+    Each field is checked to be a port, as it is written into the configuration as text."""
 
     internal_port: int
     natpmp_port: int
@@ -282,9 +173,7 @@ class Listener:
 
 
 def _listener_sections(listener: Listener) -> str:
-    """The two sections a hosting tunnel carries after its `[http]`, exactly as the client reads
-    them. Both bind loopback on this device; the only thing reachable from outside is the port the
-    provider forwards into the tunnel, and that reaches nothing but `target_port`."""
+    """The two sections a hosting tunnel carries after its `[http]`, both bound on loopback."""
     return (
         f"\n[TCPServerTunnel]\nListenPort = {listener.internal_port}\n"
         f"Target = 127.0.0.1:{listener.target_port}\n"
@@ -293,12 +182,7 @@ def _listener_sections(listener: Listener) -> str:
     )
 
 
-#: The lines a WireGuard configuration cannot do without, and what to say when one is absent.
-#:
-#: Checked before the client is asked, for one reason: the client answers "this is not a valid
-#: config" to every one of these, which is true and useless. The commonest way to arrive here is
-#: half a file (part of it selected, part of it pasted), and knowing WHICH half is missing is the
-#: difference between fixing it and trying the same thing again.
+#: The lines a configuration needs, checked first so the refusal can say which is missing.
 _MUST_CONTAIN: tuple[tuple[str, str], ...] = (
     (
         "[interface]",
@@ -323,39 +207,9 @@ _MUST_CONTAIN: tuple[tuple[str, str], ...] = (
 )
 
 
-#: The sections that open a LISTENER, which a provider's configuration has no business carrying.
-#:
-#: Sift appends its own `[http]` bound to loopback, and the comment on `_http_section` says why:
-#: a tunnel bound to anything else is an open proxy on the network the machine sits on. That is a
-#: promise about the file Sift writes, and the pasted half must keep it too: a configuration
-#: carrying `[socks5]` or its own `[http]` on `0.0.0.0` would produce a listener nobody here chose
-#: the address for, reachable by anything on the LAN and forwarding through somebody's VPN account.
-#:
-#: A tunnel hosting a swap carries two of these sections too (`[TCPServerTunnel]` and
-#: `[UDPProxyTunnel]`), and that changes nothing here. Those are SIFT'S, written by
-#: `_listener_sections` with loopback addresses Sift chose, after the pasted half has been checked;
-#: the same two arriving in a pasted file are still somebody else's listener and still refused.
-#:
-#: Refused rather than rewritten. Editing somebody's configuration to remove a section is a change
-#: they did not make and cannot see, and the honest answer to "this file does more than connect" is
-#: to say so.
-#:
-#: **THE NAMES ARE READ OUT OF THE VENDORED BINARY, not guessed.** A guessed list can name sections
-#: the client has never had and miss ones it does (`[udpproxytunnel]`, `[stdiotunnel]`, `[sni]`),
-#: and a pasted file carrying a missed one on `0.0.0.0` opens exactly the listener this exists to
-#: refuse. `tests/gates/test_tunnel_sections_match_the_client.py` reads them again on every run: a
-#: client that gains a section a later build has not heard of turns that gate red rather than
-#: letting the section through.
-#:
-#: The seven are every section the client understands that is not one of the three describing the
-#: link itself (`[interface]`, `[peer]`, `[resolve]`: the gate says why each of those
-#: three opens nothing). `[stdiotunnel]` binds no port and is refused all the same: it hands the
-#: client's own standard input and output to a TCP target through the tunnel, and this process's
-#: standard output is the client log Sift reads, so a file carrying one both moves data Sift did
-#: not send and corrupts the only record of what the client said.
-#: A `WGConfig = <path>` line makes the client read a SECOND file from the disk as the WireGuard
-#: half of the configuration: any file the process can open, named by whoever pasted it. A
-#: configuration is the text that was pasted and nothing on the disk beside it.
+#: Sections that open a listener or move data, read out of the vendored binary and checked by
+#: a gate; a pasted file carrying one is refused, never rewritten. `WGConfig` reads a second
+#: file from disk.
 _SECOND_FILE = re.compile(r"(?i)^wgconfig\s*=")
 
 _LISTENER_SECTIONS: tuple[str, ...] = (
@@ -369,15 +223,12 @@ _LISTENER_SECTIONS: tuple[str, ...] = (
 )
 
 
-#: A key line, and what it was given. Both key fields, because the same thing goes wrong with both.
+#: A key line, and what it was given.
 _KEY_LINE = re.compile(
     r"^[ \t]*(PrivateKey|PublicKey)[ \t]*=[ \t]*(\S*)", re.IGNORECASE | re.MULTILINE
 )
 
-#: A value that is a placeholder rather than a key: asterisks, dots, or the word for what was done
-#: to it. Providers show the private key hidden on their website and reveal it on a click, so text
-#: copied off that page carries the mask instead of the key, and every character of it is wrong in
-#: a way that reads, at a glance, exactly like a key.
+#: A placeholder copied off a provider's page that masks the key until clicked.
 _MASKED = re.compile(r"^[*.x_-]{3,}$|hidden|redact|your.?key", re.IGNORECASE)
 
 #: What a WireGuard key is: 32 bytes, written base64. Always 44 characters ending in one '='.
@@ -385,22 +236,7 @@ _KEY_SHAPE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 
 
 def _check_no_listeners(flattened: str, config: str) -> None:
-    """Refuse a configuration that carries a service of its own.
-
-    A provider's WireGuard file describes one thing: how to reach their server. A section that opens
-    a listener describes something else (a proxy on this machine), and Sift adds exactly one of
-    those itself, on loopback, deliberately. A second one from the file is a port Sift did not
-    choose the address for, so `BindAddress = 0.0.0.0` in a pasted file is an open proxy on the
-    network, offering anybody on it a way out through the account paying for the tunnel.
-
-    The sentence says "does more than connect" rather than "opens a port", because one of the seven
-    does not open one: `[stdiotunnel]` sends the client's own standard input and output through the
-    tunnel instead. Refused with the rest, and a refusal that named a port it had not found would be
-    a sentence somebody could go and check and find false.
-
-    Matched at the start of a line so a section name inside a comment or a value is not mistaken for
-    a section. The section names reach the log; no value from the file does.
-    """
+    """Refuse a configuration that carries a listener of its own or names a second file."""
     for line in flattened.splitlines():
         heading = line.strip()
         if _SECOND_FILE.match(heading):
@@ -421,13 +257,7 @@ def _check_no_listeners(flattened: str, config: str) -> None:
 
 
 def _check_the_keys(config: str) -> None:
-    """Refuse a key that is not one, and say which way it is not one.
-
-    The client's answer to all of these is `invalid base64 string`, which names the field it was
-    reading and not what to do about it. The masked case is worth telling apart because it is not a
-    typo: the file is exactly as it was copied, and what is wrong happened on the website it was
-    copied from.
-    """
+    """Refuse a key that is not one, telling a masked key apart from a malformed one."""
     for found in _KEY_LINE.finditer(config):
         field, value = found.group(1), found.group(2)
         if _MASKED.match(value):
@@ -446,12 +276,7 @@ def _check_the_keys(config: str) -> None:
 
 
 def _shape_of(config: str) -> dict[str, object]:
-    """What a configuration CONTAINS, with nothing of what it says.
-
-    Section names, the field names present, and how many lines there are. No value is read and none
-    is recorded: the file is a private key, and this exists to make a refusal diagnosable rather
-    than to inspect anybody's provider account.
-    """
+    """What a configuration contains, never what it says: the file is a private key."""
     lines = [line.strip() for line in config.splitlines() if line.strip()]
     sections = [line.lower() for line in lines if line.startswith("[")]
     fields = sorted(
@@ -461,13 +286,7 @@ def _shape_of(config: str) -> dict[str, object]:
 
 
 async def validate_config(config: str, *, port: int = 9000) -> None:
-    """Refuse a configuration the client cannot read, before it is ever stored.
-
-    The client's own check is the authority rather than a parser written here: it is the thing that
-    has to accept the file, and a second opinion about the format is a second thing to keep correct.
-    What happens first is only a check for the parts that are missing outright, so the refusal can
-    say which one. It reads a file, so one is written and removed; the check never opens a socket.
-    """
+    """Refuse a configuration the client cannot read, before it is ever stored."""
     flattened = config.lower()
     for needle, sentence in _MUST_CONTAIN:
         if needle not in flattened:
@@ -475,8 +294,7 @@ async def validate_config(config: str, *, port: int = 9000) -> None:
             raise TunnelConfigInvalid(sentence)
     _check_no_listeners(flattened, config)
     _check_the_keys(config)
-    # The program first: a configuration cannot be checked by a program that is not there, and
-    # "the tunnel could not be checked" would send somebody to the file rather than to the scanner.
+    # The program first, so a missing one is not blamed on the file.
     lost = await client_fault()
     if lost is not None:
         raise TunnelConfigInvalid(lost)
@@ -487,19 +305,14 @@ async def validate_config(config: str, *, port: int = 9000) -> None:
                 [_program(), "--configtest", "-c", str(path)], time_limit=_CONFIGTEST_TIMEOUT
             )
         except SubprocessError as exc:
-            # Two different faults arrive here and they have different answers. `run_once` turns a
-            # program that will not start into this same exception as one that started and hung, so
-            # the two are told apart by asking whether the program is there at all, and a missing
-            # one is not something "try saving it again" can ever fix.
+            # A missing program and a hung one raise alike; only one is fixed by saving again.
             if not await asyncio.to_thread(_client_is_present):
                 raise TunnelConfigInvalid(_NO_CLIENT) from exc
             raise TunnelConfigInvalid(
                 "The tunnel could not be checked. Try saving it again."
             ) from exc
     if result.returncode != 0:
-        # The client's own words, recorded and never shown. They name the line it choked on, which
-        # is what makes this answerable at all; without them the only way to find out is to
-        # guess.
+        # The client's own words name the line it choked on; logged, never shown.
         said = (result.stderr or result.stdout).decode("utf-8", "replace").strip()
         log.warning("tunnel.config_rejected", detail=said[:400], **_shape_of(config))
         raise TunnelConfigInvalid(
@@ -513,25 +326,9 @@ async def validate_config(config: str, *, port: int = 9000) -> None:
 async def _config_file(
     config: str, port: int, *, prefix: str, listener: Listener | None = None
 ) -> AsyncIterator[Path]:
-    """A configuration written where only this person can read it, removed on the way out.
-
-    What is written is the pasted half, then Sift's own `[http]`, then (only while a swap is being
-    hosted) the listener's two sections (`_listener_sections`). Sift's sections always come AFTER
-    the pasted half, which has already been refused if it carried one of its own.
-
-    Created inside the caller's own temporary directory with the mode set as the file is made rather
-    than after: a file created readable and narrowed a moment later is readable in that moment.
-
-    ON WINDOWS THE MODE IS ACCEPTED AND IGNORED, and the sentence above is carried by something
-    else: a per-user temporary directory whose access list already admits only its owner. The
-    property holds on both, by different means, which is worth saying, because the code reads as
-    though one line were doing all the work and on Windows it does none.
-
-    The folder's name starts with `prefix`, and for a running client that is not decoration: the
-    path is on the client's command line for as long as it runs, so the prefix is how Sift can later
-    prove a client is its own (see `TunnelProcess._token`). The file inside is gone within seconds;
-    the name on the command line stays.
-    """
+    """A configuration written readable only by this person, removed on the way out."""
+    # On Windows the mode is ignored; the per-user temp folder's access list does the work.
+    # `prefix` stays on the client's command line, which is how Sift proves a client is its own.
     workspace = await asyncio.to_thread(tempfile.TemporaryDirectory, "", prefix)
     path = Path(workspace.name) / "tunnel.conf"
     try:
@@ -551,28 +348,15 @@ def _write_private(path: Path, text: str) -> None:
 
 
 class TunnelProcess:
-    """One running client: its process, the two ports it listens on, and how it says it is doing.
-
-    **Sift ends a tunnel client only when it can prove it started it.** `owner` names whoever keeps
-    this tunnel (the tunnel store passes one token for every tunnel it runs, minted fresh each
-    time Sift starts), and it is written into the client's command line (see `_token`). No other
-    process has that value, so a client carrying it is this store's beyond argument, and one without
-    it is somebody else's however much it looks like Sift's. A rule matching on the port would not
-    do: two Sifts on one device can be handed the same port, and each would take the other's client
-    for its own leftover and end it.
-    """
+    """One running client, ended only when its command line carries its own token."""
 
     def __init__(self, spec: TunnelSpec, *, owner: str | None = None) -> None:
         self._spec = spec
-        #: A tunnel made on its own owns itself; the store passes the token all of its tunnels
-        #: share.
+        #: The store passes the token all its tunnels share.
         self._owner = owner or new_id()
         self._process: LongLivedChild | None = None
-        #: The ports this run of the client listens on. None whenever no client is running.
         self._ports: ListenPorts | None = None
-        #: Where the client's own complaints go while it runs, and the last of them once it has
-        #: stopped. Not DEVNULL, or a client that died on startup would leave no trace anywhere at
-        #: all (see `start`).
+        #: Not DEVNULL, or a client that died on startup would leave no trace.
         self._client_log: Path | None = None
         self._client_output: IO[bytes] | None = None
         self._client_said = ""
@@ -580,17 +364,12 @@ class TunnelProcess:
         self._draining = False
         self._drained = asyncio.Event()
         self._drained.set()
-        #: The exit address this run of the client was read to leave from, beside the ports of
-        #: the run it was read on: a new run can leave from another address.
+        #: Kept beside the run's ports: a new run can leave from another address.
         self._exit: tuple[ListenPorts, str] | None = None
 
     @property
     def proxy_url(self) -> str:
-        """The proxy this run of the client listens on.
-
-        Handed out by `lease` and by nothing else, so nothing holds it across a restart of the
-        client, which is what lets the port be a new one every time.
-        """
+        """The proxy this run listens on, handed out by `lease` alone, so its port may change."""
         if self._ports is None:
             raise self._not_available()
         return f"http://127.0.0.1:{self._ports.proxy}"
@@ -608,27 +387,10 @@ class TunnelProcess:
         return self._process is not None and self._process.returncode is None
 
     async def start(self, config: str, *, listener: Listener | None = None) -> None:
-        """Run the client and wait for the far end to answer.
-
-        With a `listener`, the client also hosts: it carries the two sections that let a swap reach
-        this device through the tunnel (see `Listener`). Without one it is a way out and nothing
-        else. Which of the two a running client is was decided when it started, so changing it is a
-        restart: `TunnelStore.host_on` and `stop_hosting` are the two that do that.
-
-        Returning without a handshake would leave a control reading as up over a tunnel carrying
-        nothing, which is the one thing this must not do: a site routed through it would then be
-        refused with no explanation, or (if the refusal were ever softened) go out unprotected.
-
-        Each attempt takes a fresh pair of ports from the operating system (`_free_ports`), and a
-        pair another program turned out to hold is given up for the next one rather than fought
-        over. Whatever stops a start part-way (a failure, or the start being cancelled) stops
-        the client it made, so no start leaves a client running that nothing is tracking.
-        """
+        """Run the client and wait for the far end to answer; a failed start stops what it made."""
         if self.running():
             return
-        # Before a port is taken or a key written to disk: a program an antivirus removed or
-        # altered is said in the one sentence every tunnel row and download shares, never as a
-        # tunnel that "did not connect".
+        # Before a port or a key: a removed client is said in its one shared sentence.
         lost = await client_fault()
         if lost is not None:
             raise TunnelClientLost(lost)
@@ -649,14 +411,9 @@ class TunnelProcess:
     async def _start_on(
         self, config: str, chosen: ListenPorts, listener: Listener | None = None
     ) -> bool:
-        """One attempt, on one pair of ports. True when the tunnel is up on them.
-
-        False when another program turned out to be holding one of them, which a fresh pair can
-        fix. Every other failure raises, because a fresh pair would not change it.
-        """
+        """One attempt on one pair of ports; False when another program holds one of them."""
         self._ports = chosen
-        # Off the loop: it makes a temp file and opens it, and a `stat` on a temp directory
-        # that has gone away is the kind of wait nothing else here may be made to share.
+        # Off the loop: it makes a temp file and opens it.
         output = await asyncio.to_thread(self._open_client_log)
         async with _config_file(
             config, chosen.proxy, prefix=self._token(), listener=listener
@@ -664,20 +421,15 @@ class TunnelProcess:
             try:
                 child = await start_long_lived(
                     [_program(), "-c", str(path), "-i", f"127.0.0.1:{chosen.status}", "-s"],
-                    # NOT DEVNULL. The client explains itself here, and throwing that away would
-                    # leave a client that died on the first second nothing behind to read.
+                    # Not DEVNULL: the client explains itself here.
                     stderr=output,
                 )
             except SubprocessError as exc:
-                # The one failure that is about the INSTALLATION rather than about the tunnel; said,
-                # not left to escape as a 500.
+                # A missing installation, said rather than escaping as a 500.
                 raise _client_is_missing(exc) from exc
             self._process = child
             handshake = await self._await_handshake()
-        # `running()` as well as the handshake, and the order matters. A handshake can be read from
-        # a client that is already on its way out (or, when the client could not bind its status
-        # port, from whatever did), so a tunnel is not up until the process that is meant to be
-        # carrying it is still there when the answer arrives, AND is the one listening.
+        # Running as well as handshaken, and the one listening: a dying client can answer.
         exited = not self.running()
         strangers: list[ports.PortHolder] = []
         if handshake is not None and not exited:
@@ -686,10 +438,7 @@ class TunnelProcess:
                 return True
         await self.stop_now()
         if exited:
-            # The client refuses to run on a port it cannot bind and leaves within milliseconds
-            # (the vendored build exits 1 or 2 in about 20 ms). So an early exit is
-            # the one case worth asking who holds the ports; a client that ran the whole budget
-            # without an answer held both and simply never connected.
+            # A client that cannot bind its port exits immediately; only then are holders asked.
             strangers = await self._strangers_on(chosen, child.pid)
         if strangers:
             for holder in strangers:
@@ -702,22 +451,11 @@ class TunnelProcess:
         )
 
     def _token(self) -> str:
-        """What this store's clients carry on their command line, and nobody else's do.
-
-        The start of the name of the folder the configuration is written into, whose path is an
-        argument to the client, so it needs no argument of its own, which the client would refuse.
-        """
+        """The config folder's name start, on the client's command line: this store's mark."""
         return f"{_FOLDER_PREFIX}{self._owner}-"
 
     async def _strangers_on(self, chosen: ListenPorts, own_pid: int) -> list[ports.PortHolder]:
-        """Whatever other than this run's client is listening on the ports it was given.
-
-        Asked of the operating system rather than inferred, because it is the only proof there is
-        that the proxy a download will be handed and the status that says "up" both belong to this
-        client. A lookup that cannot tell (None) names no stranger: the client is running and
-        answered, which is all that was trusted before this could be asked, and the lookup logs
-        that it could not say.
-        """
+        """Whatever other than this run's client listens on its ports, asked of the system."""
         found = await asyncio.gather(ports.holder_of(chosen.proxy), ports.holder_of(chosen.status))
         others = {
             holder.pid: holder for holder in found if holder is not None and holder.pid != own_pid
@@ -725,13 +463,7 @@ class TunnelProcess:
         return list(others.values())
 
     async def _leave_or_end(self, holder: ports.PortHolder) -> None:
-        """End a client this owner started and lost track of; leave anything else exactly alone.
-
-        A client with another store's token is another Sift's (a second install, a copy made for
-        testing), and ending it would cut that Sift's downloads off mid-transfer. It is named in
-        the log by its process id and never by its command line,
-        which carries a path into somebody's temporary folder.
-        """
+        """End a client this owner lost track of; leave another Sift's or anything else alone."""
         if self._is_own_client(holder):
             log.warning("tunnel.orphan_ended", tunnel=self._spec.name, pid=holder.pid)
             await ports.end_process(holder.pid)
@@ -743,9 +475,7 @@ class TunnelProcess:
             )
 
     def _is_own_client(self, holder: ports.PortHolder) -> bool:
-        """Whether a process is a client this store started: the program Sift ships, carrying this
-        store's token. The port it holds is not evidence of anything: two Sifts on one device can
-        be handed the same one."""
+        """Whether a process is the shipped client with this store's token; ports prove nothing."""
         return _is_the_client_program(holder) and self._token() in holder.command_line
 
     def _not_available(self) -> TunnelError:
@@ -755,11 +485,7 @@ class TunnelProcess:
         )
 
     def _open_client_log(self) -> IO[bytes]:
-        """A file for the client's own output, for as long as it runs. Answers the open file.
-
-        A file rather than a pipe nobody drains: a pipe fills, and a client blocked writing to a
-        full pipe is a tunnel that stops carrying traffic for a reason nothing would ever explain.
-        """
+        """A file for the client's output while it runs, as a full pipe would stall the tunnel."""
         handle, name = tempfile.mkstemp(prefix="sift-tunnel-log-")
         os.close(handle)
         self._client_log = Path(name)
@@ -767,25 +493,17 @@ class TunnelProcess:
         return self._client_output
 
     def _close_client_log(self) -> None:
-        """Keep the last of what the client said, then take the file away.
-
-        Kept rather than read on demand, because the only moment it can be read safely is after the
-        writer has gone, and by then the caller that needs the words is one frame further on.
-        """
+        """Keep the last of what the client said, then take the file away."""
         if self._client_output is not None:
             with contextlib.suppress(OSError):
                 self._client_output.close()
             self._client_output = None
         if self._client_log is not None:
             with contextlib.suppress(OSError):
-                # The tail only. This reaches a person on a screen, and a wall of client output is
-                # not a sentence; the whole of it is a debug log away.
+                # The tail only: it reaches a person on a screen.
                 self._client_said = self._client_log.read_text(errors="replace").strip()[-300:]
             with contextlib.suppress(OSError):
-                # Sift's OWN scratch file, in the temp directory, opened by `_open_client_log` a few
-                # seconds ago and read one line above. The rule this waives is about files somebody
-                # else put in a library folder; there is nothing here to undo, and no folder to
-                # check was handed over read-write.
+                # Sift's own scratch file in the temp directory, opened above.
                 self._client_log.unlink()  # nosemgrep: sift-no-file-removal-outside-delete-trash
             self._client_log = None
 
@@ -802,12 +520,7 @@ class TunnelProcess:
         return None
 
     async def _read_metrics(self) -> tuple[int | None, str | None]:
-        """When the far end last answered, and which server answered. Both None while none has.
-
-        This is the one request in the slice that must NOT go through the guarded session: the guard
-        refuses a private address, and this address is deliberately loopback, in this machine, to a
-        process Sift started itself.
-        """
+        """When the far end last answered and which server; loopback, so not the guarded session."""
         if self._ports is None:
             return None, None
         url = f"http://127.0.0.1:{self._ports.status}/metrics"
@@ -827,39 +540,20 @@ class TunnelProcess:
                 with contextlib.suppress(ValueError):
                     handshake = int(line.removeprefix(_HANDSHAKE_FIELD)) or None
             elif line.startswith(_ENDPOINT_FIELD):
-                # The port is the provider's and says nothing anybody acts on; the address is the
-                # whole of what "which server am I on" means. `rsplit` rather than `split`, so an
-                # IPv6 endpoint keeps its colons and loses only the port.
+                # The address alone; `rsplit` keeps an IPv6 endpoint's colons.
                 endpoint = line.removeprefix(_ENDPOINT_FIELD).rsplit(":", 1)[0].strip() or None
         return handshake, endpoint
 
     async def _read_handshake(self) -> int | None:
-        """Just the handshake, for the wait that decides whether a tunnel came up.
-
-        The same one read: starting a tunnel asks this many times a second and has no use for the
-        server address, so it takes the half it wants rather than a second request for both.
-        """
+        """Just the handshake, from the same one read, for the wait that decides a start."""
         return (await self._read_metrics())[0]
 
     async def server_address(self) -> str | None:
-        """The address of the server this tunnel is connected to now, or None if it has not said.
-
-        Asked when a download takes the tunnel, so the row can keep the value it had THEN: the
-        provider can move a tunnel to another server between one download and the next, and a row
-        that looked the address up when it was drawn would rewrite where an old download went.
-        The same reading `health` gives Settings, so the two screens cannot show different things
-        for the same moment.
-        """
+        """The server this tunnel is connected to now, read when a download takes it, or None."""
         return (await self._read_metrics())[1] if self.running() else None
 
     async def exit_address(self) -> str | None:
-        """The public IPv4 address this tunnel's traffic leaves from, or None when it cannot be
-        read: the client not running, the echo not answering, or an answer that is not one.
-
-        Asked once through the tunnel's own proxy and kept for as long as this run of the client
-        lasts. It is the VPN server's address, never this device's, and it goes to the caller
-        and nowhere else: not a log line, not a row.
-        """
+        """The public IPv4 address this tunnel leaves from, kept per run, never logged; or None."""
         chosen = self._ports
         if chosen is None or not self.running():
             return None
@@ -901,12 +595,7 @@ class TunnelProcess:
 
     @asynccontextmanager
     async def lease(self) -> AsyncIterator[str]:
-        """Hold the tunnel for the length of one download, and yield the proxy to use.
-
-        A tunnel that is draining refuses. That is what makes turning one off safe: the transfers
-        already using it finish on it, and the next one is told the tunnel is unavailable rather
-        than being quietly sent out some other way.
-        """
+        """Hold the tunnel for one download and yield its proxy; a draining tunnel refuses."""
         if self._draining or not self.running():
             raise self._not_available()
         self._leases += 1
@@ -925,12 +614,7 @@ class TunnelProcess:
         await self.stop_now()
 
     async def stop_now(self) -> None:
-        """Stop the client immediately, whatever is using it.
-
-        The transfers riding it fail, which is the point: this is the control for when the reason to
-        stop is the traffic itself. Terminate first and kill only if it will not go, so the client
-        gets the chance to close its socket.
-        """
+        """Stop the client now, whatever rides it; terminate first, kill if it will not go."""
         self._draining = True
         process = self._process
         self._process = None
@@ -949,8 +633,7 @@ class TunnelProcess:
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
-        # Off the loop for the same reason as the open, and one more: it READS the file to keep
-        # the tail of what the client said, so its cost is the size of whatever the client wrote.
+        # Off the loop: it reads the file to keep the tail of what the client said.
         await asyncio.to_thread(self._close_client_log)
         log.info("tunnel.stopped", tunnel=self._spec.name)
 

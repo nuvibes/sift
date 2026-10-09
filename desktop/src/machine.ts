@@ -1,23 +1,4 @@
-/* What this computer is, for a Sift whose library lives on another one.
- *
- * ## Why the settings screen needs two answers rather than one
- *
- * Everything Sift does with a machine (scanning, transcoding, recognising faces) happens on
- * the computer running the library, so the server's hardware block describes the server and says
- * so. This is the other one: the computer the person is sitting at, which plays the video, holds
- * the window, and takes the file when they drag one out.
- *
- * Its graphics card is named even though it does no work for Sift, because a block headed "This
- * computer" that says nothing about its graphics has a hole in it; the sentence under the block
- * says that nothing here does the work.
- *
- * ## Why the memory is not `os.totalmem()`
- *
- * It is, as a fallback. Node reports what the operating system can address, which is the
- * installed total less what the firmware reserves. The server's
- * block reports what is installed, so this asks Windows the same question the backend asks
- * (once, at first use, and cached), and the two blocks agree.
- */
+/* What this computer is, for a Sift whose library lives on another one. */
 
 import { execFile } from "node:child_process";
 import * as os from "node:os";
@@ -53,24 +34,14 @@ const askWindows: Ask = (file, args) =>
     );
   });
 
-/* Asked once. The memory in a computer does not change while it is running, and the query starts a
- * process, so a settings screen opened five times would start five of them for one answer that
- * was already known. Null means "not asked yet"; a cached failure is remembered as such. */
+/* Asked once. */
 let remembered: number | null | undefined;
 
 export function forgetMemory(): void {
   remembered = undefined;
 }
 
-/**
- * What the memory sticks in this computer add up to, or null.
- *
- * The sticks are summed. `Win32_ComputerSystem.TotalPhysicalMemory` has the obvious name and
- * answers the addressable total: the number Node already knows, a little under what is fitted.
- * `Win32_PhysicalMemory` is the firmware's own table of what is fitted.
- *
- * Falls back to what Node knows, which is a little smaller, and still better than no row at all.
- */
+/** What the memory sticks in this computer add up to, or null. */
 export async function installedMemory(
   ask: Ask = askWindows,
 ): Promise<number | null> {
@@ -94,25 +65,16 @@ export async function installedMemory(
   return remembered;
 }
 
-/* Adapters Windows lists that are not hardware anybody has: `Microsoft Remote Display Adapter` on
- * any machine that has had a remote session, `Microsoft Basic Display Adapter` before a real driver
- * is installed. Both are real entries and neither is a card. Kept in step with the same rule in the
- * backend's own probe (see `_NOT_REALLY_A_CARD` in sift/kernel/hardware.py). */
+/* Adapters Windows lists that are not hardware anybody has: `Microsoft Remote Display Adapter`
+ * on any machine that has had a remote session, `Microsoft Basic Display Adapter` before a real
+ * driver is installed. */
 const NOT_REALLY_A_CARD = "microsoft ";
 
-/* Where `AdapterRAM` stops being an answer: the field is 32 bits, so every card with 4 GB or more
- * reports this exact number and no more.
- */
+/* Where `AdapterRAM` stops being an answer: the field is 32 bits, so every card with 4 GB or
+ * more reports this exact number and no more. */
 const ADAPTER_RAM_CAP = 4293918720;
 
-/* What the driver recorded about the card, and what is merely present.
- *
- * `HardwareInformation.qwMemorySize` in the registry is 64 bits and is the real figure: a 16 GB
- * card has its size there and nothing at all in `AdapterRAM`, which stops at 32 bits. But the
- * registry keeps entries for drivers that are no longer installed, so it cannot say what is
- * PRESENT; `Win32_VideoController` can, and is the vague one about memory. One invocation, joined
- * on the name. Kept in step with `_ADAPTER_QUERY` in sift/kernel/hardware.py, which asks the same
- * two questions the same way. */
+/* What the driver recorded about the card, and what is merely present. */
 const ADAPTER_QUERY =
   "$mem = @{};" +
   " Get-ItemProperty" +
@@ -135,8 +97,7 @@ export function cardFrom(line: string): LocalCard | null {
   const name = parts[0] ? parts[0] : null;
   if (name === null || name.toLowerCase().startsWith(NOT_REALLY_A_CARD))
     return null;
-  // What the driver recorded first, because it is the real figure. The capped field only as a
-  // fallback, and only below the cap: at the cap it means "four gigabytes or more" and no more.
+  // What the driver recorded first, because it is the real figure.
   const recorded = asBytes(parts[2]);
   const capped = asBytes(parts[3]);
   const vram =
@@ -165,14 +126,7 @@ export async function graphicsCards(
 /** The longest name a computer answers to on a network (one DNS label). */
 const LONGEST_NAME = 63;
 
-/**
- * What this computer is called, or null where it has no name to give.
- *
- * For the name a phone's remote lists this window under: two copies of the app on two computers
- * both read "The Sift app on Windows" without it, and are told apart only by what they are
- * playing. Read from the operating system on every ask (a rename takes effect without a restart),
- * and held to one network label's length, which is the longest a name on a home network is.
- */
+/** What this computer is called, or null where it has no name to give. */
 export function machineName(read: () => string = os.hostname): string | null {
   const name = read().trim().slice(0, LONGEST_NAME);
   return name === "" ? null : name;
@@ -190,8 +144,7 @@ export async function thisMachine(
     graphicsCards(ask),
   ]);
   return {
-    /* Every entry carries the same model name; the first is as good as any. An empty list is
-     * possible on a platform Node cannot enumerate, and answers nothing rather than crashing. */
+    /* Every entry carries the same model name; the first is as good as any. */
     cpu_model: processors[0]?.model?.trim() || null,
     thread_count: processors.length,
     installed_ram_bytes: memory,

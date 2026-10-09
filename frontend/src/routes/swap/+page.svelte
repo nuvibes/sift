@@ -1,40 +1,6 @@
 <script lang="ts">
-	/*
-	 * Swap with another Sift: three doors, Start a swap, Join a swap and Exchange, and then the one
-	 * session.
-	 *
-	 * ## The address holds where you are
-	 *
-	 * `?door=start`, `?door=join`, `?door=both` (Start an exchange, which makes the token) or
-	 * `?door=both-join` (Join an exchange, which takes one) is the form behind a door, and `?session=<id>` is a session once there
-	 * is one. So a reload lands back on the same swap, Back steps out of a door, and the screen
-	 * never has to remember a session in memory to find it again.
-	 *
-	 * ## Every state is the server's
-	 *
-	 * The session is read from `GET /api/swap/sessions/{id}` and drawn as it says. It is read again
-	 * when the jobs bell rings (every write to a session's row rings it) and on a short poll while
-	 * the session is running, because two things move without a write: the code, which exists only in
-	 * memory and appears just after the row says "connected", and the bytes moved between the
-	 * session's ten-second measurements. The poll stops the moment the session has ended.
-	 *
-	 * ## The one fact the server does not hold
-	 *
-	 * Whether the person here has compared the code. It decides whether the code or the offer is
-	 * drawn (`stageOf`), and it lives only in this screen: a reload shows the code again, which is the
-	 * safe way for it to be lost.
-	 *
-	 * ## Exchange: both ways
-	 *
-	 * An exchange is a swap whose guest offers too. Its door does both halves, so two people who both
-	 * chose Exchange can finish: one starts it and sends the token, and the other joins with it as
-	 * any guest joins (`JoinSwap`), one path. The guest finds the pickers beside the code: what it
-	 * sends them goes with its They match, which releases its offer as the host's They match releases
-	 * the host's. Each side then answers the other's offer and watches both directions
-	 * (`SwapProgress`). What a guest picked in swap mode before pasting is waiting there
-	 * (`takeExchangePicks`). A token pasted under Exchange that turns out to be a swap one way says so
-	 * at the code (`?exchange=1` marks a join made from that door): they only send.
-	 */
+	/* Swap with another Sift: three doors, Start a swap, Join a swap and Exchange, and then the
+	 * one session. */
 	import { onDestroy } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -342,8 +308,8 @@
 		gap: var(--space-2);
 	}
 
-	/* The doors stand side by side at one height, and each one's press sits at its foot, so three
-	   sentences of different lengths do not leave three buttons at three heights. */
+	/* The doors stand side by side at one height, and each one's press sits at its foot, so
+	   three sentences of different lengths do not leave three buttons at three heights. */
 	.doors .finish {
 		align-self: end;
 	}

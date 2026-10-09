@@ -55,8 +55,7 @@
 	import type { WaitingFingerprints } from '$lib/people/fingerprint-offers';
 	import { folderImport } from '$lib/people/folder-import.svelte';
 	import { refusedMark } from '$lib/swap/refused';
-	// The download is followed OUTSIDE this component. See the module. A watcher held here dies
-	// with the pane, and the first run starts the same download from a screen that is not this one.
+	// The download is followed OUTSIDE this component.
 	import { modelFetch } from '$lib/people/faces-runs.svelte';
 	import { faceRemoval } from '$lib/jobs/watch-removal.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -104,9 +103,7 @@
 	/** Every key the More settings page draws, so a deep link to one opens the page first. */
 	const MORE_KEYS = MORE_GROUPS.flatMap((group) => group.fields.map((field) => field.key));
 
-	/* Whether a field's condition is met. An unset condition is met; a condition naming a setting
-	 * this screen has not read yet is not, which is the safe way round: a field that appears for
-	 * an instant while the values load and then vanishes reads as a fault. */
+	/* Whether a field's condition is met. */
 	function applies(field: Field): boolean {
 		if (!field.when) return true;
 		return String(entries.get(field.when.key)?.value ?? '') === field.when.is;
@@ -114,14 +111,13 @@
 
 	let entries = $state<Map<string, SettingEntry>>(new Map());
 
-	/* Read here rather than with a const tag in the markup, which has to be the immediate child of
-	   a block and this one sits inside an ordinary section. */
+	/* Read here rather than with a const tag in the markup, which has to be the immediate child
+	   of a block and this one sits inside an ordinary section. */
 	const consentEntry = $derived(entries.get(ENABLED_KEY));
 	let enabled = $state(false);
 	// Not called `state`: that name shadows the `$state` rune in this file's own scope.
 	let feature = $state<FaceSettings | null>(null);
-	/* Where recognition stands, in one line under the switch, every number the server's. The words
-	   are shared with the switch on Importing (`facesStatus`), so the two doors say the same thing. */
+	/* Where recognition stands, in one line under the switch, every number the server's. */
 	const status = $derived(
 		facesStatus(
 			feature,
@@ -143,8 +139,7 @@
 	/* A file taken in says what came, never who: the pass after it decides that by face. */
 	let packFile = $state<File | null>(null);
 	/* Whether the pass over facial fingerprints makes a new person of an entry whose faces match
-	   nobody's: a stored setting, drawn as the registry words it. Off, the group that looks like
-	   that entry asks instead, in Organize. */
+	   nobody's: a stored setting, drawn as the registry words it. */
 	const PEOPLE_FROM_FILES_KEY = 'faces.people_from_files';
 	const peopleFromFiles = $derived(entries.get(PEOPLE_FROM_FILES_KEY));
 	/* Rebuilding the piles. See the section it draws in: it is a one-off job like the rebuilds on
@@ -170,8 +165,7 @@
 	const RECOGNIZING_STARTED = ' Sift has started recognizing who they are in your library.';
 
 	/* How many faces a file brought and how many people it holds, then that recognizing has
-	   started when recognition is on (off, the line under it says what waits). A second import of
-	   the same file brings nothing, and says that plainly rather than as a failure. */
+	   started when recognition is on (off, the line under it says what waits). */
 	function packSaid(done: PackImported): string {
 		if (done.added === 0) return 'Nothing new in this file. Its faces were already here.';
 		const faces = `${counted(done.added)} ${done.added === 1 ? 'face' : 'faces'}`;
@@ -245,7 +239,7 @@
 			waitingRead += 1;
 		} catch (error) {
 			// A 400 is the file's own refusal, written to be shown: another face model, another
-			// version, damaged, or not one of these files at all. Said as the server words it.
+			// version, damaged, or not one of these files at all.
 			packError =
 				error instanceof ApiError && error.status === 400
 					? error.detail || COPY.pack.notOne
@@ -255,9 +249,8 @@
 		}
 	}
 
-	/* Who the export carries: the people Sift can recognize who have a page of their own and faces
-	   somebody confirmed. The row's own press sends everyone; the sheet behind Choose people sends a
-	   choice (`ExportPeopleSheet`). */
+	/* Who the export carries: the people Sift can recognize who have a page of their own and
+	   faces somebody confirmed. */
 	let chooser = $state<ReturnType<typeof ExportPeopleSheet> | null>(null);
 	/* Bumped after an import, so the list of who is waiting for a matching face is read again. */
 	let waitingRead = $state(0);
@@ -286,8 +279,8 @@
 		void readKnown();
 		waitingRead += 1;
 	});
-	/* Off by default each time: the pictures are small crops of real faces, and only somebody who
-	   chose to send them should. */
+	/* Off by default each time: the pictures are small crops of real faces, and only somebody
+	   who chose to send them should. */
 	let includePictures = $state(false);
 
 	type LibrariesView = components['schemas']['LibrariesView'];
@@ -302,15 +295,15 @@
 		}
 	}
 
-	/* No names sent is everybody, so the row's own press sends none and the sheet sends its lists.
-	   The library's name is the file's own: the other side keys a file by it. */
+	/* No names sent is everybody, so the row's own press sends none and the sheet sends its
+	   lists. */
 	async function sendOutPack(personIds: string[] = [], entryIds: string[] = []) {
 		packError = null;
 		try {
 			const library = await libraryName();
 			const bytes = await exportPack(library, { personIds, entryIds, includePictures });
-			// An anchor and an object URL: the plain way to hand a file to the browser, and one that
-			// works over plain http where the fancier APIs are simply absent.
+			// An anchor and an object URL: the plain way to hand a file to the browser, and one
+			// that works over plain http where the fancier APIs are simply absent.
 			const url = URL.createObjectURL(bytes);
 			const link = document.createElement('a');
 			link.href = url;
@@ -338,8 +331,7 @@
 		void faceRemoval.resume();
 	});
 
-	/* The row that follows a scan of every file is drawn only while one runs. A search or a link
-	   landing on it otherwise rings the press that starts one, on More settings, and says so. */
+	/* The row that follows a scan of every file is drawn only while one runs. */
 	$effect(() =>
 		explainAbsentRows((key) => {
 			if (feature === null) return null;
@@ -347,8 +339,8 @@
 			if (key === 'faces.sweep' && sweep.jobId === null) {
 				return { because: COPY.sweep.notRunning, near: startable ? 'faces.rescan' : undefined };
 			}
-			/* The two rows drawn only once the models are here: the press that brings them is rung
-			   in their place, or the switch where recognition is off. */
+			/* The two rows drawn only once the models are here: the press that brings them is
+			   rung in their place, or the switch where recognition is off. */
 			const waiting =
 				(key === 'faces.rescan' && !startable) ||
 				(key === 'faces.models' && (!feature.ready || modelFetch.running));
@@ -365,7 +357,7 @@
 	whenChanged(settingChanges, () => void load());
 	/* How many files are scanned, waiting or failed is written per file by the scans, which the
 	   queue reports: the counts on this pane follow the jobs bell while it is open, rather than
-	   reading only when the pane opens. The status alone, not the settings beside it. */
+	   reading only when the pane opens. */
 	whenChanged(jobChanges, () => {
 		void faceSettings().then(
 			(state) => (feature = state),
@@ -373,8 +365,7 @@
 		);
 	});
 
-	/* The server's answer once a download has ended, drawn without asking again. The watcher
-	   announces the ending itself. */
+	/* The server's answer once a download has ended, drawn without asking again. */
 	$effect(() => {
 		if (modelFetch.outcome !== null) feature = modelFetch.settled ?? feature;
 	});
@@ -424,9 +415,7 @@
 		}
 	}
 
-	/* Stop the sweep and everything it queued. The watcher is told immediately rather than left to
-	 * notice on its next tick: cancelling is instant, and two seconds of a screen still counting
-	 * down reads as a button that did nothing. */
+	/* Stop the sweep and everything it queued. */
 	async function stopScanningEverything() {
 		if (!sweep.jobId || stopping) return;
 		stopping = true;
@@ -457,9 +446,8 @@
 		}
 	}
 
-	/* The page one level in. Declared as a value, so the row that opens it and the claim that lets a
-	   deep link open it first are about the same page. The People lists are on the pane itself,
-	   after it: the lists a section owns are part of its page, not one level in. */
+	/* The page one level in. Declared as a value, so the row that opens it and the claim that
+	   lets a deep link open it first are about the same page. */
 	const morePage: SubPage = $derived({
 		title: COPY.more.label,
 		/* The hand rows drawn on the page are the ones its search entries are filed under. */
@@ -492,9 +480,7 @@
 	{/each}
 	<!--
 		Rebuilding the groups and identifying everything again: the two acts that apply a change made
-		above to what is already there, so they sit under the settings. Identify all files again is
-		not Run now on Tasks: Run now covers what the settings now ask for; this answers what cannot
-		be worked out from settings at all (a model changed underneath, crops that came out badly).
+		above to what is already there, so they sit under the settings.
 	-->
 	<SettingGroup>
 		<ActionRow
@@ -535,9 +521,9 @@
 	{/if}
 {/snippet}
 
-<!-- The lists this section owns: who Sift can recognize, and the two ways to teach it many in one go.
-     Drawn with recognition off too, because switching it off for a week is no reason to lose the
-     list. -->
+<!--
+	The lists this section owns: who Sift can recognize, and the two ways to teach it many in one go.
+-->
 <!-- A count in the people list: the figure, or a quiet dash read out as none. -->
 {#snippet tally(count: number)}
 	{#if count > 0}
@@ -571,15 +557,15 @@
 					{knownTotal}
 					{knownTotal === 1 ? 'person' : 'people'}.
 				</p>
-				<!-- The name goes to that person's own page. Reading this list is almost always
-			     followed by wanting to look at somebody in it, and a name that is only text makes
-			     that a search somewhere else. Anybody without a page of their own is drawn dimmer
-			     and stays plain text, so a name you cannot follow looks different before you
-			     click it rather than after. -->
-				<!-- A table: the name, then each count in a column of its own under a heading that
-				     says what it counts, right-aligned, and a quiet dash where there is none. Starter
-				     pictures from a stash-box are never counted with the confirmed faces: a face like
-				     them waits under Needs your input, never named. -->
+				<!--
+					The name goes to that person's own page. Reading this list is almost always
+					followed by wanting to look at somebody in it, and a name that is only text makes
+					that a search somewhere else.
+				-->
+				<!--
+					A table: the name, then each count in a column of its own under a heading that says
+					what it counts, right-aligned, and a quiet dash where there is none.
+				-->
 				<div class="known-box">
 					<Scroller>
 						<!-- The list stands on the pane's edges by its own option, which pulls it out
@@ -616,11 +602,9 @@
 						</div>
 					</Scroller>
 				</div>
-				<!-- What the Confirmed faces column counts, folded under the numbers it explains.
-				     As a group of its own, a heading over three sentences with nothing to set, it
-				     would read as a section that had lost its rows. "Confirmed face" rather than
-				     "reference" throughout: the same object, said in the words of the act that
-				     makes one, needs nothing explained before it can be read. -->
+				<!--
+					What the Confirmed faces column counts, folded under the numbers it explains.
+				-->
 				<MoreAbout text={COPY.lists.confirmed} />
 			{/if}
 		</div>
@@ -665,8 +649,7 @@
 	/>
 
 	<SettingGroup id="faces.packs" heading={COPY.lists.packs.name} help={COPY.lists.packs.help}>
-		<!-- Taking a file in, one row: choosing the file is the press. The shared picker, because the
-		     browser's own file input cannot be restyled. See `ChooseFile`. -->
+		<!-- Taking a file in, one row: choosing the file is the press. -->
 		<LabelledRow id="faces.pack-import" label={COPY.pack.import} help={COPY.pack.importHelp}>
 			{#snippet foot()}
 				{#if imported}
@@ -708,8 +691,7 @@
 				onchange={(next: unknown) => void save(PEOPLE_FROM_FILES_KEY, next)}
 			/>
 		{/if}
-		<!-- Everyone goes in; the trailing half opens the sheet that leaves people out. A swap is the
-		     other way to send them, from Swap's own screen. -->
+		<!-- Everyone goes in; the trailing half opens the sheet that leaves people out. -->
 		<ActionRow
 			id="faces.pack-export"
 			label={COPY.pack.export}
@@ -735,8 +717,7 @@
 				<p class="status">{COPY.pack.known(shareable, waitingCarried)}</p>
 			{/if}
 		</ActionRow>
-		<!-- Off by default, and says what it is for: the numbers only one face model can read. Held
-		     for this screen only, so every export starts without the pictures. -->
+		<!-- Off by default, and says what it is for: the numbers only one face model can read. -->
 		<LabelledRow id="faces.pack-pictures" label={COPY.pack.pictures} help={COPY.pack.picturesHelp}>
 			<Switch
 				label={COPY.pack.pictures}
@@ -784,9 +765,7 @@
 		{#snippet work()}
 			{#if enabled && feature}
 				{#if feature.measured_by_another_model > 0}
-					<!-- The family changed. The faces the previous model described are measured again
-					     from the pictures Sift kept, by a job on the dashboard; until it has been through
-					     them they are out of matching and grouping, and the count says how many. -->
+					<!-- The family changed. -->
 					<p>
 						{feature.measured_by_another_model.toLocaleString()} files still have faces measured by the
 						previous model. The task Measuring faces with the chosen model measures them again from the
@@ -794,11 +773,7 @@
 					</p>
 				{/if}
 				{#if feature.references_without_pictures > 0}
-					<!-- THE ONE PLACE THE WORD "REFERENCE" IS STILL SAID TO A PERSON. A pack is a file
-					     somebody else made; what is inside it is reference faces, some of which arrived
-					     as numbers with no picture behind them, and there is no confirmed face here to
-					     call them: nobody in this library ever said yes to one. Calling them
-					     confirmed faces would name an act that did not happen. -->
+					<!-- THE ONE PLACE THE WORD "REFERENCE" IS STILL SAID TO A PERSON. -->
 					<p>
 						{feature.references_without_pictures.toLocaleString()} faces from a file of facial fingerprints
 						were imported without their pictures. The chosen model can't measure them, so they no longer
@@ -806,10 +781,7 @@
 					</p>
 				{/if}
 				{#if feature.device_problem}
-					<!-- No scan at all. A scan started in this state queues the whole library, fails
-					     every file, records nothing and reports that it went through the library: it is
-					     not a scan that goes badly, it is one that cannot happen. The server refuses it
-					     too, so this is the polite half of the same rule rather than the whole of it. -->
+					<!-- No scan at all. -->
 					<p>
 						Face recognition is paused. Choose CPU or another GPU under More settings, Run
 						recognition on.
@@ -822,10 +794,10 @@
 		{/snippet}
 		{#snippet setup()}
 			{#if enabled && feature && !feature.ready}
-				<!-- The one control on this screen that makes this device reach the internet, so it is
-				     a deliberate press rather than something that happens on enabling. What it
-				     downloads is licensed by somebody else on their own terms. It is on the page
-				     itself, not one page in, because until it is pressed nothing else here works. -->
+				<!--
+					The one control on this screen that makes this device reach the internet, so it is
+					a deliberate press rather than something that happens on enabling.
+				-->
 				<ActionRow
 					id="faces.download"
 					label={COPY.models.label}
@@ -940,8 +912,7 @@
 
 <style>
 	/* No wrapper and no gap over the groups: in ordinary block flow the space each group leaves
-	   under itself collapses with the room above the next group's heading, as on every pane. What
-	   a group of paragraphs and controls lays out inside itself is this column, under the heading. */
+	   under itself collapses with the room above the next group's heading, as on every pane. */
 	.stack {
 		display: flex;
 		flex-direction: column;
@@ -975,8 +946,7 @@
 		border-radius: var(--radius-sm);
 	}
 
-	/* Somebody Sift identifies who has no page to send you to. Dimmer, so the difference is visible
-	   before you try to follow it rather than after. */
+	/* Somebody Sift identifies who has no page to send you to. */
 	.who.pageless {
 		color: var(--sift-ink-3);
 	}
@@ -995,8 +965,8 @@
 		max-block-size: var(--settings-list-cap);
 	}
 
-	/* The room the list's edges option pulls into: a row's padding on each side, so the words start
-	   on the pane's name edge and the hover ground reaches to the scroller's edge, uncut. */
+	/* The room the list's edges option pulls into: a row's padding on each side, so the words
+	   start on the pane's name edge and the hover ground reaches to the scroller's edge, uncut. */
 	/* The names the starters are for, one to a line, as the table's names read. */
 	.starter-names {
 		margin: 0;

@@ -1,16 +1,5 @@
-/* Picking several things out of a grid.
- *
- * One model for every screen of tiles, so shift-click behaves alike everywhere: a set of ids and
- * an anchor, and the three gestures every file manager has:
- *
- *   click              this one, and nothing else
- *   ctrl/cmd-click     add or remove this one, keep the rest
- *   shift-click        everything between the last one and this one
- *
- * The anchor is the last item picked deliberately, so a range dragged out and back grows and
- * shrinks from the same end. The order of the items is passed in on each call, since the grid's
- * order changes underneath and a copy here would be an older answer.
- */
+/* Picking several things out of a grid, one model for every screen: click, ctrl-click and
+ * shift-click from an anchor. The order is passed in on each call, since the grid's changes. */
 
 import { untrack } from 'svelte';
 
@@ -19,8 +8,7 @@ interface Step {
 	ids: ReadonlySet<string>;
 	anchor: string | null;
 	base: ReadonlySet<string>;
-	/* Whether that step's pick reached past the loaded screen (`#beyondScreen`), so taking back a
-	   whole-query pick restores it under its own rules. */
+	/* Whether that step's pick reached past the loaded screen. */
 	beyond: boolean;
 }
 
@@ -30,32 +18,18 @@ const STEPS_KEPT = 50;
 export class Selection {
 	#ids = $state(new Set<string>());
 	#anchor: string | null = null;
-	/* What was picked when the anchor was set, before any range was dragged from it: a shift-click
-	 * is this plus the run, recomputed, so dragging back shrinks the range. */
+	/* What was picked when the anchor was set; a shift-click is this plus the run. */
 	#base: ReadonlySet<string> = new Set();
 
-	/*
-	 * Which way the run in progress paints, decided once, where it began: from an unpicked tile it
-	 * picks, from a picked one it unpicks. Decided once and recomputed from `#base` on every move, so
-	 * an overshoot is given back in both directions. Null means add (a shift-click, or the sweep a
-	 * long press starts through `only`).
-	 */
+	/* Which way the run paints, decided where it began; null adds. */
 	#run: 'pick' | 'unpick' | null = null;
 
 	/*
-	 * Whether what is picked reaches past the rows the screen has loaded.
-	 *
-	 * For a pick made on the screen, `ordered` and `retain` keep to the loaded rows; a whole-query
-	 * pick ("Select 1,000 of 1,250") must keep all of them. A flag set where the pick is made, and
-	 * reset by every other gesture, so it is never sticky. `$state` because `ordered` reads it.
+	 * Whether the pick reaches past the loaded rows (a whole-query pick); reset by other gestures.
 	 */
 	#beyondScreen = $state(false);
 
-	/* What was picked before each of the last few steps, and what has been taken back.
-	 *
-	 * THESE HOLD CLICKS, NEVER DATA: nothing here reaches the server. One gesture is one step (a
-	 * shift-click of twenty tiles comes back in one press), and clearing counts too, which is where
-	 * a way back is most wanted. */
+	/* Clicks, never data: one gesture is one step, clearing included. */
 	#undo: Step[] = [];
 	#redo: Step[] = [];
 
@@ -72,11 +46,7 @@ export class Selection {
 		return this.#redo.length > 0;
 	}
 
-	/*
-	 * What is picked right now, copied, WITHOUT subscribing to it: screens clear the selection from
-	 * inside an effect, and a tracked read here would make that effect re-run itself until Svelte
-	 * stops it.
-	 */
+	/* The pick copied untracked, so an effect clearing it does not re-run itself. */
 	#snapshot(): Step {
 		return untrack(() => ({
 			ids: new Set(this.#ids),
@@ -118,10 +88,7 @@ export class Selection {
 		return true;
 	}
 
-	/**
-	 * Forget the steps, when the screen changes underneath (a new question, a page, a reload): the
-	 * ids in them name rows that are gone.
-	 */
+	/** Forget the steps when the screen changes under them. */
 	forgetSteps(): void {
 		this.#undo = [];
 		this.#redo = [];
@@ -144,11 +111,7 @@ export class Selection {
 		return this.#beyondScreen;
 	}
 
-	/**
-	 * Everything picked, in the order the screen is showing it, never the order it was clicked, so
-	 * an action agrees with the screen. A whole-query pick answers all of it in the order read.
-	 * Picks not on screen follow the visible ones, in the order picked.
-	 */
+	/** Everything picked in the screen's order, so an action agrees with the screen. */
 	ordered(items: readonly string[]): string[] {
 		if (this.#beyondScreen) return [...this.#ids];
 		const shown = items.filter((id) => this.#ids.has(id));
@@ -175,24 +138,14 @@ export class Selection {
 		this.#beyondScreen = false;
 	}
 
-	/**
-	 * Declare a run from here, and which way it paints. Nothing is picked or unpicked yet.
-	 *
-	 * For a sweep begun while things are picked: the tile becomes the anchor, what is picked becomes
-	 * the base, and the direction is read off the tile (`#run`). No step: a run that has not moved
-	 * changed nothing; the first `extendTo` takes it.
-	 */
+	/** Declare a run from here and its direction; nothing changes until `extendTo`. */
 	beginRun(id: string): void {
 		this.#run = this.#ids.has(id) ? 'unpick' : 'pick';
 		this.#anchor = id;
 		this.#base = new Set(this.#ids);
 	}
 
-	/**
-	 * The hand has been lifted: whatever run was open is over. Only the direction is forgotten, so a
-	 * later shift-click measures from where the sweep began; left behind, it would make the next
-	 * shift-click unpick. Called from `TileGesture.#stopSweeping` on pointerup and pointercancel.
-	 */
+	/** The hand lifted: forget the run's direction, so the next shift-click does not unpick. */
 	endRun(): void {
 		this.#run = null;
 	}
@@ -214,11 +167,8 @@ export class Selection {
 		this.#beyondScreen = false;
 	}
 
-	/** Everything picked before this gesture, with the run from the anchor to here added to it,
-	 *  or taken out of it, where the run began on a tile that was already picked. See `#run`.
-	 *
-	 * Recomputed from the anchor each time, so a range dragged one tile too far can be taken back.
-	 * With no anchor, or one that has left the list, it is a plain pick.
+	/**
+	 * The base plus (or minus) the run from the anchor to here, recomputed so overshoot comes back.
 	 */
 	extendTo(id: string, items: readonly string[]): void {
 		const from = this.#anchor === null ? -1 : items.indexOf(this.#anchor);
@@ -245,13 +195,7 @@ export class Selection {
 		// The anchor stays where the range began, so the next drag measures from the same end.
 	}
 
-	/**
-	 * What a click on an already-picked grid means. One place, so every grid agrees.
-	 *
-	 * A plain click ADDS AND REMOVES, as a phone does once a long press has started selecting: with
-	 * nothing picked a plain click opens instead and never arrives here, so "just this one" would
-	 * only drop the set being built. `only` still starts a selection from nothing.
-	 */
+	/** A plain click on a picked grid adds and removes, as on a phone. */
 	pick(id: string, event: { shiftKey: boolean }, items: readonly string[]): void {
 		if (event.shiftKey) {
 			this.extendTo(id, items);
@@ -260,8 +204,7 @@ export class Selection {
 		this.toggle(id);
 	}
 
-	/** Pick everything on screen, or drop it all if everything already is: one control, as a
-	 *  select-all checkbox. */
+	/** Pick everything on screen, or drop it all if everything is. */
 	toggleAll(items: readonly string[]): void {
 		if (items.length > 0 && items.every((id) => this.#ids.has(id))) {
 			this.clear();
@@ -274,12 +217,7 @@ export class Selection {
 		this.#beyondScreen = false;
 	}
 
-	/**
-	 * Pick every row a whole question matches, INCLUDING the ones the screen has not loaded.
-	 *
-	 * Not `toggleAll`, whose second press over an already-picked capped thousand would clear them.
-	 * No anchor, since a button press is no place a shift-click could range from.
-	 */
+	/** Pick every row the whole query matches, loaded or not; no anchor. */
 	pickWholeQuery(items: readonly string[]): void {
 		this.#step();
 		this.#ids = new Set(items);
@@ -288,14 +226,7 @@ export class Selection {
 		this.#beyondScreen = true;
 	}
 
-	/**
-	 * Take up these ids as what is picked, as a fact rather than as a gesture: no step to take
-	 * back, no run, and the anchor kept only while it is still among the rows given.
-	 *
-	 * For a selection that MIRRORS a pick held somewhere else (swap mode's picks, see
-	 * `$lib/swap/sweep.svelte`): before each press it is told what the other store holds on screen,
-	 * so a run measured from `#base` paints over the truth rather than over what it last saw.
-	 */
+	/** Take these ids as the pick, as a fact (no step, no run), for a mirrored pick (swap mode). */
 	hold(ids: readonly string[]): void {
 		this.#ids = new Set(ids);
 		this.#base = new Set(ids);
@@ -303,14 +234,9 @@ export class Selection {
 		this.#run = null;
 	}
 
-	/** Forget anything that is no longer on screen, so an action never runs over ids the person
-	 *  cannot see. */
+	/** Forget anything no longer on screen. */
 	retain(items: readonly string[]): void {
-		/*
-		 * A whole-query pick is not a pick OF the screen, so the screen cannot say what has left it;
-		 * cutting it here would collapse it to the page at the next re-read. A file deleted elsewhere
-		 * stays until the pick ends, which every verb does as its write lands.
-		 */
+		/* A whole-query pick is not of the screen, so the screen cannot trim it. */
 		if (this.#beyondScreen) return;
 		const present = new Set(items);
 		const next = new Set([...this.#ids].filter((id) => present.has(id)));

@@ -1,16 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* The Sites and Tunnels pane: cookies, the tunnels, and which Site uses which: its words, and
- * what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Sites.svelte` and the two blocks it draws, `Tunnels.svelte` and
- * `Routing.svelte`, take every word they add from `COPY`, and the search entries are built from the
- * same objects, so a heading cannot say one thing on the pane and another in a search result. The
- * third block it draws, the Sites Sift knows, carries its own module (`SupportedSites.search.ts`).
- *
- * None of these is a registered setting: saved cookies are a secret and a tunnel is a file
- * somebody dropped in. `keywords` is carrying most of the weight here: the words people use for
- * these are almost never the words on the heading, which is why "login" and "sign in" are still
- * searchable terms below while the screen itself never says either. */
+ * what somebody can type to find them. */
 import { counted } from '$lib/entity/entity-counts';
 import type { Searchable } from './search';
 
@@ -43,9 +33,7 @@ export const COPY = {
 			off: 'Off'
 		},
 		/* Whether a swap can be hosted on the tunnel, as the last try to host one found: the
-		   server's `can_host`, which is null until somebody tries. A provider's P2P server with port
-		   forwarding on hands the tunnel a port; any other server does not, and only a try tells.
-		   One wording, read by every screen that says it. */
+		   server's `can_host`, which is null until somebody tries. */
 		hosting: {
 			can: 'Can host a swap',
 			cannot: "This configuration can't host a swap because it wasn't created properly.",
@@ -76,9 +64,9 @@ export const COPY = {
 		importButton: 'Import tunnel',
 		deleteTitle: (name: string | null) =>
 			name ? `Delete the tunnel ${name}?` : 'Delete this tunnel?',
-		/* NOT "Sites sent through it use your own connection": the route is
-		   left pointing at the deleted tunnel on purpose (`delete_tunnel`, and the routes table's
-		   own note), so those Sites refuse to download until they are pointed somewhere else. */
+		/* NOT "Sites sent through it use your own connection": the route is left pointing at the
+		   deleted tunnel on purpose (`delete_tunnel`, and the routes table's own note), so those
+		   Sites refuse to download until they are pointed somewhere else. */
 		deleteSays:
 			'Its configuration is deleted. Sites that use it stop downloading until you choose another tunnel or your own connection for them.',
 		deleteConfirm: 'Delete'
@@ -101,11 +89,7 @@ export const COPY = {
 		down: (tunnel: string) => `${tunnel} isn't connected`,
 		connectionFor: (site: string) => `Connection for ${site}`
 	},
-	/* The tunnel this Sift dials through when it joins a swap. Whether a tunnel can host one is
-	   said on its own row under Tunnels. The join's choice is made on the swap screen, beside the
-	   join, where the server it goes through is named; this block says what is chosen and opens
-	   that screen. The swap screens' own sentences about a tunnel link
-	   here: `/settings/sites#sites.swap_tunnels`. */
+	/* The tunnel this Sift dials through when it joins a swap. */
 	swapTunnels: {
 		name: 'Swap tunnels',
 		help: 'The tunnel you join a swap through.',

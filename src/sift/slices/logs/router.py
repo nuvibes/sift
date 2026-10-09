@@ -1,18 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The end of the log, and a copy of it fit to leave the machine.
-
-Admin-only, and that is the control rather than a courtesy. A log line carries whatever the line
-that wrote it passed (a library path, a file name, a person's name) and while every record goes
-through the scrubber before it is written, the honest answer to a guest asking what this
-installation has been doing is still no.
-
-**Read-only, and there is deliberately no way to clear it from here.** What the log may take on disk
-is already a setting, and Sift deletes the oldest as it fills; a button that threw the record away
-would be a button whose only use is on the day somebody most wants to read it.
-
-The tail rather than the file: see `tail_of` for why a whole-file read is not an option on a log
-whose ceiling is a gigabyte.
-"""
+"""The end of the log, and a copy fit to leave the machine; admin-only, read-only."""
 
 from __future__ import annotations
 
@@ -36,36 +23,24 @@ from sift.slices.logs.tail import MOST_LINES, SEARCH_BUDGET, newest_matching
 
 router = APIRouter(tags=["logs"])
 
-#: How many lines a screen gets when it does not say. A screenful and some scrollback.
 DEFAULT_LINES = 200
 
-#: The levels a record can carry, quietest first, as structlog writes them. A filter names ONE and
-#: keeps it and everything louder ("at least this bad"): nobody means errors without critical ones.
+#: A filter keeps its level and everything louder.
 LEVELS: tuple[str, ...] = ("debug", "info", "warning", "error", "critical")
 
 Level = Literal["debug", "info", "warning", "error", "critical"]
 
-#: How many rotated files beside the log are looked through, at most. Far past any `log_backups` a
-#: person would set, and a bound, so a directory somebody filled with `sift.log.N` by hand is not a
-#: walk without an end.
+#: A bound past any real `log_backups`, so a folder filled by hand is never an endless walk.
 _MOST_ROTATIONS = 50
 
-#: The two keys every record carries that a search is never about. "info" matching every line
-#: because every line says `"level": "info"` is a search box that cannot filter anything.
+#: Never searched: every line carries them, so "info" would match everything.
 _NOT_SEARCHED = frozenset({"timestamp", "level"})
 
-#: The longest search text taken. A search box, not a place to paste a log into.
 _MOST_SEARCH = 200
 
 
 def _parsed(line: str) -> LogLine:
-    """One line, taken apart if it will come apart.
-
-    A line that is not JSON, or is JSON that is not an object, keeps its raw text and nothing else.
-    That is not a failure worth reporting: a log holds whatever was written to it, including output
-    from a library that knows nothing about Sift's format, and a page that refused to draw because
-    one line was odd would be useless exactly when it is wanted.
-    """
+    """One line, taken apart if it will come apart; otherwise its raw text alone."""
     try:
         held: Any = json.loads(line)
     except ValueError:
@@ -92,24 +67,7 @@ async def recent(
     level: Annotated[Level | None, Query()] = None,
     search: Annotated[str | None, Query(max_length=_MOST_SEARCH)] = None,
 ) -> LogPage:
-    """The end of the log, oldest first. Narrowed, where asked, to a level and a search.
-
-    Oldest first because that is the order it was written in and the order anything quoting it will
-    be read in. A screen that wants the newest at the top can turn it over; a reader following a
-    sequence of events cannot put one back together.
-
-    ## Narrowed HERE, and not on the screen
-
-    A screen that filtered what it was sent would be filtering the last two hundred lines, so
-    "errors only" on a busy log would show the errors among the last two hundred lines, which is
-    usually none, while the error somebody is looking for sits a thousand lines up. Narrowing where
-    the file is read means the two hundred lines sent are two hundred ERRORS, and the rest of a
-    large log never crosses the wire. `level` keeps that level and everything louder; `search` keeps
-    a line whose event or fields contain the words, ignoring case.
-
-    Off the event loop, like every other file read in Sift: the log lives beside the database, which
-    on a self-hosted install may be a network mount, and a stat on one of those is not instant.
-    """
+    """The end of the log, oldest first, narrowed here rather than on the screen."""
     settings = part_of(request, SETTINGS)
     path = Path(settings.data_dir) / LOG_FILENAME
     found = await asyncio.to_thread(_read, path, lines, level, search)
@@ -127,8 +85,7 @@ def _read(path: Path, lines: int, level: str | None = None, search: str | None =
         _with_rotations(path),
         lines,
         keep,
-        # Bounded only when filtered. An unfiltered read keeps every line, so it has what it asked
-        # for within a few blocks and a budget would change nothing.
+        # Bounded only when filtered: an unfiltered read has its lines within a few blocks.
         budget=None if keep is None else SEARCH_BUDGET,
     )
     return LogPage(
@@ -142,22 +99,12 @@ def _read(path: Path, lines: int, level: str | None = None, search: str | None =
 
 
 def _with_rotations(path: Path) -> list[Path]:
-    """The log and the older files rotation keeps beside it, newest first. See `newest_matching`.
-
-    Read as well as the current file because a rotation can happen a second before somebody looks:
-    the current file is then nearly empty and the error they came for is in `.1`.
-    """
+    """The log and the rotated files beside it, newest first: an error may be in `.1`."""
     return [path, *(path.with_name(f"{path.name}.{n}") for n in range(1, _MOST_ROTATIONS + 1))]
 
 
 def _keeps(level: str | None, search: str | None) -> Callable[[str], bool] | None:
-    """What a filtered read keeps, as one test of a raw line. None when nothing filters it.
-
-    A line that is not one of Sift's records has no level, so it is kept only when every level is
-    wanted (`debug`, Debug on the screen): a level filter is a promise that what is shown is at
-    least that bad, and a line nobody can rate cannot be shown under that promise. A search still
-    reads its text, since the text is all it has.
-    """
+    """A filtered read's test of one raw line; a line with no level passes only at Debug."""
     floor = LEVELS.index(level) if level in LEVELS else 0
     needle = (search or "").strip().casefold()
     if floor == 0 and not needle:
@@ -186,8 +133,7 @@ def _record(raw: str) -> dict[str, Any] | None:
 
 
 def _searched_text(record: dict[str, Any]) -> str:
-    """The event, then every other field but the two every line carries as `key=value`, the same
-    words the screen draws for a line, so what matches is what somebody can see matched."""
+    """The event and the fields as the screen draws them, so a match is a visible one."""
     event = record.get("event")
     fields = (
         f"{key}={value if isinstance(value, str) else json.dumps(value)}"
@@ -206,12 +152,10 @@ async def archive(
     request: Request,
     _admin: Annotated[Viewer, Depends(require_admin)],
 ) -> Response:
-    """`Download log`: the library's log whole and unfiltered, redacted whatever the setting says,
-    as the zip the desktop app makes of both its places (`sift.logbundle`)."""
+    """`Download log`: the library's log whole, redacted, zipped as the desktop app does."""
     settings = part_of(request, SETTINGS)
     places = [("library", Path(settings.data_dir))]
-    # The app's own logs too, where the desktop app started this backend: its window may be a
-    # browser, which has no other way to reach them.
+    # The app's own logs too: a browser window has no other way to reach them.
     if (app := await asyncio.to_thread(app_logs, settings)) is not None:
         places.append(("app", app))
     made = io.BytesIO()
@@ -220,7 +164,6 @@ async def archive(
 
 
 def app_logs(settings: Settings) -> Path | None:
-    """The desktop app's log folder (its `shell.log` and `backend.log`), as the app that started
-    this backend said it; else None."""
+    """The desktop app's log folder, as the app that started this backend said; else None."""
     folder = settings.app_log_dir
     return folder if folder is not None and folder.is_dir() else None

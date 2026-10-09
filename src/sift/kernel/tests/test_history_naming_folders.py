@@ -24,10 +24,8 @@ import sift.slices.suggestions.schema
 import sift.slices.watermarks.schema
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.access import Repository
-
-# The wording lives next door: one table for all three histories. See `sentences.py`.
 from sift.kernel.db import Database
-from sift.kernel.tests.test_history import make_file, name_person
+from sift.kernel.tests.history_helpers import make_file, name_person
 from sift.testing.fixtures import Actors
 
 pytestmark = pytest.mark.anyio

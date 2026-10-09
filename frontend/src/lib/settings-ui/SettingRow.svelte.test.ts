@@ -5,15 +5,7 @@ import type { SettingEntry } from '$lib/settings-ui/settings';
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import source from './SettingRow.svelte?raw';
 
-/*
- * A menu whose choices are NUMBERS hands back a number.
- *
- * The menu speaks strings, and the server checks a value against the choices exactly as they were
- * declared, so a Playback menu over numbers (how far into a video before it resumes, the highest
- * height a copy is made at) sending "720" for a choice of 720 is refused with a 422 and snaps
- * back, every time. The row maps the picked option back to the declared choice; this
- * drives the real menu and reads what the pane would be told.
- */
+/* A menu whose choices are NUMBERS hands back a number. */
 
 let showing: Record<string, unknown> | null = null;
 let host: HTMLElement;

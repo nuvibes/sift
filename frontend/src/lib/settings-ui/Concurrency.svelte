@@ -1,8 +1,6 @@
 <script lang="ts">
-	/*
-	 * Performance's settings: Concurrency (one row, its numbers a page behind Edit), and the step
-	 * back's two causes with its share, which lower those numbers. One group, one panel.
-	 */
+	/* Performance's settings: Concurrency (one row, its numbers a page behind Edit), and the
+	 * step back's two causes with its share, which lower those numbers. */
 	import { onMount } from 'svelte';
 	import { Button, LabelledRow, SettingLink } from '$lib/components/common';
 	import SettingGroup from './SettingGroup.svelte';
@@ -43,8 +41,7 @@
 	/* In quiet-hours mode the range is the one on Tasks, so the page points there. */
 	const NIGHTLY = { key: BUDGET, is: 'nightly' };
 
-	/** Whether a row drawn under a condition applies now. A condition on a value not read yet does
-	 * not, so a row never flashes in and out while the values load. */
+	/** Whether a row drawn under a condition applies now. */
 	function holds(when: { key: string; is: string } | undefined): boolean {
 		if (!when) return true;
 		return String(panel.value(when.key) ?? '') === when.is;

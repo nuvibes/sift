@@ -1,43 +1,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * A finger's stroke: the one reader of what a quick, straight stroke across a touch screen means.
- *
- * Two surfaces hear it. A finger drawn sideways across the viewer steps through the run it was
- * opened from (`swipeBetween`), and a finger drawn down a sheet's head puts the sheet away
- * (`Drawer` and the menu sheet, through `strokes`). Both read the same stroke by the same rules,
- * here, so "how far, how straight, how quick" cannot come to mean two things on two screens.
- *
- * Touch only, and only a stroke that is clearly along one axis: a slanted stroke is somebody
- * scrolling or reaching for the tab bar, and a slow drag is somebody deciding, so neither acts. A
- * press that starts on a control is that control's (the scrubber is a sideways drag of its own),
- * and a mouse keeps the buttons, the keys and the press outside it already has.
- *
- * The picture has nothing to pan on a touch screen (magnifying is the wheel's, in full screen), so
- * a sideways stroke on it can only mean the next file. A sheet's head scrolls nothing, so a stroke
- * down it can only mean "put this away", the way every phone's sheet goes.
+ * The one reader of a quick, straight touch stroke: sideways across the viewer steps the run, down
+ * a sheet's head puts it away. Touch only, clearly along one axis, never from a control.
  */
 import type { Attachment } from 'svelte/attachments';
 
 import { move } from '$lib/shell/motion.svelte';
 
-/** How far a stroke must travel along its axis, in CSS pixels, before it is a stroke, not a wobble. */
+/** In CSS pixels. */
 export const SWIPE_DISTANCE = 56;
-/** How much further along its axis than across it the stroke must travel. */
 const SWIPE_SLANT = 1.5;
-/** How long it may take, in milliseconds. A slower stroke is a drag somebody may still take back. */
+/** A slower stroke is a drag somebody may still take back. */
 export const SWIPE_TIME = 800;
 
-/** Where a press may begin and still be a swipe: anywhere but a control. */
 const CONTROLS =
 	'button, a, input, select, textarea, [role="slider"], [role="menu"], .player-bar, .still-control';
 
-/** The four ways a finished stroke can go, in screen terms. */
 type StrokeWay = 'left' | 'right' | 'up' | 'down';
 
-/**
- * Which way a finished stroke went, or null for a stroke that is not one: too short, too slow, or
- * too slanted to say which axis it was along. The one reading every stroke in the app is judged by.
- */
+/** Null for too short, too slow, or too slanted. */
 export function readStroke(dx: number, dy: number, ms: number): StrokeWay | null {
 	if (ms > SWIPE_TIME) return null;
 	const across = Math.abs(dx);
@@ -51,12 +32,7 @@ export function readStroke(dx: number, dy: number, ms: number): StrokeWay | null
 	return dy > 0 ? 'down' : 'up';
 }
 
-/**
- * Whether a press began on a control INSIDE the element, which is that control's to answer.
- *
- * Inside it only: a sheet's head is itself within a menu (`role="menu"`), and the menu around the
- * element is not a control the press began on.
- */
+/** A control INSIDE the element; the menu around it does not count. */
 function onAControl(node: HTMLElement, target: EventTarget | null): boolean {
 	if (!(target instanceof Element)) return false;
 	const control = target.closest(CONTROLS);
@@ -65,25 +41,19 @@ function onAControl(node: HTMLElement, target: EventTarget | null): boolean {
 
 export type SwipeWay = 'next' | 'previous';
 
-/** Which way a finished stroke steps through a run, or null for one that does not. Left is next. */
+/** Left is next. */
 export function readSwipe(dx: number, dy: number, ms: number): SwipeWay | null {
 	const way = readStroke(dx, dy, ms);
 	return way === 'left' ? 'next' : way === 'right' ? 'previous' : null;
 }
 
 interface StrokeTargets {
-	/** Whether a stroke counts at all right now. */
 	live: boolean;
-	/** What each way does. A way with nothing here is not a stroke on this element. */
 	on: Partial<Record<StrokeWay, () => void>>;
-	/**
-	 * A stroke DOWN still counts when the browser took it for a scroll, as long as nothing under
-	 * the finger could scroll up: the pull that puts a phone's viewer away. See `pulledDown`.
-	 */
+	/** A stroke DOWN counts as a pull from the top even when the browser took it (`pulledDown`). */
 	pull?: boolean;
 }
 
-/** Whether every box the press began in is at its top, so a stroke down there scrolls nothing. */
 function atTheTop(target: EventTarget | null): boolean {
 	for (let at = target instanceof Element ? target : null; at; at = at.parentElement) {
 		if (at.scrollTop > 0) return false;
@@ -91,21 +61,11 @@ function atTheTop(target: EventTarget | null): boolean {
 	return (document.scrollingElement?.scrollTop ?? 0) <= 0;
 }
 
-/*
- * The stroke, heard on the element it is drawn across.
- *
- * The click a finger lifting could still produce is swallowed once a stroke has acted, so a stroke
- * that ends on the picture never also pauses what it just moved to, and one that ends on whatever
- * a sheet uncovered never also presses it.
- *
- * The element must leave the stroke to script (`touch-action`): a stroke the browser takes for a
- * scroll or a pan is cancelled half way (`pointercancel`) and never finishes here.
- */
+/* The click a lifting finger may still produce is swallowed; the element needs `touch-action`. */
 export function strokes(targets: () => StrokeTargets): Attachment<HTMLElement> {
 	return (node) => {
 		type Begun = { x: number; y: number; at: number; pointer: number; top: boolean };
 		let start: Begun | null = null;
-		/* A stroke the browser took over (`pointercancel`), kept for its touch's end. */
 		let taken: Begun | null = null;
 
 		const down = (event: PointerEvent) => {
@@ -133,7 +93,6 @@ export function strokes(targets: () => StrokeTargets): Attachment<HTMLElement> {
 				event.timeStamp - from.at
 			);
 			if (way === null) return;
-			// A pull counts only from the top, whichever way the stroke reached here.
 			if (way === 'down' && targets().pull && !from.top) return;
 			const go = targets().on[way];
 			if (!go) return;
@@ -146,13 +105,7 @@ export function strokes(targets: () => StrokeTargets): Attachment<HTMLElement> {
 			start = null;
 		};
 
-		/*
-		 * THE PULL DOWN. On a box the browser may scroll up and down (`touch-action: pan-y`), a
-		 * stroke down is the browser's the moment it moves, and the pointer is cancelled half way.
-		 * The touch itself still ends here, so a pulled stroke is read from its touch's end, and it
-		 * counts only when it began where nothing could scroll up: at the top of a box, a stroke
-		 * down is not a scroll, it is the pull every phone's viewer answers by going away.
-		 */
+		/* THE PULL DOWN, read from the touch's end, counting only where nothing could scroll up. */
 		const pulledDown = (event: TouchEvent) => {
 			const from = taken;
 			taken = null;
@@ -185,19 +138,15 @@ export function strokes(targets: () => StrokeTargets): Attachment<HTMLElement> {
 }
 
 interface SwipeTargets {
-	/** Whether a stroke counts at all right now: the viewer is filling a phone's screen. */
 	live: boolean;
 	next?: () => void;
 	previous?: () => void;
-	/** Put the viewer away: a stroke down the picture, from the top of what it scrolls in. */
 	close?: () => void;
 }
 
-/** The mark on the box a run is stepped through on, for `stepArrival` to find it by. */
 const STEPS_ATTRIBUTE = 'data-steps';
 
-/** A sideways stroke across the picture steps through the run: left is next, right is previous.
- *  A stroke down it puts the viewer away. */
+/** Left is next, right previous; down puts the viewer away. */
 export function swipeBetween(targets: () => SwipeTargets): Attachment<HTMLElement> {
 	const heard = strokes(() => {
 		const { live, next, previous, close } = targets();
@@ -213,25 +162,16 @@ export function swipeBetween(targets: () => SwipeTargets): Attachment<HTMLElemen
 	};
 }
 
-/** How far the next file travels as it arrives, in px: enough to say which way, not a lurch. */
 export const STEP_TRAVEL = 24;
 
 /**
- * The file a step landed on, arriving from the side the finger sent it to.
- *
- * A stroke to the left moves the run on, so the next file comes in from the right, and the one before
- * comes in from the left: the travel says which way along the run the step went, the way a phone's
- * photographs slide. Called once the stepped-to file is on screen, since the viewer follows the id
- * without being rebuilt and the picture changes when the file has loaded, not when the stroke ends.
- * At `fast`, a small surface's pace: a step is a small thing, and it is repeated. Reduced motion is
- * the fade alone (`move`).
+ * The stepped-to file arrives from the side the finger sent it, at `fast`; reduced motion fades.
  */
 export function stepArrival(within: Element | null, way: SwipeWay): Promise<void> {
 	const box = within?.querySelector(`[${STEPS_ATTRIBUTE}]`) ?? null;
 	if (box === null) return Promise.resolve();
 	const from = way === 'next' ? STEP_TRAVEL : -STEP_TRAVEL;
-	/* The inline style the movement ends on is taken off again: a transform left on the box, even a
-	   zero one, makes it the box every fixed element inside it is placed against. */
+	/* The ending style is removed: a leftover transform re-anchors fixed children. */
 	const settle = () => {
 		(box as HTMLElement).style.removeProperty('transform');
 		(box as HTMLElement).style.removeProperty('opacity');
@@ -239,10 +179,8 @@ export function stepArrival(within: Element | null, way: SwipeWay): Promise<void
 	return move(box, { x: [from, 0], opacity: [0, 1] }, { pace: 'fast' }).then(settle, settle);
 }
 
-/** How long after a stroke the click it could produce may still arrive. */
 const CLICK_AFTER_STROKE_MS = 400;
 
-/** The one click that may follow a stroke, taken before the picture hears it. */
 function swallowNextClick(node: HTMLElement): void {
 	const stop = (event: Event) => {
 		event.stopPropagation();

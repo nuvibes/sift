@@ -1,11 +1,4 @@
-/* The People store: the parts that decide what a screen shows.
- *
- * The API is stubbed. What is under test is the store's own reasoning: that a slow response
- * cannot overwrite a newer one, that a person put in the vault leaves the list, and that resolving
- * a term asks the server rather than filtering the list it happens to hold. That last one is the
- * one worth guarding: the client knows names and nothing else, so answering locally would miss
- * every alias and look exactly like a working search.
- */
+/* The People store: the parts that decide what a screen shows. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,9 +19,7 @@ vi.mock('$lib/api/client', () => ({
 
 const mocked = vi.mocked(api);
 
-/* The list route answers a page rather than an array. One helper, so the shape lives in one place:
- * eleven hand-written copies of it is how a stub comes to describe a reply the server stopped
- * sending. */
+/* The list route answers a page rather than an array. */
 function page(items: Person[], total = items.length) {
 	return { items, total, limit: 60, offset: 0 };
 }
@@ -58,8 +49,7 @@ function person(overrides: Partial<Person> = {}): Person {
 		// absence: the column refuses NULL, so the wall always has one to draw a mark from or not.
 		pmv_creator: false,
 		rating: null,
-		// Off, which is what everything not deliberately kept local is. It is the card's mark, so
-		// the row carries it rather than a menu asking about it one card at a time.
+		// Off, which is what everything not deliberately kept local is.
 		keep_local: false,
 		// And "Don't swap", the refusal's other mark, off for the same reason.
 		keep_from_swaps: false,
@@ -139,15 +129,9 @@ describe('the people list', () => {
 	});
 
 	it('asks the server again when somebody goes into the vault, rather than guessing', async () => {
-		/*
-		 * Whether they leave the list has TWO answers and only the server holds them: with the
-		 * vault shut they are concealed from every route that names them, and with it open they are
-		 * still listed and simply marked.
-		 *
-		 * Dropping the row on sight is right for the first and wrong for the second: hiding
-		 * somebody while the vault is open would take them off a screen that is showing hidden
-		 * people quite happily, and only a reload would bring them back.
-		 */
+		/* Whether they leave the list has TWO answers and only the server holds them: with the
+		 * vault shut they are concealed from every route that names them, and with it open they
+		 * are still listed and simply marked. */
 		mocked.get.mockResolvedValue(page([person()]));
 		const store = new People();
 		await store.load();
@@ -161,16 +145,8 @@ describe('the people list', () => {
 	});
 
 	it('hides somebody through their own route rather than through the admin edit', async () => {
-		/*
-		 * Hiding has its own route. `update` carries the NAME and the record with it, and those
-		 * belong to the whole install, so that route is an admin's. Hiding somebody is the one
-		 * opinion on a person that belongs to nobody but the viewer, and a guest pressing Hide must
-		 * not be answered 403.
-		 *
-		 * Nothing is guessed here either. Whether they leave a wall is the server's answer, so the
-		 * bell is rung and every screen re-reads with the question IT was asking, not `load()`,
-		 * which fetches the first page unfiltered and throws away the wall's own.
-		 */
+		/* Hiding has its own route. `update` carries the NAME and the record with it, and those
+		 * belong to the whole install, so that route is an admin's. */
 		mocked.get.mockResolvedValue(page([person()]));
 		const store = new People();
 		await store.load();
@@ -222,9 +198,8 @@ describe('the people list', () => {
 		const store = new People();
 
 		await store.load('', 0, 60, 'favorite');
-		// A reload triggered by something else (a share moving, the vault opening) passes no
-		// order at all. Falling back to the default here would silently put the wall back to
-		// most-seen while the control still read Favorites first.
+		// A reload triggered by something else (a share moving, the vault opening) passes no order
+		// at all.
 		await store.load();
 
 		expect(mocked.get).toHaveBeenLastCalledWith('/people', {
@@ -233,8 +208,7 @@ describe('the people list', () => {
 	});
 
 	it('holds the scoped total, which is what a paginator is drawn from', async () => {
-		// The page it holds is 60 rows and the wall has to say 600. Taking the length of what
-		// arrived would draw one page of paging however deep the library is.
+		// The page it holds is 60 rows and the wall has to say 600.
 		mocked.get.mockResolvedValue(page([person()], 600));
 		const store = new People();
 
@@ -354,9 +328,7 @@ describe('the total, and the rows it has to agree with', () => {
 });
 
 describe('the sites wall and a slow answer', () => {
-	/* The stale-response guard every list store carries. Without it, paging twice quickly, or
-	   changing the order twice, leaves the wall showing whichever answer came back last rather
-	   than the one that was asked for last. */
+	/* The stale-response guard every list store carries. */
 	function site(overrides: Partial<Site> = {}): Site {
 		return {
 			id: 's1',
@@ -421,18 +393,10 @@ describe('the sites wall and a slow answer', () => {
 	});
 });
 
-/*
- * WHAT THE WALL IS FILTERED BY, held on the store beside the order.
- *
- * It is on the store for the reason the order is: a reload comes from places that know nothing
- * about the filter (the order changing, the vault opening, a share moving), and every one of
- * those would otherwise have to remember to pass it. The one that forgot would widen the wall back
- * to the whole library without saying so, which looks like the filter having been cleared.
- */
+/* WHAT THE WALL IS FILTERED BY, held on the store beside the order. */
 describe('the narrowing a wall was loaded with', () => {
 	it('sends every value of a repeated facet, not just the last', async () => {
-		/* Repeated keys are "either of these" to the entity routes. A request that carried one of the
-		   two would answer a narrower question than the one on screen, with nothing to reveal it. */
+		/* Repeated keys are "either of these" to the entity routes. */
 		mocked.get.mockResolvedValue(page([person()]));
 		const store = new People();
 
@@ -444,8 +408,8 @@ describe('the narrowing a wall was loaded with', () => {
 	});
 
 	it('keeps it for a reload that was not told about it', async () => {
-		/* Changing the order is the call site this is for: it passes a page and an order and nothing
-		   else, and it must not quietly widen the wall underneath somebody. */
+		/* Changing the order is the call site this is for: it passes a page and an order and
+		   nothing else, and it must not quietly widen the wall underneath somebody. */
 		mocked.get.mockResolvedValue(page([person()]));
 		const store = new People();
 		await store.load('', 0, 60, 'largest', null, { linked: ['yes'] });
@@ -456,8 +420,8 @@ describe('the narrowing a wall was loaded with', () => {
 	});
 
 	it('cannot have its paging displaced by a facet of the same name', async () => {
-		/* The filtering is spread FIRST. Where the wall starts and how much of it is asked for are
-		   the store's to say; an address is not allowed a vote on either. */
+		/* The filtering is spread FIRST. Where the wall starts and how much of it is asked for
+		   are the store's to say; an address is not allowed a vote on either. */
 		mocked.get.mockResolvedValue(page([person()]));
 		const store = new People();
 

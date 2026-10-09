@@ -2,17 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ICON_NAMES } from '$lib/design/icons';
 import { ICON_USES } from './icon-uses';
 
-/*
- * Every icon says what it is for, and says something worth reading.
- *
- * The type system already refuses a MISSING entry: the record is keyed by the icon union, so a
- * new glyph with no description will not compile. What it cannot refuse is an entry that exists and
- * says nothing: `what: 'icon'`, `where: 'the app'`. That is the shape this catches, because it is
- * the shape a description takes when somebody is adding a glyph and wants the build to go green.
- *
- * It also catches the opposite drift. The gallery is the app's one holistic view of its own visual
- * design, and it is worth nothing if half of it reads "TODO".
- */
+/* Every icon says what it is for, and says something worth reading. */
 
 describe('every icon is accounted for', () => {
 	it('has an entry for each name, and no more', () => {
@@ -30,9 +20,7 @@ describe('every icon is accounted for', () => {
 		it(`${name} says what it means and where it is`, () => {
 			const use = ICON_USES[name];
 
-			/* Long enough to be a sentence rather than a restatement of the file name. The `where`
-			   floor is higher because that is the half that is actually hard to write and the half
-			   somebody skips. */
+			/* Long enough to be a sentence rather than a restatement of the file name. */
 			expect(use.what.length, `${name}: "what" is too short to mean anything`).toBeGreaterThan(3);
 			expect(use.where.length, `${name}: "where" is too short to be a place`).toBeGreaterThan(20);
 

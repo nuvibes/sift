@@ -14,14 +14,7 @@
 	   `--page-pad` on `.stalls`, both of them the frame's own tokens used as the frame uses them.
 	   Reconsider the day the frame can be told its body does not scroll. */
 
-	/*
-	 * Theater: several videos at the same time, each cell drawing from a filter of its own.
-	 *
-	 * Everything is inside one box: fullscreen composites only the fullscreen element's subtree, so
-	 * dialogs, the source picker and menus are drawn inside the wall, and cells are never reparented
-	 * (moving a node closes what is open on it). At a phone's width (`phoneWidth`) it says it needs a
-	 * wider window; a phone drives the desk's walls from the Remote (`THEATER_ON_A_PHONE`).
-	 */
+	/* Theater: several videos at the same time, each cell drawing from a filter of its own. */
 	import { editingCell, narrowingFor, narrowingName } from '$lib/theater/narrowing';
 	import { onDestroy, onMount } from 'svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
@@ -85,10 +78,8 @@
 	} from '$lib/theater/echoes';
 	import { tapHold } from '$lib/theater/taps';
 
-	/*
-	 * The wall, which is NOT this screen's to own: the corner panel keeps it running when Theater
-	 * is left, so both say when they are done and the last one releases it.
-	 */
+	/* The wall, which is NOT this screen's to own: the corner panel keeps it running when
+	 * Theater is left, so both say when they are done and the last one releases it. */
 	const wall = showing.ensure();
 
 	/** Whether this is the desk's screen rather than the phone's: the shell's one reading of it. */
@@ -100,28 +91,22 @@
 	/** Whether the vault was open last time this looked, so a relock can be told from an unlock. */
 	let wasUnlocked = vault.unlocked;
 
-	/*
-	 * Theater's controls, on the bar every other screen uses, which the filled box holds too, so
-	 * there is no second row inside the wall.
-	 */
+	/* Theater's controls, on the bar every other screen uses, which the filled box holds too, so
+	 * there is no second row inside the wall. */
 	const mine = Symbol('theater-screen');
 
-	/*
-	 * Which cell the shared filter panel is editing: the one whose filter was pressed, else the one
-	 * the keyboard is on (`$lib/theater/narrowing`).
-	 */
+	/* Which cell the shared filter panel is editing: the one whose filter was pressed, else the
+	 * one the keyboard is on (`$lib/theater/narrowing`). */
 	const editing = $derived(editingCell(wall));
 
 	/* The orders offered, which gains a `Shuffle again` row while the cell being read is already
-	   shuffled. Worked out in `$lib/theater/orders`, where it can be tested. */
+	   shuffled. */
 	const orders = $derived(
 		cellOrders(wall.cells[editing]?.sort ?? null, wall.cells[editing]?.source ?? '')
 	);
 
-	/*
-	 * WHAT FILTER MEANS ON THIS SCREEN: one cell's source, read from one and written to all, held
-	 * and tested in `$lib/theater/narrowing`.
-	 */
+	/* WHAT FILTER MEANS ON THIS SCREEN: one cell's source, read from one and written to all,
+	 * held and tested in `$lib/theater/narrowing`. */
 	const narrowing: Narrowing = narrowingFor(wall);
 
 	$effect(() => {
@@ -136,21 +121,18 @@
 			filterable: true,
 			narrowing,
 			narrowingLead: whichCell,
-			/* The wall's two verbs, beside the cell chip, only while filled: in a window they are on
-			   the top bar, and two live copies of a control is a fault. */
+			/* The wall's two verbs, beside the cell chip, only while filled: in a window they
+			   are on the top bar, and two live copies of a control is a fault. */
 			besideTheName: stage.filling ? wallVerbs : undefined,
-			/* Which cell the chips are about. The row is above every cell on the wall, so `media: gif`
-			   is true of one of them and says nothing at all about which. */
+			/* Which cell the chips are about. The row is above every cell on the wall, so
+			   `media: gif` is true of one of them and says nothing at all about which. */
 			narrowingName: narrowingName(wall),
-			/*
-			 * SORT ACTS ON THE SELECTED CELL: a wall has up to nine lists and none of its own, as with
-			 * filters. The order is the cell's own query (`Cell.sort`), written to every addressed
-			 * cell and read from the edited one (`$lib/theater/narrowing`).
-			 */
+			/* SORT ACTS ON THE SELECTED CELL: a wall has up to nine lists and none of its own,
+			 * as with filters. */
 			sorts: wall.addressed.length > 0 ? orders : NO_CELL_TO_ORDER,
 			sort: wall.cells[editing]?.sort ?? CELL_DEFAULT_ORDER,
-			/* What the press MEANS is `$lib/theater/orders`'s, where it is tested; nothing stores
-			   `reshuffle`. */
+			/* What the press MEANS is `$lib/theater/orders`'s, where it is tested; nothing
+			   stores `reshuffle`. */
 			onSort: (next) => applyOrder(wall.addressed, next),
 			resizable: 'Choose a layout, on this row',
 			/* The wall's own hold, on the bar's own play control: one question, one control. */
@@ -159,9 +141,7 @@
 			playLabel: wall.paused ? ACTS.playEverything : ACTS.pauseEverything,
 			playShortcut: keyOf(wall.paused ? 'playEverything' : 'pauseEverything', 'theater'),
 			onPlay: () => wall.togglePause(),
-			/*
-			 * LAYOUT IS A MENU, not a panel: a list you pick one of, by this row's rule.
-			 */
+			/* LAYOUT IS A MENU, not a panel: a list you pick one of, by this row's rule. */
 			menus: [
 				{
 					id: 'layout',
@@ -172,24 +152,22 @@
 						label: one.label,
 						tooltip: one.tooltip
 					})),
-					/* Each shape drawn as itself, from the wall's own `grid-template`, since names one
-					   character apart are different pictures. */
+					/* Each shape drawn as itself, from the wall's own `grid-template`, since
+					   names one character apart are different pictures. */
 					preview: layoutPicture,
 					value: wall.layout ?? 'side_by_side_by_side',
 					onChoose: (next) => wall.setLayout(next as LayoutId)
 				}
 			],
-			/* The wall's silence goes on the TOP bar, after the play control that asks the same question
-			   about the same wall and the Hidden control the bar keeps in one place. See `topExtra`. */
+			/* The wall's silence goes on the TOP bar, after the play control that asks the same
+			   question about the same wall and the Hidden control the bar keeps in one place. */
 			topExtra: tools,
-			/* This row goes and comes back WITH the wall's own bar, unless it holds the menus in a
-			   window; see `rowQuiet`. */
+			/* This row goes and comes back WITH the wall's own bar, unless it holds the menus in
+			   a window; see `rowQuiet`. */
 			quiet: rowQuiet(wallChrome.up, stage.filling, screenBar.roomOnTopBar),
 			panels: [
-				/*
-				 * What is KEPT, and what the keys do: the two that are genuinely panels (a row of pills,
-				 * a reference table).
-				 */
+				/* What is KEPT, and what the keys do: the two that are genuinely panels (a row
+				 * of pills, a reference table). */
 				{
 					id: 'presets',
 					icon: 'table_view',
@@ -197,8 +175,8 @@
 					content: PresetsPanel,
 					lead: true
 				},
-				/* The keys are the APPLICATION's rather than this wall's, so the trigger sits on the top bar
-				   with the other window-wide controls. What it opens still opens on the screen's own row. */
+				/* The keys are the APPLICATION's rather than this wall's, so the trigger sits on
+				   the top bar with the other window-wide controls. */
 				{
 					id: 'keys',
 					icon: 'keyboard',
@@ -212,10 +190,8 @@
 
 	$effect(() => () => screenBar.release(mine));
 
-	/*
-	 * The vault has shut, so every cell lets go of what it is holding, immediately and mid-file,
-	 * since it may be concealed. Watched through `vault.unlocked`, the fact itself.
-	 */
+	/* The vault has shut, so every cell lets go of what it is holding, immediately and mid-file,
+	 * since it may be concealed. */
 	$effect(() => {
 		const unlocked = vault.unlocked;
 		if (unlocked === wasUnlocked) return;
@@ -223,10 +199,8 @@
 		if (!mini.wall) wall.vaultChanged(!unlocked);
 	});
 
-	/*
-	 * The one entry the operating system gets for this page: one media session per page, pointed at
-	 * the cell somebody is hearing and repointed when that moves.
-	 */
+	/* The one entry the operating system gets for this page: one media session per page, pointed
+	 * at the cell somebody is hearing and repointed when that moves. */
 	$effect(() => {
 		const heard = wall.heard;
 		const showing = heard === null ? null : wall.all[heard].playing;
@@ -243,12 +217,12 @@
 	whenChanged(settingChanges, () => void wall.open());
 
 	onMount(() => {
-		/* Opened first, then the kept wall the address names, which replaces what the opening put
-		   up. */
+		/* Opened first, then the kept wall the address names, which replaces what the opening
+		   put up. */
 		void wall.open().then(openAddressedWall);
 		window.addEventListener('keydown', key);
-		// BOTH, and the second one is not optional: M is a modifier while it is held and a mute when
-		// it is let go, so the mute lives on the way up. See `letGo`.
+		// BOTH, and the second one is not optional: M is a modifier while it is held and a mute
+		// when it is let go, so the mute lives on the way up.
 		window.addEventListener('keyup', letGo);
 		// And the focus leaving, which is the one way a keyup never arrives. See `lostTheKeyboard`.
 		window.addEventListener('blur', lostTheKeyboard);
@@ -262,10 +236,8 @@
 		};
 	});
 
-	/*
-	 * The saved wall an address names (`?wall=<id>`), from Insights' list of walls; after `open`, or
-	 * the layout preference would reshape it.
-	 */
+	/* The saved wall an address names (`?wall=<id>`), from Insights' list of walls; after
+	 * `open`, or the layout preference would reshape it. */
 	async function openAddressedWall(): Promise<void> {
 		const id = page.url.searchParams.get('wall');
 		if (!id) return;
@@ -278,8 +250,8 @@
 		}
 	}
 
-	// The panel keeps it if the panel has it. A screen that released unconditionally would silence a
-	// wall somebody had just popped out into the corner.
+	// The panel keeps it if the panel has it. A screen that released unconditionally would silence
+	// a wall somebody had just popped out into the corner.
 	onDestroy(() => showing.drop(mini.wall));
 
 	/** Fill the screen. The shell's box, so the controls come with it, never one video. */
@@ -287,14 +259,10 @@
 		stage.toggle();
 	}
 
-	/*
-	 * Theater's keys. The numbers are the deliberate override of a player's percentage seek, shown
-	 * on the shortcut sheet and bound only while this screen is mounted.
-	 */
-	/*
-	 * WHETHER M IS BEING HELD: held, it modifies the arrows into volume keys; alone, it mutes, which
-	 * is known only when it is LET GO with no arrow used. Repeats are ignored.
-	 */
+	/* Theater's keys. The numbers are the deliberate override of a player's percentage seek,
+	 * shown on the shortcut sheet and bound only while this screen is mounted. */
+	/* WHETHER M IS BEING HELD: held, it modifies the arrows into volume keys; alone, it mutes,
+	 * which is known only when it is LET GO with no arrow used. */
 	let holdingM = false;
 	/** Whether an arrow was used while M was down, which is what turns the release into nothing. */
 	let usedM = false;
@@ -304,19 +272,15 @@
 	/** And the two beside them, for settling on a level rather than finding one. */
 	const VOLUME_NUDGE = 2;
 
-	/*
-	 * WHAT THE KEYS ACT ON: the cell the keyboard is on, or every cell (`Wall.addressed`, the
-	 * backtick), so no verb needs a second binding.
-	 */
+	/* WHAT THE KEYS ACT ON: the cell the keyboard is on, or every cell (`Wall.addressed`, the
+	 * backtick), so no verb needs a second binding. */
 	function acting() {
 		return wall.addressed;
 	}
 
-	/*
-	 * WHAT A KEY LAST DID AT EACH CELL, by that cell's own key: the corner badge reports a PRESS
-	 * (`$lib/theater/echoes`), since a key's effect may be on a control nobody can see; per cell, so
-	 * untouched cells show nothing. On this screen, since the corner panel takes no keys.
-	 */
+	/* WHAT A KEY LAST DID AT EACH CELL, by that cell's own key: the corner badge reports a PRESS
+	 * (`$lib/theater/echoes`), since a key's effect may be on a control nobody can see; per
+	 * cell, so untouched cells show nothing. */
 	const echoes = $state<Record<string, CellEcho>>({});
 
 	/** Say what a press just did, on every cell it did it to. */
@@ -333,10 +297,9 @@
 		return wall.cells[Math.min(wall.focused, wall.cells.length - 1)];
 	}
 
-	/*
-	 * VOLUME, AND THE BADGE THAT SAYS WHERE IT LANDED: the step APPLIED, read before and after on the
-	 * first addressed cell ("+0 (100)" at the top), which speaks for all (`Wall.setMuted`).
-	 */
+	/* VOLUME, AND THE BADGE THAT SAYS WHERE IT LANDED: the step APPLIED, read before and after
+	 * on the first addressed cell ("+0 (100)" at the top), which speaks for all
+	 * (`Wall.setMuted`). */
 	function louder(by: number) {
 		const cells = acting();
 		if (cells.length === 0) return;
@@ -359,11 +322,7 @@
 		echo(moved, skipEcho(by));
 	}
 
-	/*
-	 * ONE FILE ON, AND ONE FILE BACK, for the step keys and the double and triple tap. The badge
-	 * rises after the cell has landed and says only the direction; a cell with nothing behind it
-	 * still answers, dimmed.
-	 */
+	/* ONE FILE ON, AND ONE FILE BACK, for the step keys and the double and triple tap. */
 	async function stepOn(cell: Cell): Promise<void> {
 		await cell.advance();
 		echo([cell], { icon: 'skip_next', label: 'Next' });
@@ -378,18 +337,8 @@
 		echo([cell], { icon: 'skip_previous', label: 'Previous' });
 	}
 
-	/*
-	 * THE NUMBER KEYS, WHICH CARRY FIVE VERBS EACH: the finger already names the cell, so the verb is
-	 * how the key is pressed:
-	 *
-	 * - one tap: talk to that cell
-	 * - two taps: the next file in it; three: the one before
-	 * - hold the first press: slow motion, until it is let go
-	 * - hold the second: faster, and faster again if the hold runs on; hold the third: backwards
-	 *
-	 * The cell lights on the way DOWN, without waiting out the tap window. The timers and their
-	 * awkward cases live in `$lib/theater/taps`, under fake timers.
-	 */
+	/* THE NUMBER KEYS: one tap talks to that cell, two taps play the next file, three the one
+	 * before, a held first press plays slow, a held second faster, a held third backwards. */
 
 	/** How much slower a held first press plays. Half, which is the rate every player calls slow. */
 	const SLOW_RATE = 0.5;
@@ -402,10 +351,9 @@
 	const REWIND_RATE = 2;
 	const REWIND_TICK_MS = 100;
 
-	/*
-	 * THE GESTURE A HELD KEY STARTED, and what letting go has to put back: plain variables, since
-	 * nothing draws them and state written by a timer that reads it schedules against itself.
-	 */
+	/* THE GESTURE A HELD KEY STARTED, and what letting go has to put back: plain variables,
+	 * since nothing draws them and state written by a timer that reads it schedules against
+	 * itself. */
 	let held: { cells: Cell[]; rates: number[]; rewinding: boolean } | null = null;
 	let fasterTimer: ReturnType<typeof setTimeout> | undefined;
 	let rewindTimer: ReturnType<typeof setInterval> | undefined;
@@ -427,11 +375,9 @@
 		echo(cells, said);
 	}
 
-	/*
-	 * RUNNING BACKWARDS, which no video element can be asked to do: the playhead is walked back on a
-	 * short clock toward a carried target, so a playing cell rewinds at the same rate as a stopped
-	 * one. `performance.now()`, since the wall clock can step backwards.
-	 */
+	/* RUNNING BACKWARDS, which no video element can be asked to do: the playhead is walked back
+	 * on a short clock toward a carried target, so a playing cell rewinds at the same rate as a
+	 * stopped one. */
 	function rewind(cells: Cell[]): void {
 		const moving = cells.filter((cell) => cell.seek !== null);
 		if (moving.length === 0) return;
@@ -512,26 +458,18 @@
 		}
 	});
 
-	/*
-	 * The window losing the focus, which is the one way a keyup never arrives: the recogniser
-	 * releases the hold, so the rate is put back.
-	 */
+	/* The window losing the focus, which is the one way a keyup never arrives: the recogniser
+	 * releases the hold, so the rate is put back. */
 	function lostTheKeyboard(): void {
 		numbers.cancel();
 	}
 
-	/*
-	 * M LET GO, which is where the per-cell mute actually happens; without the release `holdingM`
-	 * would stay true and turn the plain arrows into volume keys.
-	 */
+	/* M LET GO, which is where the per-cell mute actually happens; without the release
+	 * `holdingM` would stay true and turn the plain arrows into volume keys. */
 	function letGo(event: KeyboardEvent) {
 		/* The number keys first: the recogniser ignores other keys, and ending a hold puts the rate back. */
 		numbers.up(event.key);
-		/*
-		 * The DECLARATION is asked which letters this is, as every handler here does. Disarming is
-		 * asked FIRST and loosely (the physical key), the mute strictly (Ctrl+M already silenced the
-		 * wall), or `holdingM` could stick true.
-		 */
+		/* The DECLARATION is asked which letters this is, as every handler here does. */
 		if (!shortcut('theater.mute').keys.includes(event.key)) return;
 		holdingM = false;
 		// Held and used as a modifier, so the release means nothing on its own.
@@ -543,12 +481,8 @@
 		echo(wall.addressed, muteEcho(silent));
 	}
 
-	/*
-	 * THE WALL'S VERBS, answering the keyboard and the phone from one table (`pressed`, `commanded` in
-	 * `$lib/shell/shortcuts`). Rows are matched in order where keys share a letter: cell keys first,
-	 * the mutes before the volume rows (which decline unless M is held) before the arrows. A toggle
-	 * from the phone sends the state it wants.
-	 */
+	/* THE WALL'S VERBS, answering the keyboard and the phone from one table (`pressed`,
+	 * `commanded` in `$lib/shell/shortcuts`). */
 	const actions: Actions<TheaterAction> = {
 		'theater.cell': ({ key, value }) => {
 			if (key === null) {
@@ -595,10 +529,8 @@
 			}
 			return true;
 		},
-		/*
-		 * THE FOUR VOLUME KEYS, which exist only while M is down: up and down move ten, left and right
-		 * move two for settling.
-		 */
+		/* THE FOUR VOLUME KEYS, which exist only while M is down: up and down move ten, left and
+		 * right move two for settling. */
 		'theater.louder': (asked) => louderWhileM(asked, VOLUME_STEP),
 		'theater.quieter': (asked) => louderWhileM(asked, -VOLUME_STEP),
 		'theater.louderABit': (asked) => louderWhileM(asked, VOLUME_NUDGE),
@@ -636,8 +568,8 @@
 			// wall is already holding every cell.
 			const held = wall.paused || cells[0].paused;
 			if (key === null && value !== null && held === (value === 1)) return true;
-			// The wall's own hold wins over a cell's: starting one cell out of a stopped wall is not
-			// a thing to guess at, which is the rule every other play control here follows.
+			// The wall's own hold wins over a cell's: starting one cell out of a stopped wall is
+			// not a thing to guess at, which is the rule every other play control here follows.
 			if (wall.paused) {
 				wall.togglePause();
 				return true;
@@ -655,7 +587,7 @@
 		},
 		'theater.repeat': ({ key, value }) => {
 			// One answer for everything this is addressing, decided by the cell the bar is drawing:
-			// the same rule the control in the drawer follows. The phone names the answer it wants.
+			// the same rule the control in the drawer follows.
 			const cells = acting();
 			if (cells.length === 0) return true;
 			const wanted = key === null ? loopModeAt(value) : null;
@@ -685,10 +617,9 @@
 			return true;
 		},
 		'theater.fill': () => {
-			/*
-			 * NO BADGE, the one deliberately silent verb: filling the window is its own report, and
-			 * `requestFullscreen` resolves later, so `stage.filling` read now would say the opposite.
-			 */
+			/* NO BADGE, the one deliberately silent verb: filling the window is its own report,
+			 * and `requestFullscreen` resolves later, so `stage.filling` read now would say the
+			 * opposite. */
 			fullscreen();
 			return true;
 		},
@@ -701,7 +632,7 @@
 			return true;
 		},
 		// The presses only the phone makes: the scrubber, the volume, the drawer's unlettered
-		// presses, the layouts and the presets. No shortcut, so no key ever asks one.
+		// presses, the layouts and the presets.
 		...wallPresses(wall)
 	};
 
@@ -713,10 +644,8 @@
 		return true;
 	}
 
-	/*
-	 * Offered to the signed-in user's phone while the wall is open, answered from the same table;
-	 * whether this tab offers is `screenOffer`'s question.
-	 */
+	/* Offered to the signed-in user's phone while the wall is open, answered from the same
+	 * table; whether this tab offers is `screenOffer`'s question. */
 	onMount(() =>
 		screenOffer.offer({
 			kind: 'theater',
@@ -749,8 +678,7 @@
 	}
 </script>
 
-<!-- The buttons that act rather than open something. A component, not bare markup: a snippet
-     is styled where it is RENDERED, so buttons written here would arrive on the bar undressed. -->
+<!-- The buttons that act rather than open something. -->
 {#snippet tools()}
 	<TheaterTools />
 {/snippet}
@@ -776,8 +704,7 @@
 <section class="screen">
 	<!--
 		A HANDLE, AT THE FOOT OF THE SCREEN: a sliver of the bar's surface, so the hidden controls can
-		be found. On the screen, which reaches the window's bottom, not the wall. A picture of an
-		affordance, not a button: pointing at it opens the bar.
+		be found.
 	-->
 	{#if !stage.filling && !mini.wall && !wallChrome.up}
 		<span class="handle" aria-hidden="true">
@@ -820,10 +747,8 @@
 		min-block-size: 0;
 	}
 
-	/*
-	 * The handle: a sliver of the bar's own surface (its blur and hairline), rounded at the top only,
-	 * in a tab the height of the page inset under the wall, so it covers no picture.
-	 */
+	/* The handle: a sliver of the bar's own surface (its blur and hairline), rounded at the top
+	 * only, in a tab the height of the page inset under the wall, so it covers no picture. */
 	.handle {
 		position: absolute;
 		inset-block-end: 0;
@@ -846,10 +771,8 @@
 		z-index: 2;
 	}
 
-	/*
-	 * THE WALL SITS INSIDE THE PAGE in a window, inset by `--page-pad` and rounded; filled, it takes
-	 * everything.
-	 */
+	/* THE WALL SITS INSIDE THE PAGE in a window, inset by `--page-pad` and rounded; filled, it
+	 * takes everything. */
 	.stalls {
 		display: flex;
 		flex-direction: column;

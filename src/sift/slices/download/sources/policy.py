@@ -1,24 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Turning the download preferences into the one object a tool run is given.
+"""Turning the download preferences into the one policy a tool run is given, read per download.
 
-**Sift owns the value; the capable side applies it.** A gallery of four hundred images is four
-hundred requests inside a process Sift launched and cannot see into, so it cannot pace them from out
-here. What it can do is decide the number in one place and hand it to the only side able to act on
-it. This module is that one place: it reads the preferences and builds the policy, and the command
-builders take that policy and nothing else.
-
-Read live, per download, for the reason every other live-read in the slice is: a change made while a
-queue is draining should take effect on the next download and not at the next restart. The reads are
-cheap: a handful of rows.
-
-Every value is guarded on the way through, the way the free-space floor is. A stored row can outlive
-the code that wrote it (a restored backup, a setting whose bounds narrowed in an update), and the
-answer to something unreadable is the default. Whether ZERO is unreadable depends on the setting, and
-each one says which: a timeout of zero expires immediately and a cap of nothing is no cap, so those two
-fall back; a wait of zero between requests and zero retries are things somebody chose on purpose
-(the registry offers 0 for both), so those two are honored rather than silently replaced with the
-default.
-"""
+An unreadable stored value falls back to the default; a chosen zero is kept where it means none."""
 
 from __future__ import annotations
 
@@ -35,56 +18,38 @@ from sift.slices.download.sources.tuning import (
     RunPolicy,
 )
 
-#: Reads one global preference by key. Declared as a shape rather than imported from the feature
-#: that stores preferences: a feature never imports a feature.
+#: A shape, not an import: a feature never imports a feature.
 SettingReader = Callable[[str], Awaitable[object]]
-#: Whether a setting holds a value somebody chose, as against its default. See `Pacing.wait_chosen`.
 StoredReader = Callable[[str], Awaitable[bool]]
 
-#: Builds the policy for a run. What the downloader is given, so a test hands it a fixed one.
 PolicyReader = Callable[[], Awaitable[RunPolicy]]
 
 
-#: Milliseconds rather than seconds because a preference holds whole numbers, and half a second is
-#: the value that matters here. The tools take seconds, so it is divided on the way out.
+#: Milliseconds: a preference holds whole numbers, and half a second matters.
 PACE_MS_KEY = "download.pace_ms"
 
-#: The longest wait between requests somebody can choose, in milliseconds. Named because a read
-#: with a time ceiling leaves room for it (`sites.extractors._within`), and the registration's own
-#: maximum is this number.
+#: A read with a time ceiling leaves room for this (`sites.extractors._within`).
 PACE_MS_MAX = 10_000
 
-#: How many times a tool retries a request of its own.
 RETRIES_KEY = "download.retries"
 
-#: How long to wait on a connection that is not answering, in seconds.
 TIMEOUT_KEY = "download.timeout_seconds"
 
-#: How long to wait after a site says it is being asked too often, in seconds.
 BACKOFF_KEY = "download.backoff_seconds"
 
-#: The ceiling on how much of the connection a download may take, in kilobytes a second. Zero is no
-#: ceiling: the option is then not passed at all, rather than passed as a cap of nothing.
 BANDWIDTH_KEY = "download.bandwidth_kbps"
 
-#: Sizes not worth fetching, in megabytes. Zero at either end means no bound at that end.
 SKIP_SMALLER_KEY = "download.skip_smaller_mb"
 SKIP_LARGER_KEY = "download.skip_larger_mb"
 
-#: Whether the tools are asked to explain themselves.
 VERBOSE_KEY = "download.verbose"
 
-#: Which of the two quality answers a video download takes.
 QUALITY_KEY = "download.quality"
 
 _MEGABYTE = 1024 * 1024
 _KILOBYTE = 1024
 
-#: Every setting this module reads, and where on the policy it lands.
-#:
-#: Written out because each setting must mean one thing on every Site, and a download is made two
-#: ways: a tool run told the value on its command line (`argv.CONCERNS`), and Sift's own fetch
-#: (`fetcher`, `net`, `ratelimit`). The gate in `test_fetcher` holds every entry to both.
+#: Each setting must mean one thing for a tool run and Sift's own fetch; `test_fetcher` holds both.
 LANDS_AT: dict[str, str] = {
     PACE_MS_KEY: "pacing.seconds_between_requests",
     RETRIES_KEY: "pacing.retries",
@@ -97,19 +62,11 @@ LANDS_AT: dict[str, str] = {
     QUALITY_KEY: "quality",
 }
 
-#: Values on the policy that no setting holds, each with the setting it is read off: whether the
-#: wait after a rate limit was chosen is a fact about that setting, not a number told to a tool.
 READ_OFF_A_SETTING: dict[str, str] = {"pacing.wait_chosen": BACKOFF_KEY}
 
 
 def _whole(stored: object, fallback: int) -> int:
-    """A stored whole number above zero, or the default if what is stored is not one.
-
-    For the settings where zero cannot be meant: a timeout of zero seconds fails every download at
-    once, and the registry's own minimum for both of these is above zero. Not a coercion for
-    tidiness: this is on the live path, and a value that slipped the decoder would otherwise be
-    handed to the tools, which honour exactly what they are given.
-    """
+    """A stored whole number above zero, or the default: a zero timeout fails every download."""
     try:
         number = int(str(stored))
     except (TypeError, ValueError):
@@ -118,13 +75,7 @@ def _whole(stored: object, fallback: int) -> int:
 
 
 def _count(stored: object, fallback: int) -> int:
-    """A stored whole number where ZERO is an answer, or the default if what is stored is not one.
-
-    For the wait between requests and the retries. Zero there means "none", which is a real choice
-    (the registry's minimum for both is 0) and both tools take it as meant: `--sleep-requests 0`
-    and `--retries 0`. Only something that is not a number, or below zero, falls back: a chosen
-    0 is never silently replaced by the default.
-    """
+    """A stored whole number where zero means none (a real choice), or the default."""
     try:
         number = int(str(stored))
     except (TypeError, ValueError):
@@ -142,19 +93,12 @@ def _bound(stored: object) -> int | None:
 
 
 async def read_policy(get_app: SettingReader, is_stored: StoredReader | None = None) -> RunPolicy:
-    """Everything Sift has decided about how the next tool run behaves, from the preferences.
-
-    `is_stored` says whether the wait after a rate limit was chosen by somebody: only then does it
-    raise a middleman service's own measured floor. Without it (a caller with no settings store)
-    nothing counts as chosen."""
+    """The policy for the next tool run; `is_stored` says whether the rate-limit wait was chosen."""
     quality = await get_app(QUALITY_KEY)
     wait_chosen = bool(await is_stored(BACKOFF_KEY)) if is_stored is not None else False
     bandwidth = _bound_kbps(await get_app(BANDWIDTH_KEY))
     return RunPolicy(
         pacing=Pacing(
-            # A whole number of milliseconds becomes a fraction of a second, which is what both
-            # tools take. Rounded to three places so the command line carries `0.5` rather than a
-            # long tail of binary fraction.
             seconds_between_requests=round(
                 _count(await get_app(PACE_MS_KEY), int(PACING.seconds_between_requests * 1000))
                 / 1000,
@@ -186,8 +130,7 @@ def _bound_kbps(stored: object) -> int | None:
     return kilobytes * _KILOBYTE if kilobytes > 0 else None
 
 
-#: Defaults as the preferences declare them, so the registration and the fallbacks above cannot
-#: disagree about what "unset" means.
+#: As the preferences declare them, so registration and fallbacks agree on "unset".
 DEFAULTS: dict[str, object] = {
     PACE_MS_KEY: int(PACING.seconds_between_requests * 1000),
     RETRIES_KEY: PACING.retries,

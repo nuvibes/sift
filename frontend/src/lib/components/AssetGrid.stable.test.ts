@@ -1,16 +1,6 @@
 /*
- * A file arriving must not disturb the wall somebody is reading.
- *
- * The wall is one flat keyed list, so a tile that changes row keeps its element (Svelte cannot move
- * a node between two each-block instances). A greedy pack still re-partitions every row behind an
- * insertion at the front, so the wall does not take arrivals by itself: it counts what has landed
- * above it and moves when asked. Both halves are asserted here.
- *
- * Asserted on element identity (`toBe` on the node, never `toEqual`): the same picture is drawn
- * either way, and only identity separates a tile that stayed put from an identical replacement.
- *
- * The layout is arithmetic over the container's width, and jsdom reports every width as zero. The
- * width is stubbed below; the rows, the pack and the keyed each are real.
+ * A file arriving must not disturb the wall: tiles keep their elements (asserted with `toBe` on the
+ * node) and arrivals are counted, not packed in. jsdom's widths are stubbed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -25,15 +15,7 @@ vi.mock('$lib/api/client', () => ({
 	api: {
 		get: vi.fn(async (path: string, options?: { query?: Record<string, unknown> }) => {
 			if (path === '/assets') {
-				/*
-				 * `from` is honoured, which is what lets this file tell the behaviour from its
-				 * absence: the wall's catch-up is anchored on the file at the top of the page, so a
-				 * mock ignoring the anchor would hand back a page shifted by the arrival and every
-				 * assertion about the wall holding still would pass against the fault.
-				 *
-				 * A `from` naming a file that is not there serves the beginning, as the real route
-				 * does for a file deleted since the page was drawn.
-				 */
+				/* `from` is honoured, or a shifted page would pass every assertion. */
 				const asked = options?.query ?? {};
 				const anchor = asked.from as string | undefined;
 				const offset =
@@ -62,9 +44,7 @@ vi.mock('$lib/api/client', () => ({
 	ApiError: class extends Error {}
 }));
 
-/* `replaceState` as well as `goto`: the wall remembers where it is in the address as tiles land,
-   and a mock without it throws from a promise nobody awaits: three passing tests beside three
-   unhandled errors, which is a suite that has stopped being able to say anything. */
+/* `replaceState` too, or unhandled rejections hide behind passing tests. */
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }));
 vi.mock('$app/state', () => ({
 	navigating: { to: null, from: null, type: null, complete: null, delta: null, willUnload: false },
@@ -79,7 +59,6 @@ vi.mock('$app/state', () => ({
 let host: HTMLElement;
 let mounted: Record<string, unknown> | null = null;
 
-/** A file, in whatever shape the wall needs to lay one out and draw it. */
 function file(id: string, shape: { width: number; height: number }) {
 	return {
 		id,
@@ -94,14 +73,7 @@ function file(id: string, shape: { width: number; height: number }) {
 	};
 }
 
-/*
- * Mixed proportions on purpose.
- *
- * A wall of identical shapes packs the same number into every row, so inserting one at the front
- * would shift every tile by exactly one place and the fault would still show, but a real library
- * is mixed, and mixing them is what makes the row boundaries move to different files rather than
- * just along by one. It is the harder case and it is the ordinary one.
- */
+/* Mixed proportions: the harder case, and the ordinary one. */
 function library(count: number, from = 0) {
 	const shapes = [
 		{ width: 1920, height: 1080 },
@@ -114,8 +86,7 @@ function library(count: number, from = 0) {
 }
 
 beforeEach(() => {
-	// jsdom reports every element as zero wide, and a wall of no width lays out no rows at all,
-	// which would make every assertion below pass against a component that drew nothing.
+	// A zero-wide wall draws nothing, and every assertion would pass.
 	Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
 		configurable: true,
 		get: () => 1200
@@ -152,7 +123,6 @@ async function wall() {
 	return host;
 }
 
-/** Every tile on screen, by the file it is a picture of. */
 function tiles(where: HTMLElement): Map<string, Element> {
 	const found = new Map<string, Element>();
 	for (const element of where.querySelectorAll(`[${TILE_ID}]`)) {
@@ -164,8 +134,6 @@ function tiles(where: HTMLElement): Map<string, Element> {
 
 describe('a file arriving at the front of the wall', () => {
 	it('draws the tiles at all', async () => {
-		// The known positive. Without it every assertion below is satisfied by a wall that draws
-		// nothing, which is exactly what a zero-width container would produce.
 		page.items = library(12);
 
 		const drawn = tiles(await wall());
@@ -173,19 +141,11 @@ describe('a file arriving at the front of the wall', () => {
 		expect(drawn.size, 'no tiles were drawn, so nothing below proves anything').toBe(12);
 	});
 
-	/*
-	 * Driven by the press rather than the arrival. An arrival does not re-row anything, so element
-	 * identity across one proves nothing; the wall re-lays-out on a resize, a re-sort, a page
-	 * turned, and somebody taking the files that arrived while they were reading, and that last is
-	 * where tiles move.
-	 *
-	 * Identity, never appearance: the same picture is drawn either way. `toBe` on the node.
-	 */
+	/* Driven by the press: identity, never appearance. */
 	it('leaves every tile that was already there in its own element when the new ones are taken', async () => {
 		page.items = library(12);
 		const before = tiles(await wall());
 
-		// One new file at the front, exactly as a newest-first wall receives one during an import.
 		page.items = [file('new', { width: 1920, height: 1080 }), ...library(12)];
 		arrivals.changed();
 		await settle();
@@ -202,8 +162,7 @@ describe('a file arriving at the front of the wall', () => {
 		const after = tiles(host);
 		expect(after.get('new'), 'pressing it did not bring the new file in').toBeDefined();
 
-		// Not every tile: the page holds as many as fill its rows, so one arriving at the front
-		// pushes one off the end. Those that are still drawn must be the SAME elements.
+		// One in pushes one off the end; the rest must be the SAME elements.
 		let kept = 0;
 		for (const [id, element] of before) {
 			const now = after.get(id);
@@ -214,12 +173,7 @@ describe('a file arriving at the front of the wall', () => {
 		expect(kept, 'almost nothing survived, so identity was never really tested').toBeGreaterThan(8);
 	});
 
-	/*
-	 * The page holds the files it was asked for, and what arrived above it is counted. A justified
-	 * wall packs greedily from the front, so re-laying it out on each arrival moves every tile, a
-	 * strobe made of the same nodes even with every element kept. The positive control is that the
-	 * count went up, which separates a page holding still from one that has stopped listening.
-	 */
+	/* The page holds; what arrived above is counted, the count being the positive control. */
 	it('leaves every tile exactly where it was', async () => {
 		page.items = library(12);
 		const before = tiles(await wall());
@@ -239,9 +193,6 @@ describe('a file arriving at the front of the wall', () => {
 	});
 
 	it('says how many arrived rather than showing them', async () => {
-		/* The positive control for the assertion above, and it has to be here: a wall that never
-		 * re-read anything at all would also leave every tile where it was. This is what says the
-		 * grid heard the arrival, counted it, and offered it, while moving nothing. */
 		page.items = library(12);
 		const where = await wall();
 
@@ -261,12 +212,7 @@ describe('a file arriving at the front of the wall', () => {
 		expect(host.textContent, 'nothing offered the file that arrived').toMatch(/1\s*new/);
 	});
 
-	/*
-	 * The count is the distance between where the page was asked to start and where it sits now, so
-	 * it only holds while a catch-up leaves the first number alone. The steady state never reaches
-	 * that line; it matters when a catch-up finds the page itself changed (a file favorited,
-	 * hidden, renamed or deleted), where moving the mark would silently zero the untaken arrivals.
-	 */
+	/* A catch-up that finds the page changed must not zero the untaken arrivals. */
 	it('keeps counting the new ones when something on the page changes too', async () => {
 		page.items = library(12);
 		await wall();

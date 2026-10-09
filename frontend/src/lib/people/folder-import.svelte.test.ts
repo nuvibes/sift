@@ -1,6 +1,4 @@
-/*
- * The import press's refusals, in the words Settings > Faces shows for each.
- */
+/* The import press's refusals, in the words Settings > Faces shows for each. */
 import { expect, it } from 'vitest';
 
 import { ApiError } from '$lib/api/client';

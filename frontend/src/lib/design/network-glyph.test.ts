@@ -6,12 +6,7 @@ import hiddenDialog from '$lib/components/HiddenDialog.svelte?raw';
 import shareDialog from '$lib/components/ShareDialog.svelte?raw';
 import networkMark from '$lib/components/entity/NetworkMark.svelte?raw';
 
-/*
- * One glyph for a network, and it is not a house. The nodes joined to a centre are the network wherever one is meant:
- * the mark on a Site's card and page, the Network facet on the Sites wall and the Files wall, and
- * the note in the Share and Hidden dialogs that a decision on a network reaches the Sites within.
- * The cluster of houses is not on the list, so a caller naming it will not compile.
- */
+/* One glyph for a network, and it is not a house. */
 
 const HOUSES = 'other_houses';
 const NETWORK = 'hub';

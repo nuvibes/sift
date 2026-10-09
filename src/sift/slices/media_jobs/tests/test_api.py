@@ -1297,7 +1297,7 @@ async def test_the_families_are_drawn_without_a_ledger_to_estimate_from() -> Non
     """A route built without the ledger still draws every long pass; what it cannot say is the
     time left, and it says nothing rather than inventing it."""
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import _families
+    from sift.slices.media_jobs.activity_families import _families
 
     families = await _families({}, None, Switchboard())
 
@@ -1315,7 +1315,7 @@ async def test_a_family_says_it_is_switched_off_and_why_it_cannot_run() -> None:
     """
     from sift.kernel.jobs import Readiness, Switch, Switchboard, register_handler
     from sift.kernel.jobs.families import Family
-    from sift.slices.media_jobs.router import _families
+    from sift.slices.media_jobs.activity_families import _families
 
     async def nothing(_context: object) -> None:
         return None
@@ -1350,12 +1350,12 @@ async def test_the_reason_a_pass_is_not_running_is_the_servers_to_say(
     from sift.kernel.jobs import registered_families, registered_product_carriers
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import (
+    from sift.slices.media_jobs.activity_families import (
         NOTHING_WAITING,
         WAITING_FOR_WINDOW,
-        KindOfWork,
         _families,
     )
+    from sift.slices.media_jobs.router import KindOfWork
 
     types = registered_families()
     carriers = registered_product_carriers()
@@ -1425,7 +1425,7 @@ def test_every_pass_and_chore_names_a_task_that_exists(client: TestClient) -> No
     """
     from sift.kernel.jobs.families import HOUSEKEEPING
     from sift.kernel.jobs.schedules import registered_schedules
-    from sift.slices.media_jobs.router import FAMILY_TASKS
+    from sift.slices.media_jobs.activity_families import FAMILY_TASKS
 
     declared = set(registered_schedules())
     named = [chore.task for chore in HOUSEKEEPING if chore.task] + list(FAMILY_TASKS.values())
@@ -1490,7 +1490,8 @@ async def test_a_build_narrowed_to_one_product_is_that_products_familys_work() -
     from sift.kernel.jobs import register_handler
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     async def nothing(_context: object) -> None:
         return None
@@ -1526,7 +1527,8 @@ async def test_a_queued_runs_units_never_join_a_familys_denominator() -> None:
     from sift.kernel.jobs import register_handler
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     async def nothing(_context: object) -> None:
         return None
@@ -1547,7 +1549,8 @@ async def test_a_family_is_priced_by_the_media_kinds_its_work_is_waiting_on() ->
     from sift.kernel.jobs import register_handler
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     async def nothing(_context: object) -> None:
         return None
@@ -1577,7 +1580,8 @@ async def test_a_time_priced_from_the_benchmark_is_sent_as_the_least_it_takes() 
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.ledger import Estimate
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     async def nothing(_context: object) -> None:
         return None
@@ -1607,7 +1611,8 @@ async def test_a_pass_held_by_the_window_says_when_the_window_opens(client: Test
     from sift.kernel.jobs import registered_families, registered_product_carriers
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import WAITING_FOR_WINDOW, KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import WAITING_FOR_WINDOW, _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     types = registered_families()
     carriers = registered_product_carriers()
@@ -1648,7 +1653,8 @@ async def test_a_family_of_two_kinds_says_each_ones_figure_in_its_own_words(
     library counted twice and a figure about neither. Each kind with a count of its own travels
     as a part, captioned in the words its handler declared."""
     from sift.kernel.jobs.switchboard import Switchboard
-    from sift.slices.media_jobs.router import KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     # By the names the queue knows them by: a slice's tests do not import another slice.
     work = {
@@ -1674,7 +1680,8 @@ async def test_a_pass_whose_every_job_waits_for_quiet_hours_says_so_rather_than_
     from sift.kernel.jobs import register_handler
     from sift.kernel.jobs.families import Family
     from sift.kernel.jobs.switchboard import QuietHold, Switchboard
-    from sift.slices.media_jobs.router import WAITING_FOR_QUIET_HOURS, KindOfWork, _families
+    from sift.slices.media_jobs.activity_families import WAITING_FOR_QUIET_HOURS, _families
+    from sift.slices.media_jobs.router import KindOfWork
 
     async def nothing(_context: object) -> None:
         return None
@@ -1724,7 +1731,7 @@ async def test_a_chore_whose_every_job_waits_for_quiet_hours_says_so_as_a_pass_d
     nothing then).
     """
     from sift.kernel.jobs import WorkKind, WorkSummary
-    from sift.slices.media_jobs.router import WAITING_FOR_QUIET_HOURS, _housekeeping
+    from sift.slices.media_jobs.activity_families import WAITING_FOR_QUIET_HOURS, _housekeeping
 
     class Queue:
         async def last_finished_runs(self, types: list[str]) -> dict[str, object]:
@@ -1752,7 +1759,7 @@ async def test_a_chore_whose_last_run_failed_says_why_in_plain_words() -> None:
     from sift.kernel.jobs import JobState, WorkSummary
     from sift.kernel.jobs.failure_words import KINDS
     from sift.kernel.jobs.queue import TaskRun
-    from sift.slices.media_jobs.router import _housekeeping
+    from sift.slices.media_jobs.activity_families import _housekeeping
 
     failed = TaskRun(
         id="job-1",
@@ -1784,7 +1791,7 @@ async def test_a_chore_with_work_left_is_priced_from_the_ledger_as_a_pass_is() -
 
     from sift.kernel.jobs import WorkKind, WorkSummary
     from sift.kernel.jobs.families import Family
-    from sift.slices.media_jobs.router import _housekeeping
+    from sift.slices.media_jobs.activity_families import _housekeeping
 
     class Queue:
         async def last_finished_runs(self, types: list[str]) -> dict[str, object]:
@@ -1821,7 +1828,7 @@ async def test_a_swap_on_activity_waits_for_them_then_says_its_own_time_never_th
     from sift.kernel.jobs import WorkKind, WorkSummary
     from sift.kernel.jobs import families as families_module
     from sift.kernel.jobs.families import OwnEstimate
-    from sift.slices.media_jobs.router import _housekeeping
+    from sift.slices.media_jobs.activity_families import _housekeeping
 
     class Queue:
         async def last_finished_runs(self, types: list[str]) -> dict[str, object]:
@@ -1863,8 +1870,7 @@ async def test_a_carrier_making_two_families_counts_under_both_and_prices_neithe
     from sift.kernel.jobs.queue import LiveProducts
     from sift.slices.media_jobs.router import KindOfWork
 
-    # By module path: the package's `router` attribute is the APIRouter, not this module.
-    router = importlib.import_module("sift.slices.media_jobs.router")
+    router = importlib.import_module("sift.slices.media_jobs.activity_families")
     live: dict[str, list[tuple[tuple[str, ...], int]]] = {
         "build_mixed": [(("faces", "meaning"), 1), (("faces",), 2)],
         "build_pictures": [(("thumbnails", "previews"), 1)],
@@ -1920,7 +1926,7 @@ async def test_a_chore_whose_work_waits_for_the_password_says_so() -> None:
     """Enrichment's questions parked on a sealed key read "Waiting for your password" on Activity
     rather than a bare "Waiting"; one already running says nothing of it."""
     from sift.kernel.jobs import WorkKind, WorkSummary
-    from sift.slices.media_jobs.router import WAITING_FOR_UNLOCK, _housekeeping
+    from sift.slices.media_jobs.activity_families import WAITING_FOR_UNLOCK, _housekeeping
 
     class Queue:
         async def last_finished_runs(self, types: list[str]) -> dict[str, object]:

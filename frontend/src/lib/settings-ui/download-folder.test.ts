@@ -7,9 +7,7 @@ import {
 	type RootAt
 } from './download-folder';
 
-/* Where a folder somebody chose for downloads sits in the library. The default downloads folder is
-   a library folder by id, so a chosen place is one of three things, and each needs a different
-   act before it can be the default. */
+/* Where a folder somebody chose for downloads sits in the library. */
 
 const ROOTS: RootAt[] = [{ id: 'r1', path: 'D:\\Media' }];
 const FOLDERS: FolderAt[] = [

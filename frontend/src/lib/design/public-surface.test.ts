@@ -1,18 +1,5 @@
-/*
- * A module's public surface is its interface. A wide one nobody uses is a promise nobody asked for.
- *
- * A name on the way out of a module is a claim that somebody else may depend on it, and a module
- * claiming forty things and meaning six cannot be read at a glance or changed without checking all
- * forty. So a name exported while every reference to it is inside its own file is refused.
- *
- * It also finds dead code, which is the part worth having: an export can be the only thing keeping
- * a function alive to anything that looks for callers, and such a function is deleted rather than
- * quietly made private.
- *
- * Everywhere a name could be read from is counted: the interface, the browser suite, the build
- * scripts and the guard-rail suite, which reads this source as text. A constant a guard-rail greps
- * for is genuinely public even though no code imports it.
- */
+/* A module's public surface is its interface. A wide one nobody uses is a promise nobody asked
+ * for. */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -28,12 +15,7 @@ const REPO = resolve(SOURCE, '..', '..');
 /** Everywhere a name could be read from, not just where code imports it. */
 const READERS = ['frontend/src', 'frontend/e2e', 'frontend/scripts', 'tests'];
 
-/**
- * Exports that are read by something this scan cannot see, with the reason each one is here.
- *
- * The framework reads these two off the module by name to decide how the app is built and served.
- * Nothing imports them and nothing ever will; taking the marker off changes how Sift is served.
- */
+/** Exports that are read by something this scan cannot see, with the reason each one is here. */
 const READ_BY_THE_FRAMEWORK: Record<string, string> = {
 	'routes/+layout.ts:ssr': 'SvelteKit reads it to know this app is not rendered on a server',
 	'routes/+layout.ts:prerender': 'SvelteKit reads it to know the pages are built ahead of time'
@@ -50,11 +32,7 @@ function everyFile(dir: string, extensions: string[]): string[] {
 	return found;
 }
 
-/**
- * The component gallery: its own repository, nested at `routes/design/` and absent from a clone. It
- * is not counted as a reader, so this scan finds the same names in either tree; what only the
- * gallery reads is named in READ_BY_THE_GALLERY and checked against the gallery where it is here.
- */
+/** The component gallery: its own repository, nested at `routes/design/` and absent from a clone. */
 const GALLERY = 'frontend/src/routes/design/';
 
 const scanned = READERS.flatMap((where) =>
@@ -76,7 +54,9 @@ const READ_BY_THE_GALLERY: Record<string, string> = {
 	'lib/design/entry.ts:specimenId': 'the gallery anchors each specimen at the id its name gives',
 	'lib/design/fixtures.svelte.ts:EDITABLE':
 		'the gallery opens the edit dialog on this stand-in file',
-	'lib/design/fixtures.svelte.ts:lookupInMemory': 'the gallery answers its music lookup from memory'
+	'lib/design/fixtures.svelte.ts:lookupInMemory':
+		'the gallery answers its music lookup from memory',
+	'lib/design/fixtures.svelte.ts:SHARING': 'the gallery opens its share and reach dialogs on this'
 };
 
 /** The interface's own modules, which are the ones whose surface is being judged. */
@@ -121,7 +101,7 @@ describe('nothing is marked shareable that nobody shares', () => {
 
 	it('names a reason against every exception', () => {
 		// An exception with no explanation is how a list turns into a record of what happened to be
-		// true. And an exception for a name that is gone would be inherited by the next name.
+		// true.
 		for (const [key, reason] of Object.entries({
 			...READ_BY_THE_FRAMEWORK,
 			...READ_BY_THE_GALLERY

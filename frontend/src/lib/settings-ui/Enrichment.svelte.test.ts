@@ -1,15 +1,4 @@
-/* What a stash-box is allowed to write, field by field.
- *
- * Every control here is GENERATED from what the server declares, and there is no list of field
- * names in the component on purpose: a hand-written list beside the thing it describes is the
- * drift the registry exists to prevent. So what these hold is the two arrangements this file does
- * make: the three switches read in the order somebody needs them rather than the order they sort
- * in, and the rules grouped by what they are about.
- *
- * The last one is about silence. A section the server did not answer for is not a section with
- * nothing in it, and a screen that drew the two the same way would tell somebody their settings are
- * empty when the request simply failed.
- */
+/* What a stash-box is allowed to write, field by field. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { words as wordsOn } from '$lib/design/testing.svelte';
@@ -19,8 +8,8 @@ import type { SettingEntry } from '$lib/settings-ui/settings';
 
 const mocks = vi.hoisted(() => ({ fetchSettings: vi.fn(), saveSettings: vi.fn() }));
 
-/* The enrichment task's When row reads the tasks store; no row answers here, so it is drawn by its
-   address alone. The row itself is TaskWhen's to test. */
+/* The enrichment task's When row reads the tasks store; no row answers here, so it is drawn by
+   its address alone. */
 vi.mock('$lib/jobs/tasks.svelte', () => ({
 	taskList: {
 		row: () => undefined,
@@ -71,16 +60,11 @@ afterEach(() => {
 	drawn = null;
 	host?.remove();
 	/* The open sub-page is MODULE state, so it outlives the host it was drawn in, and the next
-	   test would start with the last one's page already up. The same shape as a window listener
-	   that has to be unmounted. */
+	   test would start with the last one's page already up. */
 	drilldown.close();
 });
 
-/* The sub-page is mounted beside the pane, exactly as the settings shell mounts it.
- *
- * A `PresetGroup` puts its rows on a page of its own, and that page is drawn by the SHELL rather
- * than by the group, so a test that mounted the pane alone would set the state and render
- * nothing, which reads as the rows having disappeared. See `DrilldownPage`. */
+/* The sub-page is mounted beside the pane, exactly as the settings shell mounts it. */
 async function draw(props: Record<string, unknown> = {}): Promise<void> {
 	drawn = mount(Enrichment, { target: host, props }) as Record<string, unknown>;
 	mount(DrilldownPage, { target: host, props: { behind: 'Stash-boxes' } });
@@ -116,9 +100,8 @@ function labels(): string[] {
 
 it('puts the switch that is the feature first, and the rest in the order somebody needs them', async () => {
 	// Alphabetically, "apply an exact match without asking" comes before the switch that decides
-	// whether anything is matched at all: a control acting on a feature above the switch that
-	// turns the feature on. The feature's own switch is the consent at the top of the page; the
-	// others are one page in, in the order that reads.
+	// whether anything is matched at all: a control acting on a feature above the switch that turns
+	// the feature on.
 	mocks.fetchSettings.mockResolvedValue(
 		connections([
 			entry('stash_boxes.apply_certain', { label: 'Apply an exact match' }),
@@ -145,8 +128,7 @@ it('puts the switch that is the feature first, and the rest in the order somebod
 });
 
 it('draws a switch it has never heard of rather than dropping it', async () => {
-	// A switch added in a later version arrives here with no place in the named order. Falling in
-	// after the named ones is the difference between appearing and disappearing.
+	// A switch added in a later version arrives here with no place in the named order.
 	mocks.fetchSettings.mockResolvedValue(
 		connections([
 			entry('stash_boxes.scan', { label: 'Match files', value: true }),
@@ -214,8 +196,7 @@ it('groups the rules by what they are about, under a name for each subject', asy
 	await draw();
 	await openEach();
 
-	/* Plural nouns, the way every settings heading is written. "A person" or "A file" would read
-	   as the start of a sentence rather than as the name of a group. */
+	/* Plural nouns, the way every settings heading is written. */
 	expect(host.textContent).toContain('People');
 	expect(host.textContent).toContain('Files');
 });
@@ -233,8 +214,7 @@ it('names a subject it has no word for by the subject itself, rather than droppi
 });
 
 it('says it could not read them when the section is absent, and not that there are none', async () => {
-	// Absent means the request did not answer for it. Silence must not read as "there is nothing
-	// here", or somebody turns a feature on twice and wonders why nothing sticks.
+	// Absent means the request did not answer for it.
 	mocks.fetchSettings.mockResolvedValue([{ name: 'Playback', settings: [] }]);
 
 	await draw();
@@ -285,8 +265,7 @@ it('puts a control back where it was when the write is refused', async () => {
 it('draws a heading and a sentence that say what the whole block decides', async () => {
 	/* A RULE has to exist for the block to be drawn, and that is the behaviour rather than a
 	   fixture detail: with nothing to answer, a heading and a paragraph about answering it are a
-	   promise of controls that are not there. A test passing on an empty response would never
-	   prove the heading belonged to anything. */
+	   promise of controls that are not there. */
 	mocks.fetchSettings.mockResolvedValue(
 		connections([
 			entry('enrich.person.name', {
@@ -301,8 +280,7 @@ it('draws a heading and a sentence that say what the whole block decides', async
 	await draw();
 
 	/* A group's heading: the block is a `SettingGroup`, drawn by `SharedQuestion`, with no title
-	   or lede of its own to say the same words again. A group is an `h2` under the frame's one
-	   `h1`, which is `SectionHeading`'s outline. */
+	   or lede of its own to say the same words again. */
 	expect(host.querySelector('h2')?.textContent).toContain('Stash-box fields');
 	expect(host.textContent?.replace(/\s+/g, ' ')).toContain(
 		'Fill in what is missing never changes a value you already have'
@@ -326,24 +304,13 @@ it('answers every rule in one go from the one control, in a single request', asy
 	);
 	await draw();
 
-	/* ONE request carrying all three, not three requests. A loop of saves would be three round
-	   trips, three change broadcasts and three chances to end up half applied. */
+	/* ONE request carrying all three, not three requests. */
 	const master = host.querySelector<HTMLElement>('.ui-select');
 	expect(master).not.toBeNull();
 	expect(host.textContent).toContain('Choose for each field');
 });
 
-/* The pane follows the bus.
- *
- * The same account in a second window, or another admin turning an installation-wide switch: the
- * server rings the bell, and a pane that only read on mount would go on showing the value from
- * before. On the desktop app there is no page load to put it right, so it would stay wrong until
- * a restart.
- *
- * The label is what is asserted rather than a switch position, because a label can only have come
- * from a fresh read of the declarations: there is nowhere else in this pane for it to come
- * from.
- */
+/* The pane follows the bus. */
 it('re-reads when a setting moves somewhere else', async () => {
 	mocks.fetchSettings.mockResolvedValue(
 		connections([entry('stash_boxes.scan', { label: 'Match files against the stash-boxes' })])
@@ -363,12 +330,7 @@ it('re-reads when a setting moves somewhere else', async () => {
 	expect(host.textContent).toContain('Moved somewhere else');
 });
 
-/*
- * A re-read keeps the pane on screen.
- *
- * Every saved setting rings the bell, this pane's own switches included, so a pane that went back
- * to its skeleton for each read blanked out under the pointer after every press.
- */
+/* A re-read keeps the pane on screen. */
 it('keeps the pane drawn while a re-read is on its way', async () => {
 	mocks.fetchSettings.mockResolvedValue(
 		connections([entry('stash_boxes.scan', { label: 'Match files against the stash-boxes' })])

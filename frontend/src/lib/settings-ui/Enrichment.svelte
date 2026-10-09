@@ -1,24 +1,5 @@
 <script lang="ts">
-	/*
-	 * What a stash-box is allowed to write, field by field.
-	 *
-	 * Every control on this screen is GENERATED. The server declares one rule per field a stash-box
-	 * can fill in, built from the same registry the record pages are drawn from, so a field added
-	 * in a later version arrives here with a control and a stored rule, and this file does not
-	 * change. There is no list of field names anywhere in it, deliberately: a hand-written list
-	 * beside the thing it describes is the drift the registry exists to prevent.
-	 *
-	 * It draws the Stash-boxes section on the one Recognition layout (`RecognitionPane`): the switch
-	 * that is the feature itself and a line saying where it stands, when lookups run (the enrichment
-	 * task's When row), the list of stash-boxes the section
-	 * hands in, the field rules, and More settings for the rest of the switches. The switches are
-	 * told apart from the rules by their keys and by nothing else this file decides.
-	 *
-	 * The field rules stay ON the page, as the one "For every field" control with its own page of
-	 * rows: that is already one level in, and putting it behind More settings would open a page
-	 * from a page, which the one sub-page mechanism cannot go back from, so Back would skip the
-	 * More settings page and a deep link to a rule would land on a page that does not draw it.
-	 */
+	/* What a stash-box is allowed to write, field by field. */
 	import { onMount, type Snippet } from 'svelte';
 	import { fetchSettings, saveSettings, type SettingEntry } from '$lib/settings-ui/settings';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
@@ -44,15 +25,12 @@
 
 	const SECTION = 'Stash-boxes';
 
-	/** The prefix every per-field rule's key opens with. The server builds these keys; this reads
-	 *  them, and the two meet at one string rather than at a list of forty. */
+	/** The prefix every per-field rule's key opens with. */
 	const RULE = 'enrich.';
 
-	/** What each subject is called as a heading here. A key whose subject is not named falls back to
-	 *  the subject itself, so a subject added later is drawn rather than dropped. */
-	/* Plain plural nouns, the way every heading in Sift's settings is written: "A person" reads as
-	   the start of a sentence rather than as the name of a group of rows. Sift's own words: a
-	   Site is a Site and never a site. */
+	/** What each subject is called as a heading here. */
+	/* Plain plural nouns, the way every heading in Sift's settings is written: "A person" reads
+	   as the start of a sentence rather than as the name of a group of rows. */
 	const HEADINGS: Record<string, string> = {
 		person: 'People',
 		site: 'Sites',
@@ -66,23 +44,14 @@
 	let loadFailed = $state(false);
 
 	/* The switches behind More settings, in the order somebody reads them rather than the order
-	 * they sort in.
-	 *
-	 * The server returns every section's settings sorted BY KEY, which is right for a generated
-	 * list of thirty-six and wrong for switches that depend on each other. Named here, the way
-	 * the Performance pane names its blocks. Anything not named falls in after them in the
-	 * server's own order, so a switch added later appears rather than disappearing.
-	 *
-	 * The switch that decides whether anything is looked up at all is not among them: it is the
-	 * consent at the top of the page. When new files are looked up is the enrichment task's When.
-	 */
+	 * they sort in. */
 	const SWITCH_ORDER = [
 		/* Which stash-box the lookups nobody pressed ask: the routing of the automatic runs. */
 		'stash_boxes.auto_box',
 		'stash_boxes.duration_tolerance_s',
 		/* "Confirm exact matches automatically": it decides only for the runs nobody pressed (a
 		   pressed Auto-enrich accepts an exact match on its own), so it sits after the choices
-		   that shape every lookup. The label is the server's. */
+		   that shape every lookup. */
 		'stash_boxes.apply_certain'
 		/* `records.show_every_field` is on Appearance, not here: it changes nothing but how much
 		   of a record is DRAWN. */
@@ -91,8 +60,8 @@
 	const consentEntry = $derived(entries.find((one) => one.key === STASH_SCAN_KEY));
 	const on = $derived(values[STASH_SCAN_KEY] === true);
 
-	/* More settings and the switches behind it are drawn only while lookups are on: a link landing
-	   on one while they are off rings the switch and says so. */
+	/* More settings and the switches behind it are drawn only while lookups are on: a link
+	   landing on one while they are off rings the switch and says so. */
 	$effect(() =>
 		explainAbsentRows((key) => {
 			if (on || loading || !consentEntry?.label) return null;
@@ -114,8 +83,8 @@
 				return (at === -1 ? SWITCH_ORDER.length : at) - (bt === -1 ? SWITCH_ORDER.length : bt);
 			})
 	);
-	/* Grouped by what the rule is ABOUT, in the order the server sent them, which is the order the
-	   record is read in, so the rules for a person line up with the person's own page. */
+	/* Grouped by what the rule is ABOUT, in the order the server sent them, which is the order
+	   the record is read in, so the rules for a person line up with the person's own page. */
 	const grouped = $derived.by(() => {
 		const out = new Map<string, SettingEntry[]>();
 		for (const one of entries) {
@@ -128,10 +97,7 @@
 		return [...out];
 	});
 
-	/* The one answer every rule holds, or null where they disagree.
-	 *
-	 * Worked out here rather than inside `PresetGroup` because this is the file that knows which
-	 * keys are in the group: the component owns the question, not the settings. */
+	/* The one answer every rule holds, or null where they disagree. */
 	const rules = $derived(entries.filter((one) => one.key.startsWith(RULE)));
 
 	function sharedAcross(across: SettingEntry[]): string | null {
@@ -156,18 +122,13 @@
 	onMount(() => void load());
 
 	/* And again when a setting moves somewhere else: this account in a browser, a second window,
-	 * or another admin changing one the installation shares. Every control on this pane writes on
-	 * the press and holds nothing unsaved, so a re-read can only put the same value back; see
-	 * `scripts/check_settings_followed.js`, which holds every pane to this. */
+	 * or another admin changing one the installation shares. */
 	whenChanged(settingChanges, () => void load());
 
 	/** Rising, so an older read cannot land over a newer one. */
 	let asked = 0;
 
-	/* The skeleton is for the FIRST read only (`loading` starts true and is never set again). A
-	 * re-read, which every setting saved anywhere causes, this pane's own switches included, keeps
-	 * the pane on screen and swaps the values in when they land; a re-read that fails keeps what is
-	 * drawn rather than trading a working pane for an error. */
+	/* The skeleton is for the FIRST read only (`loading` starts true and is never set again). */
 	async function load() {
 		const mine = ++asked;
 		const first = entries.length === 0;
@@ -187,10 +148,8 @@
 		}
 	}
 
-	/* Every rule together, in ONE request.
-	 *
-	 * A loop of thirty-five saves would be thirty-five round trips, thirty-five change broadcasts
-	 * and thirty-five chances to end up half applied. `saveSettings` already takes a batch. */
+	/* Every rule together, in ONE request. A loop of thirty-five saves would be thirty-five
+	 * round trips, thirty-five change broadcasts and thirty-five chances to end up half applied. */
 	async function saveAll(next: string) {
 		const before = { ...values };
 		const batch = Object.fromEntries(rules.map((one) => [one.key, next]));
@@ -215,8 +174,7 @@
 	}
 
 	/* Where lookups stand, in one line under the switch, read from the list of stash-boxes the
-	   section already holds. Nothing is claimed while that list is empty: before it has answered
-	   that is every page, and once it has, the list itself says there are none. */
+	   section already holds. */
 	const usable = $derived(
 		(boxes?.items ?? []).filter((box) => box.enabled && box.has_key && box.key_ready).length
 	);
@@ -288,14 +246,9 @@
 				{@render list?.()}
 				{#if rules.length > 0}
 					<!--
-						Forty settings, one question. As forty menus in four blocks, each carrying
-						the same sentence of help, answering them would mean reading the same three
-						options forty times. The one control here sets all of them; the fields are
-						still real rows against the same registry, one page in, for the person who
-						wants a different answer for birthdates than for tags.
-
-						`keys` is what makes a link to one of those rows still work. See
-						`drilldown`.
+						Forty settings, one question. As forty menus in four blocks, each carrying the
+						same sentence of help, answering them would mean reading the same three options
+						forty times.
 					-->
 					<PresetGroup
 						heading="Stash-box fields"

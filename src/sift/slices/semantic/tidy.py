@@ -1,27 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Descriptions of files that are no longer in the library.
-
-Every other table that names an asset carries a foreign key back to it, so removing a file removes
-what was recorded about it in the same statement. **The vectors cannot.** They live in a virtual
-table (that is what makes a nearest-neighbour search possible at all) and SQLite takes no
-foreign key on one. So a deleted file leaves its descriptions behind: invisible, never returned by
-any search, and growing.
-
-There are two halves to answering that and both are here for a reason.
-
-**The sweep prunes as it starts**, which bounds how long dead weight can sit there to "until the
-next pass over the library" rather than "for ever". That is housekeeping inside the feature's own
-work and needs nobody to ask for it.
-
-**This is the button**, and it exists because the sweep only runs when somebody asks it to describe
-their library, which on a settled install is never. Registered as a tidying so it obeys the two
-rules that hold for all of them: it says what it would remove before removing anything, and it does
-not run on its own.
-
-Nothing here is irreversible in the way the other tidyings are. What is removed is a description
-that can be computed again by reading the file, except that the file is gone, which is the whole
-reason the row is being removed.
-"""
+"""Descriptions of files no longer in the library, which no foreign key can reach."""
 
 from __future__ import annotations
 
@@ -55,12 +33,7 @@ class OrphanedDescriptions:
         self._resources = resources
 
     async def _gone(self) -> list[str]:
-        """Which described files are not in the library any more.
-
-        Asked through the kernel rather than answered here. The assets table carries permissions,
-        and both a query against it and a reach for the content store from inside a feature are
-        refused by gates, rightly, since that store reads any asset without checking anything.
-        """
+        """Which described files are not in the library any more, asked through the kernel."""
         held = await self._store.held_ids()
         if not held:
             return []
@@ -76,8 +49,7 @@ class OrphanedDescriptions:
             noun=self.noun,
             nouns=self.nouns,
             count=len(gone),
-            # Rows in a table, not files on disk. Quoting a number here would invite somebody to
-            # run it to reclaim space, which is not what this is for. See `Leftovers`.
+            # Rows in a table, not files on disk, so no space is quoted.
             frees_bytes=None,
         )
 
@@ -88,22 +60,7 @@ class OrphanedDescriptions:
 
 
 class SupersededDescriptions:
-    """Descriptions made by a Smart Search model that is no longer the one in use.
-
-    **Nothing in a search can reach them.** Every read of the index is filtered to one model's
-    revision, because numbers from two models are the same length and mean nothing to each other,
-    so the previous model's descriptions stopped being an answer the moment the model changed, and
-    they stay for ever: a file is only described again when a Build reaches it.
-
-    A press and not something a sweep does on its own, for the one cost worth saying out loud: going
-    BACK to the previous model would then mean describing the whole library with it again. The
-    detail says so, because that is the decision somebody is making when they press it.
-
-    Counted in FILES, from the records beside the index (`semantic_indexed`, one row per file,
-    indexed), rather than by grouping the vector table, which is a whole-table read. Both halves
-    go together on the run: the frames, and the records that claim them: a record left behind
-    would go on counting numbers that are no longer there.
-    """
+    """Descriptions from a Smart Search model no longer in use, unreachable by any search."""
 
     name = "superseded-descriptions"
     costly = False
@@ -122,11 +79,7 @@ class SupersededDescriptions:
         self._preferences = resources.preferences
 
     async def _in_use(self) -> str | None:
-        """The revision the chosen model writes, or None where it cannot be known here.
-
-        None is the honest answer to "which descriptions are stale" when nothing says which model
-        is chosen, and it counts nothing and removes nothing, never "all of them".
-        """
+        """The revision the chosen model writes, or None, which removes nothing."""
         if self._preferences is None:
             return None
         family = str(await self._preferences.get_app(MODEL_KEY))

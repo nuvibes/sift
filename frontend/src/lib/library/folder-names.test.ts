@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { disambiguate, recentFirst } from './folder-names';
 
-/* The fault this exists for: a library where every creator's folder holds an "Images", so the Add
-   panel's chooser would list nine rows all reading the same word. Names invented; nothing here is
-   anybody's. */
+/* The fault this exists for: a library where every creator's folder holds an "Images", so the
+   Add panel's chooser would list nine rows all reading the same word. */
 
 describe('disambiguate', () => {
 	it('leaves a name nobody else has bare', () => {
@@ -66,12 +65,7 @@ describe('disambiguate', () => {
 	});
 });
 
-/* The other half of a folder chooser: what it lists FIRST.
-
-   The server answers in the order the library walks, which is neither alphabetical nor anything
-   a person could predict, so on a library with one folder per person the chooser would be a
-   hundred rows to read to find one. The rows somebody actually downloaded into go on top; the
-   rest is alphabetical, which is at least a guessable order. Names invented. */
+/* The other half of a folder chooser: what it lists FIRST. */
 describe('recentFirst', () => {
 	const FOLDERS = [
 		{ value: 'c', label: 'Kestrel' },
@@ -104,8 +98,7 @@ describe('recentFirst', () => {
 
 	it('skips a remembered id this list does not hold', () => {
 		// A folder can be removed from the library, or handed back read-only, long after somebody
-		// downloaded into it. The record is deliberately never checked against anything, so this is
-		// the ordinary case rather than a fault.
+		// downloaded into it.
 		const listed = recentFirst(FOLDERS, ['gone', 'b'], 5);
 
 		expect(listed.map((one) => one.label)).toEqual(['Alder', 'Juniper', 'Kestrel']);

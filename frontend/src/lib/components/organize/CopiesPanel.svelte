@@ -1,21 +1,6 @@
 <script lang="ts">
-	/*
-	 * The same file, byte for byte, in more than one place. Which copies do you want?
-	 *
-	 * Next door to Near Duplicates and asking a different question. That one asks whether two files
-	 * ARE the same thing, which no threshold settles. This one already knows they are: identical
-	 * bytes were resolved into one asset with several locations the moment they were imported, so
-	 * there is nothing to judge. What is left is still a decision and still nobody else's: a second
-	 * copy on a second disk may be exactly what somebody wanted, and no rule can know that.
-	 *
-	 * ## Why it is paged
-	 *
-	 * A library can hold thousands of these. Drawing every one with every path under it, and asking
-	 * again on a timer to see whether the number had grown, is a library-sized read for nothing. A
-	 * page at a time, with the whole-library total said above it, is the same information.
-	 *
-	 * Nothing here deletes anything without a confirm naming the path that goes and what it frees.
-	 */
+	/* The same bytes in more than one place: which copies to keep is somebody's decision. Paged, with
+	 * the total above; nothing is deleted without a confirm naming the path and what it frees. */
 	import {
 		Button,
 		ConfirmDialog,
@@ -56,13 +41,7 @@
 	let releaseOpen = $state(false);
 
 	/*
-	 * Its own half only: this card has no use for the review queue's list, and reading it would be
-	 * a request for something nothing on this screen draws.
-	 *
-	 * Which page: the same paging every list in Organize has (`CardPaging`), at the server's own
-	 * page size, with the file the page starts at written into the address as `from` (and where it
-	 * was, `near`), so the way back lands here again. The address names a row, and a row that has
-	 * gone is answered with where the page was. See `DuplicatesPanel`.
+	 * Paged as every Organize list at the server's size, the page in the address (`from`, `near`).
 	 */
 	const PAGE = 24;
 	const paging = new CardPaging(PAGE);
@@ -76,9 +55,7 @@
 	});
 	onDestroy(() => onpaging?.(null));
 
-	/** The page on screen, through the paging, and where it starts written into the address once it
-	 *  has landed. Also what a release reads back: the SAME page, which one copy leaving does not
-	 *  move, and a page it emptied steps back to where the list now ends (`CardPaging.fill`). */
+	/** The page on screen, its start written once landed; a release reads the same page back. */
 	async function load(): Promise<void> {
 		if (!(await view.fillReclaim(paging))) return;
 		rememberAnchor(address.url, path, view.redundancies[0]?.asset_id, paging.offset);
@@ -96,11 +73,7 @@
 	});
 	whenChanged(libraryChanges, () => void load());
 
-	/* Arrived here pointed at one row: a still on the board's Duplicates card. See
-	   `$lib/organize/anchor` for why the browser cannot do this by itself, and `_copy_anchor` on the
-	   server for the other half of the name. Once per fragment: the list is re-read whenever the
-	   library moves, and scrolling somebody back every time would take the page off whatever they
-	   had moved on to. */
+	/* Arrived pointing at one row from the board (`_copy_anchor`); once per fragment. */
 	let revealed = '';
 
 	$effect(() => {
@@ -110,13 +83,7 @@
 	});
 
 	/*
-	 * A closer look: the player, opened over this screen through `openAsset`, as every other wall
-	 * in Sift does. The list is empty because a row here is one file in several places, so there is
-	 * nothing to step to.
-	 *
-	 * What to call a file in a sentence: a short form of its id, because every row here is one
-	 * asset in several places, and what tells the copies apart is the path under each, drawn in
-	 * full.
+	 * A closer look through `openAsset`; a file's name is a short id, its paths tell copies apart.
 	 */
 	function nameOf(assetId: string): string {
 		return `the file ending ${assetId.slice(-6)}`;
@@ -135,14 +102,10 @@
 		answered.changed();
 	}
 
-	/* The size the confirm quotes. The copy being let go, never the total, which would promise
-	   more than this one press delivers. */
+	/* The copy being let go, never the total. */
 	const releaseFrees = $derived(releasing ? formatBytes(releasing.copy.size_bytes) : '');
 
-	/*
-	 * The page in one press: for every file on it, keep the copy the rule marks (the biggest; see
-	 * `biggest`) and let the rest go, as the near-duplicate queue does.
-	 */
+	/* The page in one press: keep each marked copy, let the rest go. */
 	let pageOpen = $state(false);
 	const pageGoing = $derived(
 		view.redundancies.flatMap((asset) => {
@@ -155,8 +118,7 @@
 	const pageFrees = $derived(
 		formatBytes(pageGoing.reduce((sum, one) => sum + (one.copy.size_bytes ?? 0), 0))
 	);
-	/* "the marked copy", not "the biggest": a copy somebody marked by hand is what this press keeps
-	   now, and a sentence naming the rule would be describing a choice it may not be making. */
+	/* "the marked copy", which may be a hand's choice. */
 	const pageConsequence = $derived(
 		`Across ${counted(view.redundancies.length)} ${view.redundancies.length === 1 ? 'file' : 'files'}, Sift keeps the marked copy of each and permanently deletes the other ${pageGoing.length} from your disk, freeing ${pageFrees}. Every file keeps its tags and rating. This can't be undone.`
 	);
@@ -180,22 +142,17 @@
 		);
 	}
 
-	/** The line over each card: how many copies, how many would go, and what that frees. The same
-	    sentence the near-duplicate queue writes, because it is the same fact. */
+	/** The line over each card, the near-duplicate queue's sentence. */
 	function shapeOf(asset: Redundancy): string {
 		const going = asset.copies.length - 1;
 		return `${counted(asset.copies.length)} copies, ${counted(going)} would be deleted, frees ${formatBytes(asset.reclaimable_bytes)}`;
 	}
 
-	/* What the page is a part of. Never a bare list: a page of twenty-four out of several
-	   thousand, drawn with no total, reads as a library with twenty-four duplicates in it. */
+	/* What the page is a part of, never a bare list. */
 	const standing = $derived.by(() => {
 		if (!view.loaded) return '';
 		const files = view.totalRedundant === 1 ? 'file' : 'files';
-		/*
-		 * The pager under the list says where this page is, so there is no second readout of the
-		 * same position to disagree with it.
-		 */
+		/* The pager says the position; no second readout. */
 		const shown = '';
 		const hidden = view.concealed > 0 ? ' Some are hidden in the vault.' : '';
 		return `${formatBytes(view.totalReclaimable)} could be freed across ${view.totalRedundant} ${files}.${shown}${hidden}`;
@@ -214,8 +171,7 @@
 			No file is stored more than once, so there's nothing to delete.
 		</Empty>
 	{:else}
-		<!-- The same strip the near-duplicate queue wears: the sentence about the whole queue and
-		     the one press that settles the page. -->
+		<!-- The near-duplicate queue's strip. -->
 		<PanelBar>
 			<p class="total">{standing}</p>
 			<Button
@@ -231,15 +187,10 @@
 		<ul class="groups">
 			{#each view.redundancies as asset (asset.asset_id)}
 				{@const keeper = view.copyKeeperOf(asset)}
-				<!-- Named so a still on the board can point at THIS row. A group here has no address of
-				     its own (it is one asset in several places, on a paged queue) so the anchor is
-				     the asset's id and `slices/dedup/queue._copy_anchor` is what writes the other half
-				     of it. See `revealed` above for why arriving is not enough on its own. -->
+				<!-- Named so a board still can point at this row (`_copy_anchor`). -->
 				<li class="group" id="copy-{asset.asset_id}">
 					<header>
-						<!-- The same chip the near-duplicate queue wears, and it always says the same thing
-						     here: these are the same bytes, which is what makes them a different question
-						     from the one next door. -->
+						<!-- Always Identical: the same bytes. -->
 						<span class="closeness">Identical</span>
 						<span class="shape data">{shapeOf(asset)}</span>
 					</header>
@@ -254,8 +205,9 @@
 									onclick={() => openAsset(asset.asset_id, [])}
 									aria-label="Open {copy.filename}"
 								>
-									<!-- Every copy is the same bytes, so every tile draws the same picture,
-									     which is the point: what tells them apart is underneath. -->
+									<!--
+									The same picture on every tile; the path tells them apart.
+									-->
 									<img
 										src={thumbUrl({ id: asset.asset_id, art: asset.art })}
 										alt=""
@@ -264,13 +216,11 @@
 								</Pressable>
 
 								<p class="name"><FileName name={copy.filename} /></p>
-								<!-- The whole path, as the server says it: two copies of one file usually differ
-								     only in which library folder they are in. Never `rel_path`, which names a
-								     folder Hidden hides. -->
+								<!--
+								The whole path, never `rel_path`, which names a Hidden folder.
+								-->
 								<p class="where"><PathText path={copy.path ?? copy.filename} /></p>
-								<!-- The same three facts a near-duplicate tile prints. The shape and the length
-								     come off the ASSET, because every copy is the same bytes: printing them per
-								     copy would be one number twice with a hint that it might differ. -->
+								<!-- Shape and length off the asset, the same for every copy. -->
 								<p class="facts data">
 									{formatBytes(copy.size_bytes)}{formatDimensions(asset.width, asset.height)
 										? ` \u00b7 ${formatDimensions(asset.width, asset.height)}`
@@ -282,16 +232,10 @@
 								{:else}
 									<div class="acts">
 										<!--
-											The override, and it writes nothing: the page press is
-											what writes.
-
-											This tab lights the biggest copy and works the same
-											figure out again for its page press, so without an
-											override there is no way to say "keep that one instead",
-											and clicking anything in a group would change nothing.
-											Its sibling tab has the same, and the two are tabs of
-											one screen. See `copyKeeperOf`.
+										The override writes nothing; the page press writes
+										(`copyKeeperOf`).
 										-->
+
 										<Button
 											tone="ghost"
 											disabled={view.busy}
@@ -340,23 +284,12 @@
 />
 
 <style>
-	/*
-	 * The same card and the same tiles as the near-duplicate queue next door, deliberately.
-	 *
-	 * They are two tabs of one screen. Two shapes for "several files, one of them stays" (a
-	 * thumbnail beside a list of paths here, a card of file tiles with a keeper marked there) would
-	 * be two things to learn for one job, and the tab strip between them says they are one job.
-	 *
-	 * What stays different is what the two questions actually differ on: the chip always reads
-	 * *Identical* here because these are the same bytes, and there is no rule to choose a keeper by,
-	 * only the largest copy, which is what the reclaimable figure has always counted against.
-	 */
+	/* The near-duplicate queue's card and tiles, as two tabs of one job. */
 	section {
 		position: relative;
 	}
 
-	/* In the bar, beside the press: it takes the room and the button sits at the end. Its
-	   measure is the bar's (`PanelBar`). */
+	/* In the bar beside the press. */
 	.total {
 		flex: 1 1 24ch;
 		margin: 0;
@@ -407,8 +340,7 @@
 		font: var(--text-micro);
 	}
 
-	/* `auto-fit`, so the tiles FILL the row rather than leaving empty tracks beside them. See the
-	   near-duplicate panel, where `auto-fill` would draw two small tiles and seven columns of nothing. */
+	/* `auto-fit`, so tiles fill the row. */
 	.files {
 		display: grid;
 		grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 300px));
@@ -423,10 +355,7 @@
 		min-inline-size: 0;
 	}
 
-	/* The two things that can be done to a copy that is not the keeper, at the end of its tile:
-	   actions right, everything that is read left. They wrap rather than squeeze: a tile here is
-	   between 200 and 300 pixels wide and two buttons do not fit across it. */
-	/* At the tile's foot, so the presses of a group stand on one line whatever the name above took. */
+	/* The copy's two presses at the tile's foot, wrapping rather than squeezing. */
 	.acts,
 	.kept {
 		margin-block-start: auto;
@@ -439,19 +368,14 @@
 		gap: var(--space-2);
 	}
 
-	/* The copy that stays if nothing is pressed. Marked on the FILE rather than only in its words,
-	   because a page of these is read by looking for what is lit. */
+	/* The kept copy marked on the file, which is what is skimmed for. */
 	.keeping {
 		outline: 2px solid var(--sift-accent);
 		outline-offset: var(--space-2);
 		border-radius: var(--radius-sm);
 	}
 
-	/* Something happens under the pointer, on the PICTURE rather than on the button around it: the
-	   thumbnail fills the control, so an outline on the control would be drawn under the image and
-	   invisible. `:global` because the class is handed to `Pressable`. */
-	/* Reserved transparent at rest, so the outline STEPS in rather than appearing between two
-	   frames. An outline is drawn outside the box, so reserving it moves nothing. */
+	/* The outline on the picture, reserved transparent; global, as Pressable's. */
 	.file :global(.preview img) {
 		outline: 2px solid transparent;
 		outline-offset: 2px;
@@ -467,11 +391,7 @@
 		display: block;
 		inline-size: 100%;
 		block-size: auto;
-		/* Square rather than 4:3, and that is about what is IN these queues. A picture is drawn
-		   `contain`, never cropped: you are choosing which copy to delete, so nothing may be
-		   hidden. And much of what these queues hold is portrait. In a wide 4:3 box a portrait file
-		   renders short and narrow with grey either side; a square box of the same width gives it a third
-		   more height and the same care about not cropping. */
+		/* Square and uncropped: nothing may be hidden when choosing a copy to delete. */
 		aspect-ratio: 1 / 1;
 		max-block-size: 300px;
 		object-fit: contain;
@@ -502,8 +422,7 @@
 		color: var(--sift-ink-2);
 	}
 
-	/* The words beside the tick, so the mark is not colour alone. A control's height, so its words
-	   stand on the line of the keep press beside it. */
+	/* Words beside the tick, at a control's height. */
 	.kept {
 		display: flex;
 		align-items: center;

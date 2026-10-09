@@ -1,37 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* Music lookup: naming a file's song by asking AcoustID, drawn on the Music section.
- *
- * It is the same kind of thing as a stash-box: a place Sift sends something about the library to
- * somebody else's service, with a key of yours, through a route you choose. So it is drawn the same
- * way (the switch with its disclosure, the key that is written and never read back, the route
- * picker a box has, and a test of the key), and nowhere else.
- *
- * ## Three kinds of thing, three ways in
- *
- * The SWITCH (`music.lookup`) and the ROUTE (`music.lookup_route`) are ordinary registered settings,
- * written through the one settings write like every other, so a change reaches every screen the way
- * any setting's does. Their words (the label, the help and the disclosure) are the server's
- * declaration, read here rather than written out again, so the sentence that says what leaves this
- * device is the one the server declared and cannot drift from it.
- *
- * The KEY is not a setting. It is sealed on the server and its own routes take it in and take it
- * away; nothing answers with it. So this module holds whether one is set and whether it can be
- * opened now, and never the key: the card types it into a box and sends it, and the box goes.
- *
- * The TEST sends AcoustID's own documented example with the key, never anything of the library,
- * and says what came back in the server's words.
- *
- * ASKING ABOUT THE LIBRARY is not here. It is a task of its own, Name songs with AcoustID, with its
- * own When and its presses on Settings > Tasks; the Music pane draws that task's row, so its When
- * is chosen on either screen and it is pressed from one place. Nothing on this card sends a file's
- * fingerprint anywhere.
- *
- * ## Why the traffic goes through a wire object
- *
- * So the design gallery can draw the real card without it writing a real setting when somebody
- * presses the switch there: the gallery hands in a wire that keeps its answers in memory. The
- * screen uses `LIVE`, the default.
- */
+/* Music lookup: naming a file's song by asking AcoustID, drawn on the Music section. */
 
 import { api, ApiError } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -52,12 +20,8 @@ export const LOOKUP_KEY = 'music.lookup';
 /** Which way the lookup goes out: a tunnel's id, or nothing for this device's own connection. */
 export const LOOKUP_ROUTE_KEY = 'music.lookup_route';
 
-/**
- * The registered settings this card draws, so a pane that draws every setting it is sent can
- * leave them out. They are filed in the registry beside the stash-boxes' own, and the Stash-boxes
- * pane draws every setting of that section that is not a field rule, so without this they would
- * appear there too.
- */
+/** The registered settings this card draws, so a pane that draws every setting it is sent can
+ * leave them out. */
 const DRAWN_HERE: ReadonlySet<string> = new Set([LOOKUP_KEY, LOOKUP_ROUTE_KEY]);
 
 /** The words the card writes itself. The switch and the route carry the server's own. */
@@ -118,11 +82,9 @@ export interface LookupWire {
 	askAgain(): Promise<LookupPressed>;
 }
 
-/* WHY NOT FOLLOWED: a store built once per screen. The card that holds it re-reads it when a
-   setting moves (`whenChanged(settingChanges, ...)` in `MusicLookup.svelte`).
-
-   Exported for the gallery's wire, which answers from memory but reads the declarations from here,
-   so the gallery draws the server's own sentence rather than a copy of it. */
+/* Exported for the gallery's wire, which answers from memory but reads the declarations from here,
+   so the gallery draws the server's own sentence rather than a copy of it.
+   WHY NOT FOLLOWED: a store built once per screen. */
 export const LIVE: LookupWire = {
 	read: () => api.get<LookupState>('/music/lookup'),
 	async declared() {
@@ -145,8 +107,7 @@ function said(error: unknown): string {
 
 export class MusicLookup {
 	readonly #wire: LookupWire;
-	/* Every read takes a number, and only the newest one's answer is kept. A write bumps it too, so
-	   a read that set off before the write cannot land after it and put the old value back. */
+	/* Every read takes a number, and only the newest one's answer is kept. */
 	#reads = 0;
 
 	/** What the server said. Null until it has answered: nothing is claimed before then. */
@@ -212,12 +173,7 @@ export class MusicLookup {
 		}
 	}
 
-	/**
-	 * Ask AcoustID again about the files it did not know. Answers the server's sentence (how many
-	 * it is asking about, or that none is waiting), or the refusal in its words while the lookup is
-	 * off or has no key. The count beside the press is read again after, from the same answer the
-	 * pane draws, so it says what is left.
-	 */
+	/** Ask AcoustID again about the files it did not know. */
 	async askAgain(): Promise<{ said: string; ok: boolean }> {
 		this.asking = true;
 		try {

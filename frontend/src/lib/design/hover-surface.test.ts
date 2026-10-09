@@ -1,14 +1,4 @@
-/*
- * NOTHING READS THE SURFACE-STEP HOVERS: THEY ARE GONE.
- *
- * A flat thing under the pointer takes the state layer (`--layer-hover`, the ink mixed into its own
- * ground), which answers the same on the canvas, on a card and inside a translucent panel. Stepping
- * the ground to another surface is the wrong material wherever the ground is not the one the step
- * was spelled from, and invisible wherever the ground already is that step. Neither
- * `--hover-surface` nor `--hover-surface-raised` is declared any more, so a read of one resolves to
- * nothing and the hover silently disappears; this refuses it. `common/hover-surface.test.ts`
- * refuses a declaration.
- */
+/* NOTHING READS THE SURFACE-STEP HOVERS: THEY ARE GONE. */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

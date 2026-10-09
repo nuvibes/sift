@@ -1,18 +1,4 @@
-/* What has built up in a library, as the Maintenance screen asks the server about it.
- *
- * Two requests and no cleverness: read what is there, and run one of them by name. The counts are
- * never worked out here: a client that computed them would be a second answer to the same
- * question, and the one it showed would be the one nobody could check.
- *
- * Every run comes back with a fresh survey attached, because removing rows strands the files those
- * rows named. The numbers genuinely move in ways nothing here could predict, so they are re-read
- * rather than adjusted.
- *
- * Two of the counts read a whole directory off the disk, so the server does not take them when
- * this screen opens: it answers with the last survey and when it was taken, or with no count at
- * all before there has been one. Asking for a survey queues the count as a job, and the screen
- * re-reads when the queue moves.
- */
+/* What has built up in a library, as the Maintenance screen asks the server about it. */
 
 import { api, ApiError } from '$lib/api/client';
 import { UNREACHABLE } from '$lib/shell/unreachable';
@@ -28,8 +14,8 @@ function refusal(error: unknown): string {
 
 export class Tidy {
 	leftovers = $state<Leftovers[]>([]);
-	/** True once a load has succeeded. An attempt that failed leaves this false, so the screen says
-	    it could not look rather than that there is nothing to do. */
+	/** True once a load has succeeded. An attempt that failed leaves this false, so the screen
+	   says it could not look rather than that there is nothing to do. */
 	loaded = $state(false);
 	loading = $state(false);
 	problem = $state<string | null>(null);
@@ -42,7 +28,7 @@ export class Tidy {
 	surveying = $state(false);
 
 	/** When the counts that read the disk were last taken (the oldest of them, since one survey
-	    takes them all), or null while none has been. */
+	   takes them all), or null while none has been. */
 	get lastSurveyed(): number | null {
 		const times = this.leftovers
 			.map((one) => one.surveyed_at)
@@ -55,8 +41,7 @@ export class Tidy {
 		return this.leftovers.some((one) => one.count === null);
 	}
 
-	/** Ask for the counts that read the disk to be taken. A press while one is already going is
-	    answered rather than doubled, and reads the same on screen. */
+	/** Ask for the counts that read the disk to be taken. */
 	async survey(): Promise<void> {
 		this.problem = null;
 		try {
@@ -67,12 +52,7 @@ export class Tidy {
 		}
 	}
 
-	/* --- settling the database down -----------------------------------------------------------
-	 *
-	 * Kept apart from the tidyings above and not folded in with them, because a tidying REMOVES
-	 * something and this removes nothing. Every row survives; only the disk the file takes and how
-	 * SQLite chooses its indexes change. Listing it among things that delete data would be inviting
-	 * somebody to read it as one of them. */
+	/* --- settling the database down ----------------------------------------------------------- */
 
 	/** What the last optimize freed, so the screen can report a change nobody can otherwise see. */
 	optimized = $state<{ freed: number; now: number } | null>(null);
@@ -93,11 +73,8 @@ export class Tidy {
 		}
 	}
 
-	/* --- making every picture again ------------------------------------------------------------
-	 *
-	 * The count is asked for on load and the run is a second request, for the reason the survey
-	 * above is separate from the tidying: this is minutes of the machine on a large library, and a
-	 * control whose size is only visible after it has started is one nobody can use carefully. */
+	/* --- making every picture again
+	 * ------------------------------------------------------------ */
 
 	/** How many files a rebuild would touch, or null while that has not been asked. */
 	rebuildable = $state<number | null>(null);
@@ -110,8 +87,7 @@ export class Tidy {
 				await api.get<components['schemas']['Rebuilding']>('/jobs/rebuild-thumbnails')
 			).total;
 		} catch {
-			// A count that could not be read is left unknown. The row says so and offers no button,
-			// which is better than offering one over a number nobody has.
+			// A count that could not be read is left unknown.
 			this.rebuildable = null;
 		}
 	}
@@ -132,12 +108,8 @@ export class Tidy {
 		}
 	}
 
-	/* --- bringing the hover clips up to the shape that is set ----------------------------------
-	 *
-	 * Its own count and its own run, rather than folding into the rebuild above. They answer
-	 * different questions (that one is "every picture is out of date", this one is "the clips
-	 * are a different length from the one you chose"), and a single button doing both would make
-	 * changing a preference cost a full re-thumbnail of the library. */
+	/* --- bringing the hover clips up to the shape that is set
+	 * ---------------------------------- */
 
 	/** How many files have a hover clip of another shape, or null while that has not been asked. */
 	restyleable = $state<number | null>(null);
@@ -188,17 +160,7 @@ export class Tidy {
 		}
 	}
 
-	/* Everything, with what there is to do first.
-	 *
-	 * Every kind is drawn even at zero: showing only what has built up would make a tidying with
-	 * nothing to remove indistinguishable from one that does not exist, and somebody looking for
-	 * the control that clears a particular thing would find an empty space and no way to tell
-	 * whether they were looking in the wrong place.
-	 *
-	 * The ones with something to do are put first, so the screen still reads as a work list
-	 * rather than as an inventory. Ordering is stable within each half (the registry's own
-	 * order, which is rows before files), so nothing jumps around between reads.
-	 */
+	/* Everything, with what there is to do first. */
 	get worthDoing(): Leftovers[] {
 		return [
 			...this.leftovers.filter((one) => (one.count ?? 0) > 0),
@@ -206,8 +168,7 @@ export class Tidy {
 		];
 	}
 
-	/** Whether anything at all has built up. What the screen says when nothing has. A count not
-	    yet taken is not something built up: it is not known either way. */
+	/** Whether anything at all has built up. What the screen says when nothing has. */
 	get anythingToDo(): boolean {
 		return this.leftovers.some((one) => (one.count ?? 0) > 0);
 	}

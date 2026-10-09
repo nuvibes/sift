@@ -1,21 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Pacing requests to one host, and backing off hard when it says stop.
 
-A token bucket per host, with a shared self-tuning backoff. What it is FOR is not being polite in
-the abstract: the accounts and keys Sift uses belong to the person running it, and the failure mode
-of asking too fast is that person's own account being restricted, which no retry recovers.
-
-## Why this is in the kernel
-
-It says "host" and not "download" in every name it has, because it knows nothing about
-downloading. Two slices call it (the downloader, and the stash-box adapter, which must impose its
-own floor because those services publish no rate-limit header of any kind) and two slices may not
-import each other.
-
-Each caller brings its own numbers. The intervals, bursts and backoff a site resolver needs are not
-the ones a metadata service needs, and the configuration is the caller's business; what is here is
-the mechanism.
-"""
+The accounts belong to the person running Sift, and asking too fast can get them restricted."""
 
 from __future__ import annotations
 
@@ -26,11 +12,10 @@ from collections.abc import Awaitable, Callable
 
 from sift.kernel.numbers import as_float
 
-#: Backoff used when a "too many requests" answer carries no readable `Retry-After`.
+#: Backoff when a "too many requests" answer carries no readable `Retry-After`.
 DEFAULT_BACKOFF_SEC = 5.0
 
-# When a managed host complains its interval grows by this factor (capped), so requests stop
-# re-tripping the limit; after a streak of clean requests it relaxes one step back toward base.
+# A complaint grows a host's interval by this factor, capped; a clean streak relaxes it a step.
 _INTERVAL_GROWTH = 1.5
 _INTERVAL_DECAY = 0.8
 
@@ -39,15 +24,7 @@ Sleep = Callable[[float], Awaitable[None]]
 
 
 def parse_retry_after(value: str | None) -> float | None:
-    """Read a `Retry-After` header. Only the plain seconds form is honoured (the HTTP-date form is
-    rare for these JSON APIs) and anything else reads as absent.
-
-    This value is written by somebody else's server, which is the whole reason it is parsed rather
-    than character-checked. `isdigit()` is true for characters `float()` refuses (the superscript
-    digits among them) so a host answering with one would raise here, letting a remote party
-    choose when a download job crashed. A negative wait is dropped for the same reason a missing one
-    is: it is not a delay.
-    """
+    """A `Retry-After` in seconds, parsed rather than digit-checked as a remote server writes it."""
     if not value:
         return None
     seconds = as_float(value.strip())
@@ -106,8 +83,7 @@ class HostRateLimiter:
         return lock
 
     def _refill(self, host: str, now: float) -> None:
-        """Top up a host's bucket for the time since it was last touched, capped at its burst. A host
-        with no spacing (interval 0) is always full."""
+        """Top up a host's bucket since it was last touched, capped at its burst."""
         cap = float(self._burst(host))
         refill = self._interval(host)
         if refill <= 0:
@@ -120,24 +96,13 @@ class HostRateLimiter:
         self._updated[host] = now
 
     def pace(self, host: str, interval: float) -> None:
-        """Set how far apart requests to one host must be, in seconds.
-
-        For a caller whose pace is configuration rather than a constant: a stash-box carries its
-        own requests-per-minute, so the number is not known when the limiter is built.
-
-        Only ever WIDENS what a refusal has already widened. `_current` is where a `429` records the
-        backed-off interval, and re-declaring the base must not undo that: a box that just asked
-        Sift to slow down would otherwise be back at full speed on the next request that mentioned
-        its pace.
-        """
+        """Set a host's spacing in seconds, never undoing a wider interval a refusal set."""
         self._intervals[host] = interval
         if self._current.get(host, 0.0) < interval:
             self._current.pop(host, None)
 
     async def acquire(self, host: str) -> None:
-        """Wait until a token is free for `host` (and any backoff has cleared), then spend it. The
-        host's lock is held across the wait so concurrent callers pace out instead of all firing at
-        once; from a full bucket the first `burst` calls return immediately, the rest pace out."""
+        """Wait for a free token and any backoff, holding the host's lock so callers pace out."""
         async with self._lock(host):
             now = self._clock()
             self._refill(host, now)
@@ -146,8 +111,7 @@ class HostRateLimiter:
             block_wait = max(0.0, self._blocked_until.get(host, 0.0) - now)
             token_wait = 0.0 if (tokens >= 1.0 or refill <= 0) else (1.0 - tokens) * refill
             if token_wait > 0.0 and self._jitter_frac > 0.0:
-                # Symmetric jitter, mean factor 1.0: an irregular beat, the same average spacing.
-                # Only the pacing wait is jittered; the backoff below is honoured in full via `max`.
+                # Symmetric jitter on the pacing wait only; the backoff is honoured in full.
                 token_wait *= 1.0 + self._jitter_frac * (2.0 * self._rand() - 1.0)
                 token_wait = max(0.0, token_wait)
             wait = max(token_wait, block_wait)
@@ -158,8 +122,7 @@ class HostRateLimiter:
             self._note_clean(host)
 
     def _note_clean(self, host: str) -> None:
-        """Count a clean acquire; after `decay_after` of them relax the host's adapted interval one
-        step back toward its base."""
+        """Count a clean acquire; every `decay_after` relaxes the interval a step toward base."""
         streak = self._clean.get(host, 0) + 1
         if streak < self._decay_after:
             self._clean[host] = streak
@@ -171,15 +134,13 @@ class HostRateLimiter:
             self._current[host] = max(base, cur * _INTERVAL_DECAY)
 
     def note_retry_after(self, host: str, seconds: float) -> None:
-        """A host asked us to back off. Hard-block it until the cooldown elapses so every task aimed
-        at it waits together, and widen its steady interval a step so the next requests space out."""
+        """A host asked to back off: block it until the cooldown and widen its interval a step."""
         target = self._clock() + max(0.0, seconds)
         self._blocked_until[host] = max(self._blocked_until.get(host, 0.0), target)
         self._widen(host)
 
     def _widen(self, host: str) -> None:
-        """Grow a managed host's steady interval one step (capped) and reset its clean streak. A host
-        with no base spacing is left alone: the shared backoff already rides out its rare complaint."""
+        """Widen a managed host's interval a step, capped; one with no base spacing is left."""
         self._clean[host] = 0
         base = self._base_interval(host)
         if base <= 0:
@@ -188,5 +149,5 @@ class HostRateLimiter:
         self._current[host] = min(base * self._max_factor, max(cur, base) * _INTERVAL_GROWTH)
 
     def set_jitter(self, frac: float) -> None:
-        """Boot-time override of the pacing jitter fraction (0 disables it)."""
+        """Override the pacing jitter fraction at boot; 0 disables it."""
         self._jitter_frac = max(0.0, frac)

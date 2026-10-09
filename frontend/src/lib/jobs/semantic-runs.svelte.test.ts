@@ -1,15 +1,4 @@
-/* The two long-running things searching by meaning does, followed from outside any one screen.
- *
- * The pane's own tests assert markup and nothing about what is behind it, so the estimate, the
- * resume, and the whole of the "switched off mid-run" stop are pinned here.
- *
- * The one worth stating plainly is `running`. It is asked of the QUEUE and not of the file
- * counts. "Files still to do" is not the question: a run stopped halfway leaves exactly as many
- * files undone as a run still going, so a bar drawn from that number would sit at whatever it
- * reached, for ever, describing work that will never happen. Switching the feature off does not
- * cancel the queued jobs. It makes each one run, find the switch off, and finish having done
- * nothing.
- */
+/* The two long-running things searching by meaning does, followed from outside any one screen. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -59,12 +48,7 @@ function status(overrides: Partial<SemanticStatus> = {}): SemanticStatus {
 	};
 }
 
-/* Start reading, and let the first reading land.
- *
- * `attach` awaits its own polling loop, which does not return while a run is still going, so a
- * test that awaited it would hang exactly where the interesting cases are. The pane calls it the
- * same way, without waiting, for the same reason.
- */
+/* Start reading, and let the first reading land. */
 async function attach() {
 	void describing.attach();
 	await vi.advanceTimersByTimeAsync(0);
@@ -103,8 +87,8 @@ describe('whether anything is actually describing', () => {
 	});
 
 	it('a run that stopped halfway is stopped, not running', async () => {
-		/* The exact state switching the feature off mid-run leaves behind: work left, nothing doing
-		   it. Identical to a run in progress from the file counts alone, and the opposite answer. */
+		/* The exact state switching the feature off mid-run leaves behind: work left, nothing
+		   doing it. */
 		describing.status = status({ described_files: 10, waiting_files: 90, running_jobs: 0 });
 
 		expect(describing.running).toBe(false);
@@ -119,8 +103,7 @@ describe('whether anything is actually describing', () => {
 	});
 
 	it('a feature that cannot run is neither, whatever the counts say', () => {
-		/* Switched on with no models is an ordinary state. Drawing a stopped-run warning over it
-		   would tell somebody to carry on describing when nothing has begun. */
+		/* Switched on with no models is an ordinary state. */
 		describing.status = status({ ready: false, waiting_files: 90, running_jobs: 0 });
 
 		expect(describing.running).toBe(false);
@@ -248,9 +231,8 @@ describe('roughly how long is left', () => {
 	});
 
 	it('works it out from what the count has done lately', async () => {
-		/* Ten files a reading, two seconds a reading, ninety left after the window: about eighteen
-		   seconds. What matters is that it is a number at all: a getter that returns before reading
-		   anything reactive leaves the estimate silently null for a whole run. */
+		/* Ten files a reading, two seconds a reading, ninety left after the window: about
+		   eighteen seconds. */
 		let left = 100;
 		semanticStatus.mockImplementation(async () =>
 			status({ described_files: 200 - left, waiting_files: left, running_jobs: 1 })
@@ -280,9 +262,7 @@ describe('roughly how long is left', () => {
 
 /* --- fetching the models ---------------------------------------------------------------- */
 
-/* The progress of a download is read off the jobs list, which is one `api.get`. The watcher is
-   shared with the graphics-card download and lives in `$lib/jobs/watch-download`, so these drive
-   the request itself. */
+/* The progress of a download is read off the jobs list, which is one `api.get`. */
 function theJobSays(row: {
 	state: string;
 	progress?: number;
@@ -307,8 +287,8 @@ describe('following a model download', () => {
 	});
 
 	it('re-reads whether the install can search by meaning once the job is over', async () => {
-		/* Deliberately re-read rather than deduced from the job's last state: finishing, failing and
-		   being cancelled all ask the same question, and the status is where it is answered. */
+		/* Deliberately re-read rather than deduced from the job's last state: finishing, failing
+		   and being cancelled all ask the same question, and the status is where it is answered. */
 		apiGet.mockResolvedValue({ jobs: [] });
 		semanticStatus.mockResolvedValue(status({ ready: true }));
 		semanticAvailable.mockResolvedValue({ available: true });
@@ -392,11 +372,7 @@ describe('whether the search box should offer it', () => {
 	});
 
 	it('TAKES the control away when the install stops being able to answer', async () => {
-		/* Nobody signed in yet, or the machine cannot say. Either way the safe answer is no: an
-		   offered control that does nothing is worse than an absent one.
-		 *
-		 * Turned ON first, deliberately. Starting from off, a refusal that did nothing at all would
-		 * leave it off and the assertion would pass against a store that had stopped failing safe. */
+		/* Nobody signed in yet, or the machine cannot say. */
 		semanticAvailable.mockResolvedValue({ available: true });
 		await availability.refresh();
 		expect(availability.available).toBe(true);
@@ -429,8 +405,8 @@ describe('how much of the library a search by meaning can reach', () => {
 	});
 
 	it('says nothing at all rather than a fraction it could not read', async () => {
-		/* Zero and zero is how the line disappears. A sentence built out of a failed read would be
-		   a number somebody could act on that nothing stands behind. */
+		/* Zero and zero is how the line disappears. A sentence built out of a failed read would
+		   be a number somebody could act on that nothing stands behind. */
 		semanticCoverage.mockResolvedValue({ described: 17581, library: 101397 });
 		await coverage.load();
 

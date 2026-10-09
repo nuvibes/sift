@@ -1,26 +1,5 @@
-/**
- * Hue, saturation and value: the three numbers a colour picker is actually drawn in.
- *
- * ## Why this space and not the one the accents are solved in
- *
- * `theme/accent.ts` works in OKLCH, because the question there is "is this legible on that", and a
- * lightness number only answers that in a perceptual space. The question HERE is different: it is
- * "where on the picture do I put the marker, and what colour is under my finger". HSV is the space
- * that makes a square out of a hue (saturation across, value down) with every corner of that
- * square inside sRGB. An OKLCH square is not a square: its gamut boundary is a curve that moves
- * with the hue, so the corners would be colours no screen can paint and the marker could be
- * dragged somewhere that does not exist.
- *
- * So the two spaces answer two questions and neither replaces the other. A colour is CHOSEN here
- * and then DERIVED there, and the hex in between is the whole of what passes.
- *
- * ## Why a parse rather than a check and a parse
- *
- * `toHsv` answers `null` for anything that is not a colour, so "is this a colour" and "which colour
- * is it" are one question asked once. The shape check itself is `isHex`, imported from where the
- * app already declares it rather than written again here: it is one rule, and the version of it
- * this file would have grown is the version that comes to disagree with the server's.
- */
+/** Hue, saturation and value, the space a picker is drawn in: its square stays inside sRGB,
+ * unlike OKLCH, where accents are derived. A hex passes between the two. */
 
 import { isHex } from '$lib/theme/accent';
 
@@ -36,14 +15,7 @@ const clamp01 = (n: number): number => Math.min(1, Math.max(0, n));
 /** A hue folded back into the circle, so 370 is 10 and -10 is 350. */
 export const turn = (degrees: number): number => ((degrees % 360) + 360) % 360;
 
-/**
- * A colour, as the three numbers the picker is drawn in. `null` when it is not a colour.
- *
- * A GREY HAS NO HUE, and this says so by answering 0 rather than by guessing. Which hue a grey
- * "was" is not a fact about the grey: it is a fact about what the person was looking at before
- * they made it grey, and only the control watching them knows that. `ColorPicker` keeps the hue it
- * had for exactly that case; a function handed six f's cannot.
- */
+/** A colour as the picker's numbers, or null; a grey's hue is 0, as ColorPicker keeps its own. */
 export function toHsv(colour: string): Hsv | null {
 	if (!isHex(colour)) return null;
 	const digits = colour.trim().slice(1);
@@ -71,9 +43,7 @@ export function toHex({ hue, saturation, value }: Hsv): string {
 	const middle = chroma * (1 - Math.abs((sixth % 2) - 1));
 	const floor = clamp01(value) - chroma;
 
-	/* The six faces of the cube, as offsets from the darkest channel. Written as a table rather than
-	   as a chain of comparisons because the pattern is the point: each face holds one channel at the
-	   top, one at the bottom, and slides the third between them. */
+	/* The cube's six faces as offsets from the darkest channel. */
 	const faces: [number, number, number][] = [
 		[chroma, middle, 0],
 		[middle, chroma, 0],
@@ -96,6 +66,5 @@ export function toHex({ hue, saturation, value }: Hsv): string {
 	);
 }
 
-/** The pure hue at full saturation and full value, for the ground the picker's square is washed
- *  over. A colour built from a number, which is what makes it data rather than a decision. */
+/** The pure hue, for the ground under the picker's square. */
 export const hueColour = (hue: number): string => toHex({ hue, saturation: 1, value: 1 });

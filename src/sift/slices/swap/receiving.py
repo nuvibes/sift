@@ -294,22 +294,7 @@ class _Receiving(_Figures):
         if self.offer is None:  # pragma: no cover (files are received only after the offer)
             raise ProtocolError("a file before the offer")
         live = self.live
-        size = header.get("size")
-        # A header names the whole digest, or under `once` the sender's version (`pieces`).
-        once = "digest" not in header
-        digest = header.get("version" if once else "digest")
-        offered = self.offer.files[index].size
-        # A PEER SENDS NO MORE THAN IT OFFERED. The stripped file is the offered one less its
-        # metadata; a size past the offer's (with room for a container rewritten) is a lie.
-        if (
-            not isinstance(size, int)
-            or isinstance(size, bool)
-            or not 0 <= size <= offered + offered // 20 + (1 << 20)
-            or header.get("chunk_size") != CHUNK_SIZE
-            or not isinstance(digest, str)
-            or len(digest) != 64
-        ):
-            raise ProtocolError("a file header past what was offered")
+        size, digest, once = _checked_header(header, self.offer.files[index].size)
         count = transfer.chunk_count(size)
         named = header.get("chunks")
         share = None if named is None else set(_int_list(named, below=count))
@@ -335,13 +320,8 @@ class _Receiving(_Figures):
                 transfer.chunk_digest(frame.data) == frame.digest
             )
             if not good:
-                state.attempts[frame.index] = state.attempts.get(frame.index, 0) + 1
-                if state.attempts[frame.index] > MAX_RETRIES:
-                    log.info("swap.chunk_refused", swap=live.short_id, file=index)
-                    await self._drop(index, state)
-                    await conn.send({"skip": index})
+                if await self._refused_again(conn, index, state, frame.index):
                     return
-                await conn.send({"again": frame.index, "file": index})
                 continue
             await asyncio.to_thread(transfer.write_chunk, state.path, frame.index, frame.data)
             if state.is_dropped():
@@ -356,6 +336,17 @@ class _Receiving(_Figures):
             remaining.discard(frame.index)
             await conn.send({"ack": frame.index, "file": index})
         await self._conclude(conn, index, state)
+
+    async def _refused_again(self, conn: Conn, index: int, state: _Incoming, chunk: int) -> bool:
+        """Ask for a bad chunk again, or past the retries drop the file; True when dropped."""
+        state.attempts[chunk] = state.attempts.get(chunk, 0) + 1
+        if state.attempts[chunk] > MAX_RETRIES:
+            log.info("swap.chunk_refused", swap=self.live.short_id, file=index)
+            await self._drop(index, state)
+            await conn.send({"skip": index})
+            return True
+        await conn.send({"again": chunk, "file": index})
+        return False
 
     async def _conclude(self, conn: Conn, index: int, state: _Incoming) -> None:
         """A share's chunks are all in: the stream that finds the file whole checks it and says
@@ -436,3 +427,23 @@ class _Receiving(_Figures):
                     await live.owner.store.drop_manifest(live.id, self.key_of(index))
                 self.landing.task_done()
                 self.check_resolved()
+
+
+def _checked_header(header: Mapping[str, Any], offered: int) -> tuple[int, str, bool]:
+    """A file header's size, digest and whether it is a `once` version, or a refusal."""
+    size = header.get("size")
+    # A header names the whole digest, or under `once` the sender's version (`pieces`).
+    once = "digest" not in header
+    digest = header.get("version" if once else "digest")
+    # A PEER SENDS NO MORE THAN IT OFFERED. The stripped file is the offered one less its
+    # metadata; a size past the offer's (with room for a container rewritten) is a lie.
+    if (
+        not isinstance(size, int)
+        or isinstance(size, bool)
+        or not 0 <= size <= offered + offered // 20 + (1 << 20)
+        or header.get("chunk_size") != CHUNK_SIZE
+        or not isinstance(digest, str)
+        or len(digest) != 64
+    ):
+        raise ProtocolError("a file header past what was offered")
+    return size, digest, once

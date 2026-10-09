@@ -1,12 +1,4 @@
-/**
- * One read out at a time, and one more after it for everybody who asked meanwhile.
- *
- * The jobs bell rings for every job that moves, so a busy queue asks the same question several
- * times a second. Sent side by side, those reads pile up on a server already slow to answer them,
- * and the last to land is not always the newest. Here an ask that comes while a read is out waits
- * for that read and one more: the one more answers every ask that came in between, and each ask's
- * promise settles only once a read begun after it has landed.
- */
+/** One read out at a time, and one more after it for everybody who asked meanwhile. */
 export class OneRead {
 	#read: () => Promise<void>;
 	#reading: Promise<void> | null = null;

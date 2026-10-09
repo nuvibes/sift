@@ -1,7 +1,6 @@
-/*
- * Settings > Faces, Waiting for a face: the people a fingerprints file or a folder brought whom no
- * face matches yet, and what the list says when reading it, creating one or removing one fails.
- */
+/* Settings > Faces, Waiting for a face: the people a fingerprints file or a folder brought whom
+ * no face matches yet, and what the list says when reading it, creating one or removing one
+ * fails. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 

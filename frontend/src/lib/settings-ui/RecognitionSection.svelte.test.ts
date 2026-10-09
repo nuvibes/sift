@@ -1,10 +1,4 @@
-/* The three Recognition switches in one block, for Importing's Identify page.
- *
- * What is tested is what somebody relies on without reading it: the three switches are the features'
- * own settings, each with where it stands in the box under it, in the words its own section uses;
- * turning one on writes that switch and nothing else, so a When somebody chose is never moved; and a
- * switch that cannot run yet says where to finish setting it up, with the way there.
- */
+/* The three Recognition switches in one block, for Importing's Identify page. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';

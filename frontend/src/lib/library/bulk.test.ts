@@ -7,12 +7,7 @@ import {
 	overChunks
 } from '$lib/library/bulk';
 
-/* What a write over a selection left out, said once for the whole application.
- *
- * Seven routes answer this shape and about a dozen screens call them. The behaviour worth pinning
- * is not the wording: it is that the Unlock button appears for exactly one reason and no other,
- * because that is the half a screen written by hand would forget.
- */
+/* What a write over a selection left out, said once for the whole application. */
 
 const shown = vi.hoisted(() => vi.fn());
 const ask = vi.hoisted(() => vi.fn());
@@ -64,8 +59,8 @@ describe('saying what a bulk write left out', () => {
 	});
 
 	it('offers NOTHING when unlocking would not change the answer', () => {
-		/* The direction that matters. A file that is simply not there is not a lock, and a button
-		   promising to fix it is a button that fixes nothing. */
+		/* The direction that matters. A file that is simply not there is not a lock, and a
+		   button promising to fix it is a button that fixes nothing. */
 		announceSkipped(done({ changed: 2, skipped: 1, reason: 'Sift could not find the file.' }));
 
 		expect(lastToast().action).toBeUndefined();
@@ -95,8 +90,8 @@ describe('saying what a bulk write left out', () => {
 
 describe('folding several answers about one selection', () => {
 	it('adds up what changed and does NOT add up what was skipped', () => {
-		/* Adding a selection to three collections is three calls about the SAME files, so all three
-		   skip the same one. Summing that would report one hidden file as three left out. */
+		/* Adding a selection to three collections is three calls about the SAME files, so all
+		   three skip the same one. */
 		const folded = mergeBulk([
 			done({ changed: 2, skipped: 1, reason: 'in your vault', vault_locked: true }),
 			done({ changed: 2, skipped: 1, reason: 'in your vault', vault_locked: true }),
@@ -123,8 +118,7 @@ describe('folding several answers about one selection', () => {
 
 describe('a write over more files than one request will take', () => {
 	/* The whole reason this exists: "select all" means the whole query, and every write endpoint
-	 * takes at most five hundred ids. Without splitting, the largest selection anybody can act on is
-	 * the largest one they can make by hand, which is the fault, not a safeguard. */
+	 * takes at most five hundred ids. */
 
 	function ids(count: number): string[] {
 		return Array.from({ length: count }, (_, at) => `a${at}`);
@@ -168,9 +162,8 @@ describe('a write over more files than one request will take', () => {
 	});
 
 	it('ADDS UP what was skipped, which merging answers deliberately does not', async () => {
-		/* The distinction worth holding. `mergeBulk` covers several calls about the SAME files, so
-		 * summing would report one hidden file as three. Chunks are calls about DIFFERENT files, so
-		 * two skips here and five there are seven distinct files and the sum is the true number. */
+		/* The distinction worth holding. `mergeBulk` covers several calls about the SAME files,
+		 * so summing would report one hidden file as three. */
 		const done = await overChunks(ids(1500), async (chunk) => ({
 			changed: chunk.length - 2,
 			skipped: 2,
@@ -188,8 +181,7 @@ describe('a write over more files than one request will take', () => {
 	});
 
 	it('reports what LANDED when a chunk fails, rather than throwing it all away', async () => {
-		/* The chunks before a failure have already been written and nothing can put them back.
-		 * Throwing would tell somebody the write failed while a thousand files had been altered. */
+		/* The chunks before a failure have already been written and nothing can put them back. */
 		let calls = 0;
 		const done = await overChunks(ids(1500), async (chunk) => {
 			calls += 1;
@@ -227,14 +219,7 @@ describe('a write over more files than one request will take', () => {
 	});
 });
 
-/*
- * THE COUNT AND THE SENTENCE ARE DECIDED IN TWO PLACES, and this is where they meet.
- *
- * Only this side knows how many were skipped; only the server knows the words, which for bulk
- * delete are whatever refused the file rather than a constant. So the server sends both wordings
- * and this picks. With one wording, a selection of three would print "3 files could not be
- * included. It is in your vault."
- */
+/* THE COUNT AND THE SENTENCE ARE DECIDED IN TWO PLACES, and this is where they meet. */
 describe('the reason agrees in number with the count beside it', () => {
 	it('says it about ONE file when one was left out', () => {
 		announceSkipped(
@@ -269,8 +254,7 @@ describe('the reason agrees in number with the count beside it', () => {
 	});
 
 	it('falls back to the one wording it was given rather than explaining nothing', () => {
-		// An older server, or a producer not yet taught the plural. One sentence about the wrong
-		// number still says what happened; silence does not.
+		// An older server, or a producer not yet taught the plural.
 		announceSkipped(done({ changed: 0, skipped: 4, reason: 'That folder is read-only.' }));
 
 		expect(lastToast().message).toBe("4 files couldn't be included. That folder is read-only.");

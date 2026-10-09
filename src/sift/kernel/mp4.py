@@ -1,37 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""How far an MP4 stores its audio from the video it belongs with.
+"""How far an MP4 stores its audio from the video it belongs with, read from the `moov` index.
 
-In a well-made MP4 the audio and video for the same moment sit near each other on disk. In a badly
-muxed one they do not, and a browser that seeks has to hold two read positions hundreds of megabytes
-apart. Chrome cannot, so it falls into a loop of cancelled range requests: ten to fifty times the
-bytes the video needs, sustained, for as long as it plays. Playing forward from the
-start never notices, which is why such a file looks fine until somebody drags the scrubber.
-
-`worst_gap` answers it as one number: the largest byte distance between a moment's video and the
-audio nearest it in time.
-
-## Why this reads the index rather than asking ffprobe
-
-ffprobe can list packet positions, but it demuxes to do it, **reading more than the whole file**.
-Import already pays one full read for the content hash and a second is not free on a large
-library over a network share.
-
-Everything needed is in the `moov` index, which is a few megabytes at the end (or the start) of the
-file: `stco`/`co64` say where each chunk of a track lives, `stsc` how many samples are in it, `stsz`
-how big each one is, `stts` how long each lasts, `mdhd` the timescale, and `hdlr` which track is the
-video and which the audio. Samples sit end to end inside a chunk, so that is enough to place every
-frame exactly, which is what a packet-level walk reports, arrived at without demuxing.
-
-Measuring per chunk rather than per sample is not good enough: it understates a drifting file by
-about a chunk's worth, which can be half the gap. Per sample it agrees with a packet walk to within
-a fraction of a megabyte.
-
-Which track is which comes from `hdlr`, never from track order. A file can carry its audio first,
-and reading position instead of handler compares the streams inverted.
-
-Edit lists are ignored. They shift presentation times a little; they do not move bytes, and this
-measures a distance in bytes.
-"""
+A wide gap makes browsers storm on seeking; ffprobe would read the whole file."""
 
 from __future__ import annotations
 
@@ -47,17 +17,14 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: A box header is a 32-bit size and a four-character type. A size of 1 means the real size is a
-#: 64-bit value that follows it, and a size of 0 means the box runs to the end of the file.
+#: A box header; size 1 means a 64-bit size follows, size 0 runs to the end of the file.
 _HEADER = 8
 _LARGE_HEADER = 16
 
-#: The most index this will read into memory. Two of these is a feature-length video at high
-#: bitrate; past it the file is not one to guess about, so it is reported as unmeasurable rather
-#: than parsed.
+#: The most index read into memory; past it the file is unmeasurable rather than guessed at.
 MAX_INDEX_BYTES = 64 * 1024 * 1024
 
-#: Boxes that contain other boxes on the path down to a sample table. Walked into; nothing else is.
+#: Boxes walked into on the way to a sample table; nothing else is.
 _CONTAINERS = frozenset({b"moov", b"trak", b"mdia", b"minf", b"stbl"})
 
 _MOOV = b"moov"
@@ -73,20 +40,10 @@ _STSC = b"stsc"
 _STSZ = b"stsz"
 _STTS = b"stts"
 
-#: How far a file may store its audio from the video for the same moment before it needs
-#: repairing, in bytes.
-#:
-#: Here rather than in the feature that acts on it, because two features compare against it (the
-#: job that repairs a file and the screen that explains why) and a slice may not import a slice.
-#: Two copies of this number would eventually disagree, and the screen would describe a file the
-#: job had not touched.
-#:
-#: Twenty megabytes: seeking a file to its own worst moment in a browser, gaps under ten megabytes
-#: behave and gaps of about fifty storm every time. The margin is deliberate: a browser sizes its
-#: buffer from system memory, so a phone breaks earlier than a desktop.
+#: The gap at which a file needs repairing, shared by the repair job and the screen explaining it.
 NEEDS_REPAIR_BYTES = 20 * 1024 * 1024
 
-#: The two handler types this cares about. A file carrying neither cannot be measured.
+#: The two handler types measured; a file carrying neither cannot be.
 _VIDEO = b"vide"
 _AUDIO = b"soun"
 
@@ -97,7 +54,7 @@ class Malformed(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Box:
-    """One box: what it is, where it starts, how long it is, and how long its own header is."""
+    """One box: its kind, start, size, and the length of its own header."""
 
     kind: bytes
     start: int
@@ -115,22 +72,14 @@ class Box:
 
 @dataclass(frozen=True, slots=True)
 class Track:
-    """One track, and a way to walk its samples without holding them all.
-
-    `samples` is a factory rather than a list: the audio side has to be materialised for lookup, the
-    video side does not, and a long video has hundreds of thousands of either.
-    """
+    """One track, with a factory for its samples so a long video's need not be held."""
 
     kind: bytes
     samples: Callable[[], Iterator[tuple[int, float]]]
 
 
 def _measure(blob: bytes, at: int, limit: int) -> Box:
-    """Read one box header out of `blob` at `at`, given that nothing may run past `limit`.
-
-    `limit` is what stops a short read: every caller passes a limit no larger than the bytes it
-    really has, so a header that does not fit inside it does not fit at all.
-    """
+    """One box header at `at`, refusing anything that runs past `limit`, the bytes truly held."""
     if at + _HEADER > limit:
         raise Malformed("a box header runs past the end")
     size = struct.unpack_from(">I", blob, at)[0]
@@ -149,7 +98,7 @@ def _measure(blob: bytes, at: int, limit: int) -> Box:
 
 
 def boxes(blob: bytes, start: int, end: int) -> Iterator[Box]:
-    """The boxes laid end to end between two points. Raises `Malformed` on anything else."""
+    """The boxes laid end to end between two points; raises `Malformed` on anything else."""
     at = start
     while at < end:
         box = _measure(blob, at, end)
@@ -166,12 +115,7 @@ def find(blob: bytes, start: int, end: int, kind: bytes) -> Box | None:
 
 
 def index_box(path: Path, size: int) -> tuple[bytes, Box] | None:
-    """The file's `moov`, read by seeking past the media rather than through it.
-
-    Returns the index bytes and the box describing them, both offset so that box positions inside
-    the returned blob are relative to it. None when there is no index, or it is larger than
-    `MAX_INDEX_BYTES`, or the file does not parse.
-    """
+    """The file's `moov`, read by seeking past the media, relative to the blob; or None."""
     with path.open("rb") as handle:
         at = 0
         while at < size:
@@ -193,11 +137,7 @@ def index_box(path: Path, size: int) -> tuple[bytes, Box] | None:
 
 
 def _table(blob: bytes, box: Box, width: int) -> tuple[int, int]:
-    """Where a full box's entries start and how many there are.
-
-    Past the box header comes a version-and-flags word and then the count, which is the layout every
-    table here has always had.
-    """
+    """Where a full box's entries start and how many there are."""
     at = box.body + 8
     if at > box.end:
         raise Malformed(f"table {box.kind!r} has no count")
@@ -219,11 +159,7 @@ def _offsets(blob: bytes, stbl: Box) -> list[int]:
 
 
 def _samples_per_chunk(blob: bytes, stbl: Box, chunks: int) -> list[int]:
-    """How many samples each chunk holds, expanded from the run-length form `stsc` stores.
-
-    `stsc` names only the chunks where the count *changes*: an entry `(first_chunk, samples, ...)`
-    holds until the next entry's `first_chunk`. Chunk numbers in it are 1-based.
-    """
+    """Samples per chunk, expanded from `stsc`'s run-length form with its 1-based chunk numbers."""
     table = find(blob, stbl.body, stbl.end, _STSC)
     if table is None:
         raise Malformed("a track has no sample-to-chunk table")
@@ -246,10 +182,7 @@ def _samples_per_chunk(blob: bytes, stbl: Box, chunks: int) -> list[int]:
 
 
 def _durations(blob: bytes, stbl: Box) -> Iterator[int]:
-    """How long each sample lasts, in this track's own ticks, expanded from `stts`.
-
-    `stts` is run-length: `(count, delta)` means `count` consecutive samples each lasting `delta`.
-    """
+    """Each sample's duration in the track's ticks, expanded from run-length `stts`."""
     table = find(blob, stbl.body, stbl.end, _STTS)
     if table is None:
         raise Malformed("a track has no time-to-sample table")
@@ -261,11 +194,7 @@ def _durations(blob: bytes, stbl: Box) -> Iterator[int]:
 
 
 def _sizes(blob: bytes, stbl: Box) -> Iterator[int]:
-    """How many bytes each sample takes, from `stsz`.
-
-    A non-zero `sample_size` means every sample is that big and no table follows, which is how
-    constant-bitrate audio is usually stored.
-    """
+    """Each sample's byte size from `stsz`; a non-zero `sample_size` means all are that size."""
     table = find(blob, stbl.body, stbl.end, _STSZ)
     if table is None:
         raise Malformed("a track has no sample size table")
@@ -283,12 +212,7 @@ def _sizes(blob: bytes, stbl: Box) -> Iterator[int]:
 
 
 def _samples(blob: bytes, stbl: Box, timescale: int) -> Iterator[tuple[int, float]]:
-    """Every sample in this track as (byte position, the second it plays at).
-
-    Samples sit end to end inside a chunk, so a sample's position is its chunk's start plus the
-    sizes of the samples before it in that chunk. This is what a packet-level walk reports, arrived
-    at from the index instead of by demuxing the media.
-    """
+    """Every sample as (byte position, second it plays at), samples sitting end to end in chunks."""
     offsets = _offsets(blob, stbl)
     per_chunk = _samples_per_chunk(blob, stbl, len(offsets))
     sizes = _sizes(blob, stbl)
@@ -333,7 +257,7 @@ def _handler(blob: bytes, mdia: Box) -> bytes:
 
 
 def tracks(blob: bytes, moov: Box) -> list[Track]:
-    """Every video and audio track in an index, as chunk positions against chunk times."""
+    """Every video and audio track in an index, as sample positions against sample times."""
     found: list[Track] = []
     for trak in boxes(blob, moov.body, moov.end):
         if trak.kind != _TRAK:
@@ -356,11 +280,7 @@ def tracks(blob: bytes, moov: Box) -> list[Track]:
 
 
 def gap_between(video: Iterator[tuple[int, float]], audio: list[tuple[int, float]]) -> int:
-    """The largest byte distance between a video sample and the audio sample nearest it in time.
-
-    The video side is consumed as it is produced rather than held, because a long video has hundreds
-    of thousands of samples and only the audio side needs to be indexed for lookup.
-    """
+    """The largest byte distance from a video sample to the nearest-in-time audio sample."""
     ordered = sorted(audio, key=lambda pair: pair[1])
     when = [moment for _, moment in ordered]
     worst = 0
@@ -371,20 +291,8 @@ def gap_between(video: Iterator[tuple[int, float]], audio: list[tuple[int, float
 
 
 def worst_gap(path: Path) -> int | None:
-    """The largest byte distance between a moment's video and the audio nearest it in time.
-
-    Zero for a video with no audio track at all. There is no distance for such a file to get wrong,
-    so it is answered rather than left unknown: a silent video cannot make a browser hold two read
-    positions apart.
-
-    None when the file cannot be *read*: no index, an index too large to hold, no video track, a
-    track whose tables yield nothing, a container that is not MP4 at all (Matroska keeps none of
-    this), or anything that does not parse as boxes. A file that cannot be measured is not a file
-    that is known to be fine, and the caller decides what to do about that.
-    """
-    # The whole measurement is inside the guard, not just the parse. `Track.samples` is lazy, so a
-    # table that lies about its length raises when it is walked rather than when it is found, and
-    # a guard that stops at `tracks()` lets exactly those files throw.
+    """The worst video-to-audio byte gap; zero with no audio, None when the file cannot be read."""
+    # The whole walk is guarded, as the lazy tables raise only when walked.
     try:
         size = path.stat().st_size
         held = index_box(path, size)
@@ -396,8 +304,7 @@ def worst_gap(path: Path) -> int | None:
         audio = [track for track in found if track.kind == _AUDIO]
         if video and not audio:
             return 0
-        # A track that walks to nothing must not read as a gap of zero, which is the answer meaning
-        # "perfectly interleaved". Nothing measured is None, and the caller treats that as unknown.
+        # A track that walks to nothing is unknown (None), never a perfect zero.
         worst: int | None = None
         for sound in audio:
             listened = list(sound.samples())

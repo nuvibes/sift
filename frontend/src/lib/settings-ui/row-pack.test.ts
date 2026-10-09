@@ -1,12 +1,4 @@
-/*
- * A control made of parts follows its row onto a phone.
- *
- * The row publishes where its control column packs (`--row-pack`: the end on a desktop window, the
- * start at a phone width, where the control goes under the name). A part packed to the end on its
- * own would leave the row stacked and its control still standing at the far edge: Tasks' choice and its
- * press, quiet hours' range and its Edit. So no settings pane packs a part to the end by itself;
- * the two row primitives are the only files that own the rule.
- */
+/* A control made of parts follows its row onto a phone. */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 

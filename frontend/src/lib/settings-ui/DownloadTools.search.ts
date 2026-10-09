@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* Which programs do the downloading and which version of each is running: the words, and what
- * somebody can type to find them. Facts rather than settings, so nothing in the registry names
- * them; somebody chasing a failed download types the tool's name, or "version", or "out of date".
- *
- * ONE COPY MODULE PER PANE. `DownloadTools.svelte` draws every word it adds from `COPY`, and the
- * search entry is built from the same object. */
+ * somebody can type to find them. */
 import type { Searchable } from './search';
 
 export const COPY = {

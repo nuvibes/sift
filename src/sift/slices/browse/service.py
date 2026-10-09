@@ -1,18 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The grid's reads, and the record of what left the machine.
 
-Every asset read goes through the access layer. Nothing here writes SQL against assets, locations
-or derivatives: that is the rule that keeps permission-scoping honest, and a read-heavy feature
-is exactly where it is most tempting to break it for one convenient query.
-
-There is one read that goes to the content store instead, and it is named here rather than left to
-be discovered: the scrub strip, which cannot be found through the scoped lookup because that lookup
-matches on the settings a derivative was built with and a strip's settings are its own layout. The
-permission question is still asked first, separately, through the access layer, and the store is
-handed in at boot rather than reached for. `sprite_sheet` sets all of that out; a second exception
-appearing without the same explanation is the thing to push back on.
-
-The only tables this owns are its own: the save log.
+Every asset read goes through the access layer; the one exception is the scrub strip, asked of
+the content store after the access layer has said yes (`sprite_sheet`). It owns only the save log.
 """
 
 from __future__ import annotations
@@ -59,12 +49,7 @@ from sift.kernel.wiring import Part
 
 log = get_logger(__name__)
 
-#: The fields a person types onto a file's record, as the `Asset` row calls them.
-#:
-#: Read off the row before and after the save rather than taken from the arguments, because the
-#: store cleans what it is given (a pasted address loses its tracking parameters, a title of
-#: spaces becomes nothing) and an event that reported what was TYPED would disagree with the
-#: record for exactly the saves where the cleaning did something.
+#: The fields a person types onto a record, read off the row after the store has cleaned them.
 RECORD_FIELDS = (
     "title",
     "download_url",
@@ -76,11 +61,7 @@ RECORD_FIELDS = (
 )
 
 
-#: How far to walk from where the draw landed before giving up on finding something to show.
-#:
-#: Only ever more than one step where the row it landed on was a concealed placeholder or the file
-#: already open, both of which are a small share of any library. Bounded so a library that is
-#: entirely one of those cannot spin.
+#: How far to walk from where the draw landed, so a library of placeholders cannot spin.
 _RANDOM_TRIES = 8
 
 _INSERT_SAVE = "INSERT INTO save_log (id, user_id, asset_id, saved_at) VALUES (?, ?, ?, ?)"
@@ -184,8 +165,7 @@ class BrowseService:
         return kept
 
     async def _words(self, viewer: Viewer, asset_filter: AssetFilter) -> WordMatches | None:
-        """The files among this viewer's own that hold the filter's words, matched once for the
-        page, its total and every count; None for an admin, whose words the index answers."""
+        """The viewer's own files holding the filter's words, matched once; None for an admin."""
         words = words_of(asset_filter)
         if viewer.is_admin or words is None:
             return None
@@ -206,14 +186,9 @@ class BrowseService:
         hidden_only: bool,
         limit: int,
     ) -> list[FacetCount]:
-        """How many of the files this query reaches carry each value of one dimension.
-
-        Kept under the change bus's mark, as the panel asks five dimensions on every change of the
-        query. The key carries everything the answer depends on.
-        """
+        """How many files this query reaches carry each value of one dimension, cached."""
         where, bound = asset_filter.predicate()
-        # Beside the mark, which moves on every announcement: what this user may see and the word
-        # index, which move with or without one (a word index is written after its announcement).
+        # What this user may see and the word index move with or without an announcement.
         key = (
             viewer.id,
             viewer.cache_stamp,
@@ -253,24 +228,7 @@ class BrowseService:
         seed: int | None = None,
         after: str | None = None,
     ) -> AssetPage:
-        """A page of what this viewer may see. The scoping is the repository's, not ours.
-
-        The filter is handed straight down rather than applied to what comes back. Narrowing a
-        page here would leave the total describing a wider set than the rows do, and a paginator
-        that disagrees with its own count is the first sign that filtering has moved out of the
-        one statement that also decides visibility.
-
-        `pinned_first` is whether the wall doing the asking honours the pin, handed down untouched
-        for the same reason as everything else here: it belongs to the one statement that decides
-        both what is in the page and what order it is in.
-
-        `hidden_only` is the Hidden screen asking for the complement of the usual page. Handed down
-        for the same reason and with more at stake: it is a question about concealment, and the one
-        statement that decides concealment is the only place that may answer it.
-
-        `seed` is WHICH shuffle, and it belongs to the same statement for the same reason the order
-        does: a page and the count beside it have to describe one arrangement of one set.
-        """
+        """A page of what this viewer may see; every narrowing goes down to the one statement."""
         return await self._access.visible_assets(
             viewer,
             limit=limit,
@@ -292,43 +250,10 @@ class BrowseService:
         avoiding: str | None = None,
         asset_filter: AssetFilter = NO_FILTER,
     ) -> AssetView | None:
-        """One file at random out of everything this viewer may open, or None if there is nothing.
+        """One random file of everything this viewer may open (or in `asset_filter`), or None.
 
-        The whole library rather than whatever page is on screen: that is the point of the control
-        it answers, and a version that quietly picked from the visible rows would look identical
-        until somebody noticed it never left the folder they were in.
-
-        `asset_filter` is the caller's own narrowing, and it is the caller's to state rather than
-        something read off whatever is on screen. The player names none, so it still reaches the
-        whole library; a Theater cell set to one search names that search, and the draw comes from
-        inside it. Stated rather than inferred is what keeps both honest: there is no ambient
-        "current view" for this to read, so reaching past the screen is expressed by naming
-        nothing rather than by the route being incapable of narrowing.
-
-        **The count and the draw take the same predicate, in the same statement.** The offset is
-        chosen inside the total, so a total counting a wider set than the draw reads from would
-        land the draw past the end of it (silently, as a run of Nones) and a total counting a
-        narrower one would make whole stretches of the set unreachable. Filtering afterwards has
-        the same fault in a worse place: it would publish, in the gap between the count and what
-        comes back, the existence of files this user was never shown.
-
-        Scoped by the same statement the grid pages with, so it can only ever choose from what this
-        user may see: an asset nobody shared with them is not merely skipped here, it is not in
-        the set to be counted. Concealed rows are skipped as well: with the vault shut they are
-        already absent, and in the mode that leaves placeholders on the grid a placeholder is not
-        something anybody can play.
-
-        Two reads rather than one clever statement. Asking the database to order a library at random
-        is a sort of the whole table for one row; asking it for the count and then for one row at a
-        known offset is two index reads whatever the library's size.
-
-        **One draw, then a walk from where it landed**, rather than drawing again each time the
-        first answer will not do. Drawing again is the obvious shape and it is a lottery: in a
-        library of two, every draw has an even chance of landing back on the file already open, so
-        "somewhere else" occasionally means "here again". Stepping forward one row is guaranteed to
-        be a different one, so the small library behaves exactly as somebody would expect and the
-        large one is unaffected. The cost is a faint bias towards the row after a skipped one, which
-        is not a property anybody is relying on: this is a way of finding something to watch.
+        The count and the draw take one predicate in one statement, then one draw at an offset and
+        a walk forward from it, so a library of two never lands back on the file already open.
         """
         words = await self._words(viewer, asset_filter)
         counted = await self._access.visible_assets(
@@ -337,8 +262,7 @@ class BrowseService:
         if counted.total == 0:
             return None
 
-        # `secrets` rather than `random`: it costs nothing here, and it is one fewer weak generator
-        # in a codebase where the difference matters elsewhere.
+        # `secrets`: one fewer weak generator.
         landed = secrets.randbelow(counted.total)
 
         for step in range(min(_RANDOM_TRIES, counted.total)):
@@ -347,9 +271,7 @@ class BrowseService:
             page = await self._access.visible_assets(
                 viewer, limit=1, offset=offset, asset_filter=asset_filter, words=words
             )
-            # Nothing there, or a placeholder: the same answer, which is to move along. An offset
-            # inside the count is a row unless something was deleted between the two reads, and a
-            # placeholder is not something anybody can play.
+            # Nothing there, or a placeholder: move along.
             view = page.items[0] if page.items else None
             if view is None or (view.concealed and not viewer.show_hidden):
                 continue
@@ -361,49 +283,23 @@ class BrowseService:
     async def state_for(
         self, viewer: Viewer, asset_ids: Sequence[str]
     ) -> dict[str, AssetUserState]:
-        """This viewer's hearts and stars for a page of assets, keyed by asset.
-
-        One query for the page rather than one per tile: a grid of fifty tiles asking fifty times
-        is the shape that makes a fast page feel slow, and it is invisible until the library is
-        big enough to matter.
-        """
+        """This viewer's hearts and stars for a page of assets, keyed by asset, in one query."""
         if not asset_ids:
             return {}
         return await self._state.states_of(list(asset_ids), viewer.id)
 
     async def sprite_sheet(self, viewer: Viewer, asset_id: str) -> Derivative | None:
-        """The scrub strip built for an asset this viewer may open, or None.
+        """The scrub strip of an asset this viewer may open, or None.
 
-        This is the one read in the slice that goes to the content store rather than through the
-        access layer, and it is worth saying exactly why and exactly what keeps it honest.
-
-        The scoped lookup the thumbnail and the hover clip use matches on the settings a derivative
-        was built with. Those two are always built with none, so the empty settings are the key and
-        naming them costs nothing. A scrub strip's settings ARE its layout (how many frames across
-        and down, and how wide one is), decided per file from its length, so nothing that has not
-        already read the row can name them. There is no settings-blind scoped lookup to ask instead.
-
-        So the permission question is asked first and separately, through the access layer, and only
-        an asset that has passed it is looked up here. `open_asset` is the strict check: it refuses a
-        concealed asset even in the mode that leaves a placeholder on the grid, which is the same
-        check the scoped lookup makes. Nothing below it decides who may see anything: by then the
-        answer is already yes.
-
-        The store is handed in at boot rather than reached for, the same way the two file-mutating
-        features get theirs. That is not a formality: a build rule refuses any part of the app
-        outside the kernel that helps itself to the content store, because the store reads any asset
-        with no permission check at all.
-
-        Newest wins where a file has been rebuilt at a different density, matching the rule the
-        scoped lookup applies to the same situation.
+        Its settings are its layout, so no scoped lookup can name it: `open_asset` decides first,
+        and only then is the content store (handed in at boot) asked. Newest wins.
         """
         if await self._access.open_asset(viewer, asset_id) is None:
             return None
         return await self._newest_sheet(asset_id)
 
     async def sprite_of(self, viewer: Viewer, record: FileRecord) -> Derivative | None:
-        """`sprite_sheet` for a file whose record this viewer was just given: its check is the
-        record's, and the bytes are theirs exactly when the record is not a shut vault's."""
+        """`sprite_sheet` for a file whose record this viewer was just given."""
         if record.view.concealed and not viewer.show_hidden:
             return None
         return await self._newest_sheet(record.view.asset.id)
@@ -419,20 +315,8 @@ class BrowseService:
         return max(sheets, key=lambda derivative: (derivative.created_at, derivative.id))
 
     async def sprite_served(self, viewer: Viewer, asset_id: str) -> ServedDerivative | None:
-        """The strip to send, with what deciding its caching rule needs.
-
-        The two reads are not one because the strip cannot be found by the scoped derivative lookup.
-        See `sprite_sheet` for why its settings make it unaddressable that way. So the strict
-        check happens there, and this asks the ordinary scoped read for the two facts a response
-        needs: whether the asset is in this user's vault, and the token its pictures are
-        addressed by.
-
-        Affordable here in a way it would not be on a grid tile: a strip is fetched once, when
-        somebody opens a video, rather than a hundred times while scrolling.
-        """
-        # The ordinary scoped read first, and the strict one after it. The other way round the
-        # second question can never answer no (`sprite_sheet` refuses everything this refuses and
-        # more), so the guard on it would be a line no test could reach and no reader could trust.
+        """The strip to send, with what its caching rule needs: vaulted or not, and its token."""
+        # The ordinary scoped read first: the strict one refuses everything this refuses.
         view = await self._access.get_asset(viewer, asset_id)
         if view is None:
             return None
@@ -442,10 +326,7 @@ class BrowseService:
         path = await self.sprite_bytes(sheet)
         if path is None:
             return None
-        # A strip with no recorded digest is not named by the asset's token, so rebuilding it would
-        # not change its address and a browser told to keep it would show the old one for a week.
-        # Careful until the catch-up pass has read it: the same rule the still and the clip
-        # follow, decided per picture rather than per asset for the same reason.
+        # A strip with no recorded digest keeps its address when rebuilt, so it is not cached.
         keepable = sheet.content_hash is not None
         return ServedDerivative(
             path=path,
@@ -454,14 +335,7 @@ class BrowseService:
         )
 
     async def sprite_bytes(self, sheet: Derivative) -> Path | None:
-        """Where a strip's bytes are, or None if they are not readable.
-
-        Two different nothings arrive here as one. A row naming a path that is not inside the cache
-        at all (a restored backup, or one written before the check that now refuses it), raises,
-        and is worth a line in the log because somebody should look at it. A path inside the cache
-        with no file at it is the ordinary case of something having been cleared out, which is what
-        a cache is for. To whoever asked for a picture they are the same answer.
-        """
+        """Where a strip's bytes are, or None; a path outside the cache is logged as well."""
         try:
             return await self._content.derivative_at(sheet.rel_cache_path)
         except ValueError:
@@ -471,17 +345,7 @@ class BrowseService:
             return None
 
     async def record_save(self, viewer: Viewer, asset_id: str) -> None:
-        """Note that somebody kept a copy. Called only after the save has been allowed.
-
-        Two records of one act, in ONE transaction: the save log's row, which an admin's
-        maintenance pane lists, and a `saved` event with the file as its subject, which is what
-        puts the save on the file's own history and in the Settings feed. The name is the file's
-        as it is now, which the ledger's door reads in the file page's order (`NAME_NOW`) as it
-        writes: the snapshot every event here takes.
-
-        Who may read the event is the history's rule, not this writer's: a save is the user's
-        own act, drawn for that user and for an admin only (`history._drawn_elsewhere`).
-        """
+        """Note a kept copy, after the save was allowed: the save log's row and a `saved` event."""
         audience = Audience.of_user(viewer.id)
         async with telling(self._db, audience, About.MINE) as connection:
             await connection.execute(_INSERT_SAVE, (new_id(), viewer.id, asset_id, self._now()))
@@ -511,17 +375,7 @@ class BrowseService:
     ) -> bool:
         """Write the editable half of a file's record. False when this viewer has no such file.
 
-        IMPORTANT: `UNCHANGED` is not the same as None, and the distinction is the whole signature. None
-        means "clear this field"; `UNCHANGED` means "the caller did not mention it". Two optional
-        arguments both defaulting to None would make a caller who names one silently blank the
-        other, which is a full-row writer pretending to be a partial one.
-
-        The scoped read comes first and it is doing real work rather than being polite: it is what
-        makes a file this user may not be shown answer "no such file" instead of being written
-        to. The same two-step the entity covers use.
-
-        The writes go to the content store rather than to SQL here, which is the rule this slice is
-        built on: nothing in `browse` writes against `assets` directly.
+        `UNCHANGED` is "not mentioned", None is "clear it": the distinction is the signature.
         """
         if await self._access.get_asset(viewer, asset_id) is None:
             return False
@@ -534,6 +388,43 @@ class BrowseService:
             if was != now:
                 changed.append({"field": field, "before": was, "after": now})
 
+        await self._write_fields(
+            viewer,
+            asset_id,
+            title=title,
+            download_url=download_url,
+            release_date=release_date,
+            details=details,
+            production_date=production_date,
+            site_code=site_code,
+            music=music,
+            links=links,
+        )
+        after = await self._content.get(asset_id)
+        if before is not None and after is not None:
+            for field in RECORD_FIELDS:
+                note(field, getattr(before, field), getattr(after, field))
+        if not isinstance(links, Unchanged):
+            note("links", was_links, await self._content.links_of(asset_id))
+        if changed:
+            await self._record_edit(viewer, asset_id, after or before, changed)
+        return True
+
+    async def _write_fields(
+        self,
+        viewer: Viewer,
+        asset_id: str,
+        *,
+        title: str | Unchanged | None,
+        download_url: str | Unchanged | None,
+        release_date: str | Unchanged | None,
+        details: str | Unchanged | None,
+        production_date: str | Unchanged | None,
+        site_code: str | Unchanged | None,
+        music: str | Unchanged | None,
+        links: Sequence[str] | Unchanged | None,
+    ) -> None:
+        """Write each field the caller named, through the content store."""
         if not isinstance(title, Unchanged):
             await self._content.set_title(asset_id, title)
         if not isinstance(download_url, Unchanged):
@@ -550,18 +441,8 @@ class BrowseService:
             # A song somebody typed is made by them where no song is called that yet.
             await self._content.set_music(asset_id, music, by_user=viewer.id)
         if not isinstance(links, Unchanged):
-            # A list is replaced as a whole and None is an empty one, because a form that cleared
-            # every row sends nothing rather than a list of nothing.
+            # A form that cleared every row sends nothing, so None is an empty list.
             await self._content.set_links(asset_id, links or [])
-        after = await self._content.get(asset_id)
-        if before is not None and after is not None:
-            for field in RECORD_FIELDS:
-                note(field, getattr(before, field), getattr(after, field))
-        if not isinstance(links, Unchanged):
-            note("links", was_links, await self._content.links_of(asset_id))
-        if changed:
-            await self._record_edit(viewer, asset_id, after or before, changed)
-        return True
 
     async def _record_edit(
         self,
@@ -570,29 +451,10 @@ class BrowseService:
         asset: Asset | None,
         changed: Sequence[Mapping[str, object]],
     ) -> None:
-        """One event for one save, naming every field it moved.
+        """One event for one save, naming every field it moved, announced to every screen.
 
-        ONE event and not one per field, because one press of Save is one act: seven events for a
-        form somebody filled in would bury the six other things that happened that minute, and the
-        record exists to be read.
-
-        In its own transaction, and that is a compromise worth naming rather than hiding. The
-        record's eight fields are written through eight statements in the content store, each
-        opening its own write, so there is no single transaction here to put the event inside,
-        and the writes guard is not re-entrant, so wrapping them would deadlock rather than group.
-        A crash between the last field and this line loses the event and keeps the edit. The
-        durable shape is one transaction for a save, which means a content-store writer that takes
-        a connection; until there is one, this is the honest placement.
-
-        It ANNOUNCES, to two screens with one bell. The History pane re-reads on the library's
-        bell and on nothing else, so an event written in silence would sit unseen on every other
-        tab; and the edit itself (the title a wall draws, the details a record page shows), told
-        to NOBODY, would leave every other tab drawing the old name until reloaded. The
-        audience is `who_may_see_a_file`: every admin (the pane is theirs, and an admin sees every
-        file) and every user who has been given anything, the same wide question a file
-        arriving asks, since "who might be drawing this file" is exactly that question. The exact
-        answer is the permission resolver's, bound to one viewer at a time; each client re-reads
-        its own page through the ordinary door and answers it for itself.
+        Its own transaction: the store's eight writes each open their own, and the guard is not
+        re-entrant, so a crash after the last field keeps the edit and loses the event.
         """
         async with self._db.write() as connection:
             await record_event(
@@ -605,12 +467,7 @@ class BrowseService:
             announce(await who_may_see_a_file(connection), About.LIBRARY)
 
     async def links_of(self, asset_id: str) -> list[str]:
-        """A file's links, for the detail view.
-
-        Unscoped on purpose and safe because of where it is called: the caller has already resolved
-        the asset through the scoped read, so a file this user may not see never reaches here.
-        A second scoping rule written against a links table would be a second place to get it wrong.
-        """
+        """A file's links, for the detail view; the caller has resolved the asset, scoped."""
         return await self._content.links_of(asset_id)
 
     async def saves(self, *, limit: int, offset: int) -> tuple[list[dict[str, object]], int]:

@@ -42,9 +42,7 @@ beforeEach(() => {
 
 describe('what each page can show', () => {
 	it('never offers a page a tab for its own kind', () => {
-		// The one that reads as a page linking to itself. A person's own wall of people IS offered
-		// and is a different question (it is filtered with `with_person` and named "Seen with"),
-		// which is why this is asserted per kind rather than as one rule with an exception.
+		// The one that reads as a page linking to itself.
 		const own: Record<EntityKind, RelatedKind> = {
 			person: 'people',
 			tag: 'tags',
@@ -69,9 +67,7 @@ describe('what each page can show', () => {
 	});
 
 	it('gives a site a Sites tab, and gives nothing else one', () => {
-		/* A site is the only thing here that can be part of another of its own kind. The tab is
-		   drawn whether or not anything IS part of it, exactly as every other tab on every other
-		   page is: a nought is a real answer and an absent tab means "no such wall". */
+		/* A site is the only thing here that can be part of another of its own kind. */
 		expect(tabsFor('site', 'pf1', '/sites/pf1').map((tab) => tab.id)).toContain('sites_within');
 		for (const on of KINDS.filter((kind) => kind !== 'site')) {
 			expect(tabsFor(on, 'x', '/x').map((tab) => tab.id)).not.toContain('sites_within');
@@ -83,9 +79,7 @@ describe('what each page can show', () => {
 	});
 
 	it("gives a person's people wall its own glyph, because it is not a person", () => {
-		/* The single figure names a person, which is the page you are already on. Who else is in
-		   their files is a relationship between people, and the group of three says so. The one
-		   exception, read off the same pair of facts the label is. */
+		/* The single figure names a person, which is the page you are already on. */
 		const own = tabsFor('person', 'p1', '/people/p1').find((tab) => tab.id === 'people');
 		expect(own?.label).toBe('Seen with');
 		expect(own?.icon).toBe('diversity_3');
@@ -145,9 +139,9 @@ describe('what each page can show', () => {
 
 describe("where one thing's own page is", () => {
 	it('spells every kind the way its wall is spelt, not the way the kind is', () => {
-		// The one that matters is the photo set: it is named `photo_set` and filed at `/photo-sets`,
-		// so anything building the address from the kind by hand gets it wrong in a way that 404s
-		// only for that one kind.
+		// The one that matters is the photo set: it is named `photo_set` and filed at
+		// `/photo-sets`, so anything building the address from the kind by hand gets it wrong in a
+		// way that 404s only for that one kind.
 		expect(pageOf('person', 'p-1')).toBe('/people/p-1');
 		expect(pageOf('tag', 't-1')).toBe('/tags/t-1');
 		expect(pageOf('site', 's-1')).toBe('/sites/s-1');
@@ -166,11 +160,7 @@ describe('which tab an address names', () => {
 	});
 
 	it('falls back to Files when the address names a tab this page does not have', () => {
-		// A link built for a person's page and opened on a collection's. Without this the page asks
-		// for a wall it has no tab for, so nothing is lit and the strip reads as broken.
-		//
-		// Photo sets rather than loops: a collection has a Loops tab, so `loops` is a wall it
-		// really has and asking for it is the case below rather than this one.
+		// A link built for a person's page and opened on a collection's.
 		expect(showing('collection', 'photo_sets')).toBe('files');
 		expect(showing('person', 'nonsense')).toBe('files');
 	});
@@ -180,13 +170,7 @@ describe('which tab an address names', () => {
 	});
 });
 
-/*
- * WHERE A CARD LEADS, which is the other half of the one table the counts are read off.
- *
- * The same fact is needed by the wall that draws the cards and by the request that fills it, and a
- * second answer written on the wall is how a card comes to say six over a wall of two. Both readers
- * ask this module.
- */
+/* WHERE A CARD LEADS, which is the other half of the one table the counts are read off. */
 describe('where a card leads', () => {
 	it('carries the page it was pressed from, as a filter the bar can draw', () => {
 		expect(relatedHref('person', 'people', 'p2', 'Jane Doe')).toBe('/people/p2?people=Jane+Doe');
@@ -213,16 +197,13 @@ describe('where a card leads', () => {
 
 	it('refuses a wall of media, which has no card to press', () => {
 		// Files and loops are drawn by the media grid and a tile opens a file at a moment, so there
-		// is no page to lead to. Better a sentence than an address built out of `undefined`.
+		// is no page to lead to.
 		expect(() => relatedHref('person', 'loops', 'l1')).toThrow();
 		expect(() => relatedHref('person', 'files', 'a1')).toThrow();
 	});
 
-	/*
-	 * THE PROPERTY THE WHOLE ARRANGEMENT EXISTS FOR, asked of every wall rather than of one: a card
-	 * asks for the filtered count exactly when its press carries the filtering.
-	 * Either half changed alone puts back a number describing a set the press cannot reach.
-	 */
+	/* THE PROPERTY THE WHOLE ARRANGEMENT EXISTS FOR, asked of every wall rather than of one: a
+	 * card asks for the filtered count exactly when its press carries the filtering. */
 	it('counts the narrowed tally on exactly the walls whose press carries the page', async () => {
 		const walls: Exclude<RelatedKind, 'files' | 'loops'>[] = [
 			'photo_sets',
@@ -259,9 +240,7 @@ describe('the narrowing a wall is asked for', () => {
 		await loadRelated('site', 'pf1', 'sites_within');
 
 		const [path, options] = mocked.get.mock.calls[0];
-		// The same wall the Sites tab reads, asked the other question. `site` here would be
-		// "the sites this site's files came from", which is this site, so the tab would list the
-		// page you are standing on.
+		// The same wall the Sites tab reads, asked the other question.
 		expect(path).toBe('/sites');
 		expect(options?.query).toMatchObject({ parent: 'pf1' });
 		expect(options?.query).not.toHaveProperty('site');
@@ -280,14 +259,7 @@ describe('the narrowing a wall is asked for', () => {
 		expect(mocked.get.mock.calls[2][1]?.query).toMatchObject({ photo_set: 's1' });
 	});
 
-	/*
-	 * ONE TABLE, TWO READERS: where a card leads and what it counts.
-	 *
-	 * A card whose press carries this page as a filter opens the two of them together, so the
-	 * number on it has to be the size of that wall. Written as two answers in two files it would be
-	 * two: a Seen with card printing the person's whole wall of six over a press that opens the
-	 * two-person wall of two, with nothing on screen saying which set was meant.
-	 */
+	/* ONE TABLE, TWO READERS: where a card leads and what it counts. */
 	it('asks for the narrowed tally exactly where the press carries the page', async () => {
 		await loadRelated('person', 'p1', 'people');
 		expect(mocked.get.mock.calls[0][1]?.query).toMatchObject({ count: 'narrowed' });
@@ -302,8 +274,7 @@ describe('the narrowing a wall is asked for', () => {
 	it('asks for nothing of the kind where the press is plain', async () => {
 		// A collection's wall takes no query and a site inside a network is reached by a column, so
 		// both open whole, and a card that asked for the filtered count there would print a number
-		// smaller than the page it opens. Absent rather than `whole`, because the server's default
-		// is the whole and a parameter repeating a default is one more thing to keep in step.
+		// smaller than the page it opens.
 		await loadRelated('person', 'p1', 'collections');
 		expect(mocked.get.mock.calls[0][1]?.query).not.toHaveProperty('count');
 
@@ -327,8 +298,7 @@ describe('the narrowing a wall is asked for', () => {
 	});
 
 	it('refuses Files, which the media grid fetches for itself', async () => {
-		// Asking here would build an address for a wall that does not exist. Better a sentence than
-		// a request to `undefined`.
+		// Asking here would build an address for a wall that does not exist.
 		await expect(
 			loadRelated('person', 'p1', 'files' as Exclude<RelatedKind, 'files'>)
 		).rejects.toThrow();
@@ -388,12 +358,7 @@ describe('a tab searched and ordered', () => {
 
 describe('a count that has not moved', () => {
 	/* The guard that keeps a page from freezing. The Loops tab draws `AssetGrid`, which reports
-	 * its total from an EFFECT rather than once per fetch. So an unconditional write here makes
-	 * a new object, the tab strip re-derives off it, the grid gets fresh props, its effect runs
-	 * again, and round it goes until Svelte gives up and takes the page's whole effect graph
-	 * down. What that looks like is a page that will not navigate: the address changes and the
-	 * screen does not.
-	 */
+	 * its total from an EFFECT rather than once per fetch. */
 
 	it('does not replace the object it holds', () => {
 		const counts = new TabCounts();
@@ -416,9 +381,7 @@ describe('a count that has not moved', () => {
 
 	it('carries the mark beside a tab as well as the number on it', () => {
 		/* `disagreements` is not a tab and rides on the same map, because it arrives on the same
-		 * request: every number on one strip is taken at one moment. The panel that draws them
-		 * OVERWRITES it, exactly as a wall overwrites its own tab's count, so settling the last row
-		 * takes the mark down rather than leaving it standing over an empty panel. */
+		 * request: every number on one strip is taken at one moment. */
 		const counts = new TabCounts();
 		counts.saw('disagreements', 3);
 		expect(counts.current.disagreements).toBe(3);
@@ -438,10 +401,8 @@ describe('a count that has not moved', () => {
 });
 
 describe('the strip after the library moves', () => {
-	/* An act on the page (a song's artists edited, a share, a tag put on) writes a History line and
-	 * rings the library's bell. The wall on screen re-reads and reports its own number; History has
-	 * no wall, so without this the number beside it would stay at what the page opened with until
-	 * somebody left. */
+	/* An act on the page (a song's artists edited, a share, a tag put on) writes a History line
+	 * and rings the library's bell. */
 
 	it('asks again for the page it follows, and the later answer wins', async () => {
 		let lines = 3;
@@ -532,8 +493,7 @@ describe('the mark one kind of entity wears', () => {
 
 describe('what kind of thing a wall-s rows are', () => {
 	it('answers with the kind whose wall it is', () => {
-		// The inverse of one table rather than a second table of the same fact. A card asks it for
-		// the verbs it should offer, so a wall it cannot name is a card with no menu.
+		// The inverse of one table rather than a second table of the same fact.
 		expect(kindOf('people')).toBe('person');
 		expect(kindOf('tags')).toBe('tag');
 		expect(kindOf('sites')).toBe('site');
@@ -542,9 +502,8 @@ describe('what kind of thing a wall-s rows are', () => {
 	});
 
 	it('answers Site for the wall that is the sites wall asked another question', () => {
-		/* `sites_within` is what is PART OF a Site rather than a wall of its own, and a row of it
-		   is a Site, so it is not in the table being inverted and is written out beside it. Left
-		   out, a site's Sites tab would be the one wall of named things with no verbs on it. */
+		/* `sites_within` is what is PART OF a Site rather than a wall of its own, and a row of
+		   it is a Site, so it is not in the table being inverted and is written out beside it. */
 		expect(kindOf('sites_within')).toBe('site');
 	});
 

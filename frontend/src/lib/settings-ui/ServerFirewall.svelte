@@ -1,17 +1,5 @@
 <script lang="ts">
-	/*
-	 * Windows Firewall on the computer running Sift, seen from another computer.
-	 *
-	 * The same question the Network sharing section asks on the computer running Sift (does Windows
-	 * let other devices through?), asked through the server, which asks the Sift app there. Drawn in
-	 * General's group about that computer, and only while it shares the library: the answer changes
-	 * nothing otherwise.
-	 *
-	 * THE ONE PRESS THAT CANNOT FINISH HERE. Opening the port raises Windows' own administrator
-	 * prompt, and it appears on the computer running Sift. Nothing reached over a network can
-	 * approve it, which is the property rather than a gap, so the sentence under the button says
-	 * where to go, and the button waits while somebody walks over.
-	 */
+	/* Windows Firewall on the computer running Sift, seen from another computer. */
 	import { onMount } from 'svelte';
 	import { Button, Note } from '$lib/components/common';
 	import {

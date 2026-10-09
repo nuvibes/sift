@@ -1,13 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Typed configuration, read from the environment.
+"""Typed configuration, read from the environment, by the only module that reads it.
 
-This is the only module that reads the environment. Everything else takes a `Settings` and
-reads a field off it, so there is exactly one place to look for what a knob is called, what it
-defaults to, and what happens if it is wrong.
-
-Errors here are read by someone who is self-hosting an app, not debugging a program. A
-traceback is not an error message: say what is wrong, where, and what to do about it.
-"""
+Errors here are read by somebody self-hosting: say what is wrong, where, and what to do."""
 
 from __future__ import annotations
 
@@ -30,12 +24,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 
 def retired_variables_in_use() -> list[str]:
-    """Retired names this machine still carries, so startup can say they do nothing.
-
-    Read here rather than anywhere else for the reason at the top of this module: this is the only
-    place that reads the environment. Returned rather than logged, because logging is not up yet
-    when configuration is built.
-    """
+    """Retired names this machine still sets, returned for startup to report."""
     return sorted(name for name in RETIRED_VARIABLES if name in os.environ)
 
 
@@ -44,21 +33,14 @@ class ConfigError(RuntimeError):
 
 
 class _SharedDotEnvSource(PydanticBaseSettingsSource):
-    """The .env file source, made tolerant of keys that are not Sift's own.
-
-    A .env beside a checkout is often shared with other tools, which keep keys there that are not
-    settings. Reading the same file, Sift ignores anything that is not one of its SIFT_ settings
-    rather than refusing to start over a line another tool put there. A mistyped SIFT_ name is still
-    an error: those stay SIFT_-prefixed here and are kept for the strict check, and a SIFT_ name set
-    as a real environment variable is always checked.
-    """
+    """The dotenv source, ignoring keys not SIFT_ settings, as other tools share the file."""
 
     def __init__(self, wrapped: PydanticBaseSettingsSource) -> None:
         super().__init__(wrapped.settings_cls)
         self._wrapped = wrapped
 
     def get_field_value(self, field: Any, field_name: str) -> Any:
-        # Never called: __call__ is overridden. Present only to satisfy the abstract base.
+        # Never called, as __call__ is overridden; present for the abstract base.
         return self._wrapped.get_field_value(field, field_name)  # pragma: no cover
 
     def __call__(self) -> dict[str, Any]:
@@ -70,29 +52,12 @@ class _SharedDotEnvSource(PydanticBaseSettingsSource):
         }
 
 
-#: The most workers `SIFT_WORKER_CONCURRENCY` may ask for. A backstop, not a knob: no household box
-#: has a reason to run more than this many jobs together, and without a ceiling a typo (an extra
-#: zero) would try to spawn thousands of worker tasks at boot. Set above the default so nobody who
-#: had a real reason to raise it hits the ceiling by accident.
+#: A backstop against a typo spawning thousands of workers at boot, above any real need.
 MAX_WORKER_CONCURRENCY = 64
 
 
-#: Variables older versions read, and what happened to each.
-#:
-#: A NAME, ONCE USED, IS NEVER FREE AGAIN. Two things go wrong without this list and they pull in
-#: opposite directions. Delete the field and the strict check below sees an unrecognised SIFT_
-#: variable and refuses to boot, so removing something that did nothing breaks a machine that had
-#: it. Keep the field and the variable goes on being accepted, validated and ignored, which is the
-#: state that produced this list in the first place.
-#:
-#: Named here instead: recognised, not read, and said out loud once at startup so whoever wrote
-#: that line finds out it is doing nothing. The value is a sentence rather than a marker, because
-#: the next reader's question is what to use instead.
-#:
-#: SIFT_PUBLIC_BASE_URL was declared, documented and validated for as long as it existed and was
-#: read by no code in the application: nothing in Sift ever built an absolute link out of it. Every
-#: address the client and the playlists use is relative, which is what makes a proxy in front work
-#: without being told anything at all.
+#: Variables older versions read, and what replaced each: recognised so a machine setting one
+#: still boots, never read, and named once at startup.
 RETIRED_VARIABLES: dict[str, str] = {
     "SIFT_PUBLIC_BASE_URL": (
         "it never did anything: every address Sift builds is relative, so a proxy in front needs "
@@ -105,66 +70,31 @@ RETIRED_VARIABLES: dict[str, str] = {
 }
 
 
-# --- Defaults that differ by platform ------------------------------------------------------------
-#
-# Sift ships as a native Windows application, where nothing is mounted and Sift must pick
-# sensibly. The POSIX values (`/data`, `/media`) are what a checkout on Linux and CI run with.
-#
-# THIS IS NOT COSMETIC. `/data` is a perfectly valid Windows path: it resolves to `C:\data` on
-# the current drive, a folder that already exists on some machines. A Windows run inheriting the
-# POSIX defaults would therefore not fail; it would quietly build a second library in a
-# directory nobody chose, and `0.0.0.0` would put it on the LAN by default. Both are silent.
+# Windows defaults differ: the POSIX `/data` is a valid Windows path, and a run inheriting it
+# would silently build a library there and listen on the LAN.
 
 _WINDOWS = sys.platform == "win32"
 
 
 def _windows_app_dir() -> Path:
-    r"""`%LOCALAPPDATA%\Sift`: the local profile, deliberately not the roaming one.
-
-    A roaming profile is copied between machines by domain policy and by some backup tools, and a
-    media database with its transcode cache is precisely what should never be silently
-    synchronised: it is large, it is machine-specific, and half of it is derived.
-    """
+    r"""`%LOCALAPPDATA%\Sift`, never roaming: a media database must not be synchronised."""
     local = os.environ.get("LOCALAPPDATA")
     base = Path(local) if local else Path.home() / "AppData" / "Local"
     return base / "Sift"
 
 
-#: How far up from this file a `vendor/bin` is worth looking for.
-#:
-#: Bounded, so that a stray directory of that name near the root of a drive can never be mistaken
-#: for the application's own. Six is two more than the deepest real layout needs.
+#: Bounded, so a stray `vendor/bin` near a drive's root is never taken for the application's.
 _VENDOR_SEARCH_DEPTH = 6
 
 
 def _vendor_directories() -> list[Path]:
-    r"""Everywhere the shipped tools might be, nearest first.
-
-    A walk UP from this file rather than a count of parents. `parents[3]` is the repository root
-    from `src/sift/kernel/config.py`, but in the installed application the same file sits three
-    levels deeper, inside `runtime/Lib/site-packages/sift/kernel/`, where the same expression names
-    `runtime/Lib/vendor/bin`, a folder that does not exist, and every vendored tool would silently
-    fall back to a bare name.
-
-    The shell passes explicit paths for ffmpeg, ffprobe, webpinfo and anim_dump, so the tool that
-    depends on this is the tunnel client: it is started deep inside the downloader, which has no
-    Settings to read, and without the walk no tunnel could start on an installed copy.
-    """
+    r"""Everywhere the shipped tools might be, nearest first, walking up from this file."""
     here = Path(__file__).resolve()
     return [parent / "vendor" / "bin" for parent in here.parents[:_VENDOR_SEARCH_DEPTH]]
 
 
 def vendored_tool(name: str) -> str:
-    """The tool the application ships, when it is there; otherwise whatever the machine has.
-
-    PUBLIC, because the tunnel client is found through it too and that one is not a Settings field:
-    a tunnel is started deep inside the downloader, which has no Settings to read. A bare name is
-    right on Linux, where a package puts the client on PATH, and wrong for a Windows install, where
-    nothing puts it anywhere.
-
-    Falling back to the bare name is deliberate and is not a failure: on Linux, and in any checkout
-    that has not fetched the vendored tools, the machine's own copy is the right one.
-    """
+    """The tool the application ships when it is there; otherwise the machine's own by name."""
     if not _WINDOWS:
         return name
     for root in _vendor_directories():
@@ -175,12 +105,7 @@ def vendored_tool(name: str) -> str:
 
 
 def vendor_folder() -> Path | None:
-    """The folder a Windows pack put its shipped tools in, or None where there is none: Linux,
-    and a checkout that has not fetched them.
-
-    Asked of the FOLDER rather than of one tool, so a tool missing from it reads as removed from
-    where it was put, which is a different fault from never having been shipped at all.
-    """
+    """The folder a Windows pack put its tools in, or None, so a missing tool reads as removed."""
     if not _WINDOWS:
         return None
     for root in _vendor_directories():
@@ -189,23 +114,13 @@ def vendor_folder() -> Path | None:
     return None
 
 
-# --- The device's own folder, and the libraries in it --------------------------------------------
-#
-# A DEVICE RUNS MANY LIBRARIES AND KEEPS ONE COPY OF WHAT IS THE SAME FOR ALL OF THEM. The face,
-# Smart Search and watermark models and the graphics-card runtime are files about this device and
-# this build of Sift, not about anybody's library: the same model gives the same answer whichever
-# library asks. Kept inside each library's data folder they would be hundreds of megabytes a
-# feature per library for ever, and a new or duplicated library would start without any of them.
-#
-# Both rules below are defined here, once, because the kernel's model store needs the second and
-# a slice may not be imported by the kernel. The backup slice, which makes libraries, reads them
-# from here rather than keeping a copy.
+# One store per device for what every library shares (models, the GPU runtime), defined here
+# as the kernel's model store needs it.
 
 #: The folder new libraries are made in, beside the first library's data folder.
 LIBRARIES_FOLDER = "libraries"
 
-#: The mark on that folder (and its list of libraries kept elsewhere). A library whose grandparent
-#: holds it is one of the folder's members. Written by the backup slice only.
+#: The mark naming a libraries folder; written by the backup slice only.
 LIBRARIES_MARK = "sift-libraries.json"
 
 #: The device's one store of models and the graphics-card runtime, beside the libraries.
@@ -213,15 +128,7 @@ MODELS_FOLDER = "models"
 
 
 def libraries_folder(data_dir: Path) -> Path:
-    """The folder libraries are made in, found the same way from the first library or any member.
-
-    A data folder at `<folder>/<name>/data` is a member when `<folder>` carries the mark. Anything
-    else is a library kept somewhere of its own, and the folder is `libraries` beside its data
-    folder, which, for the first library Sift made, is the one place this has always meant.
-
-    Found again from INSIDE, because a member's data folder is `<folder>/<name>/data` and "beside
-    the data folder" would be a different place for every library.
-    """
+    """The folder libraries are made in, found alike from the first library or any member."""
     above = data_dir.parent.parent
     if (above / LIBRARIES_MARK).is_file():
         return above
@@ -229,22 +136,9 @@ def libraries_folder(data_dir: Path) -> Path:
 
 
 def models_folder(data_dir: Path) -> Path:
-    r"""The device's one store of models and the graphics-card runtime: beside the libraries.
+    r"""The device's one model store beside the libraries, derived from the data folder.
 
-    `%LOCALAPPDATA%\Sift\models` on an ordinary install, found from whichever library is running:
-    the first one (`...\Sift\data`) and every member of the libraries folder
-    (`...\Sift\libraries\<name>\data`) arrive at the same folder, which is what makes "New library"
-    and "Duplicate this library" need no models of their own.
-
-    DERIVED FROM THE DATA FOLDER, NOT FROM `%LOCALAPPDATA%`. A copy of Sift started on a data
-    folder somewhere else (a test copy of a library, or one somebody moved) keeps its models
-    beside that folder, so it can never download over, or delete, the files another running copy
-    has loaded.
-
-    INSIDE THE DATA FOLDER WHEN THERE IS NOTHING SIFT OWNS ABOVE IT: a data folder at the root of a
-    drive (`D:\data`) or a container's mount (`/data`). A store at `D:\models` or `/models` would be
-    a folder on somebody's drive root, or one no volume keeps.
-    """
+    Inside the data folder when nothing Sift owns sits above it, as at a drive's root."""
     device = libraries_folder(data_dir).parent
     if device.parent == device:
         return data_dir / MODELS_FOLDER
@@ -252,12 +146,7 @@ def models_folder(data_dir: Path) -> Path:
 
 
 class Settings(BaseSettings):
-    """Every setting Sift has. Prefixed SIFT_ in the environment.
-
-    No secret has a default and none is invented. Site logins are encrypted with a key derived
-    from the user's password, so there is no key in the environment at all: nothing for a user
-    to generate, save, or lose.
-    """
+    """Every setting Sift has, prefixed SIFT_; no secret has a default or lives here."""
 
     model_config = SettingsConfigDict(
         env_prefix="SIFT_",
@@ -282,17 +171,13 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # Only the .env file source is wrapped. The environment and constructor stay strict, so a
-        # mistyped SIFT_ variable there still fails the boot; the shared-file tolerance is scoped to
-        # the one place a non-Sift key legitimately appears.
+        # Only the dotenv source is tolerant; a mistyped SIFT_ variable elsewhere still fails.
         return (
             init_settings,
             env_settings,
             _SharedDotEnvSource(dotenv_settings),
             file_secret_settings,
         )
-
-    # --- Storage ---------------------------------------------------------------------
 
     data_dir: Path = _windows_app_dir() / "data" if _WINDOWS else Path("/data")
     """The database. The only directory that must be backed up."""
@@ -304,14 +189,11 @@ class Settings(BaseSettings):
     transcode_cache_max_bytes: int = Field(default=5 * 1024**3, gt=0)
     """Ceiling for the transcode cache before the oldest segments are evicted."""
 
-    # Optional overrides. Unset, each derives from data_dir/cache_dir. See the properties
-    # below. A user should be able to relocate one directory without restating the others.
+    # Optional overrides; unset, each derives from data_dir or cache_dir.
     transcode_cache_dir_override: Path | None = Field(
         default=None, alias="SIFT_TRANSCODE_CACHE_DIR"
     )
     quarantine_dir_override: Path | None = Field(default=None, alias="SIFT_QUARANTINE_DIR")
-
-    # --- Behaviour -------------------------------------------------------------------
 
     cookie_secure: bool | None = None
     """Mark the session cookie Secure, so a browser only ever sends it back over HTTPS.
@@ -423,17 +305,12 @@ class Settings(BaseSettings):
     at all.
     """
 
-    # --- External tools --------------------------------------------------------------
-
     ffmpeg_path: str = vendored_tool("ffmpeg")
     ffprobe_path: str = vendored_tool("ffprobe")
 
-    # For animated WebP, which ffmpeg can write and has never been able to read. `webpinfo`
-    # answers the canvas size and the frame count; `anim_dump` writes the frames out.
+    # Animated WebP's two readers, as ffmpeg cannot read one.
     webpinfo_path: str = vendored_tool("webpinfo")
     anim_dump_path: str = vendored_tool("anim_dump")
-
-    # --- Networking ------------------------------------------------------------------
 
     host: str = "0.0.0.0" if not _WINDOWS else "127.0.0.1"  # noqa: S104 (see the docstring)
     """Which addresses to listen on, and the two answers are different for a good reason.
@@ -460,8 +337,6 @@ class Settings(BaseSettings):
     it is refused outright rather than silently downgraded.
     """
 
-    # --- Derived paths ---------------------------------------------------------------
-
     @computed_field  # type: ignore[prop-decorator]
     @property
     def transcode_cache_dir(self) -> Path:
@@ -474,12 +349,7 @@ class Settings(BaseSettings):
 
     @property
     def models_dir(self) -> Path:
-        """The device's store of models and the graphics-card runtime. See `models_folder`.
-
-        A property rather than a field or a variable: it has no value of its own to be told, only
-        a place that follows from where the library is, and a second knob for it would be a way
-        for two copies of one library to disagree about where their models are.
-        """
+        """The device's model store, derived rather than set, so library copies agree on it."""
         return models_folder(self.data_dir)
 
     @property
@@ -489,8 +359,7 @@ class Settings(BaseSettings):
 
     @property
     def managed_dirs(self) -> tuple[Path, ...]:
-        """Directories Sift owns and may create. Library roots are not here: those belong to
-        the user and Sift only ever reads them."""
+        """Directories Sift owns and may create; library roots are the user's and only read."""
         return (
             self.data_dir,
             self.cache_dir,
@@ -499,21 +368,12 @@ class Settings(BaseSettings):
             self.models_dir,
         )
 
-    # --- Validation ------------------------------------------------------------------
-
     @model_validator(mode="before")
     @classmethod
     def _reject_unknown_variables(cls, data: Any) -> Any:
-        """A SIFT_ variable that is not a setting is a typo, and must be an error.
-
-        Left alone, pydantic-settings simply does not read a variable it has no field for. So
-        `SIFT_CHACE_DIR=/mnt/big` starts cleanly, uses the default, and gives the user a Sift
-        that ignores the one line they most carefully edited, with nothing anywhere to say so.
-        Failing at boot costs a restart; failing silently costs an afternoon.
-        """
+        """A SIFT_ variable that is not a setting is a typo, so it fails the boot."""
         known = {field.alias or f"SIFT_{name.upper()}" for name, field in cls.model_fields.items()}
-        # A retired name is recognised so that removing a setting cannot stop a machine that still
-        # names it from booting. It is recognised and not read (see `RETIRED_VARIABLES`).
+        # A retired name is recognised but never read (see `RETIRED_VARIABLES`).
         unknown = sorted(
             k
             for k in os.environ
@@ -567,15 +427,7 @@ class Settings(BaseSettings):
 
 
 def ensure_directories(settings: Settings) -> None:
-    """Create the directories Sift owns, and prove each one is writable.
-
-    Checked at boot rather than on first use, so a read-only cache volume is a startup failure
-    with a clear cause instead of a thumbnail that silently never appears.
-
-    Writability is tested by actually writing, not by inspecting permission bits: the bits can
-    say yes while the filesystem is read-only, the disk is full, or a network share's own
-    permissions disagree.
-    """
+    """Create the directories Sift owns and prove each writable by writing, at boot."""
     for directory in settings.managed_dirs:
         try:
             directory.mkdir(parents=True, exist_ok=True)
@@ -599,18 +451,13 @@ def ensure_directories(settings: Settings) -> None:
 
 
 def _explain(error: ValidationError) -> str:
-    """Turn a validator's report into something a self-hoster can act on.
-
-    Pydantic's default rendering leads with its own vocabulary: "1 validation error for
-    Settings", "[type=value_error, input_value=...]", which is noise to someone whose actual
-    problem is a mistyped line in a file. Keep the sentence the validator wrote, drop the rest.
-    """
+    """A validator's report as the sentences it wrote, without pydantic's own vocabulary."""
     lines = []
     for err in error.errors():
         message = err["msg"].removeprefix("Value error, ")
 
         if not err["loc"]:
-            # A model-level check. It already knows which variables it is talking about.
+            # A model-level check, which already names its variables.
             lines.append(f"  - {message}")
             continue
 
@@ -662,13 +509,7 @@ def _is_secret_env_name(name: str) -> bool:
 
 
 def describe_environment() -> dict[str, str]:
-    """The SIFT_ variables actually set, for a startup log line.
-
-    No secret lives in Sift's environment by design: secrets are wrapped in the database, not
-    passed in as environment. A secret-shaped name is masked anyway, so the day a secret-carrying
-    knob is added it does not land in the log by default rather than only after someone remembers
-    to.
-    """
+    """The SIFT_ variables set, for a startup line, any secret-shaped name masked."""
     return {
         k: (_ENV_REDACTED if _is_secret_env_name(k) else v)
         for k, v in sorted(os.environ.items())

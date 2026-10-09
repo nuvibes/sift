@@ -1,17 +1,7 @@
 <script lang="ts">
 	import { HeldNewcomers, reloadOnLibraryChange } from '$lib/library/changes.svelte';
 	import { Button } from '$lib/components/common';
-	/*
-	 * The collections screen: every collection, what it holds, and the making of one.
-	 *
-	 * It is a drop target for the same gesture the tag screen uses, and it makes the same promise:
-	 * a clip dragged from the grid onto a collection is added and **no file moves**: the path and
-	 * the bytes are untouched, and the membership row is the only thing written. The screen says so
-	 * in words, because the alternative is somebody inferring it from nothing appearing to happen.
-	 *
-	 * The count under each cover is the server's, scoped to whoever is reading. It is never worked
-	 * out here from the rows this session happens to hold.
-	 */
+	/* The collections screen: every collection, what it holds, and the making of one. */
 	import { Selection, TileGesture, VerbMenuItems } from '$lib/components/common';
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
 	import EntityWallFlows from '$lib/components/entity/EntityWallFlows.svelte';
@@ -54,8 +44,7 @@
 	);
 
 	function letGo(event: KeyboardEvent) {
-		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again. It touches no
-		// data and never reaches the server (see `TileGesture.undoKeys`).
+		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again.
 		if (gesture.undoKeys(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -64,41 +53,28 @@
 		if (event.key === 'Escape' && gesture.escaped(event)) event.stopPropagation();
 	}
 
-	/* Anything that leaves the wall leaves the selection with it, or the bar counts rows that are
-	   not there and the next action runs over ids the server has forgotten. */
+	/* Anything that leaves the wall leaves the selection with it, or the bar counts rows that
+	   are not there and the next action runs over ids the server has forgotten. */
 	$effect(() => {
 		const here = new Set(shown.map((one) => one.id));
 		untrack(() => selection.retain([...here]));
 	});
 
-	/*
-	 * What order the shelf is in.
-	 *
-	 * SENT rather than applied here: the list is paged, so a comparison applied here would order
-	 * one page and call it the order of the shelf.
-	 *
-	 * It orders the SHELF. The sequence inside a collection is arranged by hand and is the entire
-	 * point of having one; nothing on this screen can touch it.
-	 */
-	/* Held in `./sort.svelte` and not here, because opening a row unmounts this screen. See
-	   that file for the fault that is. */
+	/* What order the shelf is in. SENT rather than applied here: the list is paged, so a
+	 * comparison applied here would order one page and call it the order of the shelf. */
+	/* Held in `./sort.svelte` and not here, because opening a row unmounts this screen. */
 	const order = $derived(collectionsSort.value);
 
-	/* Which page, at what size, in what order was last asked for, so a settled screen does not ask
-	   for the same thing twice. See the People wall for why the guard is untracked. */
+	/* Which page, at what size, in what order was last asked for, so a settled screen does not
+	   ask for the same thing twice. */
 	let askedFor = -1;
 	let askedSize = -1;
 	let askedOrder = '';
 	/** ...and under which filter, so a facet going on or off re-asks from the same place. */
-	/* What has been typed into the search box, and what the wall was last asked for.
-	 *
-	 * SENT to the list route as its `prefix`, never applied to the rows in hand: this wall is a page
-	 * of a longer list, so filtering what has already arrived would quietly hide everything past the
-	 * page. The People wall's own note says the same about the same mistake.
-	 */
+	/* What has been typed into the search box, and what the wall was last asked for. */
 	let term = $state('');
 	/* The words the wall is searched by live in its address, so the chip on the bar, Back and a
-	   link all say the same thing as the box. See `WallWords`. */
+	   link all say the same thing as the box. */
 	const prefix = $derived(wordsIn(address.url));
 	const words = new WallWords();
 
@@ -116,22 +92,19 @@
 	/** ...and under which search, so a letter typed re-asks from the first page. */
 	let askedPrefix = '';
 
-	/* What the bar has filtered this shelf to, out of the address: only this noun's facets, never
-	   the order or the page position. A derived STRING beside it, because a derived only propagates
-	   when its value changes and the effect below must not wake on every address change. */
+	/* What the bar has filtered this shelf to, out of the address: only this noun's facets,
+	   never the order or the page position. */
 	const narrowedBy = $derived(facetParams('collection', address.url.searchParams));
 	const narrowedKey = $derived(JSON.stringify(narrowedBy));
 
 	/* Whole rows of the window, the same way every other wall pages (see `CardPaging`). */
 	const paging = new CardPaging(COLLECTIONS_PER_PAGE, 'wall.collections');
 
-	/* The route this wall belongs to, captured once, so a page landing under a row somebody has just
-	   opened can be told from one landing on the wall itself. See `$lib/grid/anchor`. */
+	/* The route this wall belongs to, captured once, so a page landing under a row somebody has
+	   just opened can be told from one landing on the wall itself. */
 	const path = address.url.pathname;
 
-	/* True exactly once: the first settle, which is somebody arriving at a link. After that the
-	   anchor in the address is one WE wrote, for the question being asked at the time. So reading
-	   it again on a new question would start the new one at the old one's position. */
+	/* True exactly once: the first settle, which is somebody arriving at a link. */
 	let arriving = true;
 
 	/* What a bell brings while somebody is reading further down is held, so nothing they are
@@ -153,13 +126,7 @@
 		};
 	}
 
-	/*
-	 * What this wall offers the bar above it.
-	 *
-	 * A collection is not a file, so filtering by the query language is not a thing this screen can
-	 * do, and it SAYS so, in a dimmed control that stays where it is, rather than leaving a hole
-	 * the other controls slide into.
-	 */
+	/* What this wall offers the bar above it. */
 	const mine = Symbol('collections-wall');
 
 	$effect(() => {
@@ -173,9 +140,9 @@
 			sort: order,
 			onSort: (next) => {
 				collectionsSort.set(next);
-				/* A new order is a new list, so the page it was on means nothing in it, and neither
-				   does the anchor in the address, which names a row of the list that has just been
-				   replaced. */
+				/* A new order is a new list, so the page it was on means nothing in it, and
+				   neither does the anchor in the address, which names a row of the list that has
+				   just been replaced. */
 				paging.offset = 0;
 				forgetAnchor(address.url, path);
 			}
@@ -185,27 +152,14 @@
 	$effect(() => () => screenBar.release(mine));
 
 	$effect(() => {
-		/*
-		 * `loaded` is READ here and `loading` is not, and the split is the whole of it.
-		 *
-		 * `loaded` going false is the signal to fetch again: that is exactly what `forget()` does
-		 * when the vault opens or shuts, because what is concealed never arrives and a list held
-		 * from before is wrong the moment the vault moves. Not reading it would leave this screen
-		 * deaf to that: the rows cleared, nothing asking for them again, and the wall empty until
-		 * navigated away from and back.
-		 *
-		 * `loading` is what must NOT be read. It goes true then false on every fetch, so an effect
-		 * watching it is triggered by its own work: a request loop. Reading only `loaded` cannot
-		 * loop: the load ends with it true, this runs once more, and returns.
-		 */
-		/* Named so the effect re-runs when the page moves or the order changes. The page SIZE is read
-		   too: a taller window holds more rows. */
+		/* `loaded` is READ here and `loading` is not, and the split is the whole of it. */
+		/* Named so the effect re-runs when the page moves or the order changes. */
 		const wanted = paging.offset;
 		const size = paging.size;
 		const wantedOrder = order;
 		const narrowing = narrowedKey;
-		// Read here rather than inside the untracked block, exactly as the page and the order are: a
-		// letter typed is a different list and has to wake this.
+		// Read here rather than inside the untracked block, exactly as the page and the order are:
+		// a letter typed is a different list and has to wake this.
 		const wantedPrefix = prefix;
 		const stale = !collections.loaded;
 		// UNTRACKED, and that is load-bearing. Reading the address inside an effect makes the effect
@@ -226,13 +180,12 @@
 			) {
 				return;
 			}
-			/* A different filter is a different list, so the page it was on means nothing in it.
-			   Not on the FIRST ask, where there is no previous filtering to have moved away from. */
+			/* A different filter is a different list, so the page it was on means nothing in it. */
 			const moved = narrowed && askedNarrowing !== '';
 			const at = moved ? 0 : wanted;
 			if (paging.offset !== at) paging.offset = at;
-			/* ...and the stale anchor comes OUT of the address with it, or a link copied from the bar
-			   would carry a position belonging to a question nobody is asking any more. */
+			/* ...and the stale anchor comes OUT of the address with it, or a link copied from
+			   the bar would carry a position belonging to a question nobody is asking any more. */
 			if (moved) {
 				paging.forget();
 				forgetAnchor(address.url, path);
@@ -245,8 +198,7 @@
 			void collections
 				.fill(paging, wantedOrder, narrowedBy, wantedPrefix)
 				// Written after the page lands, because turning to an anchor knows the offset it is
-				// going to only once the answer arrives. The offset itself is landed inside `fill`,
-				// with the rows, and its re-run of this effect asks nothing (see `CardPaging.land`).
+				// going to only once the answer arrives.
 				.then(() => rememberAnchor(address.url, path, collections.items[0]?.id, paging.offset));
 		});
 	});
@@ -270,16 +222,7 @@
 		}
 	}
 
-	/*
-	 * The heart and the stars, which are THIS account's and reach nobody else's screen.
-	 *
-	 * Offered to a guest as well as to an admin, unlike renaming or deleting: an opinion changes
-	 * where a row appears on this wall and never whether it appears, so there is nothing here for a
-	 * permission to protect. Keeping something from another account is what restricting is for.
-	 *
-	 * The store settles the row from the server's own answer, so nothing here re-reads the wall:
-	 * throwing away a list somebody is looking at to change one glyph is what that would cost.
-	 */
+	/* The heart and the stars, which are THIS account's and reach nobody else's screen. */
 	async function heart(one: { id: string; name: string }, favorite: boolean) {
 		try {
 			await collections.setFavorite(one.id, favorite);
@@ -296,14 +239,7 @@
 		}
 	}
 
-	/*
-	 * Every verb this wall offers, for the bar AND for each card's menu, from the one registry.
-	 *
-	 * A collection cannot be put inside another collection and no stash-box has one, so neither
-	 * verb exists for the kind (the registry's `KIND_FACTS`, not a judgement written here). The
-	 * heart and the stars ARE offered: the server has `/collections/{id}/favorite` and `/rating`.
-	 * See the People wall for the rest.
-	 */
+	/* Every verb this wall offers, for the bar AND for each card's menu, from the one registry. */
 	/* Read the wall again, at the page, the order and the search it is showing. */
 	function reread() {
 		fromBell = true;
@@ -336,21 +272,14 @@
 
 	const pickedIds = $derived(selection.ordered(shown.map((one) => one.id)));
 
-	/* And again whenever a share or a restrict moves, because this list is scoped: what belongs in
-	   it changes without anything being imported. See the helper. */
+	/* And again whenever a share or a restrict moves, because this list is scoped: what belongs
+	   in it changes without anything being imported. */
 	reloadOnLibraryChange(reread);
 </script>
 
 <svelte:head><title>Collections</title></svelte:head>
 
-<!--
-	The same wall component every other entity screen uses, and the same card.
-
-	A card of its own here would be an EntityCard written out again with its own hover, its own
-	picked ring, its own concentric-corner arithmetic and its own breakpoint. Two cards in one
-	application is two of everything, and the second one to be touched is the one that drifts: the
-	size slider, for one, works only where the screen knows what a card is.
--->
+<!-- The same wall component every other entity screen uses, and the same card. -->
 <EntityGrid
 	title="Collections"
 	icon="box"
@@ -458,8 +387,7 @@
 				onclickcapture={(event) => gesture.clicked(collection.id, event)}
 			>
 				{#snippet menu()}
-					<!-- The same declared verbs the bar draws, rendered as menu rows. Not written out
-					     again here, which is what stops the two from coming apart. -->
+					<!-- The same declared verbs the bar draws, rendered as menu rows. -->
 					<VerbMenuItems
 						ids={targetIds(collection.id)}
 						subjectId={collection.id}

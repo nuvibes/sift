@@ -1,14 +1,4 @@
-/* Settings > History: the pane over the whole-install record.
- *
- * The WORDS of each line are `ledger.test.ts`'s and are not re-checked here. What this file owns is
- * the three things the pane itself decides and nothing else can:
- *
- *  - the days, because a list read down is a list somebody is looking for a day in;
- *  - paging, by numbered pages of fifty: a turn asks for that page's offset, never the first
- *    page again;
- *  - the live re-read, because it must read the page somebody is ON again, never send them back to
- *    the first.
- */
+/* Settings > History: the pane over the whole-install record. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
@@ -37,8 +27,7 @@ import Ledger from './Ledger.svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 
 const DAY = 86_400;
-/* A fixed moment so "Today" and "Yesterday" mean the same thing every run. The pane reads the clock
-   through `byDay`, so the clock is what is faked rather than the module. */
+/* A fixed moment so "Today" and "Yesterday" mean the same thing every run. */
 const NOW = new Date(2026, 8, 17, 14, 0, 0);
 
 function at(daysAgo: number, hour: number): number {
@@ -180,8 +169,7 @@ async function backToTheFirstPage(): Promise<void> {
 	await settle();
 }
 
-/* Filters alone over nothing, for the seconds a read takes, say nothing about a list coming. Until
-   the first read answers it draws the loading state every list has. */
+/* Filters alone over nothing, for the seconds a read takes, say nothing about a list coming. */
 it('draws the loading state until its first read answers, then the list', async () => {
 	let answer: (value: LedgerPage) => void = () => {};
 	mocks.readLedger.mockReturnValue(new Promise<LedgerPage>((resolve) => (answer = resolve)));
@@ -243,9 +231,8 @@ it('puts every time in one column at the end, whether or not its line has a pres
 });
 
 it('stands the presses and the time under the line at a phone width, so the line keeps the row', async () => {
-	/* The two fixed tracks are 20rem and a phone line is about 24rem, so beside them the sentence
-	   would be left a word's width and read one word to a line. On a phone the row is the line
-	   alone, with the Report press and the moment on a line under it. */
+	/* The two fixed tracks are 20rem and a phone line is about 24rem, so beside them the
+	   sentence would be left a word's width and read one word to a line. */
 	phoneWidth.yes = true;
 	try {
 		mocks.readLedger.mockResolvedValue(page([event('one')]));
@@ -305,9 +292,7 @@ it('draws all three narrowings, asking for everything until somebody says otherw
 	mocks.readLedger.mockResolvedValue(page([event('one')], 1));
 	await draw();
 
-	/* The two triggers, by the words on them. WHICH choices each offers is `ledger.test.ts`'s
-	   (they are built from the vocabulary itself), and the list they open is a portal this renderer
-	   will not open, so what is proved here is that the row is drawn and starts unnarrowed. */
+	/* The two triggers, by the words on them. */
 	const triggers = [...host.querySelectorAll('button[aria-haspopup="listbox"]')].map(
 		(one) => one.textContent?.trim() ?? ''
 	);
@@ -321,12 +306,8 @@ it('draws all three narrowings, asking for everything until somebody says otherw
 	);
 });
 
-/*
- * DECISIONS: what was decided on Organize and what Sift filed by itself, as a choice of this one
- * list and not a screen of its own. Opened on it (Organize's Decisions lands here), it asks for the
- * decisions alone, and each line's Undo is the very door a decision card pressed, so a decision is
- * taken back from History exactly as from the card.
- */
+/* DECISIONS: what was decided on Organize and what Sift filed by itself, as a choice of this one
+ * list and not a screen of its own. */
 it('opens on Decisions where it was sent there, and takes one back through the same door', async () => {
 	mocks.readLedger.mockResolvedValue(page([event('one', { receipt: receipt() })], 1));
 	mocks.undoDecision.mockResolvedValue(undefined);
@@ -350,8 +331,7 @@ it('opens on Decisions where it was sent there, and takes one back through the s
 
 it("leads a decision's line with the picture the server handed for it, and only that line", async () => {
 	/* A decision has to be CHECKED, not only read: each row carries a still of what it was
-	   about. The server hands it on the line (`still`); a line with
-	   none draws none, and the still sits at the row's height so the list keeps one rhythm. */
+	   about. */
 	mocks.readLedger.mockResolvedValue(
 		page(
 			[
@@ -439,11 +419,8 @@ it('reads the page it is on again when something happens, never the first page',
 	await backToTheFirstPage();
 });
 
-/*
- * ONE LINE PER PRESS: a task still running hands its line back with a newer id and a larger count.
- * The line it replaces is the one with the same oldest act (`first`), so the list never carries the
- * press twice.
- */
+/* ONE LINE PER PRESS: a task still running hands its line back with a newer id and a larger
+ * count. */
 it('replaces a folded line that grew, rather than holding the press twice', async () => {
 	mocks.readLedger.mockResolvedValue(
 		page([event('press-3', { folded: 3, first: 'press-1' }), event('older')], 2)
@@ -462,11 +439,8 @@ it('replaces a folded line that grew, rather than holding the press twice', asyn
 	expect(lines()[0]).toContain('press-5.mp4');
 });
 
-/*
- * UNDO ALL on a folded line: every decision of the press, through the server's own reading of it
- * under the same narrowing. Never a single Undo on its newest act, which would take back one of
- * four thousand and read as the whole line.
- */
+/* UNDO ALL on a folded line: every decision of the press, through the server's own reading of it
+ * under the same narrowing. */
 it('offers Undo all on a folded line of decisions, and asks for that press', async () => {
 	mocks.readLedger.mockResolvedValue(
 		page([event('press', { folded: 12, first: 'first', standing: 12, receipt: receipt() })], 1)
@@ -490,14 +464,7 @@ it('offers Undo all on a folded line of decisions, and asks for that press', asy
 	expect(mocks.undoAll).toHaveBeenCalledWith('press', { kind: undefined, verb: undefined });
 });
 
-/*
- * TAKING ONE BACK, from this list rather than from a band above the work on a queue screen.
- *
- * An event with a receipt IS a workbench decision (one row, one id), so the press goes through
- * the same door a queue screen uses. What is checked is the three conditions and the door, not the
- * server's answer: a line with no receipt was never a decision, one already reversed reads as taken
- * back, and a queue that can reverse nothing would be offering a button that can only say no.
- */
+/* TAKING ONE BACK, from this list rather than from a band above the work on a queue screen. */
 it('offers an Undo on a decision that has not been taken back, and presses the same door', async () => {
 	mocks.readLedger.mockResolvedValue(page([event('one', { receipt: receipt() })], 1));
 	mocks.undoDecision.mockResolvedValue(undefined);
@@ -551,12 +518,7 @@ it('offers no Undo on one already taken back, nor on a queue that can reverse no
 	expect(undoButton()).toBeNull();
 });
 
-/*
- * LAST IN THIS FILE ON PURPOSE. What the pane remembers about where it was left outlives one
- * component, which is the whole point of it, so a test that leaves it on page two would hand that
- * page to whatever mounts next. Anything added after this one restores that page instead of
- * reading the first.
- */
+/* LAST IN THIS FILE ON PURPOSE. */
 it('opens again on the page it was left on, rather than at the first page', async () => {
 	mocks.readLedger.mockResolvedValue(page(lineRun('a', PAGE), 300));
 	await draw();
@@ -564,8 +526,8 @@ it('opens again on the page it was left on, rather than at the first page', asyn
 	pagerPress('Next page')?.click();
 	await settle();
 
-	/* Pressing a name in a line RUNS a route, so the pane is torn down and built again, which
-	   is the whole of what this memory exists for. */
+	/* Pressing a name in a line RUNS a route, so the pane is torn down and built again, which is
+	   the whole of what this memory exists for. */
 	unmount(drawn as Record<string, unknown>);
 	drawn = null;
 	mocks.readLedger.mockClear();
@@ -578,14 +540,7 @@ it('opens again on the page it was left on, rather than at the first page', asyn
 	expect(lines()[0]).toContain('b0.mp4');
 });
 
-/*
- * WHERE IN THE LIST, on the box that is actually doing the scrolling.
- *
- * The pane is drawn inside a scrolling area it does not own, and that area declares itself
- * scrollable only once it has set itself up, so asking which box scrolls while this pane is
- * mounting answers `<html>`. A listener there records nothing, and the position put back would be
- * nought every time.
- */
+/* WHERE IN THE LIST, on the box that is actually doing the scrolling. */
 it('puts back where the list was being read, on the box that really scrolls', async () => {
 	const all = Array.from({ length: 600 }, (_unused, index) => event(`d${index}`));
 	mocks.readLedger.mockImplementation(({ limit, offset }: { limit: number; offset: number }) =>
@@ -593,7 +548,7 @@ it('puts back where the list was being read, on the box that really scrolls', as
 	);
 
 	/* A stand-in for that area: jsdom has no layout, so the box is given a position that can be
-	   written and read back. What is being tested is which element is asked, not how far it goes. */
+	   written and read back. */
 	const area = document.createElement('div');
 	let top = 0;
 	Object.defineProperty(area, 'scrollTop', {
@@ -618,8 +573,8 @@ it('puts back where the list was being read, on the box that really scrolls', as
 	expect(leaving).toBeTypeOf('function');
 	leaving?.({} as never);
 
-	/* AND THEN THE SCREEN IS TIDIED ON ITS WAY OUT, which is the other half: a reset arrives as an
-	   ordinary scroll, and following it put people back at the top. Nothing must read this. */
+	/* AND THEN THE SCREEN IS TIDIED ON ITS WAY OUT, which is the other half: a reset arrives as
+	   an ordinary scroll, and following it put people back at the top. */
 	area.scrollTop = 320;
 	area.dispatchEvent(new Event('scroll'));
 
@@ -635,18 +590,7 @@ it('puts back where the list was being read, on the box that really scrolls', as
 	area.remove();
 });
 
-/*
- * AND THE LEAVING THAT ANNOUNCES NOTHING, which is the other way out of this pane.
- *
- * Pressing a FILE's name opens the popout through `pushState`, and `pushState` in `@sveltejs/kit`
- * assigns `page.state` wholesale, so `page.state.settings` is gone, the Settings panel is
- * unmounted, and no navigation is announced: standing at 347 in a 450-line feed, pressing a file's
- * name and closing the popout with Escape must not come back at the TOP.
- *
- * The press is the door, because it is the one moment that is both early enough to be honest and
- * late enough to mean something. Recording it at the TEARDOWN puts nothing back: by then the screen
- * is being tidied on its way out, which is the reset the case above exists to ignore.
- */
+/* AND THE LEAVING THAT ANNOUNCES NOTHING, which is the other way out of this pane. */
 it('takes the position at the press, for the leaving that announces nothing', async () => {
 	const all = Array.from({ length: 600 }, (_unused, index) => event(`e${index}`));
 	mocks.readLedger.mockImplementation(({ limit, offset }: { limit: number; offset: number }) =>
@@ -674,8 +618,8 @@ it('takes the position at the press, for the leaving that announces nothing', as
 	/* Somebody puts a finger on a file's name. Nothing has moved yet, and this is the reading. */
 	area.dispatchEvent(new Event('pointerdown', { bubbles: true }));
 
-	/* And THEN the panel is taken away with no navigation announced at all, and the screen on its
-	   way out is tidied. Neither of those may be read. */
+	/* And THEN the panel is taken away with no navigation announced at all, and the screen on
+	   its way out is tidied. */
 	area.scrollTop = 320;
 	area.dispatchEvent(new Event('scroll'));
 	unmount(drawn as Record<string, unknown>);
@@ -693,8 +637,7 @@ it('takes the position at the press, for the leaving that announces nothing', as
 });
 
 it('folds a line naming many things and opens the rest in place, the line wrapping to hold it', async () => {
-	/* Nineteen file names would run off the end of the row. The server names five and folds the
-	   rest into ONE piece, which opens where the count was. */
+	/* Nineteen file names would run off the end of the row. */
 	const file = (at: number) => ({
 		text: `${String(at + 2).padStart(2, '0')}.jpg`,
 		kind: 'asset',
@@ -734,9 +677,8 @@ it('folds a line naming many things and opens the rest in place, the line wrappi
 });
 
 it("offers a run's Report only where the server says the line has one", async () => {
-	/* A task's own run line (a backup) names the task under the same subject kind as a pass,
-	   and a Report on it would answer "Couldn't load that report". The line's `report` is the
-	   answer. */
+	/* A task's own run line (a backup) names the task under the same subject kind as a pass, and
+	   a Report on it would answer "Couldn't load that report". */
 	const run = (id: string, subject: string, report: string | null) =>
 		event(id, {
 			verb: 'ran',

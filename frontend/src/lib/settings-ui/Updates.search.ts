@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Updates pane's words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Updates.svelte` draws every word it adds from `COPY`, and the search
- * entry below is built from the same object, so the pane and a search result cannot say different
- * things. The registered hidden notice is the registry's copy, which feeds the search by itself,
- * except that it is drawn here as the action its value stands for, under the registry's own label.
- *
- * Installing a new version is not a preference, so nothing registered describes it, and neither are
- * the version running and the licence and source at the pane's foot: those are what this pane adds
- * to the index. `About` stays a word that finds the version. */
+/* The Updates pane's words, and what somebody can type to find them. */
 import type { Searchable } from './search';
 
 export const COPY = {

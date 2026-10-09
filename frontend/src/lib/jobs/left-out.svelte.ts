@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* The files each product gave up on, from the build sheet the Import tasks draw: what a pass's
-   "1 left out" counts and names. One read at a time. */
+   "1 left out" counts and names. */
 import { fetchBuildSheet } from '$lib/library/importing';
 
 class LeftOut {

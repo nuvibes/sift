@@ -1,12 +1,6 @@
 <script lang="ts">
-	/*
-	 * The two sheets a folder's menu opens: Share, which decides who may see it, and Visibility, which
-	 * reports who can and through what. Held once here for every screen that draws folder menus, so
-	 * Browse and `Settings > Folders` open the same sheets on the same target words.
-	 *
-	 * Share takes several folders, because a selection bar shares a whole selection; Visibility one,
-	 * because forty folders have forty answers to who can reach them.
-	 */
+	/* The two sheets a folder's menu opens: Share, which decides who may see it, and Visibility,
+	 * which reports who can and through what. */
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import VisibilityDialog from '$lib/components/VisibilityDialog.svelte';
 	import type { ShareTarget } from '$lib/library/sharing';

@@ -1,21 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Endpoints for photo sets.
-
-The same four rules the collections endpoints run on, because they are rules about writing to a
-shared catalog rather than rules about what a collection is.
-
-**A set is shared, so editing one is admin-only.** There is one `photo_sets` table for the install
-and a set decides what its pictures are. Making, renaming, filling and deleting one all change what
-other users see. Reading is open to any signed-in user, scoped to what they may see.
-
-**Every read is scoped, including the numbers.** A set showing twelve pictures above a count of
-fifty has said that thirty-eight exist without showing one of them, and a count is enough to
-publish a library.
-
-**Denied and missing are the same answer.** Every refusal is the 404 an unknown id would get.
-
-**Nothing on disk moves.** Adding a picture writes one row in a join table.
-"""
+"""Endpoints for photo sets: admin-only writes, scoped reads and counts, denied reads as 404."""
 
 from __future__ import annotations
 
@@ -131,11 +115,7 @@ def _view(photo_set: PhotoSetView, mark: GrantMark | None = None, *, art: str) -
 
 
 async def _require_set(access: Repository, viewer: Viewer, photo_set_id: str) -> PhotoSetView:
-    """The set, if this viewer may be shown it. 404 otherwise, either way.
-
-    Resolved through the access layer even on admin-only writes: a hidden set is concealed from
-    admins too, and an edit that could still reach one would be a way to confirm it is there.
-    """
+    """The set, if this viewer may be shown it; 404 otherwise, admins included for a hidden one."""
     photo_set = await access.visible_photo_set(viewer, photo_set_id)
     if photo_set is None:
         raise _missing()
@@ -143,16 +123,7 @@ async def _require_set(access: Repository, viewer: Viewer, photo_set_id: str) ->
 
 
 class PhotoSetsNarrowing:
-    """What the PHOTO SETS on the wall are: their tags, whether they have a cover, who made them,
-    and what has been shared.
-
-    A photo set has no owner column (`photo_sets` records where a set came from), so there is no
-    "mine" to ask, and inventing one would mean inventing the fact behind it. Who MADE one is
-    recorded, which is the Created by column.
-
-    See `PeopleNarrowing` in the people slice for the repeated-key rule, and
-    `CollectionsNarrowing` for what an admin-only key does when somebody else sends it.
-    """
+    """What the photo sets on the wall are: their tags, cover, maker, and what has been shared."""
 
     def __init__(
         self,
@@ -191,34 +162,8 @@ async def list_photo_sets(
     asset: Annotated[str | None, Query()] = None,
     count: Annotated[Literal["whole", "narrowed"], Query()] = "whole",
 ) -> PhotoSetList:
-    """One page of the photo sets this viewer may know about.
-
-    `person`, `tag` and `site` are what make this a related list as well as a wall: passed one,
-    the answer is the sets whose pictures that thing reaches, counted over the same narrowed set.
-    They are ids, resolved by the filter rather than by name, because a name is ambiguous and this
-    is called from a page that already holds the id.
-
-    `prefix` narrows to the names beginning with what somebody is typing. See the collection
-    listing beside this one for why a picker needs that of the server rather than of its own cache.
-
-    `count` is which tally a card prints: `whole` (every file under that row this viewer may see),
-    or `narrowed`, how many of them are on THIS wall. A press on a card carries the page it was
-    pressed from, so a card reached through somebody else opens the two together, and its number
-    has to be the size of THAT wall or it describes a set the press cannot reach. `whole` by
-    default, which is what a plain wall means.
-
-    `from` names a set to start the page at, instead of an offset. The wall pages by whole rows, so
-    how many cards a page holds depends on the size of the screen, which means a page NUMBER is
-    not a durable thing to put in an address, and the set somebody was looking at is. It is
-    resolved against this same question (the same prefix, order, narrowing and tally), because a
-    position only means anything in the list it was taken from.
-
-    A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-    rather than refusing: a set that has since been
-    renamed, hidden or deleted is a stale link and not an error. That also means a caller cannot
-    learn anything by trying ids: the answer for a set being kept back is the same as for one that
-    never existed, and both are the first page. The People wall says all of this too.
-    """
+    """One page of the photo sets this viewer may know about; `person`, `tag` or `site` narrow it
+    to sets reaching that id, `count` picks the tally, and `from` starts the page at a set."""
     if sort not in ENTITY_SORT_KEYS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown sort {sort!r}")
     narrowing = related_filter(person=person, tag=tag, site=site, asset=asset)
@@ -280,14 +225,7 @@ async def photo_set_facets(
     site: Annotated[str | None, Query()] = None,
     asset: Annotated[str | None, Query()] = None,
 ) -> FacetCounts:
-    """What the photo sets this wall reaches are made of, along one dimension, with counts.
-
-    Declared before `/photo-sets/{photo_set_id}`: routes match in declaration order, and the other
-    way round this address would be read as a set called "facets".
-
-    The counts are of SETS, over the statement that decides which of them the wall holds, with
-    every narrowing the listing takes. See `people_facets` in the people slice.
-    """
+    """What the photo sets this wall reaches are made of, along one dimension, with counts."""
     if facet not in ENTITY_FACETS["photo_set"] or (
         facet in ADMIN_ENTITY_FACETS and not viewer.is_admin
     ):
@@ -315,15 +253,7 @@ async def create_photo_set(
     service: Annotated[PhotoSetService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> PhotoSetSummary:
-    """Make an empty set by hand.
-
-    Names are not unique. Two shoots can genuinely both be called "beach", and refusing the second
-    would be asserting something about the world that is not true.
-
-    It arrives visible, empty and with no cover, and the answer is built from what was just written
-    rather than read back through the access layer: there is nothing to scope: it holds nothing,
-    wears no cover, and the name is the one the caller sent.
-    """
+    """Make an empty set by hand; names need not be unique."""
     photo_set = await service.create(body.name, by_user=viewer.id)
     return PhotoSetSummary(id=photo_set.id, name=photo_set.name, origin=photo_set.origin)
 
@@ -334,15 +264,10 @@ async def get_photo_set(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> PhotoSetSummary:
-    """One set's own row: its name, its cover, where it came from and its scoped count.
-
-    With the sharing mark, because the page draws a badge from it, and a reply that omits a
-    restrict is a badge that stops being drawn while the grant is still in force.
-    """
+    """One set's own row: its name, its cover, where it came from, sharing, and its scoped count."""
     photo_set = await _require_set(access, viewer, photo_set_id)
     marks = await access.visible_marks(viewer, ObjectType.PHOTO_SET, [photo_set_id])
-    # And this user's own O tally over the set's pictures, asked for here and nowhere else: it is
-    # a sum over the set's files, so the wall would pay one per card for a number no card draws.
+    # This user's O tally, asked here only: a sum per card would cost the wall one each.
     return _view(
         photo_set, marks.get(photo_set_id), art=face_version(viewer.cache_stamp)
     ).model_copy(update={"o_count": await access.o_count_of_photo_set(viewer, photo_set_id)})
@@ -357,21 +282,9 @@ async def history_of_a_photo_set(
     viewer: Annotated[Viewer, Depends(current_viewer)],
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
 ) -> list[HistoryEvent]:
-    """What happened to this Photo Set, oldest first.
-
-    Authenticated rather than admin, the same rule the set's own row follows. The sharing half is an
-    admin's and the kernel withholds it, for the reason written there, and on a set that half is
-    most of the thread, because `photo_set_items` records no moment for a file going in.
-
-    Resolved through `_require_set` first, so a set this viewer may not be shown answers the same
-    404 an id that was never minted would.
-    """
+    """What happened to this Photo Set, oldest first."""
     await _require_set(access, viewer, photo_set_id)
-    # The registry is asked which kinds of decision can never be taken back, and the answer is
-    # handed to the read so it offers no Undo on those: the same question the file's history and
-    # a person's ask, from the same place, because an affordance the server would refuse is worse
-    # than none. Asked of the REVERSERS rather than of the queues: a decision written by a queue
-    # that has since been retired is still one somebody can take back.
+    # Decisions that can never be taken back are offered no Undo, asked of the reversers.
     final = [one.name for one in workbench.reversers if not one.reversible]
     return [
         history_event(event)
@@ -394,22 +307,7 @@ async def maker_of_a_photo_set(
     database: Annotated[Database, Depends(wiring.database)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> MadeBy | None:
-    """WHO MADE IT: Sift and the pass that did it, the user who asked, or nobody.
-
-    Its own route rather than a field on the row, and that is the one judgement here. `PhotoSetSummary` is
-    the shape the wall is drawn from as well as the page, so a maker on it would be filled for the
-    one and left null for the other: a field meaning "nothing recorded it" on a page and "nobody
-    asked" on a wall, with nothing on the wire to tell them apart. A page that wants the line asks
-    for it; a wall that does not, does not pay a point read a row for it.
-
-    Authenticated rather than admin, the same rule the Photo Set's own row and its history follow.
-    The kernel read is unscoped and relies on the subject having been resolved first, which is what
-    `_require_set` does, so a Photo Set this viewer may not be shown answers the same 404 an id that was
-    never minted would, rather than saying who made a thing they cannot see.
-
-    Null is the ordinary answer and never an error: every row made before the catalog recorded this
-    says nothing, and a line drawn from nothing would be an invention.
-    """
+    """Who made this Photo Set: Sift and its pass, the user who asked, or nobody recorded."""
     await _require_set(access, viewer, photo_set_id)
     made = await made_by(database, viewer, "photo_set", photo_set_id)
     return None if made is None else made_by_wire(made)
@@ -423,15 +321,7 @@ async def rename_photo_set(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> PhotoSetSummary:
-    """Rename a set. Hiding one is a separate request.
-
-    The word index is NOT told: a photo set's name is in no column the index gathers (a file's
-    title, its music, its filename, its paths, its tags, its people, its usernames, its collections
-    and its sites), so a rename changes nothing the index could be wrong about. A whole-index
-    rebuild would hold the write lock for many seconds on a large library and buy nothing. If a
-    set's name is ever gathered into that text, this needs a `touched_many` of the set's items
-    (which ARE nameable) and not a rebuild.
-    """
+    """Rename a set. Hiding one is a separate request."""
     await _require_set(access, viewer, photo_set_id)
     if await service.rename(photo_set_id, body.name, actor=Actor.user(viewer.id)) is None:
         raise _missing()  # pragma: no cover (resolved above, so the row is there)
@@ -515,9 +405,7 @@ async def set_photo_set_cover(
         frame=body.frame,
     )
     await forget_displaced(pictures, before, after=kept)
-    # Ask for the picture of that moment. Queued rather than rendered here: a request that shells
-    # out to ffmpeg is a request that takes seconds, and the client falls back to the file's own
-    # still until it lands, exactly as a mark's tile does.
+    # Queued rather than rendered here, so the request never waits on ffmpeg.
     if body.asset_id is not None and body.at_ms is not None:
         await stills.wants_still(body.asset_id, body.at_ms)
     return await _set_now(access, viewer, photo_set_id)
@@ -618,18 +506,7 @@ async def set_photo_set_vault(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> Response:
-    """Hide the set from this user, or stop hiding it.
-
-    Behind the PIN, like every other hide: without one there would be nothing to unhide it with.
-    Hiding a set conceals its PICTURES as well, which is what somebody hiding it meant.
-
-    The PIN check is AWAITED here rather than declared as a dependency, and that is not a style
-    choice: it is the one shape that works. `require_vault_pin` takes a plain `Viewer`, so as a
-    `Depends` FastAPI reads that parameter as something the CALLER should send and answers every
-    request with a 422 before the handler is reached: declared that way, this route would refuse
-    everything, with an error toast as the only sign. Every caller of it in the application awaits
-    it inline.
-    """
+    """Hide the set and its pictures from this user, or stop hiding it; behind the PIN."""
     await _require_set(access, viewer, photo_set_id)
     await require_vault_pin(request, viewer)
     await service.set_vault(viewer, photo_set_id, vault=body.vault)
@@ -645,12 +522,7 @@ async def edit_photo_set_items(
     viewer: Annotated[Viewer, Depends(require_admin)],
     remove: Annotated[bool, Query()] = False,
 ) -> BulkWriteDone:
-    """Add pictures to a set, or take them out. No file is moved.
-
-    A picture that cannot be resolved is SKIPPED and counted, and the reply says how many were left
-    out and why. See `sift.kernel.reach`: the case against a partial success is a case against a
-    SILENT one, and this one speaks.
-    """
+    """Add pictures to a set, or take them out; a picture that cannot be resolved is counted."""
     await _require_set(access, viewer, photo_set_id)
     actionable = await access.actionable_of(viewer, body.asset_ids)
     wanted = list(actionable.allowed)
@@ -671,8 +543,7 @@ async def photo_set_tags(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> list[TagOnPhotoSet]:
-    """The tags on this set. The same address shape people, sites and collections use, so the one
-    client store reaches all four rather than each growing its own."""
+    """The tags on this set, in the address shape every entity uses."""
     await _require_set(access, viewer, photo_set_id)
     return [
         TagOnPhotoSet(id=row["id"], name=row["name"]) for row in await service.tags_on(photo_set_id)

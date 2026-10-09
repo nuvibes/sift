@@ -10,15 +10,7 @@ import { noServerAt } from '../../test-setup';
 /* Left unanswered on purpose: the naming preview, which this file does not draw. */
 noServerAt('/api/site-options/preview');
 
-/* Settings, Downloads: what is set ONCE about downloading.
- *
- * Three things are guarded. The groups a person comes for are on the pane, in their order. The
- * knobs nobody should be invited to turn (downloads at the same time, the speed limit, the pacing,
- * the timeout, the retries and the back-off) are NOT on the pane but one row away, on the More
- * settings page, and a deep link to one of them opens that page first. And a setting registered
- * later that nothing here names still lands somewhere (the More settings page) rather than on no
- * screen at all.
- */
+/* Settings, Downloads: what is set ONCE about downloading. */
 
 const fetchSettings = vi.fn<() => Promise<SettingSection[]>>();
 

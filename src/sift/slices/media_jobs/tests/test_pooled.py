@@ -188,7 +188,7 @@ async def test_the_shown_range_holds_until_the_figure_has_stayed_off_for_a_minut
     assert shown is not None and before is not None and before - 1 <= shown <= before
 
 
-ROUTER = importlib.import_module("sift.slices.media_jobs.router")
+ROUTER = importlib.import_module("sift.slices.media_jobs.activity_families")
 
 
 def test_the_read_is_a_shares_only_while_its_own_reads_waited_most_of_a_minute(

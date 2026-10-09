@@ -1,11 +1,4 @@
-/* Linking a person, a site or a tag to a stash-box, and reading back what was kept.
- *
- * Two claims carry the file. The kind is an ARGUMENT (one module for all three subjects, which is
- * what makes one confirm screen possible), so every address here has to carry the kind it was
- * given rather than a spelling of its own. And reading what has already been agreed must never
- * fail: the stash-boxes are optional, every screen they touch works without them, and a page that
- * threw because an optional table could not be read would be a person's page that would not open.
- */
+/* Linking a person, a site or a tag to a stash-box, and reading back what was kept. */
 
 import { beforeEach, expect, it, vi } from 'vitest';
 
@@ -58,8 +51,7 @@ it('reads what has already been agreed, for each kind of subject', async () => {
 });
 
 it('answers with nothing rather than throwing when that cannot be read', async () => {
-	// The one refusal that is swallowed on purpose. A guest may read this and an install may have no
-	// stash-boxes at all; either way the person's page still has to open.
+	// The one refusal that is swallowed on purpose.
 	mocked.get.mockRejectedValue(new ApiError(403, 'forbidden'));
 
 	expect(await linksOf('person', 'p-1')).toEqual([]);
@@ -67,7 +59,6 @@ it('answers with nothing rather than throwing when that cannot be read', async (
 
 it('hands the typed name over as a parameter rather than building the address', async () => {
 	// A name with an ampersand in it is ordinary, and pasted into an address it ends the parameter.
-	// Escaping is the client's job; what matters here is that this gives it the chance.
 	mocked.get.mockResolvedValue({ answers: [] });
 
 	await search('person', 'Salt & Pepper');
@@ -122,8 +113,8 @@ it('asks again by hand, and nothing here runs on a timer', async () => {
 });
 
 it('forgets a link without touching the subject', async () => {
-	// One request, to the links route. What was agreed to was written through the subject's own edit
-	// route and stays there, so forgetting must not reach for it.
+	// One request, to the links route. What was agreed to was written through the subject's own
+	// edit route and stays there, so forgetting must not reach for it.
 	mocked.del.mockResolvedValue(undefined);
 
 	await forgetLink('site', 's-1', 'box-1');
@@ -143,8 +134,7 @@ it('shows what the server said, and one flat sentence for everything else', () =
 
 it('asks each kind of row who made it at the address that can answer', async () => {
 	// The three a box can name ride along with their links; the two it cannot are asked at their
-	// own entity's route. What this holds is that neither half borrows the other's address: a
-	// shelf asked on the links route would be told it might have stash-box records.
+	// own entity's route.
 	mocked.get.mockImplementation(async (path: string) =>
 		path.startsWith('/stash-boxes/')
 			? { links: [], made_by: { kind: 'sift', via: 'folder' } }

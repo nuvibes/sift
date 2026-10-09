@@ -1,26 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Telling apart two folders that are called the same thing.
- *
- * A media library is full of repeated names (every person's folder holds an "Images" and a
- * "Videos"), so a chooser in the Add panel would list nine rows reading "Images" and nothing else.
- * Nine identical rows is not a list somebody can pick from; it is nine guesses.
- *
- * The obvious repair is to put the whole path in the label. It is the wrong shape twice over: the path is mostly the names of
- * parents that are the same for every row in the list, so the part that TELLS THEM APART is buried
- * in the middle of a long string, and a unique name ("Sift Downloads") ends up wearing a path
- * it never needed. What a reader wants is the name, and beside it the least amount of path that
- * makes this one that name rather than another.
- *
- * So: the name stays the label, and what is added is the SHORTEST suffix of the parent path that no
- * other option sharing that name can claim. Nine "Images" become "Images" beside "Juniper/2025",
- * "Images" beside "Kestrel" and so on, each carrying only as much as it needs, and a name nobody
- * else has is left bare.
- *
- * Pure, and here rather than in each chooser, because there are four of them (the Add panel, the
- * Move sheet, the default download folder and the naming rule's destination), and four copies of a
- * rule like this is four lists that disambiguate differently.
- */
+/* Telling apart two folders that are called the same thing. */
 
 /** An option that may know where it is on disk. `path` ends with the folder's own name. */
 export interface Placed {
@@ -46,19 +25,12 @@ function parentsOf(one: Placed): string[] {
 		.map((part) => part.trim())
 		.filter(Boolean);
 	// The last segment is the folder itself wherever the caller spelled the path that way, and
-	// repeating the name inside its own detail says nothing. Where the path does NOT end with the
-	// name (a caller spelling a path some other way), every segment is a parent and is kept.
+	// repeating the name inside its own detail says nothing.
 	if (parts.length > 0 && parts[parts.length - 1] === one.label) parts.pop();
 	return parts;
 }
 
-/**
- * The same options, with a `detail` on any whose label another option also has.
- *
- * Order, values and labels are untouched: this only ever ADDS the phrase that says which one this
- * is. An option with no path to draw on keeps no detail even when its name repeats: there is
- * nothing honest to say about it, and an empty phrase is worse than none.
- */
+/** The same options, with a `detail` on any whose label another option also has. */
 export function disambiguate(options: readonly Placed[]): Distinguished[] {
 	const sharing = new Map<string, Placed[]>();
 	for (const one of options) {
@@ -89,30 +61,8 @@ export function disambiguate(options: readonly Placed[]): Distinguished[] {
 	});
 }
 
-/**
- * The order a folder chooser lists in: what this account used last, then everything else by name.
- *
- * ## Why the order is not the server's
- *
- * `/library/folders` answers in the order the library walks, which is neither alphabetical nor
- * anything a person could predict, so a chooser drawing it straight would ask somebody to read a
- * hundred rows to find one. Alphabetical is predictable, and the rest of the list is in it.
- *
- * What sits ABOVE it is the shortcut: a library has one folder per person, and the same handful is
- * where everything went this week. Those are put in front, in the order they were last used, up to
- * `RECENT_FOLDERS_KEPT`. See `$lib/shell/interface-state`, which is where the record lives and where
- * the reasoning for it being the account's rather than the browser's is written out.
- *
- * ## Why it is here rather than in each chooser
- *
- * The same reason `disambiguate` above is: there are four folder choosers and a rule like this
- * written out four times is four lists that order differently. Pure, so a caller hands in its
- * options and its recents and gets the order back: nothing here reads a store.
- *
- * The first row of a chooser (the default, "Sift decides") is NOT passed through this. It is
- * not a folder among the folders; it is the answer that applies when none is chosen, and it stays
- * where it is put.
- */
+/** The order a folder chooser lists in: what this account used last, then everything else by
+ * name. */
 export function recentFirst<Option extends { value: string; label: string }>(
 	options: readonly Option[],
 	recent: readonly string[],
@@ -122,10 +72,7 @@ export function recentFirst<Option extends { value: string; label: string }>(
 	const first: Option[] = [];
 	for (const id of recent) {
 		const found = byId.get(id);
-		// Silently skipped where it names a folder this list does not hold. A folder can be removed
-		// from the library, or handed back read-only, long after somebody downloaded into it, and
-		// the record is deliberately never checked against anything, so this is the ordinary case
-		// rather than a fault.
+		// Silently skipped where it names a folder this list does not hold.
 		if (!found || first.includes(found)) continue;
 		first.push(found);
 		if (first.length >= kept) break;

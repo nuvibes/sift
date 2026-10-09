@@ -1,15 +1,6 @@
 /*
- * Where to move files to, and the one sentence about it somebody can be wrong about.
- *
- * "It moves the file on your disk" is otherwise discovered later by an application that can no
- * longer find its files, so the sheet says it under the question every time, and asks every time,
- * with no way to turn the asking off.
- *
- * What is proved: the sentence is there, the count is in the question, and nothing goes until a
- * destination has been chosen, since a destination filled in for somebody is one they did not pick.
- *
- * Rendered rather than read from the source: matching the `confirmDisabled` line out of the
- * component would be a second copy of it, not a check.
+ * The sentence about the disk is always there, the count is in the question, and nothing goes until
+ * a destination is chosen.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,17 +9,8 @@ import { reactiveProps } from '$lib/design/testing.svelte';
 import MoveDialog from './MoveDialog.svelte';
 
 /*
- * The destination picker, stood in for, because without a destination this file can never reach
- * an enabled Move button.
- *
- * The real one is a listbox that positions itself against the trigger, which needs a layout jsdom
- * does not have: the trigger can be clicked and no options ever appear. So it is replaced by the
- * smallest thing that has the same effect on this component: something that writes a value back
- * through the same binding. What it looks like is not this component's business and is tested where
- * that component lives.
- *
- * A component in Svelte is a function of an anchor and its props, and `bind:value` hands over a
- * property with a setter, so writing to it is exactly what choosing an option does.
+ * The picker stood in for: jsdom cannot lay out the listbox, so this writes the bound value
+ * directly.
  */
 const picker = vi.hoisted(() => ({ props: null as { value: string } | null }));
 
@@ -39,9 +21,7 @@ vi.mock('$lib/components/common', async (importOriginal) => ({
 	}
 }));
 
-/* Choose a destination, as somebody does: after the sheet is on screen, not while it is being
-   drawn. The sheet clears the choice every time it opens, so a value written during the render is
-   wiped a moment later by the component doing exactly what it should. */
+/* After the sheet is on screen: it clears the choice on every open. */
 function choose(folderId: string) {
 	picker.props!.value = folderId;
 	flushSync();
@@ -72,7 +52,6 @@ function render(count = 2) {
 	mount(MoveDialog, { target: host, props });
 	flushSync();
 
-	// Portalled to the end of the document rather than rendered where it was written.
 	return {
 		props,
 		onconfirm,
@@ -95,7 +74,6 @@ describe('what the sheet says', () => {
 	});
 
 	it('offers no way to stop being asked', () => {
-		/* No box that turns the question off may come back. */
 		const { dialog } = render();
 
 		expect(dialog.querySelector('input[type="checkbox"]')).toBeNull();
@@ -111,7 +89,6 @@ describe('until a destination has been chosen', () => {
 	});
 
 	it('starts over each time the sheet opens', () => {
-		/* Carried over, a destination from the last move would be one this selection did not pick. */
 		const { confirm, props } = render();
 		choose('f2');
 		expect(confirm.disabled).toBe(false);

@@ -1,84 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What happened to a site, a tag, a shelf or a Photo Set, in order.
-
-`history.py` asks that question of a FILE and `history_person.py` of a PERSON. This asks it of the
-four remaining things in the catalog that have a page of their own. Same `Event`, same actors, same
-ordering rule: four different subjects. A record somebody can read about one kind of thing and
-not about the next one along reads as the tab being broken.
-
-## One module and not four, and the tables are why
-
-The shape is genuinely shared rather than merely similar. Every one of the four answers the same
-three questions (when was it made, what has been put on it, and who has it been shared with), and
-two of them answer a fourth, which is whether a stash-box knows it. What differs between them is a
-table name, a column name and a run of words, and every one of those is a value. So this is four
-public functions over one private shape, with what differs kept in values rather than in a protocol:
-adding a fifth kind is a row, not a file. Four separate modules would be four copies of the grant
-read, four copies of the day-grouping, and four chances for one of them to forget that a grant is
-an admin's to see.
-
-A USERNAME has no thread of its own: it is shown under its person and its site. What was posted
-under a username is on its site's thread, and a username joined to somebody or taken off them is a
-ledger act that names the person, so it is on theirs.
-
-## What each of them actually holds, from the tables and not from what would be nice
-
-**A tag** was made at a moment (`tags.created_at`), is put on files by somebody or by a pass
-(`asset_tags.source` and `.decided_at`), and may be linked to a stash-box (`tag_stash_box_links`).
-
-**A site** carries `created_at` from v41 of the catalog, nullable: an older row's moment was read
-off the earliest signal it had, and a row with no signal has none, so the arrival event is drawn
-only where there is a moment to draw it at. A made-up date on a screen somebody is reading to find
-out what really happened is the one thing a history may not do. It also holds the usernames added
-to it (`usernames.created_at`), the filings made under those usernames (`asset_usernames`), and a
-stash-box link (`site_stash_box_links`).
-
-**A shelf** and **a Photo Set** were each made at a moment and hold items, and their membership
-tables record when each file went in (`added_at`, catalog v47). A shelf records WHO made it
-(`collections.owner_id`) and a Photo Set records HOW it was made (`photo_sets.origin`), and each
-of those is said in the sentence.
-
-## What each statement costs
-
-EXPLAIN QUERY PLAN against an initialized schema:
-
-    the tag, the site, the shelf, the set   SEARCH ... USING INDEX sqlite_autoindex_<table>_1 (id=?)
-    files a tag is on                       SEARCH link USING INDEX ix_asset_tags_tag (tag_id=?)
-    usernames on a site                     SEARCH usernames USING INDEX ix_usernames_site
-    filings under a site                    SEARCH ac USING INDEX ix_usernames_site, then
-                                            SEARCH link USING INDEX ix_asset_usernames_username
-    a stash-box link                        SEARCH l USING INDEX sqlite_autoindex_..._1, then the
-    box who it is shared with                   SEARCH g USING INDEX ix_acl_object
-
-Every one of them is a seek. The ones that group add `USE TEMP B-TREE FOR GROUP BY`, which is the
-sort of what the seek found and not a second pass over a table. The two that count across the
-library (what a tag is on and what is filed under a site) GROUP in SQL for the reason a person's
-history does: a tag on four thousand files is not four thousand lines anybody can read, and what
-crosses out of SQLite is one row per day rather than one row per file.
-
-## Why none of these is declared a `point_read`
-
-Because `point_read` is a claim that a statement is constant-time and may therefore run on the event
-loop, and the two counting reads are not. They seek and then aggregate over every row the seek
-found, which on a tag somebody has put on a large part of their library is real work. A seek is not
-the same claim as a bounded one, and declaring it here would put that work on the loop on exactly
-the install where it is biggest. `history_person.py` reaches the same conclusion about the same
-shape; the file history's reads ARE declared, and every one of them answers about one file.
-"""
+"""What happened to a site, a tag, a shelf, a Photo Set or a song, in order: one private shape over
+five subjects."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
-# The wording, and the addresses the numbers in it go to. One table for all three histories (see
-# that module's header for why the words moved out of the reads that say them).
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history import (
     DEFAULT_LIMIT,
     MADE_BY_BOX,
     MAX_LIMIT,
-    VIAS,
     Actor,
     Detail,
     Event,
@@ -111,6 +44,7 @@ from sift.kernel.access.history_folds import (
     drawn_receipts,
 )
 from sift.kernel.access.history_sources import _folders_seen
+from sift.kernel.access.history_usernames import site_username_lines
 from sift.kernel.access.repository import Repository
 from sift.kernel.access.sentences import (
     SIFT,
@@ -118,7 +52,6 @@ from sift.kernel.access.sentences import (
     Line,
     Piece,
     files,
-    username_opens,
 )
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.access.visibility import FILE_SEEN_BY_VIEWER, seen_by
@@ -133,52 +66,29 @@ from sift.kernel.where import folder_said
 if TYPE_CHECKING:  # pragma: no cover (the registry type, for the annotation only)
     from sift.kernel.workbench import Workbench
 
-#: The tables a FEATURE owns that these reads touch, and which may therefore not be there.
-#: Same guard and same reason as every other history: a process that never imported the stash-box
-#: slice has never registered its schema, so `tag_stash_box_links` is genuinely absent and a
-#: statement naming it is a hard error rather than an empty answer.
+#: Tables a feature owns, which a process that never imported it does not have.
 _FEATURE_TABLES = (
-    # The receipt source. Both, because `_DECIDED` names both.
     "workbench_decisions",
     "workbench_decision_subjects",
     "tag_stash_box_links",
     "site_stash_box_links",
     "stash_boxes",
-    # Needed so a line names its box: the counting reads choose the box-naming statement by
-    # `stash_box_tables_in(here)`, which asks for this table AND `stash_boxes`, and `here` only ever
-    # holds what is listed here: without it every thread here would take the NULL-box statement
-    # and say "A stash-box put it on 200 files". It matters twice: a line's count opens its own
-    # files, and the box is part of which files those are.
+    # So a line names its box (`stash_box_tables_in`).
     "asset_stash_box_matches",
-    # A box disagreed about one of this thing's fields and the answer was to keep what was here:
-    # the half of enrichment that says somebody judged.
     "stash_box_kept",
 )
 
 _TABLES = "SELECT name FROM sqlite_master WHERE type = 'table'"
 
 
-#: A decision naming no file (a pass over the whole library) is an admin's line alone.
 NAMES_A_FILE = """
    AND (:admin = 1 OR d.object_kind = 'asset' OR EXISTS (
          SELECT 1 FROM workbench_decision_subjects f
           WHERE f.decision_id = d.id AND f.kind = 'asset'))"""
 
-#: EVERY BULK JUDGEMENT THAT NAMED ONE OF THESE FOUR THINGS, newest last: a decision a person took
-#: on one of these, with an Undo on the board, belongs on the page of the thing it changed.
-#:
-#: The kind is BOUND, unlike the file's and the person's: one statement serves four pages. It is
-#: NOT FILTERED TO ONE QUEUE: queue names belong to the slices that register them. The SEARCH is
-#: `ix_workbench_subject (kind, subject_id)`, the index the other two use.
-#:
-#: !! AND IT MUST NOT DRAW AN EVENT. The ledger is built by widening this table, so every act a
-#: writer records lands here, and read straight out an event draws as a bulk judgement with an
-#: Undo the workbench refuses. `LEDGER_QUEUE` is reserved so no queue may claim it, which makes
-#: the exclusion exact. An event carrying a RECEIPT is written under that receipt's own queue and
-#: still draws: it is a decision and it can be taken back. `_ledger_events` draws the rest.
-#:
-#: Only a receipt whose every file this viewer may be shown, and for a guest only one naming a file:
-#: its stored number cannot be scoped when read. See `history_person._DECIDED`.
+#: Every bulk judgement that named one of these things, newest last. Never a ledger event
+#: (`LEDGER_QUEUE`), and only a receipt whose every file this viewer may be shown (see
+#: `history_person._DECIDED`).
 _DECIDED = splice(
     """
 SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
@@ -197,13 +107,10 @@ SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
     NOTHING_HIDDEN=NOTHING_HIDDEN,
 )
 
-#: What one of the grouped statements below answers with: who did it, the name to show beside it,
-#: and the sentence. Three values rather than an object, because it is what `Event` takes.
+#: Who did it, the name beside it, and the sentence: what `Event` takes.
 _Said = Callable[[str | None, Piece, int, str | None], "tuple[Actor, str | None, Line]"]
 
-#: The maker columns ride along with the name and the moment, because the arrival event needs all
-#: three and a second read for them would be a second point read per page. `created_by_act` is
-#: which act made the file a tag Sift made for a copy came from (`sentences.FROM_ACT`).
+#: `created_by_act` is the act whose copy a Sift-made tag came from (`sentences.FROM_ACT`).
 _TAG = (
     "SELECT name, created_at, created_by_kind, created_by_via, created_by_user_id,"
     " created_by_box_id, created_by_act"
@@ -221,12 +128,8 @@ _SONG = (
     " FROM songs WHERE id = ?"
 )
 
-# EVERY FILE PUT IN A SHELF OR A PHOTO SET THAT THE LEDGER DID NOT RECORD.
-# The membership tables carry the moment a file went in (`added_at`, catalog v47), so a shelf's own
-# History can say every addition. The ledger says the ones it recorded, with who did
-# them, and those lines are drawn from it; these are the REST (additions from before the ledger,
-# and a Photo Set's files put there when a task made it), read off the row, so no addition is said
-# twice and none is missing. Only files the viewer may see; one row per file, grouped by day below.
+# Files put in a shelf or a Photo Set that the ledger did not record, read off `added_at`, only
+# those the viewer may see.
 _SHELF_ADDITIONS = splice(
     """
 SELECT link.asset_id AS id, COALESCE(NULLIF(a.title, ''), a.original_filename) AS name,
@@ -260,16 +163,8 @@ SELECT link.asset_id AS id, COALESCE(NULLIF(a.title, ''), a.original_filename) A
     SEEN=FILE_SEEN_BY_VIEWER,
 )
 
-# EVERY FILE A SONG WAS NAMED ON THAT THE LEDGER DID NOT RECORD AGAINST THE SONG.
-#
-# A song is named on a file by Sift (AcoustID, a Site's page, the same music as another file) or by
-# a person's hand, and the membership row says which, with when and, for a name carried from the
-# same music, the file it came from (`song_files`). Sift's acts are recorded on the FILE (one
-# `song_named` each, which a song's id is not a subject of), and a name typed into a file's Music
-# field is that file's edit; so the song's own thread reads them off the rows, grouped by day and
-# source, and draws from the ledger only what a person did ON the song (`linked` with it as the
-# object, from its own page), which is why those rows are left out here. Only files the viewer may
-# see, and the file a name came from only where they may see that too.
+# Files a song was named on that the ledger did not record against the song, read off `song_files`.
+# Only files the viewer may see.
 _SONG_ADDITIONS = splice(
     """
 SELECT link.asset_id AS id, COALESCE(NULLIF(a.title, ''), a.original_filename) AS name,
@@ -293,31 +188,20 @@ SELECT link.asset_id AS id, COALESCE(NULLIF(a.title, ''), a.original_filename) A
     SEEN=FILE_SEEN_BY_VIEWER,
 )
 
-#: The most files one day's addition names; past it the line counts them. Four thousand files a
-#: task put in one Photo Set are one line saying how many, not a list running off the row.
+#: The most files one day's addition names before it counts them.
 _ADDITIONS_NAMED = 50
 
-#: How many of a counted day's files its "Show each" lists, newest first: the feed's cap for the
-#: same list (`history_events.FEED_FOLD_SHOWN`).
+#: How many of a counted day's files its "Show each" lists (`history_events.FEED_FOLD_SHOWN`).
 _ADDITIONS_LISTED = 100
-#: The row is read even without a moment, because whether it EXISTS decides between an empty history
-#: and no history at all. `created_at` (catalog v41) is nullable on this one table, so an arrival
-#: with no moment is drawn as "before this was recorded" where the row says who made it; a site
-#: whose row carries no signal at all keeps the empty history it had.
+#: Read even with no moment: whether the row exists decides between an empty history and none.
 _SITE = (
     "SELECT name, created_at, created_by_kind, created_by_via, created_by_user_id,"
     " created_by_box_id"
     " FROM sites WHERE id = ?"
 )
 
-#: Every file this tag was put on, gathered by WHAT decided it and by the DAY it was decided.
-#:
-#: The day is the machine's local day (`kernel/when.py`). It is null for a row written before
-#: `decided_at` existed, so those rows fall
-#: into a group of their own and come back with no time, which is exactly what they know.
-#:
-#: Only the files this viewer may be shown, counted as they are read: the reasoning is
-#: `history_person._NAMED`'s, and so is the fragment.
+#: Every file this tag was put on, grouped by what decided it and by the machine's local day; only
+#: files this viewer may be shown.
 _TAG_FILES_SQL = """
 SELECT link.source AS source,
        {{BOX}} AS box,
@@ -336,10 +220,7 @@ _TAG_FILES_NO_LEDGER = splice(
     _TAG_FILES_SQL, BOX=BOX_OF_A_ROW, SEEN=FILE_SEEN_BY_VIEWER, RECEIPT=NO_RECEIPT
 )
 
-#: The same, on a database without the stash-box tables (a process that never imported that
-#: slice): NULL where the box would be. Fixed strings rather than one built from a fragment,
-#: which is the rule query text lives under here. Each tagging carries its receipt where the
-#: record of decisions is here (`history_folds.RECEIPT_OF_A_NAMING`, the one fold).
+#: Without the stash-box tables: NULL where the box would be.
 _TAG_FILES_NO_BOX_SQL = """
 SELECT link.source AS source,
        NULL AS box,
@@ -358,24 +239,10 @@ _TAG_FILES_NO_BOX_NO_LEDGER = splice(
     _TAG_FILES_NO_BOX_SQL, SEEN=FILE_SEEN_BY_VIEWER, RECEIPT=NO_RECEIPT
 )
 
-# A FILING THAT IS A DOWNLOAD'S OWN ACT. A download files its file under the Site it came from in
-# the same press (`download/service.attribute`), so a Site's thread would say "3 files were filed
-# under it" beside "Sift downloaded 3 files from it", one act twice. The download's line is drawn
-# from the ledger's `downloaded` event (`history._downloads_by_day`), and a filing is the
-# download's where ITS ROW SAYS SO: the writer names `download` as the source, and catalog v67
-# marks every older row a `downloaded` event vouches for. A filing the row does not
-# claim for a download (one somebody made by hand, or a download from before the ledger) is
-# counted here, as the only line saying it.
-#
-# Not by the clock: a filing whose row carries no time would never match, and a hand filing under
-# the Site inside the minute would be swallowed. The row is the record.
+# A filing that is a download's own act, as its row says: the download's line already says it.
 _NOT_A_DOWNLOAD = "(link.source IS NULL OR link.source <> 'download')"
 
-#: Every filing made under this site, through the usernames that belong to it.
-#:
-#: Two hops rather than one, because an asset has no site: it has usernames, and a username belongs
-#: to a site. That is the same shape the permission resolver walks, and it is why the join is here
-#: rather than a column being read off a row.
+#: Every filing made under this site, through its usernames.
 _SITE_FILES_SQL = """
 SELECT link.source AS source,
        {{BOX}} AS box,
@@ -403,9 +270,7 @@ _SITE_FILES_NO_LEDGER = splice(
     RECEIPT=NO_RECEIPT,
 )
 
-#: The same, on a database without the stash-box tables (a process that never imported that
-#: slice): NULL where the box would be. Two fixed strings rather than one built from a fragment,
-#: which is the rule query text lives under here.
+#: Without the stash-box tables: NULL where the box would be.
 _SITE_FILES_NO_BOX_SQL = """
 SELECT link.source AS source,
        NULL AS box,
@@ -428,60 +293,7 @@ _SITE_FILES_NO_BOX_NO_LEDGER = splice(
     _SITE_FILES_NO_BOX_SQL, SEEN=FILE_SEEN_BY_VIEWER, DOWNLOADS=_NOT_A_DOWNLOAD, RECEIPT=NO_RECEIPT
 )
 
-#: The usernames on this site, one row each, oldest first, grouped by DAY in Python.
-#:
-#: Not a count per day: "36 usernames added to it" says nothing about which, so the line names them
-#: and the names have to cross. That costs one row per username on the site, off
-#: `ix_usernames_site`, bounded by the site and read once per pane, the same bound the site's own
-#: People tab reads its usernames under.
-#:
-#: THE ROW WITH NO NAME IS NOT A USERNAME and is left out. It is the library's way of writing
-#: "from this site, poster unknown" (`filed_sentence`), which a filing makes for itself; it has no
-#: name to say, and counting it would make a site read "1 username added to it" when nobody had
-#: added one. Its files are on the thread already, in the filings' own lines.
-#:
-#: The person rides along because a username has no page of its own: pressing one goes to its
-#: person, or to the files under it where nobody is said (`sentences.username_opens`).
-#:
-#: AND ONLY THE USERNAMES THIS VIEWER MAY BE TOLD ABOUT. The line names each one, and a username
-#: whose every file is kept from the viewer is a name that exists only on files they were not shown:
-#: the same disclosure as a count of them. So a guest is told a username that has a file they may
-#: be shown, off the stored per-username count; an admin is also told a username typed in with no
-#: file yet. A NAME, so the vault flag is the strict one (`:reveal_named`, the vault really open):
-#: with "Show a locked tile" on, a username whose every file is locked is not named either.
-_SITE_USERNAMES = """
-SELECT un.id AS id, un.name AS name, un.person_id AS person_id, un.created_at AS created_at
-  FROM usernames un
- WHERE un.site_id = :subject AND un.name <> ''
-   AND ((:admin = 1 AND NOT EXISTS (SELECT 1 FROM asset_usernames any_file
-                                    WHERE any_file.username_id = un.id))
-        OR EXISTS (SELECT 1 FROM viewer_entity_counts c
-                    WHERE c.user_id = :viewer AND c.kind = 'username' AND c.object_id = un.id
-                      AND c.permitted - CASE WHEN :reveal_named = 1 THEN 0 ELSE c.concealed END > 0))
- -- ordered by the clock: not every username has an id Sift minted in order; an old migration
- -- wrote random hex ones (access schema `_SITE_ONLY_ACCOUNT`)
- ORDER BY un.created_at ASC, COALESCE(un.name_sort, un.name) ASC, un.id ASC
-"""
-
-#: HOW EACH USERNAME ON THIS SITE ARRIVED, from its `added` event (subject the username, object the
-#: Site; `catalog._seed_username_on` writes one, and workbench v14 backfilled the rest). Off
-#: `ix_workbench_object`. The Site's own thread is where this is said: the event is otherwise drawn
-#: only in the feed (`history._drawn_elsewhere` gives `added` to the arrival line, which on a Site
-#: is the username line below). Newest first, so the first event per username is its latest word.
-_ARRIVALS = """
-SELECT s.subject_id AS id, d.actor_kind AS actor_kind, d.actor_id AS actor_id,
-       d.payload AS payload
-  FROM workbench_decisions d
-  JOIN workbench_decision_subjects s ON s.decision_id = d.id AND s.kind = 'username'
- WHERE d.object_kind = 'site' AND d.object_id = ? AND d.verb = 'added'
- ORDER BY d.decided_at DESC, d.id DESC
-"""
-
-#: Grants on the thing itself, by the word `acl_grants` files it under.
-#:
-#: The object type is BOUND rather than written into four statements, which is the one place this
-#: module's shared shape is load-bearing rather than tidy: the rule that a grant is an admin's to
-#: read is written once, so there is no fourth copy of it to forget.
+#: Grants on the thing itself, the object type bound so the admin-only rule is written once.
 _GRANTS = """
 SELECT u.username AS username, g.effect AS effect, g.created_at AS created_at,
        g.subject_user_id AS user_id
@@ -495,13 +307,7 @@ SELECT u.username AS username, g.effect AS effect, g.created_at AS created_at,
 def _tagged_sentence(
     source: str | None, counted: Piece, count: int, box: str | None = None
 ) -> tuple[Actor, str | None, Line]:
-    """Who put this tag on a run of files, and how the app says it.
-
-    The words are `sentences.put_on`'s; what is decided here is the ACTOR, which is a fact about the
-    source word rather than about the sentence. A word this build has never heard of still produces
-    an event, attributed to Sift (which is what every non-null source means), because an unknown
-    pass is still a pass and dropping the row would lose files somebody can see on screen.
-    """
+    """Who put this tag on a run of files; an unknown source word is still Sift."""
     actor, name = actor_of_source(source, box)
     return actor, name, say.put_on(by_of(actor, name), source, counted, count)
 
@@ -509,41 +315,26 @@ def _tagged_sentence(
 def _filed_sentence(
     source: str | None, counted: Piece, count: int, box: str | None = None
 ) -> tuple[Actor, str | None, Line]:
-    """Who filed a run of files under this site, and how the app says it.
-
-    `asset_usernames.source` is the third table to carry that column and it means what it means on
-    the other two, so the folder arm is here and not in `_tagged_sentence`: a folder read files a
-    site, and nothing reads a folder name and reaches a tag.
-    """
+    """Who filed a run of files under this site."""
     actor, name = actor_of_source(source, box)
     return actor, name, say.filed_under(by_of(actor, name), source, counted, count)
 
 
-#: How a Photo Set came to be, in the words `photo_sets.origin` holds, and who that makes the actor.
-#:
-#: A set assembled by hand was made by somebody and the row does not record which user; the other
-#: three were made by a pass Sift ran. The word is a CHECK constraint on the column, so this table
-#: is closed by the schema rather than by hope, and a word outside it falls through to the
-#: plainest sentence rather than to nothing.
+#: How a Photo Set came to be, by `photo_sets.origin`, and who that makes the actor.
 _ORIGINS: dict[str, tuple[Actor, str]] = {
     "manual": (Actor.SOMEBODY, ""),
     "download": (Actor.SIFT, " from a download"),
     "folder": (Actor.SIFT, " from a folder"),
     "archive": (Actor.SIFT, " from an archive"),
-    # A post read out of the files' own names, and a shoot. The sentence for the
-    # first says NAMES rather than a download, because the task that makes it read a name and
-    # downloaded nothing: a set claiming a download made it would name a task that never ran.
+    # A post read out of file names says names, not a download.
     "filename": (Actor.SIFT, " from the files' names"),
     "shoot": (Actor.SIFT, " from a shoot"),
 }
 
 
 async def _from_the_folder(access: Repository, viewer: Viewer, found: Row) -> Line | None:
-    """ " from the folder Beach", the folder a set was made from named and linked to its files.
-
-    None where the folder is gone or this reader may not see it all the way down (`kernel.where`),
-    and the line keeps "from a folder", the words it has without one.
-    """
+    """ " from the folder Beach", or None where the folder is gone or not fully visible
+    (`kernel.where`)."""
     if found["folder_name"] is None:
         return None
     path, name = str(found["folder_path"] or ""), str(found["folder_name"])
@@ -556,21 +347,12 @@ async def _from_the_folder(access: Repository, viewer: Viewer, found: Row) -> Li
 def _counted_events(
     rows: Sequence[Counted], kind: str, said_as: _Said, *, subject: str, parameter: str
 ) -> list[Event]:
-    """One event per group, from a statement that counts files by source and by day.
-
-    THE NUMBER IS THE WAY TO WHAT IT COUNTS: "Put on 4,000 files" with no way to those files is a
-    number somebody then has to go and reproduce by hand. The link's name is the phrase the sentence
-    already carries, so it is placed where it sits in the line, so nothing has to look for it.
-
-    **What the address is, said plainly:** the files this GROUP counted, and no others (the Files
-    wall filtered by `parameter` (`filed` or `tagged`) to this line's source, day and box,
-    `files_of_filing`), never the whole set, which would open 500 files from a line saying 4.
-    """
+    """One event per group of a count by source and day, its number linking to exactly the files it
+    counted (`files_of_filing`)."""
     events: list[Event] = []
     for row in rows:
         source = None if row["source"] is None else str(row["source"])
         count = int(row["files"])
-        # Which box, by the filing or the file's one applied match (`history.BOX_OF_A_ROW`).
         box = None if row["box"] is None else str(row["box"])
         counted = say.thing(
             "files", subject, files(count), href=files_of_filing(parameter, subject, row)
@@ -589,84 +371,8 @@ def _counted_events(
     return events
 
 
-def _arrival_of(row: Row | None, viewer: Viewer) -> tuple[Actor, str, bool]:
-    """Who a username's arrival names, the task's phrase, and whether it is a backfill that could
-    not say how, from its `added` event, or nobody where there is none."""
-    if row is None:
-        return Actor.SOMEBODY, "", False
-    kind, who = row["actor_kind"], row["actor_id"]
-    if kind == "sift" and who:
-        return Actor.SIFT, str(who), False
-    if kind == "user" and who:
-        return (Actor.YOU if str(who) == viewer.id else Actor.ANOTHER_USER), "", False
-    backfilled = '"backfilled"' in str(row["payload"] or "")
-    return Actor.SOMEBODY, "", backfilled
-
-
-def _username_events(
-    rows: Sequence[Row],
-    arrivals: Sequence[Row] = (),
-    viewer: Viewer | None = None,
-) -> list[Event]:
-    """One line per DAY of usernames put on a site, naming each of them. Rows oldest first.
-
-    Each name in the sentence is a link, and where it goes is the kernel's one rule for a username
-    (`username_opens`): its person, or the files posted under it. Past `sentences.FEED_MOST` the
-    line names five and says "and N more", and the "N more" is a fold that opens the rest IN PLACE
-    (`sentences.listed`): one piece carrying them, rather than a detail group the client had to
-    find by matching its words in the sentence.
-
-    HOW EACH ARRIVED is its `added` event's (`_ARRIVALS`): a day's
-    usernames are one line per way they came ("Sift added the usernames a and b to it from file
-    names", "You added the username c to it"), and one the backfill could not read says it arrived
-    "before Sift recorded how". A username with no event at all is passive, as the table alone says
-    nothing about who made it.
-    """
-    told: dict[str, Row] = {}
-    for one in arrivals:
-        told.setdefault(str(one["id"]), one)
-    days: dict[tuple[int, Actor, str, bool], list[Row]] = {}
-    for row in rows:
-        actor, via, untold = (
-            _arrival_of(told.get(str(row["id"])), viewer)
-            if viewer is not None
-            else (Actor.SOMEBODY, "", False)
-        )
-        days.setdefault((day_number(int(row["created_at"])), actor, via, untold), []).append(row)
-    events: list[Event] = []
-    for (_day, actor, via, untold), day_rows in days.items():
-        named = [
-            say.thing(
-                "username",
-                str(row["id"]),
-                str(row["name"]),
-                href=username_opens(
-                    str(row["id"]), None if row["person_id"] is None else str(row["person_id"])
-                ),
-            )
-            for row in day_rows
-        ]
-        how = say.from_pass(via, len(named))
-        events.append(
-            Event(
-                at=max(int(row["created_at"]) for row in day_rows),
-                actor=actor,
-                actor_name=SIFT if actor is Actor.SIFT else None,
-                kind="filed",
-                pieces=say.usernames_added(
-                    by_of(actor, None), named, how if actor is Actor.SIFT else "", untold=untold
-                ),
-                # The mark's word only where the client has one for it (`history.VIAS`).
-                via=via if via in VIAS else None,
-            )
-        )
-    return events
-
-
-#: How long after a task made a Photo Set a file going into it is still that task's filling. The
-#: fill is written in the same press (`photo_sets/service._fill`), so a minute is the feed's
-#: one-press gap (`history_events.FEED_FOLD_GAP`) rather than a new number; anything later nobody
-#: recorded.
+#: How long after a task made a Photo Set a file going in is still that task's filling
+#: (`history_events.FEED_FOLD_GAP`).
 _FILLED_BY_THE_TASK = 60
 
 
@@ -677,17 +383,8 @@ def _addition_events(
     how: say.Part = "",
     until: int | None = None,
 ) -> list[Event]:
-    """One line per DAY of files put in a shelf or a Photo Set that the record did not say, from
-    the rows of `_SHELF_ADDITIONS` / `_SET_ADDITIONS`. Rows oldest first.
-
-    Each file is named and linked, five and then "and N more" opening in place
-    (`sentences.listed`); past `_ADDITIONS_NAMED` in a day the line counts them. The actor is who
-    the ROW can say, and only that: a Photo Set a task made was filled by that task, so a file that
-    went in by `until` (its making, and `_FILLED_BY_THE_TASK` after) is the task's (`actor`, `how`);
-    every other addition (a shelf's, a set assembled by hand, a file put in a task's set later)
-    records when it happened and never who did it, so its line is passive rather than guessing
-    "You".
-    """
+    """One line per day of files put in a shelf or Photo Set that the record did not say. Only a
+    task's own filling names an actor."""
     days: dict[tuple[bool, int | None], list[Row]] = {}
     for row in rows:
         at = None if row["at"] is None else int(row["at"])
@@ -705,8 +402,7 @@ def _addition_events(
             else say.said(files(count))
         )
         moments = [int(row["at"]) for row in day_rows if row["at"] is not None]
-        # A COUNTED day opens to its files under the line, as a day of downloads does
-        # (`history._downloads_by_day`): the newest `_ADDITIONS_LISTED` of them, saying so.
+        # A counted day opens to its newest files under the line.
         listed = tuple(
             Link(kind="asset", id=str(row["id"]), name=str(row["name"] or ""))
             for row in reversed(day_rows[-_ADDITIONS_LISTED:])
@@ -736,12 +432,7 @@ def _addition_events(
 async def _grant_events(
     database: Database, viewer: Viewer, object_type: str, object_id: str
 ) -> list[Event]:
-    """Who this was shared with or kept from. ADMIN ONLY: the caller decides, never this.
-
-    Said the way the file's history says it, because it is the same fact about the same table.
-    THE ACTOR IS WHO MADE THE SHARE, as the ledger recorded it, and SOMEBODY where nothing did
-    (`history.share_makers`), never the recipient in the "by" position.
-    """
+    """Who this was shared with or kept from. Admin only: the caller decides."""
     granted = list(await database.fetch_all(_GRANTS, (object_type, object_id)))
     makers = await share_makers(database, viewer, object_type, object_id, granted)
     return [
@@ -786,13 +477,7 @@ def _made_event(
     via: str | None = None,
     act: str | None = None,
 ) -> Event:
-    """The arrival, with the thing itself linked.
-
-    The subject of its own history carries a link to itself, for the reason the person's does: this
-    read does not know which screen is drawing it, and a sentence that names something should carry
-    the way to it wherever it is read. `via` and `act` are the pass that made it and the act that
-    pass took, where the mark should say them (`Event.via`, `Event.how`).
-    """
+    """The arrival, with the thing itself linked."""
     made = say.entity_created if created else say.entity_added
     return Event(
         at=at,
@@ -815,26 +500,8 @@ async def _ledger_events(
     *,
     name_now: str | None = None,
 ) -> list[Event]:
-    """What the ledger recorded about one of these four things, said in this thread's voice.
-
-    A rename, an edit, a delete of something it was linked to, a refusal to let it be sent outside
-    the machine, a share taken back: acts that overwrite a column or remove a row, and which this
-    page therefore could not say had ever happened. The rule that decides which of them are drawn
-    is `history.ledger_events` and is shared with the other two histories, because it is the same
-    rule (see that function).
-
-    The grants word is passed for all four, which is what stops a standing share being drawn twice:
-    `_grant_events` below already draws it from the row while the row is there.
-
-    `linked` is the link table's box lines, one per box and each its LATEST run. They are drawn
-    HERE, beside the ledger, because the two are one source for one act: a box line absorbs the
-    record writers' nameless `enriched` event (`history._drawn_elsewhere`), and a press the ledger
-    draws on its own line takes the place of that box's table line (`history.runs_not_drawn`).
-    Answered as the lines to draw, both halves.
-
-    `name_now` is given by a Site's thread, the one of the four a merge folds into: see
-    `history._taken_as`.
-    """
+    """What the ledger recorded about one of these things (`history.ledger_events`), with the link
+    table's box lines beside it."""
     ledger = await ledger_events(
         database,
         viewer,
@@ -858,18 +525,8 @@ async def _decided_events(
     final_queues: Sequence[str],
     bench: Workbench | None = None,
 ) -> list[Event]:
-    """The receipts a queue wrote about one of these four things, with their Undo and reversal.
-
-    Modelled on the person thread's, and sharing its body deliberately: `_decision_events` is
-    reached past the underscore because a bulk judgement is ONE act and a tag's thread and a file's
-    thread are two views of it: the same title, the same Undo, the same reversal line underneath,
-    the same rule about which user may be named. Written again here they would be two usernames
-    of one thing, and the way that fails is silent.
-
-    Both tables are checked because the statement names both: a query naming a missing table is a
-    hard error rather than an empty answer, and a library whose workbench has never been registered
-    genuinely has neither.
-    """
+    """The receipts a queue wrote about one of these things, with their Undo and reversal: the
+    person thread's body."""
     if not {"workbench_decisions", "workbench_decision_subjects"} <= here:
         return []
     decided = list(
@@ -878,17 +535,13 @@ async def _decided_events(
             {**verdict_of(viewer), "kind": kind, "subject": entity_id, "ledger": LEDGER_QUEUE},
         )
     )
-    # Read BEFORE the actors are resolved, so a decision's user is one of the names asked for in
-    # the single lookup rather than a second one: the file's history's own arrangement.
+    # Read before the actors resolve, so one lookup names everybody.
     who = _Who(
         viewer=viewer,
         names=await _names_of(
             database, [str(row["user_id"]) for row in decided if row["user_id"] is not None]
         ),
     )
-    # "here" in a saved title is the FILE, and this page is not it (see `files_of_decisions`).
-    # Every decision is worded the one way the feed and the decision record word it, this thing said
-    # as "it" (`worded.decided_said`); a row its area cannot word keeps that stored title.
     said = await decided_said(
         database, bench, viewer, decided, here=(kind, entity_id, say.HERE[say.VANTAGE_ENTITY])
     )
@@ -905,8 +558,7 @@ async def _decided_events(
 async def _ordered(
     database: Database, viewer: Viewer, events: list[Event], kept: int, access: Repository | None
 ) -> list[Event]:
-    """The newest `kept` in the one order (`history.ordered`), a kept answer and its receipt one
-    line first, each thing said as this viewer may be told it (`unshown_said`)."""
+    """The newest `kept` in the one order (`history.ordered`)."""
     events = ordered(one_line_per_kept(events))[-kept:]
     return await unshown_said(database, access, viewer, events)
 
@@ -929,27 +581,15 @@ async def history_of_tag(
     final_queues: Sequence[str] = (),
     bench: Workbench | None = None,
 ) -> list[Event]:
-    """Everything that happened to one tag, oldest first.
-
-    UNSCOPED, and safe because of where it is called: the route resolves the tag through the scoped
-    lookup every other by-id route on it uses, so a viewer who may not be shown it never reaches
-    this. A second scoping rule written here would be a second place to get it wrong.
-
-    The viewer is read for ONE thing, which is the sharing: who else signs in to this install
-    is not something a tag a guest may see should disclose. That is the same half the file's history
-    withholds, and it is the only half here that is about users rather than about the tag.
-    """
+    """Everything that happened to one tag, oldest first. Unscoped: the route resolves the tag
+    first; the viewer only gates the sharing."""
     kept = _bounded(limit)
     here = await _here(database)
     tag = await database.fetch_one(_TAG, (tag_id,))
     if tag is None:
         return []
 
-    # Who made the tag is asked of the row: v41 of the catalog records whether somebody typed the
-    # name or a pass wrote it. SOMEBODY is the answer for every tag made before that.
     actor, actor_name = await _who_made(database, viewer, tag, here=here)
-    # A tag Sift made for a copy names the act that made the copy and wears that act's mark: the
-    # pass (`via`) and the act (`how`), which the client draws as the act's own verb glyph.
     made_a_copy = actor is Actor.SIFT and tag["created_by_via"] == "produced"
     events = [
         _made_event(
@@ -966,8 +606,7 @@ async def history_of_tag(
             act=tag["created_by_act"] if made_a_copy else None,
         )
     ]
-    # The receipts first, so a tagging a card on this page already says leaves the count (the one
-    # fold, `history_folds.counted_apart_from_receipts`).
+    # The receipts first, so a tagging a card says leaves the count.
     decided = await _decided_events(database, viewer, "tag", tag_id, here, final_queues, bench)
     events.extend(
         _counted_events(
@@ -1004,16 +643,14 @@ def _receipts_in(here: set[str]) -> bool:
 
 
 def _tag_files(here: set[str]) -> str:
-    """Which of the four tag-files statements this process can run: with the box's name where the
-    stash-box tables are here, and each row's receipt where the record of decisions is."""
+    """Which of the four tag-files statements this process can run."""
     if stash_box_tables_in(here):
         return _TAG_FILES if _receipts_in(here) else _TAG_FILES_NO_LEDGER
     return _TAG_FILES_NO_BOX if _receipts_in(here) else _TAG_FILES_NO_BOX_NO_LEDGER
 
 
 def _site_files(here: set[str]) -> str:
-    """Which of the four Site-files statements this process can run: with the box's name where the
-    stash-box tables are here, and each row's receipt where the record of decisions is."""
+    """Which of the four Site-files statements this process can run."""
     if stash_box_tables_in(here):
         return _SITE_FILES if _receipts_in(here) else _SITE_FILES_NO_LEDGER
     return _SITE_FILES_NO_BOX if _receipts_in(here) else _SITE_FILES_NO_BOX_NO_LEDGER
@@ -1028,14 +665,7 @@ async def history_of_site(
     final_queues: Sequence[str] = (),
     bench: Workbench | None = None,
 ) -> list[Event]:
-    """Everything that happened to one site, oldest first.
-
-    The arrival event is drawn at its moment, and without one ("before this was recorded") where the
-    row says who made it but not when: `created_at` (catalog v41) is nullable on this one table,
-    because an older row's value was read off the earliest signal the row had and some rows had
-    none. A site with nothing recorded still has an empty history, which is what makes it different
-    from a site that is not there at all: the route turns the second into a 404.
-    """
+    """Everything that happened to one site, oldest first."""
     kept = _bounded(limit)
     here = await _here(database)
     site = await database.fetch_one(_SITE, (site_id,))
@@ -1056,25 +686,7 @@ async def history_of_site(
                 actor_name,
             )
         )
-    events.extend(
-        _username_events(
-            await database.fetch_all(
-                _SITE_USERNAMES,
-                {
-                    "viewer": viewer.id,
-                    "reveal_named": 1 if viewer.show_hidden else 0,
-                    "subject": site_id,
-                    "admin": 1 if viewer.is_admin else 0,
-                },
-            ),
-            (
-                await database.fetch_all(_ARRIVALS, (site_id,))
-                if {"workbench_decisions", "workbench_decision_subjects"} <= here
-                else []
-            ),
-            viewer,
-        )
-    )
+    events.extend(await site_username_lines(database, viewer, site_id, here))
     decided = await _decided_events(database, viewer, "site", site_id, here, final_queues, bench)
     events.extend(
         _counted_events(
@@ -1118,21 +730,14 @@ async def history_of_collection(
     final_queues: Sequence[str] = (),
     bench: Workbench | None = None,
 ) -> list[Event]:
-    """Everything that happened to one shelf, oldest first.
-
-    Every addition is drawn: the ledger's, with who did it, and the rest off the row
-    (`_SHELF_ADDITIONS`, reading `collection_items.added_at` from catalog v47). Beside them, when
-    the shelf was made and who has been given it.
-    """
+    """Everything that happened to one shelf, oldest first."""
     kept = _bounded(limit)
     here = await _here(database)
     shelf = await database.fetch_one(_COLLECTION, (collection_id,))
     if shelf is None:
         return []
 
-    # The user who made the shelf is named only to an admin, and not by reading `_Who`: a shelf's
-    # owner is one user id on one row, so the whole of that rule here is "a user who is not you is
-    # named only to an admin", and a guest is told a shelf was made without being told by whom.
+    # The shelf's maker is named only to an admin.
     owner = None if shelf["owner_id"] is None else str(shelf["owner_id"])
     mine = owner is not None and owner == viewer.id
     events = [
@@ -1174,13 +779,7 @@ async def history_of_photo_set(
     bench: Workbench | None = None,
     access: Repository | None = None,
 ) -> list[Event]:
-    """Everything that happened to one Photo Set, oldest first.
-
-    Every file added, as a shelf's (`_SET_ADDITIONS`), with one thing a shelf has not got:
-    `origin` says HOW the set came to be, and a set Sift assembled from a folder and one somebody
-    put together by hand are different enough that the first line should say which, and that the
-    files the task put in it say it too.
-    """
+    """Everything that happened to one Photo Set, oldest first."""
     kept = _bounded(limit)
     here = await _here(database)
     found = await database.fetch_one(_PHOTO_SET, (photo_set_id,))
@@ -1229,12 +828,7 @@ async def history_of_photo_set(
 
 
 def _song_events(rows: Sequence[Row]) -> list[Event]:
-    """One line per DAY, SOURCE and file a name came from, of the files a song was named on, from
-    the rows of `_SONG_ADDITIONS` (oldest first). Each file is named and linked, five and then "and
-    N more" in place; past `_ADDITIONS_NAMED` the line counts them and opens to the newest of them,
-    as a shelf's additions do (`_addition_events`). Sift's three sources are Sift's acts; a person's
-    hand records nobody and is said without an actor.
-    """
+    """One line per day, source and source file of the files a song was named on."""
     groups: dict[tuple[str | None, str | None, int | None], list[Row]] = {}
     for row in rows:
         at = None if row["at"] is None else int(row["at"])
@@ -1284,8 +878,7 @@ def _song_events(rows: Sequence[Row]) -> list[Event]:
     return events
 
 
-#: Who made a song, as its own row says: Sift and the task, the user asking, or somebody. The
-#: task's phrase is the one every Created by line reads (`sentences.from_pass`).
+#: Who made a song, as its own row says.
 def _song_maker(viewer: Viewer, row: Row) -> tuple[Actor, str]:
     kind = row["created_by_kind"]
     if kind == "sift":
@@ -1304,13 +897,8 @@ async def history_of_song(
     final_queues: Sequence[str] = (),
     bench: Workbench | None = None,
 ) -> list[Event]:
-    """Everything that happened to one song, oldest first.
-
-    When it was made and by what (Sift from AcoustID or a download, or somebody), every file it was
-    named on, by day and by where the name came from (`_SONG_ADDITIONS`), and what the ledger
-    recorded about the song itself: a rename, a note, a cover, a merge, files put on it or taken off
-    it from its page. UNSCOPED like every entity thread; the route resolves the song first.
-    """
+    """Everything that happened to one song, oldest first. Unscoped: the route resolves the song
+    first."""
     kept = _bounded(limit)
     here = await _here(database)
     found = await database.fetch_one(_SONG, (song_id,))

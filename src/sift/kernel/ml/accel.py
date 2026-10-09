@@ -1,40 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Making a graphics card usable, on a machine where Sift was installed rather than built.
+"""Fetching the graphics-card runtime on request into the data directory, and proving it works.
 
-**THE PROBLEM THIS SOLVES.** Sift ships the processor-only build of its model runtime. That is not
-an oversight: the graphics-card build is a quarter of a gigabyte and needs a further gigabyte of
-NVIDIA's own libraries beside it, and the overwhelming majority of installs will never switch on a
-feature that uses either. Putting all of it in the installer would charge every download for a
-capability almost nobody turns on.
-
-Without it a menu offers a GPU option that can never work, refused with a sentence that has no
-answer in it. A setting somebody cannot act on is worse than no setting: it reads as a fault in the
-machine.
-
-**WHAT THIS DOES.** The graphics-card runtime is fetched on request, the same way a model is, and
-put somewhere it can survive:
-
-- **In the DATA directory, not beside the application.** Installing an update replaces everything
-  under the application's own folder, so a runtime put there would be silently deleted by the next
-  update and the feature would turn itself off with no explanation. The data directory is the same
-  reasoning the model files are kept there under: expensive to obtain, and not Sift's to delete.
-- **Under a folder named for the exact set**, so a Sift whose bundled runtime has moved on does not
-  load a graphics-card runtime built against the old one. Mixing the two is not a version warning;
-  it is a process that dies inside a C library.
-- **Verified wheel by wheel BEFORE anything is unpacked.** A truncated download of a native library
-  does not fail loudly: it fails when a card is asked to do something, hours later, inside code
-  that cannot say what happened.
-
-**AND IT IS PROVED BEFORE IT IS BELIEVED.** `works` below does not ask which providers are
-available. It starts a separate process, loads a real model onto the card, and runs it. The list of
-available providers is not evidence: a runtime lists every provider it was COMPILED with, the way
-a video encoder can appear in a list, accept a job, and fail on every frame because the hardware
-behind it is not reachable.
-
-The separate process is not tidiness either. A CUDA context that fails once is dead for the whole
-process, forever and silently: every later call fails while the program goes on running. Proving it
-in a process that then exits is the only way to ask the question without risking the answer.
-"""
+Verified wheel by wheel before unpacking; proved by running a model in a separate process."""
 
 from __future__ import annotations
 
@@ -73,8 +40,7 @@ class AccelError(Exception):
 
 
 def refused_for_good(exc: FetchFailed) -> type[AccelError]:
-    """A refused certificate fails the download once, with no retries; built on first use because
-    the inference child imports this module and must not import the job package."""
+    """A refused certificate fails for good; built late, as the inference child imports this."""
     if not isinstance(exc, Untrusted):
         return AccelError
     from sift.kernel.jobs.queue_rows import JobFailedPermanently
@@ -96,25 +62,11 @@ class Wheel:
     size_bytes: int
 
 
-#: What this set IS, and the name of the folder it goes in.
-#:
-#: Every part of it is load-bearing. `1.28.0` must match the runtime Sift itself carries, because
-#: the two are the same library and only one of them can be imported. `cp313` is the interpreter
-#: the packages are compiled for. `cu13` is the CUDA generation the whole set is built against:
-#: mixing a CUDA 12 library into a CUDA 13 set produces a process that exits without a message.
+#: Every part is load-bearing: the runtime Sift carries, the interpreter, and the CUDA generation.
 PIN = "1.28.0-cp313-cu13"
 
-#: The exact packages, resolved once and written down.
-#:
-#: REGENERATE, do not edit by hand:
-#:
-#:     uv pip compile --python-site x86_64-pc-windows-msvc --python-version 3.13 \
-#:         --generate-hashes -  <<< 'onnxruntime-gpu[cuda,cudnn]==<version>'
-#:
-#: and take the graphics-card runtime and the `nvidia-*` lines from it. The rest of what that
-#: resolves (numpy, protobuf, flatbuffers, packaging) is already inside Sift, because the
-#: processor build of the same runtime depends on all four. Fetching second copies of them would
-#: put two numpys on one path, which is a failure with no useful message at either end.
+#: Regenerate with `uv pip compile ... 'onnxruntime-gpu[cuda,cudnn]==<version>'` and keep only the
+#: GPU runtime and `nvidia-*` lines; the rest is already inside Sift, and a second numpy breaks it.
 WHEELS: tuple[Wheel, ...] = (
     Wheel(
         "onnxruntime-gpu",
@@ -167,62 +119,36 @@ WHEELS: tuple[Wheel, ...] = (
     ),
 )
 
-#: How much has to come down the wire, so a screen can say so BEFORE anybody starts.
+#: How much comes down the wire, so a screen can say so before anybody starts.
 TOTAL_BYTES = sum(wheel.size_bytes for wheel in WHEELS)
 
-#: What the set takes on disk once unpacked: 1.8 GB of libraries beside the 1.34 GB of wheels they
-#: came out of. Both exist at the same time while the last wheel is being unpacked, which is what
-#: `PEAK_BYTES` is: the room the install needs, and the figure the screen says and the download is
-#: refused without.
+#: Unpacked size; wheels and libraries coexist while the last unpacks, so `PEAK_BYTES` is the need.
 UNPACKED_BYTES = 1_800_000_000
 PEAK_BYTES = TOTAL_BYTES + UNPACKED_BYTES
 
-#: Written last, and its presence is what "installed" means.
-#:
-#: LAST, so that a download interrupted three quarters of the way through leaves a folder that is
-#: obviously incomplete rather than one that looks finished and fails at the first use. Nothing
-#: reads a half-unpacked folder, because nothing looks at the folder at all until this file is in
-#: it.
+#: Written last, so an interrupted install never looks finished.
 _MARKER = "ready.json"
 
-#: Where the partly-downloaded packages wait between attempts. Inside the same folder, so stopping
-#: and resuming later costs the remainder rather than the whole gigabyte, and so that throwing the
-#: whole installation away is one directory removal.
+#: Partly downloaded packages, inside the folder, so a resume costs only the remainder.
 _PARTS = ".parts"
 
 
-#: The runtime's corner of the device's model store. Older versions kept it in a library's data
-#: folder, under the same name (`kernel.ml.store`).
+#: The runtime's corner of the device's model store.
 FOLDER = "accel"
 
 
 def directory(settings: Settings) -> Path:
-    """Where this exact set of packages lives: in the device's store, beside the models.
-
-    Once per device rather than once per library, for the reason the models are: it is a build of
-    a program for this device's card, and a second library would otherwise download 1.3 GB again.
-    """
+    """Where this exact set lives: once per device, beside the models."""
     return settings.models_dir / FOLDER / PIN
 
 
 def installed(settings: Settings) -> bool:
-    """Whether a COMPLETE installation is there. Says nothing about whether the card works."""
+    """Whether a complete installation is there; says nothing about whether the card works."""
     return (directory(settings) / _MARKER).is_file()
 
 
 def already_capable() -> bool:
-    """Whether the runtime this Sift can already import drives a card without any of this.
-
-    THE ANSWER TO "WHAT IF I ALREADY HAVE THESE FILES". Somebody running Sift from its source may
-    have installed the graphics-card runtime themselves, deliberately, at a version they chose,
-    and a machine with a full CUDA toolkit on it is the commonest kind of machine that has a card
-    worth using. Downloading 1.3 GB over the top of that would be spending somebody's bandwidth to
-    replace something already working, and putting a folder in front of theirs on the import path
-    would silently take the version decision away from them.
-
-    So it is asked BEFORE anything is offered: where this is true, there is nothing to install and
-    the screen says so instead of offering a download. A runtime that can't start can't drive one.
-    """
+    """Whether the runtime Sift already imports drives a card, so nothing need be downloaded."""
     from sift.kernel.config import get_settings
 
     try:
@@ -232,55 +158,25 @@ def already_capable() -> bool:
     return why_unusable("nvidia", available) is None
 
 
-# The directories Windows has been told it may load libraries from. Held at module scope because
-# `add_dll_directory` UNDOES ITSELF when the object it returns is collected, so a handle nobody
-# keeps is a directory that stops working a moment later, at whatever point the collector runs.
+# Held for ever, as `add_dll_directory` undoes itself when its handle is collected.
 _dll_directories: list[object] = []
 
-#: Which directories have already been handed to `add_dll_directory`, so none is handed over twice.
-#:
-#: **The guard that keeps `enable` idempotent.** That function is called on EVERY import of the
-#: runtime (and the import site is deliberately not cached, because a screen asks it the moment
-#: somebody changes a device), so it runs again for every model load and every provider query.
-#: `sys.path` and `PATH` are checked before they are written; without this, each call would append
-#: two more registrations, and the list above holds every handle for ever precisely so that none of
-#: them is collected.
-#:
-#: Windows' own list of added directories is bounded. Once it overflows, `AddDllDirectory` answers
-#: **ERROR_FILENAME_EXCED_RANGE (206)**, which Python maps to `ENOENT` and reports as
-#: `FileNotFoundError: [WinError 206] The filename or extension is too long: '<the directory>'`.
-#: The directory exists, its name is 88 characters, and nothing about it is too long: it is the
-#: LIST that is too long, and the message names the wrong thing entirely. It would show as
-#: describe jobs that fail with that sentence and nothing else.
+#: Directories already added, so `enable` stays idempotent: Windows' list overflows with a
+#: misleading "filename too long" (206) error.
 _dll_added: set[str] = set()
 
-#: Whether this site lets a process widen its own library search path.
-#:
-#: `os.add_dll_directory` is Windows-only, and the packages this installs are Windows builds, so
-#: on any other site there is nothing here to do and the path alone decides what gets imported.
-#: Named rather than asked inline so both answers can be driven: one of them is unreachable on
-#: whichever machine the suite happens to be running on.
+#: Named so both answers can be tested on either system.
 _CAN_ADD_DLL_DIRECTORY = hasattr(os, "add_dll_directory")
 
 
 def enable(settings: Settings) -> bool:
-    """Make the installed runtime the one that gets imported. Idempotent; False when there is none.
-
-    THIS HAS TO HAPPEN BEFORE THE RUNTIME IS IMPORTED, and once it is imported it cannot be undone:
-    two builds of the same library cannot both be loaded, and the first one in wins for the life of
-    the process. That is why the call sits at the top of the one function that does the importing,
-    rather than anywhere that looks tidier.
-    """
+    """Make the installed runtime the one imported, before the import; False when there is none."""
     if not installed(settings):
         return False
     root = directory(settings)
-    # Written down where it is easy to check: EVERYTHING this touches is inside Sift's own folder.
-    # Nothing is installed into the machine's Python, nothing is put on the system PATH, and no
-    # library anywhere else is replaced. `add_dll_directory` is process-local, so even the search
-    # path this widens is widened only for this one running copy of Sift.
+    # Everything touched is inside Sift's folder and this process; nothing system-wide changes.
     if str(root) not in sys.path:
-        # FRONT of the path. Sift's own processor build is installed beside the application and
-        # would otherwise be found first, and "found first" is the whole question here.
+        # The front, so Sift's own processor build is not found first.
         sys.path.insert(0, str(root))
     if _CAN_ADD_DLL_DIRECTORY:
         found = library_directories(root)
@@ -294,24 +190,7 @@ def enable(settings: Settings) -> bool:
 
 
 def _put_first_on_the_path(directories: list[Path]) -> None:
-    r"""Also on this PROCESS'S own PATH, and both are needed rather than either.
-
-    `add_dll_directory` governs what PYTHON's loader is asked to open. It does not reach what those
-    libraries then ask for themselves: `onnxruntime_providers_cuda.dll` names `cublasLt64_13.dll` in
-    its import table, and Windows resolves that with the ordinary search order, which does not
-    consult the directories added above: with the folders added and not on the path, the provider
-    fails to load with "cublasLt64_13.dll ... is missing" while the file sits in a folder that was
-    just added. With them on the path it loads and the card runs a model.
-
-    FIRST, not last, and that is deliberate on a machine that has CUDA installed for something else.
-    Sift's own copy wins for Sift, so nothing here can pick up a different version that happens to
-    be on the machine, which is the same isolation, read from the other side, as nothing here
-    being able to disturb that other installation.
-
-    THIS PROCESS ONLY. `os.environ` is a copy the process holds; nothing is written to the user's
-    or the machine's environment, and it is gone when Sift stops. Its one reach beyond this process
-    is that anything Sift starts inherits it, which is what makes the proof subprocess work.
-    """
+    r"""Also first on this process's PATH: the libraries' own imports use the ordinary search."""
     current = os.environ.get("PATH", "")
     already = {part.casefold() for part in current.split(os.pathsep) if part}
     adding = [str(one) for one in directories if str(one).casefold() not in already]
@@ -321,14 +200,7 @@ def _put_first_on_the_path(directories: list[Path]) -> None:
 
 
 def library_directories(root: Path) -> list[Path]:
-    r"""Every folder under `nvidia/` that actually holds a library.
-
-    FOUND BY LOOKING, NOT BY KNOWING THE LAYOUT. A fixed pattern like `nvidia/*/bin` stops being
-    true without anything failing loudly: the CUDA 13 wheels put their libraries one level deeper,
-    in `nvidia/cu13/bin/x86_64`, and a runtime installed, verified and reported ready would then
-    fail to load `cublas64_13.dll`, which on screen reads only as "the card was refused and the
-    processor was used instead". Asking which folders contain a `.dll` cannot go out of date.
-    """
+    r"""Every folder under `nvidia/` that holds a library, found by looking, not by a layout."""
     return sorted({found.parent for found in root.glob("nvidia/**/*.dll")})
 
 
@@ -338,12 +210,7 @@ async def install(
     progress: Progress | None = None,
     session_factory: SessionFactory | None = None,
 ) -> bool:
-    """Fetch and unpack the whole set. True when it finished, False when it was stopped.
-
-    Every package is downloaded and checked before ANY of them is unpacked. A set where six of seven
-    libraries are the right ones is not six-sevenths working: it is a process that dies on a call
-    into the seventh, with a message about an address rather than about a download.
-    """
+    """Fetch and verify every package, then unpack; True when done, False when stopped."""
     root = directory(settings)
     parts = root / _PARTS
     await asyncio.to_thread(parts.mkdir, parents=True, exist_ok=True)
@@ -388,19 +255,14 @@ async def install(
         json.dumps({"pin": PIN, "packages": {w.name: w.version for w in WHEELS}}, indent=2),
         "utf-8",
     )
-    # The kept answer to "which devices can the runtime drive" has just stopped being true.
+    # The kept answer about which devices work is now stale.
     forget_devices()
     log.info("ml.accel.installed", pin=PIN, bytes=TOTAL_BYTES)
     return True
 
 
 def remove(settings: Settings) -> None:
-    """Throw the whole thing away. A gigabyte somebody may want back is a gigabyte they can see.
-
-    The rule this steps around exists to stop Sift deleting files somebody else put there: media
-    it indexes in place. This folder is not that: Sift created it, Sift is the only thing that reads
-    it, and every byte in it can be fetched again from the addresses pinned in this file.
-    """
+    """Throw the whole set away; Sift made it and can fetch it all again."""
     root = directory(settings)
     shutil.rmtree(root, ignore_errors=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
     forget_devices()
@@ -424,14 +286,7 @@ def _unpack_all(root: Path, files: list[tuple[Wheel, Path]]) -> None:
 
 
 def _unpack(root: Path, wheel: Wheel, archive: Path) -> None:
-    """Unzip one package into the folder, and refuse anything this is not equipped to install.
-
-    A wheel is a zip, and for THIS pinned set installing one really is unzipping it: every package
-    in it is a directory of files plus its own metadata, with no scripts, no headers and no data
-    section. That is checked rather than assumed: a `.data` directory means a package whose files
-    have to be sorted into several destinations, and unzipping one of those puts libraries where
-    nothing will look for them and reports success. If a future pin brings one, this stops.
-    """
+    """Unzip one package, refusing a `.data` section this cannot install correctly."""
     with zipfile.ZipFile(archive) as bundle:
         for member in bundle.namelist():
             first = member.split("/", 1)[0]
@@ -440,10 +295,7 @@ def _unpack(root: Path, wheel: Wheel, archive: Path) -> None:
                     f"the {wheel.name} package has to be installed by a package installer, and "
                     "Sift only knows how to unpack the simple kind. Nothing was installed."
                 )
-            # Every member's place is proved inside the folder before anything is written: a name
-            # with a drive, a separator of the other system, a `..`, or one that resolves out of
-            # the folder is refused rather than repaired, since this set is pinned by digest and a
-            # member like that means the file is not what was pinned.
+            # Each member's place is proved inside the folder before anything is written.
             parts = member.rstrip("/").split("/")
             if any(part in ("", ".", "..") or ":" in part or "\\" in part for part in parts):
                 raise AccelError(f"the {wheel.name} package names a file outside the folder.")
@@ -456,12 +308,10 @@ def _unpack(root: Path, wheel: Wheel, archive: Path) -> None:
         bundle.extractall(root)
 
 
-#: The model the proof runs. It comes WITH the runtime (every build ships these three tiny files
-#: for its own tests), so there is nothing to fetch, nothing to add to the installer, and nothing
-#: that can go stale against the runtime it is proving.
+#: A model every runtime build ships for its own tests, so nothing is fetched.
 _PROOF_MODEL = "mul_1.onnx"
 
-#: Long enough for a first CUDA context on a cold driver, which is seconds rather than milliseconds.
+#: Long enough for a first CUDA context on a cold driver.
 _PROOF_TIMEOUT = 120.0
 
 _PROOF = """
@@ -490,14 +340,13 @@ print(json.dumps({"ok": True, "version": onnxruntime.__version__}))
 
 
 async def works(settings: Settings) -> str | None:
-    """Prove the card really runs a model, in a process of its own (see the module's note).
-    None when it does, a reason when it does not."""
+    """Prove the card runs a model, in a process of its own; None when it does, else a reason."""
     if not installed(settings):
         return "The graphics-card runtime is not installed."
 
     argv = [sys.executable, "-c", _PROOF, str(directory(settings)), _PROOF_MODEL]
     try:
-        # The one limit covers starting the proof too, which waits on the pool an import fills.
+        # The limit covers starting the proof too.
         finished = await asyncio.wait_for(
             run_once(argv, time_limit=_PROOF_TIMEOUT), timeout=_PROOF_TIMEOUT
         )
@@ -511,8 +360,7 @@ async def works(settings: Settings) -> str | None:
     if finished.returncode == 0:
         log.info("ml.accel.proved", pin=PIN)
         return None
-    # The last line, because a failing runtime writes pages of its own diagnostics first and the
-    # sentence a person needs is at the end of them.
+    # A failing runtime writes pages first; the sentence a person needs is at the end.
     said = _readable(finished.stderr or finished.stdout)
     log.warning("ml.accel.proof_failed", detail="\n".join(said[-8:])[:800])
     return (
@@ -521,54 +369,26 @@ async def works(settings: Settings) -> str | None:
     )
 
 
-#: Anything that is not ordinary printable text, in a sentence that came from another program.
-#:
-#: A byte that is not valid UTF-8 becomes U+FFFD, which reaches the screen as a box in front of an
-#: otherwise perfectly good sentence and reads as Sift having garbled its own message. Control
-#: characters do the same more quietly. Both are taken out HERE rather than in the interface,
-#: because this is where a person's sentence is being built out of another program's bytes.
+#: Non-printable text from another program, removed here where a person's sentence is built.
 _UNREADABLE = re.compile(r"[^\x20-\x7e]+")
 
-#: The colour codes a terminal would have eaten. The escape itself is a control character and is
-#: gone by the time this runs; what is left is the `[1;31m` that followed it, in the middle of a
-#: sentence somebody is trying to read.
+#: The colour codes left once the escape character is gone.
 _COLOUR = re.compile(r"\[[0-9;]*m")
 
 
 def _readable(raw: bytes) -> list[str]:
-    r"""The child's output as lines, in the two encodings it arrives in.
-
-    ONE STREAM, TWO ENCODINGS, and the second one is why this is not a plain `decode`. The runtime
-    is a C++ library and writes its diagnostics as WIDE characters, so each letter arrives followed
-    by a zero byte; Python's own last words on the same stream are ordinary UTF-8. Decoded as one or
-    the other, half the output is unreadable, and the unreadable half can be the half that says
-    what is actually wrong.
-
-    Dropping the zero bytes makes both halves readable at the same time, because everything either
-    of them says is ASCII. It is the smallest thing that is true of both rather than a guess about
-    which one a given run produced.
-    """
+    r"""The child's output as lines; dropping zero bytes reads both its wide and UTF-8 halves."""
     return raw.replace(b"\x00", b"").decode("utf-8", "replace").strip().splitlines()
 
 
-#: What a line looks like when it names the REAL failure rather than the consequence.
-#:
-#: The proof script's own last words are "the card was refused and the processor was used instead",
-#: which is true and is a summary of what happened, not a reason, and read on a settings screen it
-#: is a sentence about a graphics card. The reason comes earlier, a line such as
-#: `cublasLt64_13.dll ... is missing`, which is a sentence somebody can act on and is not about a
-#: card at all. So a line that names a load failure wins over the last line.
+#: A line naming the real load failure, preferred over the summarising last line.
 _A_REASON = re.compile(
     r"error loading|onnxruntimeerror|is missing|cannot find|failed to create", re.I
 )
 
 
 def _last_sentence(lines: list[str]) -> str:
-    """The line that best says WHY, made safe to put on a screen.
-
-    The last non-empty line is the summary and is the fallback. A line naming a load failure is
-    preferred over it, because that is the one with the answer in it.
-    """
+    """The line that best says why, made safe to put on a screen."""
     cleaned = [_COLOUR.sub("", _UNREADABLE.sub(" ", line)).strip() for line in lines]
     kept = [line for line in cleaned if line]
     for line in reversed(kept):

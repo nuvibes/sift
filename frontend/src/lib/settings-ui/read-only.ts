@@ -1,29 +1,4 @@
-/*
- * THE PANES ABOUT THE COMPUTER SIFT RUNS ON, and what a phone's width gets of each.
- *
- * Seven things in Settings are about that computer rather than about the library or the person
- * looking at it. Each was decided once, here, for a phone, and the reason is the decision:
- *
- * - Performance (with the graphics card on it): READ ONLY. What the computer is and how Sift is
- *   doing on it is worth reading anywhere; the self-test loads that computer for a minute, its
- *   answers change how hard Sift works it, and installing or removing a graphics card's pack
- *   restarts Sift, which drops the phone's own connection in the middle of the press.
- * - Backup and restore: READ ONLY. A backup saved to a phone puts the library's whole record (the
- *   names, the tags, the faces) in the phone's own storage, where Sift can never erase it, which is
- *   the same reason Sift keeps no offline copy on a phone; a restore replaces the library.
- * - Maintenance: READ ONLY. Every press on it runs for minutes against the library's database, and
- *   some cannot be stopped once started; it is started where the computer can be watched.
- * - Updates: not held here, because a browser can already only read it: the install press is the
- *   desktop application's (`bridge.canApplyUpdate`), and the licence and notices at its foot must
- *   stay reachable everywhere.
- * - Storage folders and Network sharing: already not offered in any browser, a phone included:
- *   both are the desktop application's (`bridge.canMoveStorage`, `bridge.canShareOnNetwork`), and
- *   switching sharing off from a phone would cut the phone off mid-press.
- *
- * READ ONLY means every row still says what it is set to, and nothing on the pane changes it: a
- * row's control is drawn disabled and a row whose control is a press draws no press. The pane says
- * so once, under its title. A link to another pane still goes there.
- */
+/* THE PANES ABOUT THE COMPUTER SIFT RUNS ON, and what a phone's width gets of each. */
 import { getContext, setContext } from 'svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 

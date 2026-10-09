@@ -1,14 +1,4 @@
-/* Where Sift keeps its own two folders, and moving them somewhere else.
- *
- * This is the screen in front of the most destructive thing the shell can be asked to do, and every
- * claim below is decided in the markup where no shell test can see it.
- *
- * The one that matters most is the refusal. `moveStorage` answers three ways and they are three
- * different situations: it worked, it could not (and the sentence says which folder was wrong), or
- * the person closed the picker, which is not a failure and must leave no trace. A refusal that
- * became a toast would be gone by the time somebody was choosing the next folder, which is the one
- * moment it is read.
- */
+/* Where Sift keeps its own two folders, and moving them somewhere else. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -115,8 +105,7 @@ it('draws nothing in a browser, where the folders are on somebody else s compute
 });
 
 /* Where a file SAVED OUT of Sift lands: a folder on this device that nothing is imported from,
-   beside the two Sift keeps for itself. Drawn by Folders, and only where the shell can choose
-   one. */
+   beside the two Sift keeps for itself. */
 it("draws where saved files go under Sift's own folders, where the shell can choose one", async () => {
 	canChooseDownloadFolder.mockReturnValue(true);
 	downloadFolder.mockResolvedValue({ path: 'D:\\Saved', chosen: true });

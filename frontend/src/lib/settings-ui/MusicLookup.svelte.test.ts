@@ -1,12 +1,4 @@
-/* Song names on the Music section: the one switch that sends a file's sound to AcoustID.
- *
- * What is worth pinning is what makes it safe to have on the screen at all. It is off unless the
- * server says it is on, and the switch sits under the sentence saying what it sends, in the
- * server's words and never folded away. The key goes into a password box, goes out through its own
- * route, and is never drawn again: the block says a key is saved, and nothing more. The switch
- * and the route are written through the ordinary settings write, and the test of the key says what
- * came back in the server's words.
- */
+/* Song names on the Music section: the one switch that sends a file's sound to AcoustID. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { words as wordsOn } from '$lib/design/testing.svelte';
@@ -283,9 +275,7 @@ it('puts the switch back when the server refuses it', async () => {
 });
 
 it('asks AcoustID about nothing itself: the lookup is a task, pressed on Tasks', async () => {
-	/* Turning the switch on says what MAY be sent. When anything is sent is the lookup task's own
-	 * When, and its press is on Tasks: this block draws no press that sends the library's
-	 * fingerprints, and says so in the line under the switch. */
+	/* Turning the switch on says what MAY be sent. */
 	const OWED = { on: true, key_set: true, key_ready: true, route: null, owed: 12 };
 	const post = vi.spyOn(api, 'post');
 	await shown(OWED);
@@ -298,9 +288,8 @@ it('asks AcoustID about nothing itself: the lookup is a task, pressed on Tasks',
 });
 
 it('reads its counts again as the work moves, on the work bell and the library bell', async () => {
-	/* A block that re-read only when a setting moved would leave the count beside the lookup task
-	 * standing still through a whole run. Every answer kept rings the work bell, and a named song
-	 * the library bell. */
+	/* A block that re-read only when a setting moved would leave the count beside the lookup
+	 * task standing still through a whole run. */
 	let owed = 63;
 	await shown({ on: true, key_set: true, key_ready: true, route: null, owed });
 	const lookups = () =>

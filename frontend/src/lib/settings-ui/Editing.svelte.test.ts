@@ -1,8 +1,4 @@
-/* Editing: what the editor makes, and how big a smaller copy is.
- *
- * Two headings and nothing else. The confirmations are on General, so none is drawn here, and the
- * compression group says once what the four sizes are for while each size keeps its own line
- * saying whose upload limit it starts at. */
+/* Editing: what the editor makes, and how big a smaller copy is. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';

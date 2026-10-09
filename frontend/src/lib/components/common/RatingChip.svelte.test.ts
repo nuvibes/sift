@@ -1,14 +1,5 @@
-/*
- * The rating's one dressing, and the three things it owes.
- *
- * There is one look, held to the heart's own rules, because the heart has no second dressing and
- * the two halves of one opinion must read as a pair.
- *
- * Pinned here is what a screenshot would not settle: the glyph is unfilled until there is a rating
- * (a filled yellow star over an unrated file says it is rated), the mark still reads the value out
- * rather than hiding it behind the menu, and pressing it opens the chooser. The chooser's answers
- * are `RatingChoices`', tested beside it.
- */
+/* The rating's one dressing, held to the heart's rules: unfilled until rated, the value read out,
+ * and a press opens the chooser (`RatingChoices`, tested beside it). */
 import { flushSync, mount, unmount, type ComponentProps } from 'svelte';
 import { afterEach, expect, it, vi } from 'vitest';
 
@@ -40,10 +31,7 @@ function trigger(): HTMLButtonElement {
 }
 
 it('is a bare mark with no pill at all, wherever it is drawn', () => {
-	/*
-	 * A bare glyph like the heart, not a bordered chip. `Chip` puts its own class on what it draws,
-	 * so the absence of that class is the assertion.
-	 */
+	// A bare glyph like the heart: no `Chip` class.
 	render({ rating: 8, label: 'This file' });
 
 	expect(host?.querySelector('.chip')).toBeNull();
@@ -51,10 +39,7 @@ it('is a bare mark with no pill at all, wherever it is drawn', () => {
 });
 
 it('draws the OUTLINE glyph while there is no rating', () => {
-	/*
-	 * `Icon` marks a filled glyph with the `filled` class; an unrated star must not wear it, or the
-	 * loudest thing on an unrated row is a mark saying a rating is there.
-	 */
+	// An unrated star never wears `filled`.
 	render({ rating: null, label: 'This file' });
 
 	expect(host?.querySelector('.star .filled')).toBeNull();
@@ -67,9 +52,7 @@ it("fills the glyph once there is one, which is the heart's rule exactly", () =>
 });
 
 it('still reads the rating out, which a heart has no equivalent of', () => {
-	/* The one place the pair genuinely differ: a heart is one bit and says everything by being
-	   filled, and a rating is ten. A mark with no figure would be a readout you cannot read without
-	   opening the menu, which is not a readout. */
+	// A rating is ten values, so the figure is drawn.
 	render({ rating: 8, label: 'This file' });
 
 	expect(host?.querySelector('.figure')?.textContent).toBe('4');
@@ -77,8 +60,7 @@ it('still reads the rating out, which a heart has no equivalent of', () => {
 });
 
 it('says so plainly when there is no rating yet', () => {
-	// No figure to draw, and the star alone is a complete sentence to look at and half of one to
-	// hear, so the label is the whole of it.
+	// Unrated, the label is the whole of it.
 	render({ rating: null, label: 'This file' });
 
 	expect(host?.querySelector('.figure')).toBeNull();
@@ -86,18 +68,14 @@ it('says so plainly when there is no rating yet', () => {
 });
 
 it("takes the heart's own sizes, so the pair cannot drift apart", () => {
-	/* The star stands beside a heart on every surface that draws both. An 18px heart beside a 20px
-	   star reads as two unrelated controls, so the size is one list shared with
-	   `Heart` and set at the call site for both together. */
+	// The size list is Heart's, so the pair is set together.
 	render({ rating: 8, size: 20, label: 'This file' });
 
 	expect(host?.querySelector('.star .icon')?.classList.contains('size-20')).toBe(true);
 });
 
 it('opens the chooser when the mark is pressed', async () => {
-	/* The half that is easy to lose while changing how a trigger is drawn: the menu still opens
-	   when the mark is pressed. Waited for rather than read immediately: the surface is portalled
-	   and positioned, so it arrives a frame after the press. */
+	// The chooser still opens; waited for, as it is portalled.
 	render({ rating: 8, label: 'This file' });
 
 	trigger().click();
@@ -109,8 +87,7 @@ it('opens the chooser when the mark is pressed', async () => {
 });
 
 it('has nothing to press at all when the rating is only being shown', () => {
-	// A readout with no chooser behind it. A disabled control is the honest drawing of that, rather
-	// than one that opens a menu whose answers would be refused.
+	// Read only: a disabled readout, not a menu of refused answers.
 	render({ rating: 8, readonly: true, label: 'This file' });
 
 	expect(trigger().disabled).toBe(true);

@@ -1,16 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Running the face models, on a device chosen when they are loaded.
-
-The machinery is the kernel's: choosing a device, refusing to pretend when it is missing,
-verifying a file before loading it, and holding a prepared session so it is not rebuilt per call.
-A second feature needed all of it and a feature may not import another feature, so it lives in one
-place and both ask for it.
-
-**What is here is the word "Recognition".** The kernel's copy will not invent a subject for a
-sentence a person has to act on: "a graphics card is not available" says nothing about what was
-trying to use one, on a machine where two different features might have been. So the caller
-supplies the word, and this is where the face pass supplies its own.
-"""
+"""Running the face models on a device chosen when they are loaded: the kernel's machinery, with
+"Recognition" supplied as the subject of its sentences."""
 
 from __future__ import annotations
 
@@ -43,11 +33,7 @@ log = get_logger(__name__)
 #: How this feature names itself in a message about a device it cannot use.
 FEATURE = "Recognition"
 
-#: What the models are working on at this moment: the file a scan is reading, or the picture a
-#: starter is checked from. Set by the pass, read only when the card is lost under it, so the log
-#: names the input a lost device was handed. The kernel's own line says the device and the error,
-#: and nothing about what the models were asked; without this a fault that recurs on one input
-#: could not be traced back to it.
+#: What the models are working on now, so the log of a lost device names its input.
 IN_FLIGHT: ContextVar[str | None] = ContextVar("faces_in_flight", default=None)
 
 
@@ -86,9 +72,8 @@ class Runner(_Runner):
 
 
 class ChildRunner(_ChildRunner):
-    """The same models, in a process of their own, below normal priority. What the service runs
-    on; `Runner` above is the same surface in this process, for a test that stands the runtime
-    in. See `sift.kernel.ml.child` for why the process is the unit."""
+    """The same models in a process of their own, below normal priority: what the service runs on
+    (`sift.kernel.ml.child`)."""
 
     def __init__(
         self, settings: Settings, hardware: HardwareReport, *, device: str = "cpu"

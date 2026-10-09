@@ -17,13 +17,8 @@ from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
 from sift.slices.auth.crypto import generate_master_key
 from sift.testing.auth import establish_session
 
-#: The check route's own module, reached by name rather than imported.
-#:
-#: `from sift.slices.download import router` does NOT give it. The package re-exports the slice's
-#: `APIRouter` under that same name, so the attribute wins over the submodule and every spelling of
-#: the plain import (including the string form monkeypatch takes) lands on the router object and
-#: fails with "has no attribute". This is the one spelling that always means the module.
-download_api = importlib.import_module("sift.slices.download.router")
+#: The cookie check route's own module, where its network call is patched.
+download_api = importlib.import_module("sift.slices.download.router_connections")
 
 
 # Every endpoint this slice mounts, with a body where one is needed. Nothing here is reachable

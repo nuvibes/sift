@@ -1,11 +1,4 @@
-/* THE RECORD'S TWO FILTERS, read back.
- *
- * The feed's LINES are the server's (built by the one builder per act every History screen uses
- * and sent as pieces), so nothing here says a sentence, and the sentences are tested where they
- * are built (`src/sift/kernel/tests/test_sentences.py`). What the browser still says about an act
- * is its name in the Action filter and a kind's name in the Type filter;
- * `test_the_feed_says_every_word.py` holds both tables to the kernel's lists.
- */
+/* THE RECORD'S TWO FILTERS, read back. */
 import { describe, expect, it } from 'vitest';
 
 import * as ledger from './ledger';

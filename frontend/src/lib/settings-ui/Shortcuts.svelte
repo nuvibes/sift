@@ -1,24 +1,5 @@
 <script lang="ts">
-	/*
-	 * Every key the application answers to, grouped by where it works.
-	 *
-	 * ## Why it is generated and not written
-	 *
-	 * A written list does not change when the thing it describes does: a hand-typed sheet beside
-	 * the code that reads the keys will say the numbers go "1 to 4" while the code takes 1 to 9.
-	 * Every row here comes out of the same declarations the key handlers match against, so a
-	 * shortcut that is added, moved or removed changes this page and cannot fail to.
-	 *
-	 * `shortcutsByArea` leaves out an area with nothing in it, so there is no heading over an empty
-	 * list. This file does not know a key exists.
-	 *
-	 * ## Read-only, and that is the whole of it today
-	 *
-	 * Nothing here is a preference: no shortcut can be changed. It is a section rather than a page
-	 * because it is a thing you look up while using the app, and Settings is where people look for
-	 * a list of what something can do. When a binding does become changeable, the row is where the
-	 * control goes, and the grouping and the order are already right.
-	 */
+	/* Every key the application answers to, grouped by where it works. */
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 	import KeyRows from '$lib/components/KeyRows.svelte';
 	import { shortcutsByArea } from '$lib/shell/shortcuts';
@@ -46,8 +27,7 @@
 {/each}
 
 <style>
-	/* The headings are `app.css`'s, like every other pane's. Only the room under the opening
-	   sentence is this file's, and it is the same step the other panes leave. */
+	/* The headings are `app.css`'s, like every other pane's. */
 	header {
 		margin-block-end: var(--space-6);
 	}

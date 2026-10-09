@@ -1,20 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What runs for a file the moment it lands in staging, before anything reads it from the library.
+"""Work run for a file the moment it lands in staging, while reading it end to end is cheap.
 
-Everything a person hands Sift waits in Sift's own staging directory before it is copied into a
-library folder, which is often a network share. For work that reads a file END TO END this is
-the one affordable moment: local disk instead of the share's one lane. Features register work here
-at import (no slice imports another), fired once per landing from the function every origin uses.
-
-A hook gets the file's identity, not an asset id: the bytes may be a file already held, an asset
-written a moment later, or nothing if the copy fails, and the identity is true in every case. It
-also gets the destination root (None if unknown), the only folder there is to ask about per-folder
-switches while the file has no place yet. A hook that raises is logged and the rest run: the
-landing is what was asked for, and anything left undone is picked up later by its own pass.
-
-The handle is installed once by the composition root (as `kernel/lanes.py` does), since the
-import pipeline holds no database; nothing installed means nothing runs.
-"""
+A hook gets the identity and destination root; one that raises is logged and never fails it."""
 
 from __future__ import annotations
 
@@ -39,28 +26,22 @@ class Landing(Protocol):
     async def landed(
         self, path: Path, identity: str, settings: Settings, *, root_id: str | None
     ) -> None:
-        """Do it. Raising is allowed and is logged; it never fails the landing.
-
-        `root_id` is the library root the file is being placed in, None where none is known.
-        See the module docstring.
-        """
+        """Do it; raising is logged and never fails the landing; `root_id` may be None."""
         ...
 
 
-#: How to build one, given the handle it needs: registration happens at import, before a database.
+#: Registration happens at import, before a database exists.
 Builder = Callable[[Database], Landing]
 
 _REGISTERED: dict[str, Builder] = {}
 
-#: The handle the composition root installed, and the landings built against it; None until boot.
 _DATABASE: Database | None = None
 _BUILT: dict[str, Landing] = {}
 
 
 @dataclass(frozen=True, slots=True)
 class KnownShape:
-    """What Sift already holds about a landed file's bytes: its kind, and the probe's answer
-    where the probe has run. Read for a landing, which has no viewer to scope a read to."""
+    """What Sift holds about a landed file's bytes: its kind and the probe's answer, if run."""
 
     media_type: str
     probed_at: int | None
@@ -68,11 +49,7 @@ class KnownShape:
 
 
 async def known_shape(database: Database, identity: str, settings: Settings) -> KnownShape | None:
-    """The kept shape of the file these bytes belong to, or None when nothing is recorded yet.
-
-    The one library read a landing may make, the file's own row by identity; in the kernel because
-    a feature never reads the content store itself.
-    """
+    """The kept shape of these bytes' file, read by identity, or None when nothing is recorded."""
     from sift.kernel.content.identity import ContentStore
 
     asset = await ContentStore(database, settings).resolve_by_identity(identity)
@@ -96,22 +73,14 @@ def registered_landings() -> dict[str, Builder]:
 
 
 def install(database: Database | None) -> None:
-    """Give the registry the handle its landings are built against, or take it away.
-
-    Once at boot, or None from a test. Built landings are dropped with it, so none stays bound to a
-    database that has gone.
-    """
+    """Give the registry its database at boot, or None in a test; built landings are dropped."""
     global _DATABASE
     _DATABASE = database
     _BUILT.clear()
 
 
 async def landed(path: Path, identity: str, *, settings: Settings, root_id: str | None) -> None:
-    """Run every registered landing for a file that has just arrived in staging.
-
-    Awaited, not launched: the caller removes staging as soon as the import returns. `root_id` is
-    required, None included, so a forgetful caller cannot silently become "no destination".
-    """
+    """Run every landing, awaited, as the caller removes staging once the import returns."""
     if _DATABASE is None:
         return
     for name, builder in _REGISTERED.items():

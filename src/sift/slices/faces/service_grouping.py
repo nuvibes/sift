@@ -17,35 +17,17 @@ class GroupingMixin(FaceServiceBase):
     """Building, and topping up, the piles of unnamed faces."""
 
     async def regroup(self, *, full: bool = False) -> int:
-        """Pile up every appearance nobody has been attached to.
+        """Pile up every appearance nobody has been attached to, leaving set-aside and hand-built
+        piles alone.
 
-        Piles somebody set aside are left exactly as they are, and their faces are kept out of the
-        grouping, or every re-group would resurrect what was ignored.
-
-        Piles somebody built by merging or splitting get the same treatment, for the same reason
-        one step over: re-clustering their faces would scatter a decision a person made back into
-        whatever the arithmetic thinks, which is precisely what they overrode.
-
-        **Two ways, and the ordinary one is the cheap one.** Re-clustering every unnamed face from
-        scratch after every batch compares every pair, grows with the square of the library (about
-        five seconds a job at ten thousand faces), and gives every pile a fresh identity, so a
-        screen showing one loses it. Incrementally, the faces in no pile are compared against the
-        piles that exist and join the nearest one
-        that clears the bar; the rest are grouped among themselves into new piles. Existing piles
-        keep their identity and everything in them. A batch against the piles is one small
-        multiply.
-
-        `full` groups every unnamed face from scratch, and is for the moments the piles
-        themselves are in question: the end of a sweep, every description having been measured
-        again by a different model, and the press of the button. Even then a rebuilt pile keeps
-        the identity of the old pile whose middle it is nearest. See `carry_identities`.
+        Incremental by default, so piles keep their identity; `full` re-clusters from scratch
+        and keeps each rebuilt pile's nearest old identity (`carry_identities`).
         """
         await self._require_enabled()
         configured = await self.configuration()
         if not full:
             return await self._group_the_new(configured)
-        # And the faces turned past the bar's angle, which wait on their own files to be named
-        # or asked about: see `_group_the_new`.
+        # And the faces turned past the bar's angle, which are never grouped.
         kept = (
             await self._store.ignored_track_ids()
             | await self._store.by_hand_track_ids()
@@ -62,19 +44,11 @@ class GroupingMixin(FaceServiceBase):
 
         vectors = [vector for _, vector in pending]
         previous = await self._store.open_piles_for_grouping()
-        # Off the event loop, because Sift is one process with one loop and arithmetic that holds it
-        # freezes every screen, every video and the live job feed for as long as it runs.
-        #
-        # `pile_up` takes the uncapped route through the clustering, which only joins groups that
-        # clear the bar and splits into islands: a hundred milliseconds at a couple of thousand
-        # faces, but about five seconds at ten thousand, growing with the square of the pool. That
-        # is not nothing on a loop serving video. It runs from scratch only when asked to; the
-        # ordinary pass is `_group_the_new`. See `GALLERY_SETTLE_SECONDS`.
+        # Off the loop: from scratch this grows with the square of the pool.
         groups = await asyncio.to_thread(clustering.pile_up, vectors)
         made: list[tuple[Vector, list[str]]] = []
         for members in groups:
-            # Every group has a member and every size shows now (`MIN_PILE_SIZE` is one); the
-            # question is kept for the day a floor comes back.
+            # Every size shows now (`MIN_PILE_SIZE` is one).
             if not clustering.worth_showing(len(members)):  # pragma: no cover (floor is one)
                 continue
             middle = tracking.centroid([vectors[index] for index in members])
@@ -89,19 +63,9 @@ class GroupingMixin(FaceServiceBase):
         return len(made)
 
     async def _group_the_new(self, configured: Configured) -> int:
-        """The incremental grouping: place the faces in no pile, and touch nothing else.
-
-        Returns how many piles were joined or made. A face joins the nearest existing pile
-        that clears the bar; the faces that join none are grouped among themselves, which is a
-        small clustering rather than a library-wide one. Piles emptied by naming are tidied
-        away, as the full pass does.
-        """
+        """The incremental grouping: place the faces in no pile, and touch nothing else."""
         piles = await self._store.open_piles_for_grouping()
-        # **A face turned past the bar's angle is in no group.** It is kept to be named on its file
-        # and asked about by a match, never to decide anything alone, and a group is a way of
-        # deciding many together: one name given to a group names every face in it. A turned
-        # face's nearest face of SOMEBODY ELSE clears the bar for joining about twice as often as a
-        # square-on face's does, so it would also carry strangers in.
+        # A turned face is in no group: one name for a group would name it too.
         turned = await self._store.turned_away(configured.bar.min_frontality)
         loose = [
             one for one in await self._store.unpiled(configured.recognizer) if one[0] not in turned
@@ -123,8 +87,7 @@ class GroupingMixin(FaceServiceBase):
         made: list[str] = []
         if left:
             groups = await asyncio.to_thread(clustering.pile_up, [vectors[index] for index in left])
-            # The same floor the full pass applies: a group too small to be worth showing is not
-            # written, and its faces are offered to the next pass again.
+            # A group too small to show is not written, and its faces wait for the next pass.
             made = await self._store.add_piles(
                 [
                     (

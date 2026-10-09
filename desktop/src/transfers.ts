@@ -1,20 +1,4 @@
-/* The main process's half of a transfer: starting one, following it, and noticing when it dies.
- *
- * WHY THERE IS A SECOND PROCESS AT ALL is written at the top of transfer.ts and is the whole
- * reason this file exists: a drop being taken blocks the main thread inside a stream read, so the
- * bytes that read is waiting for cannot also be produced by the main thread.
- *
- * ONE PROCESS, NOT ONE PER TRANSFER. Starting a process costs tens of milliseconds and a drag is
- * meant to feel like a gesture, not like launching something. Several transfers share it; each is
- * told apart by an id, and the process is long-lived because there is nothing in it worth tearing
- * down between drags.
- *
- * THE FAILURE THAT MATTERS IS THE PROCESS DYING. A transfer that fails reports it and leaves the
- * marker file a receiver watches for. A transfer whose PROCESS has gone cannot do either, so the
- * marker is left here, from the outside, for every job that was in flight. Without that, a receiver
- * sits on a file that has stopped growing until its patience runs out and then writes out whatever
- * arrived.
- */
+/* The main process's half of a transfer: starting one, following it, and noticing when it dies. */
 
 import { utilityProcess } from 'electron';
 import * as path from 'node:path';
@@ -34,8 +18,7 @@ export type Fork = () => Child;
 
 const forkWorker: Fork = () => {
 	/* `__dirname`, so this is the compiled worker beside the compiled main process: inside the
-	 * asar in an installed copy, and in `dist/` from a checkout. Naming it any other way is how a
-	 * second process quietly fails to start only in the shipped build. */
+	 * asar in an installed copy, and in `dist/` from a checkout. */
 	const child = utilityProcess.fork(path.join(__dirname, 'transfer-worker.js'), [], {
 		serviceName: 'sift-transfer'
 	});
@@ -83,9 +66,7 @@ export class TransferPool {
 		child.on('message', (message: TransferMessage) => this.heard(message));
 		child.on('exit', () => {
 			this.child = null;
-			/* Everything that was in flight is now a transfer nobody will ever finish. Each one gets
-			 * its failure marker, because the receiver on the other side of it has no other way to
-			 * learn the difference between a writer that is slow and a writer that is gone. */
+			/* Everything that was in flight is now a transfer nobody will ever finish. */
 			for (const id of [...this.waiting.keys()]) this.finish(id, null, true);
 		});
 		return child;

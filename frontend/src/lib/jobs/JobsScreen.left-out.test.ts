@@ -1,7 +1,5 @@
-/*
- * A pass with nothing left but files its products gave up on says how many, and the words open
- * those files: the page Import tasks' count opens, one press from Activity.
- */
+/* A pass with nothing left but files its products gave up on says how many, and the words open
+ * those files: the page Import tasks' count opens, one press from Activity. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import type { JobsPage } from './family';

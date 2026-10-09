@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The review surface. Admin-only, and the server is what says so.
-
-`require_admin` sits on all four routes. That is necessary and it is not sufficient, which is why
-the service resolves every row against the user asking as well: an admin can conceal things from
-themselves, and a list built for "an admin" rather than for *this* admin would show them back what
-they hid.
-
-Nothing here applies anything on its own. There is no auto-apply setting in this feature and there
-is no route that would need one: a folder name is far weaker evidence than the fingerprint match
-that earned one elsewhere, and a wrong attribution in a library nobody is auditing gives no sign
-which entries to distrust.
-"""
+"""The folder review routes; admin-only, and every row is still resolved against this admin."""
 
 from __future__ import annotations
 
@@ -62,30 +51,12 @@ async def list_suggestions(
     start: Annotated[str | None, Query(alias="from")] = None,
     near: Annotated[int | None, Query(ge=0)] = None,
 ) -> ProposalList:
-    """The folders Sift thinks it can name, and what it thinks each one is.
-
-    The total is the total of what survived scoping rather than the number of rows there are. A
-    count larger than the list would publish, in the difference, how many folders this user is
-    not being told about, which is the one thing concealment exists to prevent.
-
-    `from` names a row to start the page at, instead of an offset. The wall pages by whole rows,
-    so how many cards fit depends on the size of the screen, which means a page NUMBER is not a
-    durable thing to put in an address and the row somebody was looking at is. Resolved against this
-    same scoped, narrowed list, because a position only means anything in the list it came from.
-
-    A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-    rather than refusing. Deleted, renamed out of
-    the current narrowing, answered by somebody else, or simply not this user's to see all give
-    the same answer, which is what stops a link being a way to ask whether something is there. On
-    a queue it is also the ordinary case: answering a question is what takes it off the list.
-    """
+    """The folders Sift thinks it can name, scoped to this viewer; `from` resumes at a row."""
     if start is not None:
         at = await service.position_of(viewer, start)
         offset = resume_at(at, near)
     page = await service.pending(viewer, limit=limit, offset=offset)
-    # The stills this page draws, asked ONCE for the page rather than per picture. Without the
-    # token every thumbnail here would be addressed bare, which the server answers the careful way,
-    # so a card of twenty-four dissenting files would be twenty-four conditional requests a visit.
+    # Cache tokens for the page's stills, asked once for the page.
     art = await service.art_of(
         [
             asset_id
@@ -133,15 +104,8 @@ async def filed(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> FiledList:
-    """What was filed under somebody without anybody being asked.
-
-    Its own route rather than a field on the list, because the list is outstanding work and this is
-    work already done, and an empty list of questions with a record of what was answered silently
-    beside it is the whole point.
-    """
-    # `asdict`, not `vars`. Every dataclass in this slice declares `slots=True`, and an object with
-    # slots has no `__dict__` for `vars` to read, so `vars` would raise as soon as there was
-    # anything at all to report, while answering perfectly on an install where no pass had run yet.
+    """What was filed under somebody without anybody being asked."""
+    # `asdict`, not `vars`: these dataclasses have slots and no `__dict__`.
     return FiledList(filed=[FiledView(**asdict(one)) for one in await service.filed(viewer)])
 
 
@@ -154,21 +118,7 @@ async def filed_from_filenames(
     start: Annotated[str | None, Query(alias="from", max_length=200)] = None,
     near: Annotated[int | None, Query(ge=0)] = None,
 ) -> FilenameFilingList:
-    """What a file's own name said about where it came from, grouped by the username it named.
-
-    Declared BEFORE `/suggestions/{claim_id}/...`, and that is load-bearing rather than tidy: those
-    are POSTs and this is a GET, so nothing collides today, and the ordering is what keeps that true
-    the day one of them grows a read.
-
-    A report and never a question: nothing on this page is waiting on anybody, and what it offers is
-    the undo of one file at a time, or of one whole username (`take_back_username`). See
-    `FiledFromFilenamesQueue` for why the pass applies itself.
-
-    `from` names the username a page starts at: the group the page was left at, carried in the
-    tab's address so the way back lands on the same page. Taking back every filing under a username
-    takes it off this list, so a `from` naming nothing is answered with the page it was on
-    (`near`), or the top. See `resume_at`.
-    """
+    """What files' own names said, grouped by username; declared before the `{claim_id}` routes."""
     if start is not None:
         offset = resume_at(await service.filing_position(viewer, start), near)
     groups, total = await service.filings_by_username(viewer, limit=limit, offset=offset)
@@ -203,13 +153,7 @@ async def take_back_username(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> UsernameTakenBack:
-    """No on one row of the filenames page: every file a name filed under this username comes off.
-
-    One decision, recorded by whoever pressed, so the toast's Undo and the record's put every
-    filing back as it was. Only the files this viewer may be shown, the files the row counted.
-    Nothing left to take back answers no files and no record rather than an error: a second
-    press finds the first one's work done.
-    """
+    """No on one filenames row: every name filing under this username comes off, as one decision."""
     taken = await service.take_back_username(viewer, username_id=username_id)
     return UsernameTakenBack(files=taken.files, decision_id=taken.decision_id or "")
 
@@ -223,13 +167,7 @@ async def take_back_folder(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> FolderTakenBack:
-    """Take back, on a row of Added without asking: the person comes off the files the folder pass
-    put them on under this folder, the folder is no longer theirs, and Sift never adds it to them
-    again without asking. One decision, recorded by whoever pressed, whose Undo puts it all back.
-
-    Nothing to take back (a second press, a folder or person this viewer cannot see) answers no
-    files and no record rather than an error, so none of those can be told apart.
-    """
+    """Take back one silent folder filing and refuse it from now on, as one undoable decision."""
     taken = await service.take_back_folder(viewer, folder_id=folder_id, person_id=person_id)
     return FolderTakenBack(files=taken.files, decision_id=taken.decision_id or "")
 
@@ -241,12 +179,7 @@ async def confirm_suggestion(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> ConfirmedView:
-    """Yes, and everything that follows from yes, in one press.
-
-    The files are attributed, the face group is named, the folder's spelling becomes an
-    also-known-as name, a username folder gets its username linked to the person, and the question
-    is never asked again. Making any of that a second press would be the point of this screen missed.
-    """
+    """Yes, and everything that follows from it, in one press."""
     try:
         applied = await service.confirm(viewer, claim_id, skip=body.skip)
     except NotFound as refused:
@@ -272,12 +205,7 @@ async def reject_suggestion(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> FolderSetAside:
-    """Not a person. Remembered permanently, and by name rather than by folder.
-
-    Renaming a folder on disk makes it a different folder as far as Sift is concerned, so a no tied
-    to the folder would come straight back under the new name. Tied to the name it holds wherever
-    that name turns up, which is what "it never comes back" has to mean.
-    """
+    """Not a person: remembered for good, by name rather than by folder."""
     try:
         settled = await service.reject(viewer, claim_id)
     except NotFound as refused:
@@ -292,16 +220,7 @@ async def say_who_a_folder_is(
     service: Annotated[SuggestionService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> ConfirmedView:
-    """Name a folder the reader got wrong, or never asked about, as a person or as a site.
-
-    The other four routes all answer a question Sift asked. This is the only one that starts with a
-    person, and it is the only way a MISS is ever written down: a folder the reader misread or
-    walked past leaves no row at all, so without this the record holds every "you proposed X, wrong"
-    and not one "you missed Y".
-
-    It answers exactly as a confirmation does, because it IS one: the claim is written and then put
-    through the same path, so the attribution, the alias and the username are decided in one place.
-    """
+    """Name a folder the reader got wrong or missed, as a person or a site; answers as a confirm."""
     try:
         applied = await service.say_who_a_folder_is(viewer, folder_id, body.name, kind=body.kind)
     except NotFound as refused:

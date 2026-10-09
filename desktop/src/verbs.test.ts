@@ -1,11 +1,4 @@
-/* The verbs, and above all who is allowed to call them.
- *
- * `chooseFolder` is the whole of the folder-grant mechanism: whatever comes back from it becomes
- * a folder the server-side picker will then list the contents of. So the tests that matter are
- * not "does it return a path" but "whose call is answered": a handler that answered a subframe,
- * or a page that had been navigated somewhere else, would be handing that page the ability to
- * nominate any folder on the machine.
- */
+/* The verbs, and above all who is allowed to call them. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -21,20 +14,13 @@ vi.mock('./paths', async (importOriginal) => ({
 	dragAddonFile: () => FAKE_ADDON
 }));
 
-/* The firewall module really starts PowerShell and really raises an elevation prompt. What these
- * tests are about is the VERB (who is allowed to call it, and which port it passes), so the
- * module itself is stood in for. Its own behaviour is tested in firewall.test.ts. */
+/* The firewall module really starts PowerShell and really raises an elevation prompt. */
 vi.mock('./firewall', () => ({
 	firewallState: vi.fn(async (port: number) => `read:${port}` as unknown as string),
 	openFirewall: vi.fn(async (port: number) => `open:${port}` as unknown as string)
 }));
 
-/* The transfer runs in a second process in the application, and a test must never start one.
- *
- * What is stood in for is only WHERE the work happens: the pool's own behaviour has its own tests
- * in transfers.test.ts, and the transfer's in transfer.test.ts. What these tests are about is the
- * verb: that it starts the transfer without waiting for it, hands the drag the two names, and
- * passes what it hears back to the page. */
+/* The transfer runs in a second process in the application, and a test must never start one. */
 vi.mock('./transfers', () => ({
 	transfers: () => ({
 		start: async (
@@ -53,9 +39,7 @@ vi.mock('./transfers', () => ({
 }));
 
 /* The browser list really reads the Windows registry, and the answer is whatever happens to be
- * installed on the machine the test runs on. What these tests are about is the VERB (who may
- * call it, and that the id it accepts has to be one from this list), so the reading is stood in
- * for. Its own behaviour is tested in browsers.test.ts. */
+ * installed on the machine the test runs on. */
 const BROWSERS = [
 	{ id: 'C:\\Program Files\\Bluebird\\bluebird.exe', name: 'Bluebird' },
 	{ id: 'C:\\Program Files\\Kestrel\\kestrel.exe', name: 'Kestrel' }
@@ -64,10 +48,7 @@ vi.mock('./browsers', () => ({
 	installed: vi.fn(async () => BROWSERS)
 }));
 
-/* The log tail really reads the shell's own log file, wherever this machine keeps it. What the
- * verb does with a count is the whole of what is under test (the file it reads is decided by
- * paths.ts and nothing from a page reaches it), so the read is stood in for and the number it was
- * asked for is what the tests look at. `log` itself stays real: the drag path writes to it. */
+/* The log tail really reads the shell's own log file, wherever this machine keeps it. */
 const SHELL_LOG_ANSWER = {
 	lines: ['one line'],
 	path: 'C:\\Sift\\shell.log',
@@ -79,18 +60,14 @@ vi.mock('./log', async (importOriginal) => ({
 	tail: vi.fn(() => SHELL_LOG_ANSWER)
 }));
 
-/* Applying an update downloads an installer and runs it. What the verb owes is which feed it reads
- * and that the backend is stopped before the launch, so the doing is stood in for. update.test.ts
- * has the feed, the hash and the signature. */
+/* Applying an update downloads an installer and runs it. */
 vi.mock('./update', async (importOriginal) => ({
 	...(await importOriginal<typeof import('./update')>()),
 	applyUpdate: vi.fn(async () => ({ ok: true, version: '0.1.157' }))
 }));
 
-/* This machine's own network interfaces, so the address offered for a second computer is a stated
- * choice rather than whatever the test machine happens to have. Only `networkInterfaces` is
- * replaced: the tests use `os.tmpdir` for a real folder a client-mode drag writes into.
- */
+/* This machine's own network interfaces, so the address offered for a second computer is a
+ * stated choice rather than whatever the test machine happens to have. */
 type StubInterface = { family: string; internal: boolean; address: string };
 const machineInterfaces: Record<string, StubInterface[] | undefined> = {};
 vi.mock('node:os', async (importOriginal) => ({
@@ -254,9 +231,7 @@ describe('the channel', () => {
 		expect(await ipcRenderer.invoke(CHOOSE_FOLDER)).toBe('D:\\Media');
 	});
 
-	/* The one that matters. The preload is attached only to saved origins, but a window keeps its
-	 * channel for as long as it lives and a page can be navigated, so the check has to happen at
-	 * the moment of the call, not at the moment the capability was granted. */
+	/* The one that matters. */
 	it('refuses a page that has been navigated somewhere else', async () => {
 		sender.senderFrame = { url: 'https://example.com/anything', parent: null };
 		folderAnswers.push(['D:\\Media']);
@@ -287,9 +262,7 @@ describe('the channel', () => {
 
 /* --- Taking a file out ------------------------------------------------------------------- */
 
-/* The OLE drag loop itself is not entered here: it needs a hand on a mouse. What these prove is
- * everything around it: who is answered, which origin is asked, and above all WHICH DRAG a
- * client-mode file gets and with what arguments, which is invisible from outside the addon. */
+/* The OLE drag loop itself is not entered here: it needs a hand on a mouse. */
 
 const AN_ASSET = '01HX0000000000000000000007';
 
@@ -312,8 +285,7 @@ describe('startDrag', () => {
 		expect(fetched).toEqual([]);
 	});
 
-	/* THE ORIGIN COMES FROM THE ASKING PAGE, not from a value passed in. That is what makes this
-	 * correct in all three shapes the shell runs in without anything to keep in step. */
+	/* THE ORIGIN COMES FROM THE ASKING PAGE, not from a value passed in. */
 	it('asks the server the page is actually talking to', async () => {
 		/* Re-wired for a DIFFERENT trusted origin, which is the whole point: nothing in the handler
 		 * names an address, so a shell pointed at another machine asks that machine. */
@@ -327,8 +299,7 @@ describe('startDrag', () => {
 		expect(fetched[0]).toBe(`http://192.168.1.9:5171/api/assets/${AN_ASSET}/local-file`);
 	});
 
-	/* A file on THIS machine is dragged where it lies. No copy, whatever its size, which is the
-	 * case that matters most: a library of large clips on the machine running Sift. */
+	/* A file on THIS machine is dragged where it lies. */
 	it('drags a local file by its path, and copies nothing', async () => {
 		fetchAnswers.push(
 			reply({
@@ -342,9 +313,7 @@ describe('startDrag', () => {
 		expect(addon.calls).toEqual([{ verb: 'startDrag', path: 'D:\\library\\clip.mp4' }]);
 	});
 
-	/* A PICTURE THAT SAYS WHERE IT WAS TAKEN IS NEVER DRAGGED AS IT IS. Handing Windows the
-	 * original's path would carry its GPS into whatever chat window it is dropped on. Even a path in
-	 * the answer is not dragged: the copy without the place is fetched and streamed instead. */
+	/* A PICTURE THAT SAYS WHERE IT WAS TAKEN IS NEVER DRAGGED AS IT IS. */
 	it('drags a copy without the place for a file that holds one, never its path', async () => {
 		fetchAnswers.push(
 			reply({
@@ -366,8 +335,7 @@ describe('startDrag', () => {
 
 	/* A file on another machine is one gesture: the drag is entered straight away with a name, a
 	 * size and the file the download is being written into, and the receiving application reads
-	 * that file as it arrives.
-	 */
+	 * that file as it arrives. */
 	it('drags a file on another machine in ONE gesture, as a file still arriving', async () => {
 		fetchAnswers.push(reply({ path: null, filename: 'clip.mp4', size_bytes: 4 }));
 		fetchAnswers.push(reply('data'));
@@ -379,8 +347,7 @@ describe('startDrag', () => {
 		// The name the receiver shows, and the size its own progress bar is drawn from.
 		expect(started?.name).toBe('clip.mp4');
 		expect(started?.total).toBe(4);
-		// The file being written, and where it ends up. Both, because the download may finish before
-		// the receiver gets round to opening it.
+		// The file being written, and where it ends up.
 		expect(started?.partial).toMatch(/clip\.mp4\.partial$/);
 		expect(started?.finished).toMatch(/clip\.mp4$/);
 	});
@@ -396,9 +363,9 @@ describe('startDrag', () => {
 		expect(addon.calls.at(-1)?.total).toBe(-1);
 	});
 
-	/* A LIBRARY ON A NETWORK SHARE. Both machines can see the file, so the second one hands over the
-	   path and nothing crosses the network: the same instant drag as on the machine Sift runs on.
-	   This is the ordinary case for anybody keeping their library on a NAS. */
+	/* A LIBRARY ON A NETWORK SHARE. Both machines can see the file, so the second one hands over
+	   the path and nothing crosses the network: the same instant drag as on the machine Sift
+	   runs on. */
 	it('hands over the share path rather than fetching anything', async () => {
 		const onShare = path.join(temp, 'on-the-nas.mp4');
 		fs.writeFileSync(onShare, 'data');
@@ -436,8 +403,8 @@ describe('startDrag', () => {
 		expect(addon.calls.at(-1)?.verb).toBe('startStreamedDrag');
 	});
 
-	/* Trusted and still not an address: a trust check a shell was handed can be looser than a URL
-	   parser, and the drag must not go on to build a request out of nothing. */
+	/* Trusted and still not an address: a trust check a shell was handed can be looser than a
+	   URL parser, and the drag must not go on to build a request out of nothing. */
 	it('refuses a trusted page whose address has no origin, and asks nobody', async () => {
 		registerVerbs(() => 'local');
 		sender.senderFrame = { url: 'not an address', parent: null };
@@ -446,8 +413,8 @@ describe('startDrag', () => {
 		expect(fetched).toEqual([]);
 	});
 
-	/* The second drag of a clip that has already arrived is instant: the copy is dragged where it
-	   lies, and nothing is fetched again. */
+	/* The second drag of a clip that has already arrived is instant: the copy is dragged where
+	   it lies, and nothing is fetched again. */
 	it('drags a file already fetched from where it lies, without fetching it again', async () => {
 		fetchAnswers.push(reply({ path: null, filename: 'clip.mp4', size_bytes: 4 }));
 		await ipcRenderer.invoke(START_DRAG, AN_ASSET);
@@ -479,7 +446,7 @@ describe('startDrag', () => {
 
 		await ipcRenderer.invoke(START_DRAG, AN_ASSET);
 		// The transfer is deliberately not awaited, so let it run to its end before reading what it
-		// announced. In the application this happens while the file is being dropped.
+		// announced.
 		await new Promise((settle) => setTimeout(settle, 10));
 
 		expect(sentToPage.at(-1)?.payload).toMatchObject({
@@ -565,8 +532,7 @@ describe('captureWindow', () => {
 		expect(asked).toEqual([]);
 	});
 
-	/* The page measures in CSS pixels and the window in its own, which differ by the zoom. The
-	   edges are rounded outwards so a fractional box never loses its last row of pixels. */
+	/* The page measures in CSS pixels and the window in its own, which differ by the zoom. */
 	it('turns an area in the page into the same area of the window', async () => {
 		const { asked, contents } = capturable(async () => pictureOf([1]), 1.25);
 
@@ -629,9 +595,8 @@ describe('captureRect', () => {
 
 /* --- A server on another computer ------------------------------------------------------- */
 
-/* A saved server is somebody else's program, and anything able to change a plain-http page on the
-   way here is too. It gets what a window onto a library elsewhere needs, and nothing that acts on
-   this machine's own Sift. */
+/* A saved server is somebody else's program, and anything able to change a plain-http page on
+   the way here is too. */
 describe('a page served by another computer', () => {
 	const SERVER = 'http://192.168.1.20:5171';
 
@@ -694,8 +659,7 @@ describe('a page served by another computer', () => {
 		expect(ipcRenderer.sendSync(BRIDGE_VERBS, `${TRUSTED}/browse`)).toEqual(verbsFor('local'));
 	});
 
-	/* The preload leaving a method off is a convenience; this is the check. Every verb that acts on
-	   this machine's Sift refuses the page even when it calls the channel directly. */
+	/* The preload leaving a method off is a convenience; this is the check. */
 	it('cannot reach a verb that acts on this machine, even by calling the channel', async () => {
 		const sharing = {
 			read: vi.fn(() => ({
@@ -799,8 +763,7 @@ describe('a page served by another computer', () => {
 	});
 
 	/* How THIS window behaves is this computer's own: the close button and starting with Windows
-	   are answered and changed by this shell, whichever computer served the page. The server's own
-	   answers are asked of the server, never of this bridge. */
+	   are answered and changed by this shell, whichever computer served the page. */
 	it("keeps this window's close button and sign-in start on this computer", async () => {
 		const closing = { keepRunning: vi.fn(() => false), keep: vi.fn() };
 		const startup = { read: vi.fn(() => false), write: vi.fn((on: boolean) => on) };
@@ -821,9 +784,8 @@ describe('a page served by another computer', () => {
 		expect(startup.write).toHaveBeenCalledTimes(1);
 	});
 
-	/* THE CLIPBOARD, ONLY JUST AFTER A REAL PRESS. The press is what the operating system delivered
-	   to this window, never an event the page reports. A script can dispatch a click, and none of
-	   those reach the main process. One press buys one read. */
+	/* THE CLIPBOARD, ONLY JUST AFTER A REAL PRESS. The press is what the operating system
+	   delivered to this window, never an event the page reports. */
 	it('reads the clipboard only just after a press in the window, once per press', async () => {
 		clipboardContents.text = 'https://example.com/a';
 
@@ -853,8 +815,8 @@ describe('a page served by another computer', () => {
 		}
 	});
 
-	/* This copy's own update, for a copy behind the library it shows: no argument, so only a newer
-	   release its own feed signs, and only just after a press in the window. */
+	/* This copy's own update, for a copy behind the library it shows: no argument, so only a
+	   newer release its own feed signs, and only just after a press in the window. */
 	it('updates this copy only just after a press in the window, once per press', async () => {
 		vi.mocked(applyUpdate).mockClear();
 		expect(await ipcRenderer.invoke(APPLY_UPDATE)).toEqual({ ok: false, reason: 'failed' });
@@ -872,8 +834,7 @@ describe('a page served by another computer', () => {
 		expect(await ipcRenderer.invoke(READ_CLIPBOARD)).toBeNull();
 	});
 
-	/* The server describes its own file; it never names one of this machine's. A `path` it sends
-	   is dropped, and the streamed drag (the bytes from the server) is what runs. */
+	/* The server describes its own file; it never names one of this machine's. */
 	it('never drags a local path a remote server named', async () => {
 		fetchAnswers.push(
 			reply({

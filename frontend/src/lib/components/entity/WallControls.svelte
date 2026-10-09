@@ -1,24 +1,9 @@
 <script lang="ts">
 	/*
-	 * The two controls every entity wall has above it: a box that filters the wall, and the way to
-	 * add one.
-	 *
+	 * The two controls above every entity wall: a NarrowBox filtering as you type, and Add, a
+	 * press navigating to a literal address the reachability gate can read.
 	 * NOT ON THE GALLERY: it is two primitives the gallery already draws, a `NarrowBox` at its
 	 * page-header size and a `Button`, arranged into one row.
-	 *
-	 * One component rather than five copies, so the same act looks the same on every wall and each
-	 * wall says only what it is a wall of.
-	 *
-	 * The box has no button beside it. Typing filters, and the wall visibly filters as the letters
-	 * land, so a Find button would only be a second way to run the same search, taking the room the
-	 * Add needs. The box is `NarrowBox`, the one box in Sift that filters a list as you type, with
-	 * its own cross and Escape, since a hand on the mouse wants the cross; the walls get exactly
-	 * what Settings, Downloads and the pickers have.
-	 *
-	 * Add is a button that goes somewhere. Sift's buttons are never links (see `Button`), so this
-	 * is a press that navigates, to an address the caller writes as a literal on the wall: that is
-	 * what the reachability gate reads, and a path assembled here from a noun would be a screen
-	 * nothing in the client names.
 	 */
 	import { Button, NarrowBox } from '$lib/components/common';
 	import { screenBar } from '$lib/components/shell/screen-bar.svelte';
@@ -51,9 +36,7 @@
 		maxlength = 120
 	}: Props = $props();
 
-	/* How long typing pauses before `onsettled`: long enough that typing a name is one request
-	   rather than one per letter, short enough that the wall follows the typing. The one copy: every
-	   wall hands its settle here rather than keeping a timer of its own. */
+	/* The pause before `onsettled`: one request per name, still following the typing. */
 	const SETTLE_MS = 180;
 	let settling: ReturnType<typeof setTimeout> | null = null;
 
@@ -62,9 +45,7 @@
 		if (!onsettled) return;
 		if (settling) clearTimeout(settling);
 		const words = term;
-		/* Only while the box still says what was typed. Words that reached the wall some other way
-		   in the pause (the chip's cross, Back, a link) are in the box now, and the typing they
-		   replaced is not written over them. */
+		/* Only while the box still holds what was typed. */
 		settling = setTimeout(() => {
 			if (term === words) onsettled?.(words.trim());
 		}, SETTLE_MS);
@@ -75,8 +56,7 @@
 		if (settling) clearTimeout(settling);
 	});
 
-	/* This box's words are this wall's. While it is drawn the top search box reads nothing from the
-	   address, so what is typed here never appears there. See `screenBar.claimOwnBox`. */
+	/* This box's words are this wall's, never the top search box's (`claimOwnBox`). */
 	const mine = Symbol('wall-box');
 	$effect(() => screenBar.claimOwnBox(mine));
 
@@ -134,15 +114,13 @@
 		gap: var(--space-2);
 	}
 
-	/* How narrow the box may get, and nothing else of it, which is `NarrowBox`'s. The floor is
-	   reached only on a short row, where the box gives way before a row of tabs wraps. */
+	/* How narrow the box may get before tabs wrap. */
 	.wall-controls :global(.find) {
 		inline-size: auto;
 		min-inline-size: var(--tab-box-floor);
 	}
 
-	/* At a phone's width the row is the header's whole second line: the box takes whatever the Add
-	   leaves, and the Add keeps its word, since a plus alone does not say what it adds. */
+	/* On a phone the box takes what Add leaves; Add keeps its word. */
 	@media (max-width: 767px) {
 		.wall-controls {
 			flex: 1 1 100%;

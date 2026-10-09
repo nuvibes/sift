@@ -1,11 +1,4 @@
-/*
- * The graphics-card download, followed from outside the panel that started it.
- *
- * Held at module level for the same reason the model download is: over a gigabyte takes long enough
- * that somebody will close the settings sheet while it runs, and a watcher inside the component
- * would be thrown away with it, so coming back would show the button again and the only way to
- * find out whether it had finished would be to reload the page.
- */
+/* The graphics-card download, followed from outside the panel that started it. */
 
 import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 

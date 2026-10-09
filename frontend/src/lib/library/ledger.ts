@@ -1,30 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * THE RECORD OF EVERYTHING THIS LIBRARY HAS DONE: reading it, and the two filters over it.
- *
- * Every line is built on the server, by the one builder per act every History screen uses
- * (`kernel/access/sentences.py`), and arrives as PIECES (plain words and the things they name,
- * each where it sits), which `HistorySentence` draws. Nothing here assembles a sentence, names a
- * thing or says who did it, and nothing here searches a sentence for a name: a second word table in
- * the client is a second copy that drifts, and one act would read differently on different screens.
- *
- * What is left is what the two filters need: what a filter over each KIND of thing is called, and
- * what a filter over each ACT is called.
- *
- * ## No "your year" here
- *
- * A record of what the installation did and a story about what one PERSON did are different
- * surfaces for different audiences: this one is admin-only by its nature and that one must not be.
- */
+/* THE RECORD OF EVERYTHING THIS LIBRARY HAS DONE: reading it, and the two filters over it. */
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 
-/**
- * One event, exactly as the server describes it: its line as pieces, and the facts it was built from.
- *
- * Taken from the generated schema rather than written out again. A copy beside it does not fail
- * when the server moves. It goes quietly wrong, and the screen is where somebody finds out.
- */
+/** One event, exactly as the server describes it: its line as pieces, and the facts it was built
+ * from. */
 export type LedgerEvent = components['schemas']['LedgerEventView'];
 
 /** A page of the record. */
@@ -33,8 +13,7 @@ export type LedgerPage = components['schemas']['LedgerPage'];
 /** How many events one page holds. The server's own default, said here because the pane pages. */
 export const PAGE = 50;
 
-/* What the feed was filtered to, or nothing at all. Not exported: callers write the object inline
-   and never name the type, and a name nothing reads is refused by `public-surface.test.ts`. */
+/* What the feed was filtered to, or nothing at all. */
 interface LedgerAsk {
 	limit?: number;
 	offset?: number;
@@ -42,10 +21,8 @@ interface LedgerAsk {
 	kind?: string;
 	/** One act. See `VERBS`. */
 	verb?: string;
-	/**
-	 * Only the decisions: what a queue can take back, Organize's answers and Sift's own filings,
-	 * each with its Undo. A narrowing of this one feed and not a list beside it.
-	 */
+	/** Only the decisions: what a queue can take back, Organize's answers and Sift's own filings,
+	 * each with its Undo. */
 	decisions?: boolean;
 }
 
@@ -65,13 +42,8 @@ export async function readLedger(ask: LedgerAsk = {}): Promise<LedgerPage> {
 /** What an Undo all did: how many decisions moved back, out of how many the line stood for. */
 type UndoneAll = components['schemas']['UndoneFoldView'];
 
-/**
- * UNDO ALL on a folded line: every decision the press it stands for took, each through its own undo.
- *
- * The filtering goes back with it because the server reads the press again the way the line was
- * drawn: a press is a reading of the record under that filter, and what is undone must be
- * exactly what the line said (`ledger_router.undo_all`).
- */
+/** UNDO ALL on a folded line: every decision the press it stands for took, each through its own
+ * undo. */
 export async function undoAll(
 	eventId: string,
 	narrowing: { kind?: string; verb?: string; decisions?: boolean } = {}
@@ -87,12 +59,8 @@ export async function undoAll(
 
 /* --- the two filters --------------------------------------------------------------------------- */
 
-/**
- * WHAT A FILTER OVER EACH KIND OF THING IS CALLED, in the plural, as the walls already name them.
- *
- * The same closed list the kernel's `SubjectKind` holds; `test_the_feed_says_every_word.py` holds the
- * two together, because a kind with no label is a filter nobody can choose.
- */
+/** WHAT A FILTER OVER EACH KIND OF THING IS CALLED, in the plural, as the walls already name
+ * them. */
 export const KINDS: Record<string, { many: string }> = {
 	asset: { many: 'Files' },
 	person: { many: 'People' },
@@ -119,10 +87,8 @@ export const KINDS: Record<string, { many: string }> = {
 	recap: { many: 'Recaps' }
 };
 
-/**
- * WHAT A FILTER OVER EACH ACT IS CALLED. Every verb the kernel can record has a row, and nothing
- * else does (`test_the_feed_says_every_word.py`); the LINE for each act is the server's.
- */
+/** WHAT A FILTER OVER EACH ACT IS CALLED. Every verb the kernel can record has a row, and nothing
+ * else does (`test_the_feed_says_every_word.py`); the LINE for each act is the server's. */
 export const VERBS: Record<string, { label: string }> = {
 	added: { label: 'Added' },
 	removed: { label: 'Removed' },
@@ -184,13 +150,7 @@ export const VERBS: Record<string, { label: string }> = {
 /** What "no filter" is called on the wire and in the two choosers. */
 export const ANY = 'all';
 
-/**
- * THE TWO FILTERS, BUILT FROM THE TABLES THEMSELVES rather than from a list beside them.
- *
- * A hand-written list of choices is the thing that goes one line short: a verb added to `VERBS`
- * with no row in a filter list is an act the record holds and nobody can ask for, and nothing would
- * say so. These cannot be short, because they ARE the tables.
- */
+/** THE TWO FILTERS, BUILT FROM THE TABLES THEMSELVES rather than from a list beside them. */
 export function kindChoices(): { value: string; label: string }[] {
 	return [
 		{ value: ANY, label: 'Everything' },

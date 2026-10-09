@@ -1,8 +1,6 @@
-/*
- * Only a page's first group goes without a heading: a later group with no heading continues the
+/* Only a page's first group goes without a heading: a later group with no heading continues the
  * group before it, closing the gap and drawing the line between two rows, so two unheaded groups
- * never sit a band apart with nothing between them.
- */
+ * never sit a band apart with nothing between them. */
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 import { afterEach, expect, it } from 'vitest';
 
@@ -82,8 +80,8 @@ function siblings(...groups: { heading?: string; rows: boolean }[]): HTMLElement
 }
 
 it('follows a heading alone at the ordinary gap, never pulled up over its sentence', () => {
-	/* A heading with its sentence and no rows, then the rows it introduces in a group of their own:
-	   the rows sit under the sentence. Pulled up by the whole gap they would be drawn over it. */
+	/* A heading with its sentence and no rows, then the rows it introduces in a group of their
+	   own: the rows sit under the sentence. */
 	const [, rows] = siblings({ heading: 'Log', rows: false }, { rows: true });
 	expect(rows.classList.contains('continues')).toBe(true);
 	expect(getComputedStyle(rows).marginBlockStart).not.toMatch(/-1/);

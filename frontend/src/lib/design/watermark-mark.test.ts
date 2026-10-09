@@ -1,11 +1,4 @@
-/*
- * One glyph for a watermark, wherever one is drawn: the corner the mark sits in.
- *
- * `position_bottom_right`, in the four places a watermark is drawn: the Enriched-by mark on a
- * file and its facet row (both read `facetValueIcon`), the History line (`markOf`, which reads the
- * same table and falls back to its own), and the Settings section. Four tables, so four places the
- * glyph could quietly differ; the type only proves each name exists.
- */
+/* One glyph for a watermark, wherever one is drawn: the corner the mark sits in. */
 import { describe, expect, it } from 'vitest';
 
 import { markOf } from '$lib/components/common/history';

@@ -1,29 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """What to do about one folder, given what its name says and what its faces say.
 
-Cheapest and strongest first, and the first rung that fires wins: a folder makes at most one
-claim about who it is. Everything here is a pure decision over values the caller has already
-gathered, so the ordering can be read in one place and tested without a database.
-
-The two ends of the ladder are the interesting ones.
-
-**The top two rungs write without asking.** A folder whose files already carry one face group
-somebody has NAMED, and a folder whose name is already the name of somebody in the library, are
-both resting on a judgement a human has already made. Nothing is created and nothing is invented;
-the attribution is carried from where it was decided to where it obviously also applies. That is
-what makes a large library collapse in one pass instead of asking a thousand questions.
-
-**Named means named on the file**, by the one rule for that: a face somebody confirmed, or one
-recognized above the line at which Sift puts the name on the file without asking. A face recognized
-that way rests on the pictures somebody confirmed as that person (here or, for descriptions a swap
-brought, on the other install), and the file already carries the name, so it counts. A face Sift is
-only ASKING about is not a name: it puts nobody on its own file, and it may not give away a folder.
-
-**The bottom rung offers on a name alone**, and only once a pass has actually looked. Body-only
-content, back shots and art carry no face and are a large share of many libraries, so refusing to
-offer them would gut the feature on exactly the content it is for. But *not looked yet* and *looked
-and found nobody* are opposite answers, and telling them apart is the difference between a useful
-screen and a new library producing thousands of unfounded guesses in its first hour.
+A pure ladder, cheapest and strongest first, the first rung that fires winning. The top two write
+without asking, resting on a name a person already gave (a face named on the file, or a person's own
+name); the bottom offers on a name alone, and only once a pass has looked.
 """
 
 from __future__ import annotations
@@ -35,37 +15,17 @@ from enum import StrEnum
 from sift.kernel.attribution import FolderFaces
 from sift.slices.suggestions.naming import Reading
 
-#: How much of a folder one face group has to account for, on its own, before it corroborates the
-#: folder's name.
-#:
-#: Three fifths, measured over the files that contain any face at all rather than over the folder.
-#: A folder of forty-seven photographs where six are landscapes is still a folder about one person,
-#: and counting the landscapes against her would set the bar by how much scenery somebody shot.
-#:
-#: Three fifths rather than a bare majority because a bare majority is a coin toss on a small
-#: folder: four of seven is 57% and is one misgrouped face away from being three of seven. At three
-#: fifths a second group in the same folder cannot also be dominant, which is the property that
-#: matters: the answer is either one person or nobody, never an argument between two.
+#: How much of a folder one face group must account for, over the files with any face, before it
+#: corroborates the folder's name; at three fifths no second group can also dominate.
 DOMINANT_SHARE = 0.6
 
 #: A half is dominance too, when nothing else in the folder comes close.
-#:
-#: Three fifths alone misses the folder that is plainly one person's and carries a scatter of faces
-#: nobody has grouped: half the files with a face are hers, every other group holds a file or two,
-#: and the share lands a point under the bar. What the three fifths guards against is an argument
-#: between two groups, and a leader holding ten times what the next one holds is no argument. So a
-#: half with that lead is enough; a half without it is still the coin toss above. The tie guard and
-#: the floor below apply to either road.
 DOMINANT_SHARE_WITH_A_LEAD = 0.5
 
-#: How many times the runner-up the leader has to hold for `DOMINANT_SHARE_WITH_A_LEAD` to be
-#: enough. A folder with no runner-up at all has the lead by definition.
+#: How many times the runner-up the leader must hold for that half to be enough.
 DOMINANT_LEAD = 10
 
-#: And it takes at least this many. A pile of two across forty-seven files is not dominance and
-#: corroborates nothing; it is two photographs that happen to match. The share alone would call a
-#: folder where exactly two files have a face and both are the same person "dominant", which is
-#: true and worthless.
+#: And it takes at least this many files: two matching photographs corroborate nothing.
 DOMINANT_FLOOR = 3
 
 
@@ -86,7 +46,7 @@ class Action(StrEnum):
 
 
 class Evidence(StrEnum):
-    """Why a claim exists, kept because "why am I being asked this" is a fair question."""
+    """Why a claim exists, kept so a person can ask why they are being asked."""
 
     NAMED_GROUP = "named_group"
     KNOWN_NAME = "known_name"
@@ -123,10 +83,10 @@ class Verdict:
     action: Action = Action.NOTHING
     evidence: Evidence | None = None
 
-    #: Who, when the rung already knows. `None` on a rung that proposes somebody who may not exist.
+    #: Who, when the rung already knows; None on a rung proposing somebody who may not exist.
     person_id: str | None = None
 
-    #: The name to propose, as the folder spells it. Empty when the rung names nobody new.
+    #: The name to propose, as the folder spells it; empty when the rung names nobody new.
     name: str = ""
 
     #: The face group the claim rests on, when it rests on one.
@@ -134,27 +94,19 @@ class Verdict:
 
 
 def dominant(counts: Mapping[str, int], *, with_faces: int) -> str | None:
-    """The one group or person that accounts for a clear majority here, or None.
-
-    None for an empty folder, for a folder nothing agrees about, and for a tie: a tie between two
-    groups is exactly the case where picking one is a wrong attribution that looks like a right
-    one, and the threshold is set so a tie for the top cannot pass it anyway.
-    """
+    """The one group or person that accounts for a clear majority here, or None, as for a tie."""
     if with_faces <= 0 or not counts:
         return None
     leader, seen = max(counts.items(), key=lambda pair: (pair[1], pair[0]))
     if seen < DOMINANT_FLOOR:
         return None
-    # The runner-up is the next largest count, whoever holds it. A tie for the top makes it equal
-    # to the leader, which no lead can pass and the guard below refuses anyway.
+    # The runner-up is the next largest count; a tie for the top equals the leader.
     runner_up = sorted(counts.values(), reverse=True)[1] if len(counts) > 1 else 0
     alone = seen >= with_faces * DOMINANT_SHARE
     led = seen >= with_faces * DOMINANT_SHARE_WITH_A_LEAD and seen >= DOMINANT_LEAD * runner_up
     if not (alone or led):
         return None
-    # A second group matching the leader exactly is not a majority, whatever the arithmetic above
-    # says about the share. Written out rather than relied on, because the share and the floor are
-    # numbers somebody may move later and this property is not negotiable.
+    # A second group matching the leader is not a majority, whatever the numbers say.
     if sum(1 for count in counts.values() if count == seen) > 1:
         return None
     return leader
@@ -173,33 +125,12 @@ def decide(
 ) -> Verdict:
     """What to do about this folder.
 
-    `named_by` is everybody the folder's name already names, by their own name or by an alias. Its
-    LENGTH is what matters as much as its contents: two people answering to one word is a real
-    thing the stash-box allows on purpose, and which of them was meant is not a question a folder
-    name can answer. So two matches link nobody, and the folder is left alone rather than guessed
-    at: offering it would only invite somebody to create a third person with the same name.
-
-    `looking` is whether recognition is switched on at all. With it off there is no pass to wait
-    for, so a name-shaped folder is offered immediately and marked as resting on its name alone.
-
-    `owned_inside` is everybody a folder somewhere UNDER this one is already somebody's own folder
-    for: answered as them, or named for them by its own name. `by_name_only` is set for a folder
-    whose name is the whole of what it is, which the faces in it may not overrule (a person's own
-    folder a swap made). Both bind only rung 1; see the rung.
+    Two people named by the folder's name link nobody. `looking` off offers a name-shaped folder at
+    once. `owned_inside` and `by_name_only` bind only rung 1.
     """
-    # 1. A face group somebody has already named accounts for this folder.
-    #
-    # **It gives a whole subtree away without asking, so it is the rung that has to know what a
-    # folder IS before it counts the faces in it.** Two shapes are never one person's, however the
-    # faces fall. A folder holding somebody ELSE's own folder is a collection of people: the faces
-    # of the one with the most files in it outvote everybody else's, and the silent write then
-    # reaches the other person's files (a face nobody named is no veto, and a file with no face is
-    # none either). And a folder whose own name says whose it is, where the faces are somebody
-    # filmed with them.
-    #
-    # The share stays over the files WITH a face (see `DOMINANT_SHARE`): counted over every file,
-    # it would refuse the body-only folder this rung exists for, and the share is not what makes a
-    # collection of people read as one person: what the folder holds is.
+    # 1. A face group somebody has already named accounts for this folder. It writes a whole
+    # subtree, so never for a folder holding somebody else's own folder, nor one whose own name says
+    # whose it is.
     already_named = None if by_name_only else dominant(faces.named, with_faces=faces.with_faces)
     if already_named is not None and not set(owned_inside) - {already_named}:
         return Verdict(
@@ -238,6 +169,5 @@ def decide(
     if faces.with_faces == 0:
         return Verdict(action=Action.OFFER, evidence=Evidence.NAME_ONLY, name=reading.name)
 
-    # Looked at, faces found, and none of them agrees with any other. That is a folder of many
-    # different people (a topic folder), and it is never one person.
+    # Looked at, faces found, none agreeing: a folder of many people, never one person.
     return Verdict()

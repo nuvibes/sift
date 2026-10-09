@@ -10,10 +10,7 @@ describe('directContents', () => {
 	});
 
 	it('needs nothing but the folder itself', () => {
-		/* The folder's own id is the whole of the ask: it is in the address already. Needing
-		   every child's id would mean needing the tree: the wall asking for the subtree once and
-		   for the folder again when the tree landed, and giving up above a cap of children and
-		   showing the subtree for ever. */
+		/* The folder's own id is the whole of the ask: it is in the address already. */
 		expect(Object.keys(directContents({ in: 'parent' })).sort()).toEqual(['depth', 'in']);
 	});
 

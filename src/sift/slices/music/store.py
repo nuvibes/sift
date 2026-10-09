@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Reading and writing what this feature records. No file is opened here.
-
-Every statement is over this feature's own tables, and one over the per-user counts the
-visibility component keeps for it. What it does not ask is which files the user asking may see:
-the stored count already is that answer (`waiting_for`), and the Generate count takes this
-feature's condition into the kernel's own statement (`lack` below). The one read that answers a
-viewer (which files share a song with this one) asks the stored verdict (`viewer_assets`) the
-way every read of a file does, and the route hands its answer to the ordinary read besides.
-"""
+"""Reading and writing this feature's tables; no file is opened here."""
 
 from __future__ import annotations
 
@@ -30,42 +22,22 @@ from sift.slices.music.schema import WAITING_KIND, WAITING_SCOPE
 
 log = get_logger(__name__)
 
-#: Lacking an audio fingerprint, as one term of the Generate count.
-#:
-#: `a` is the asset row, which the kernel's count supplies. The question (read, with a sound
-#: track, and no fingerprint row) is `music_waiting`, which the database keeps by the one rule
-#: declared in `schema.py` (`WAITING`) and written out by the kernel (`kernel/access/waiting.py`):
-#: this term reads the answer rather than stating the rule a second time.
-#: "Has audio" is `acodec IS NOT NULL` there, so a photograph, a GIF and a silent video are all
-#: excluded before anything is decoded.
-#:
-#: OR A FINGERPRINT NOT YET PAIRED (v3): a row whose keys have not been cut under the scheme in
-#: force (`matching.KEY_SCHEME`, the first parameter), or one read by an older algorithm than the
-#: one in force (`chromaprint.ALGORITHM`, the second). The work this product owes a file is
-#: its fingerprint AND the pairing that reads it, and every fingerprint kept before the pairing
-#: existed has the first and not the second. Without this half nothing would ever ask for them: the
-#: Build asks this term which files to hand the task, and the task's own "has one, not indexed"
-#: branch does the rest without opening the file. A pressed run is still the only thing that starts
-#: it. See `slices/music/service.py`.
+#: Waiting in `music_waiting`, or fingerprinted but not paired under the scheme in force.
 LACKS_AUDIO_FINGERPRINT = (
     "(EXISTS (SELECT 1 FROM music_waiting w WHERE w.asset_id = a.id)"
     " OR EXISTS (SELECT 1 FROM audio_fingerprints f WHERE f.asset_id = a.id"
     " AND (f.indexed_scheme IS NOT ? OR f.algorithm IS NOT ?)))"
 )
 
-#: How many waiting files one user may see with their vault shut, off the count the visibility
-#: component keeps. No row is nought: a count that reaches nothing is taken away.
+#: With the vault shut; no row is zero.
 _WAITING_FOR = (
     "SELECT permitted - concealed AS files FROM viewer_entity_counts"
     " WHERE user_id = ? AND kind = ? AND object_id = ?"
 )
 
-#: Whether any file in the library is waiting at all.
 _ANY_WAITING = "SELECT 1 AS ok FROM music_waiting LIMIT 1"
 
-#: Which of these files lack the work: the Build's count term (`LACKS_AUDIO_FINGERPRINT`) asked of a
-#: page of ids rather than of the library, spliced from the one constant so the page and the count
-#: cannot describe two sets. `a.id` is each id of the page, bound as one JSON list.
+#: The count's own term asked of a page of ids, so the two cannot describe different sets.
 _LACKING_AMONG = splice(
     "SELECT a.id FROM (SELECT value AS id FROM json_each(?)) a WHERE {{LACKS}}",
     LACKS=LACKS_AUDIO_FINGERPRINT,
@@ -96,11 +68,7 @@ ON CONFLICT(identity) DO UPDATE SET algorithm = excluded.algorithm,
   computed_at = excluded.computed_at
 """
 
-# The claim, in one transaction: copy the waiting row onto the file and take the waiting row away.
-# Two transactions would leave a window in which a crash keeps both, and the next claim would then
-# write a fingerprint the file already has: harmless, and still two answers to one question
-# sitting in the database at the same time. A waiting row read under an algorithm no longer in force
-# is not copied: the file is then read afresh, and the row goes with the claim either way.
+# One transaction, so a crash cannot leave both rows; a stale-algorithm row is not copied.
 _CLAIM = """
 INSERT INTO audio_fingerprints
   (asset_id, algorithm, tool, duration_ms, offset_ms, fingerprint, computed_at)
@@ -111,19 +79,13 @@ ON CONFLICT(asset_id) DO NOTHING
 
 _DROP_CLAIMED = "DELETE FROM audio_fingerprints_pending WHERE identity = ?"
 
-# A row nothing will ever claim: one that waited past the cutoff for a file that never arrived, or
-# one read under an algorithm since replaced, which the claim refuses.
+# Past the cutoff, or under a replaced algorithm the claim refuses.
 _DROP_STALE = "DELETE FROM audio_fingerprints_pending WHERE computed_at < ? OR algorithm IS NOT ?"
 
-#: A row read under the algorithm in force. One read by an older algorithm is the count's lack too
-#: (`LACKS_AUDIO_FINGERPRINT`), so it must not count as answered here, or the Build would hand the
-#: file out on every run and the task would return immediately without reading it again.
+#: An older algorithm is still lacking, or the Build would hand the file out every run.
 _HAS_ROW = "SELECT 1 AS ok FROM audio_fingerprints WHERE asset_id = ? AND algorithm = ?"
 
-# --- which files share a song: the keys and the pairs (v3) ------------------------------------
-#
-# See `slices/music/matching.py` for the rule and `schema.py` for the tables. Every list of values
-# travels as ONE bound JSON array read with `json_each`, never as text in the statement.
+# Lists of values travel as one bound JSON array read with `json_each`.
 
 #: Whether this file's pairing is done under the scheme in force.
 _INDEXED = "SELECT 1 AS ok FROM audio_fingerprints WHERE asset_id = ? AND indexed_scheme = ?"
@@ -132,10 +94,7 @@ _DROP_KEYS = "DELETE FROM audio_fingerprint_keys WHERE asset_id = ?"
 
 _ADD_KEYS = "INSERT INTO audio_fingerprint_keys (key, asset_id) SELECT value, ? FROM json_each(?)"
 
-#: The files sharing at least `CANDIDATE_KEYS` distinct keys with a set of them, and how much sound
-#: each one's fingerprint covers: the second half of the floor is length-relative and is decided
-#: by `matching.is_candidate`, so the rule is stated once. Grouped first and joined after, so the
-#: fingerprint row is read once per candidate rather than once per shared key.
+#: The length-relative floor is `matching.is_candidate`; grouped first to read each row once.
 _CANDIDATES = """
 SELECT s.asset_id, s.shared, f.duration_ms
   FROM (SELECT k.asset_id, COUNT(*) AS shared
@@ -153,8 +112,7 @@ SELECT algorithm, tool, duration_ms, offset_ms, fingerprint
   FROM audio_fingerprints WHERE asset_id = ?
 """
 
-# A file's pairs are replaced whole: two statements rather than `a_id = ? OR b_id = ?`, so each
-# side is read off its own index.
+# Two statements so each side uses its own index.
 _DROP_PAIRS_A = "DELETE FROM music_pairs WHERE a_id = ?"
 _DROP_PAIRS_B = "DELETE FROM music_pairs WHERE b_id = ?"
 
@@ -177,24 +135,10 @@ SELECT a_id, b_id, ber, offset_s, windows, matching, computed_at FROM music_pair
  ORDER BY ber, a_id, b_id
 """
 
-#: The most files one group answers with. A song somebody set a few hundred clips to is a real
-#: library, and one hop from each of those is a few hundred more; past this many the closest are
-#: the ones worth drawing, and the statement stays a page rather than a walk of the library.
+#: Past this many, the closest are the ones worth drawing.
 GROUP_LIMIT = 500
 
-#: A file's group: the files paired with it, and the files paired with THOSE (one hop, never
-#: further, never the file itself), ordered closest first. A file reached two ways keeps its
-#: closer one, and a file reached through another scores the weaker of the two links, because a
-#: chain is only as sure as its least sure pair.
-#:
-#: ONE statement for both callers. `:user` NULL is the group as Sift's own acts see it (the song
-#: name spreading through it). A user makes it answer to the stored verdict twice over: a file is
-#: in the answer only where this user may see it: concealed ones only where `:reveal` says this
-#: viewer is shown one at all (`reveals_existence`, the flag every count of files binds), and a
-#: file is a BRIDGE to the next hop only where this user may see it and it is not concealed from
-#: them, whatever `:reveal` says, because a chain through a hidden file would describe it out of
-#: visible ones. The query language's `same_music:` leaf (`kernel/access/constraints.py`) walks
-#: the same hop by the same bridge rule.
+#: One hop, closest first, a chain scoring its weakest link; a hidden file never bridges a hop.
 _GROUP = """
 WITH direct(id, ber) AS (
   SELECT p.b_id, p.ber FROM music_pairs p WHERE p.a_id = :asset
@@ -240,11 +184,7 @@ class Kept:
 
 @dataclass(frozen=True, slots=True)
 class Pair:
-    """Two files verified to share a song, as `music_pairs` holds them: the smaller id first.
-
-    `offset_s` is where the song sits in `b_id` minus where it sits in `a_id`. Built by `of`,
-    which is what keeps the order and the sign of the offset agreeing.
-    """
+    """Two files verified to share a song, smaller id first; build with `of` to keep the sign."""
 
     a_id: str
     b_id: str
@@ -287,42 +227,23 @@ class MusicStore:
         self._db = database
 
     def lack(self) -> Lack:
-        """Files with audio and no fingerprint, as one term of the Generate count.
-
-        No product name on it: a file this pass cannot read is written down as an EMPTY row rather
-        than as a verdict, so there is nothing to exclude: the empty row has already taken it out
-        of this term. See `slices/music/schema.py`.
-        """
+        """Files with audio and no fingerprint, as a Generate term; an empty row is an answer."""
         return Lack(LACKS_AUDIO_FINGERPRINT, params=(KEY_SCHEME, chromaprint.ALGORITHM))
 
     async def waiting_for(self, user_id: str) -> int:
-        """How many files this user can see still want a fingerprint.
-
-        One row, off the per-user count the visibility component keeps over `music_waiting`,
-        rather than every file with audio checked against the user's visible set on every draw of
-        the board. The vault's files are left out whatever the viewer's mode: this is a number about
-        work, and a locked tile is not a file anybody can look at.
-        """
+        """How many files this user can see still want a fingerprint, from the per-user count."""
         row = await self._db.fetch_one(_WAITING_FOR, (user_id, WAITING_KIND, WAITING_SCOPE))
         return 0 if row is None else max(0, int(row["files"]))
 
     async def any_waiting(self) -> bool:
-        """Whether any file in the library still wants a fingerprint: the library's own fact,
-        with no user, which is what decides whether the card is drawn at all."""
+        """Whether any file still wants a fingerprint, which decides whether the card is drawn."""
         return await self._db.fetch_one(_ANY_WAITING) is not None
 
     async def lacking_among(self, asset_ids: Sequence[str]) -> set[str]:
-        """Which of these files still owe a fingerprint or its pairing: `lack` asked of a page.
-
-        It asks the count's own term, not merely whether a paired row exists, which would hand a
-        task to every silent file and every file whose copies are missing, which the count leaves
-        out, so a run would read more files handed out than it counted.
-        """
+        """Which of these files still owe a fingerprint or its pairing, by the count's own term."""
         if not asset_ids:
             return set()
-        # Bound from the count's own term, so the two cannot disagree about what `?` means. Written
-        # out by hand, the binding could fall a value short of the term, and every Run now of the
-        # music task would fail before it handed out a single file.
+        # Bound from the term itself, so a parameter cannot fall short.
         params = (json.dumps(list(asset_ids)), *self.lack().params)
         rows = await self._db.fetch_all(_LACKING_AMONG, params)
         return {str(row["id"]) for row in rows}
@@ -333,11 +254,7 @@ class MusicStore:
         return found is not None
 
     async def keep(self, asset_id: str, kept: Kept) -> None:
-        """Write one file's fingerprint, replacing whatever was there.
-
-        A replaced fingerprint is no longer indexed: its keys and pairs were cut from the old
-        values, so the stamp goes with them and the next run pairs it again.
-        """
+        """Write one file's fingerprint, replacing any, and clear its stamp so it pairs again."""
         await self._db.execute(
             _KEEP,
             (
@@ -367,8 +284,7 @@ class MusicStore:
         )
 
     async def claim(self, asset_id: str, identity: str) -> bool:
-        """Move a waiting fingerprint onto this file. Whether there was one to move, read under
-        the algorithm in force."""
+        """Move a staged fingerprint onto this file; False when none waits under this algorithm."""
         async with self._db.write() as connection:
             cursor = await connection.execute(_CLAIM, (asset_id, identity, chromaprint.ALGORITHM))
             claimed = int(cursor.rowcount) > 0
@@ -376,8 +292,7 @@ class MusicStore:
         return claimed
 
     async def forget_pending_before(self, cutoff: int) -> int:
-        """Drop fingerprints that waited for a file that never arrived, and any read under an
-        algorithm no longer in force. How many went."""
+        """Drop staged fingerprints past `cutoff` or under an old algorithm; returns how many."""
         async with self._db.write() as connection:
             cursor = await connection.execute(_DROP_STALE, (cutoff, chromaprint.ALGORITHM))
             gone = int(cursor.rowcount)
@@ -385,20 +300,12 @@ class MusicStore:
             log.info("music.pending_swept", rows=gone)
         return gone
 
-    # --- which files share a song: the keys and the pairs (v3) --------------------------------
-
     async def indexed(self, asset_id: str) -> bool:
         """Whether this file's fingerprint has been paired under the scheme in force."""
         return await self._db.fetch_one(_INDEXED, (asset_id, KEY_SCHEME)) is not None
 
     async def index_keys(self, asset_id: str, keys: Iterable[int]) -> None:
-        """Replace this file's keys, in one transaction.
-
-        Not the stamp: that is written with the pairs (`settle`), so a failure between the two
-        leaves the file unindexed and the next run pairs it again. The keys are written first and
-        on their own because the ORDER is what finds every pair once: a file writes its keys before
-        it searches, so of two files arriving together whichever searches second finds the other.
-        """
+        """Replace this file's keys before it searches, so two arriving together find each other."""
         async with self._db.write() as connection:
             await connection.execute(_DROP_KEYS, (asset_id,))
             await connection.execute(_ADD_KEYS, (asset_id, json.dumps(sorted(keys))))
@@ -406,8 +313,7 @@ class MusicStore:
     async def candidates(
         self, asset_id: str, keys: Iterable[int], *, limit: int = CANDIDATE_LIMIT
     ) -> list[Candidate]:
-        """The other files sharing at least `CANDIDATE_KEYS` of these keys, most shared first, and
-        no more than `limit` of them (`matching.CANDIDATE_LIMIT`)."""
+        """Files sharing at least `CANDIDATE_KEYS` of these keys, most first, at most `limit`."""
         wanted = sorted(keys)
         if not wanted:
             return []
@@ -437,12 +343,7 @@ class MusicStore:
         )
 
     async def write_pairs(self, asset_id: str, pairs: Sequence[Pair]) -> None:
-        """Replace every pair this file is in with these, in one transaction.
-
-        Whole rather than added to: the pairs were all verified just now against every candidate
-        the keys found, so a pair of this file that is not among them no longer holds: its
-        fingerprint was read again, or the rule moved. Told on its own bell (`About.SAME_MUSIC`).
-        """
+        """Replace every pair this file is in, in one transaction, rung on `About.SAME_MUSIC`."""
         for one in pairs:
             if asset_id not in (one.a_id, one.b_id):
                 raise ValueError("a file's pairs are the pairs it is in")
@@ -467,7 +368,7 @@ class MusicStore:
                 announce(await who_may_see_a_file(connection), About.SAME_MUSIC)
 
     async def settle(self, asset_id: str) -> None:
-        """Say this file's pairing is done, under the scheme in force. The last write of the run."""
+        """Mark this file's pairing done; the last write of the run."""
         await self._db.execute(_STAMP_INDEXED, (KEY_SCHEME, asset_id))
 
     async def pairs_of(self, asset_id: str) -> list[Pair]:
@@ -487,21 +388,13 @@ class MusicStore:
         ]
 
     async def music_group(self, asset_id: str) -> list[str]:
-        """The files sharing a song with this one, one hop, as Sift's own acts see them: every
-        file, whoever may see it. For a write Sift makes (a song name spreading through the group),
-        never for an answer to a person: that is `same_music_of`."""
+        """The file's group as Sift's own writes see it, unscoped; never an answer to a person."""
         return await self._group(asset_id, user_id=None, reveal=False)
 
     async def same_music_of(
         self, user_id: str, asset_id: str, *, reveal: bool = False
     ) -> list[str]:
-        """The files sharing a song with this one that this user may see, one hop, closest first.
-
-        Scoped by the stored verdict (the file reached and the file it was reached through),
-        with a concealed file only where `reveal` says this viewer is shown one at all. Never the
-        file itself. Whether the user may see THIS file is the caller's question, asked before
-        this one (see the route).
-        """
+        """The files sharing a song with this one that this user may see, one hop, closest first."""
         return await self._group(asset_id, user_id=user_id, reveal=reveal)
 
     async def _group(self, asset_id: str, *, user_id: str | None, reveal: bool) -> list[str]:
@@ -512,16 +405,9 @@ class MusicStore:
         return [str(row["asset_id"]) for row in rows]
 
 
-# --- SONG-NAMES: the names Sift wrote, the names taken back, what AcoustID was asked ---------------
-#
-# Two tables of `schema.py` and one more (`music_lookup_key`), read and written by
-# `slices/music/names.py` and `slices/music/lookup.py`. The song itself is a row of the catalog's
-# `songs`, and a file's is its row of `song_files`, written only through the kernel's song door
-# (`kernel/content/songs.py`, reached by `seed_music_on`); that row says where it came from, which
-# is what `music_names` said before step 4 of this feature's schema retired it.
+# Song names: the refusals, AcoustID's answers and its key; the song itself is the catalog's.
 
-#: Whether somebody took this song off this file. Read under the writer's own transaction, so an
-#: Undo that lands between a check and a write cannot be overwritten by it.
+#: Read inside the writer's transaction, so an Undo cannot be overwritten.
 _REFUSED = "SELECT 1 AS refused FROM music_name_refusals WHERE asset_id = ? AND song = ?"
 
 _REFUSE = "INSERT OR IGNORE INTO music_name_refusals (asset_id, song, refused_at) VALUES (?, ?, ?)"
@@ -529,17 +415,7 @@ _REFUSE = "INSERT OR IGNORE INTO music_name_refusals (asset_id, song, refused_at
 #: A song somebody put on a file by hand: any "no" to that song on that file is taken back.
 _UNREFUSE = "DELETE FROM music_name_refusals WHERE asset_id = ? AND song = ?"
 
-#: Whether a file is one AcoustID should be asked about: a fingerprint with something in it, long
-#: enough for a song, no song on the file, nobody having taken a song off it, and no answer kept. A
-#: lookup that ended in a refusal or a failure is asked again; one that named a song or found
-#: nothing is not.
-#:
-#: The file's own song and length are asked of the kernel first (`songs_and_lengths`), because a
-#: feature does not read the files' table: `:length_ms` is the file's length where it has one, and
-#: this statement is asked only of a file that carries no song.
-#:
-#: Written once and spliced into both statements below, so the one file's question and the
-#: library's list cannot come to disagree about what a lookup is still owed for.
+#: Owed a lookup: a long enough fingerprint, no song, no refusal and no kept answer.
 _STILL_OWED = """
 LENGTH(f.fingerprint) > 0
    AND NOT EXISTS (SELECT 1 FROM music_name_refusals r WHERE r.asset_id = f.asset_id)
@@ -547,8 +423,7 @@ LENGTH(f.fingerprint) > 0
                     AND l.status IN ('named', 'nothing'))
 """
 
-#: A page of files asked one of the two questions below, in one statement. Whether each is long
-#: enough for a song is decided beside it (`NameStore._wanting`), with the file's own length first.
+#: Length is decided beside it (`NameStore._wanting`).
 _PAGE_OF_FILES = """
 SELECT f.asset_id AS asset_id, f.duration_ms AS duration_ms
   FROM audio_fingerprints f
@@ -558,10 +433,7 @@ SELECT f.asset_id AS asset_id, f.duration_ms AS duration_ms
 
 _WANTS_LOOKUP = splice(_PAGE_OF_FILES, RULE=_STILL_OWED)
 
-#: The same question asked of the library, a page at a time in id order: what the catch-up walks
-#: and what its count is made of. The length here is the sound the fingerprint covers, because the
-#: file's own length is the kernel's to read; each file is asked again one at a time, with its own
-#: length and song (`LookupStarter._worth_asking`), before anything is queued for it.
+#: The same of the library, a page at a time in id order, for the catch-up.
 _OWED_LOOKUPS = splice(
     """
 SELECT f.asset_id
@@ -575,11 +447,7 @@ SELECT f.asset_id
     OWED=_STILL_OWED,
 )
 
-#: Whether a file is one AcoustID may be ASKED AGAIN about: a fingerprint with something in it,
-#: nobody having taken a song off it, and its last answer that AcoustID did not know it, given
-#: before `:before` (a moment; nought for any age). The file's own song and length are asked of the
-#: kernel first, as `_WANTS_LOOKUP`'s are. The earlier answer is kept until the new one replaces
-#: it (`_KEEP_LOOKUP`), so a file asked again and still not known reads the same until then.
+#: Ask again: last answer "not known" before `:before`; the old answer stays until replaced.
 _ASKED_AND_NOT_KNOWN = """
 LENGTH(f.fingerprint) > 0
    AND NOT EXISTS (SELECT 1 FROM music_name_refusals r WHERE r.asset_id = f.asset_id)
@@ -589,7 +457,6 @@ LENGTH(f.fingerprint) > 0
 
 _WANTS_AGAIN = splice(_PAGE_OF_FILES, RULE=_ASKED_AND_NOT_KNOWN)
 
-#: The same asked of the library a page at a time in id order, as `_OWED_LOOKUPS` is.
 _NOT_KNOWN_PAGE = splice(
     """
 SELECT f.asset_id
@@ -619,10 +486,10 @@ _LOOKUP_OF = (
     " WHERE asset_id = ?"
 )
 
-#: A moment later than any answer: "asked before this" is any answer at all.
+#: Later than any answer.
 _ANY_AGE = 2**62
 
-#: The sealed AcoustID key's id. One row or none: an install has one application key.
+#: One row or none.
 _KEY_ID = "SELECT secret_id FROM music_lookup_key WHERE id = 1"
 _SET_KEY_ID = """
 INSERT INTO music_lookup_key (id, secret_id, set_at) VALUES (1, ?, ?)
@@ -648,7 +515,7 @@ class OwedPage:
     """One page of the files a lookup is owed for (`NameStore.owed_lookups`)."""
 
     files: tuple[str, ...]
-    #: The last id the page READ, song or no song: where the next page starts. None at the end.
+    #: The last id read, where the next page starts; None at the end.
     last: str | None
 
 
@@ -687,9 +554,7 @@ class NameStore:
         return asset_id in await self.wanting_lookup([asset_id], shortest_ms=shortest_ms)
 
     async def wants_asking_again(self, asset_id: str, *, shortest_ms: int, before: int) -> bool:
-        """Whether AcoustID may be asked again about this file: its last answer was that it did not
-        know it, given before `before` (nought: any age), and it still has no song. See
-        `_ASKED_AND_NOT_KNOWN`."""
+        """Whether AcoustID may be asked again about this file (see `_ASKED_AND_NOT_KNOWN`)."""
         found = await self.wanting_asking_again([asset_id], shortest_ms=shortest_ms, before=before)
         return asset_id in found
 
@@ -708,7 +573,7 @@ class NameStore:
     async def _wanting(
         self, statement: str, asset_ids: Sequence[str], *, shortest_ms: int, **bound: object
     ) -> set[str]:
-        # Long enough by the file's own length where it has one, else by what the fingerprint covers.
+        # The file's own length where it has one, else the fingerprint's.
         lengths = await self._songless_lengths(asset_ids)
         if not lengths:
             return set()
@@ -734,8 +599,7 @@ class NameStore:
     async def not_known_page(
         self, *, after: str, limit: int, shortest_ms: int, before: int
     ) -> OwedPage:
-        """One page of the files AcoustID did not know, last asked before `before`, that still
-        have no song, in id order after `after`. See `owed_lookups` for how the walk pages."""
+        """Files AcoustID did not know, asked before `before`, songless, a page after `after`."""
         rows = await self._db.fetch_all(
             _NOT_KNOWN_PAGE,
             {"after": after, "limit": limit, "shortest_ms": shortest_ms, "before": before},
@@ -743,33 +607,21 @@ class NameStore:
         return await self._songless_page([str(row["asset_id"]) for row in rows])
 
     async def _songless_page(self, ids: list[str]) -> OwedPage:
-        """A page read in id order, less the files that carry a song (asked of the kernel), with
-        the last id READ as where the next page starts."""
+        """A page less the songful files, with the last id read as the next start."""
         if not ids:
             return OwedPage(files=(), last=None)
         carrying = await songs_of(self._db, ids)
         return OwedPage(files=tuple(one for one in ids if not carrying.get(one)), last=ids[-1])
 
     async def owed_lookups(self, *, after: str, limit: int, shortest_ms: int) -> OwedPage:
-        """One page of the files a lookup is still owed for, in id order after `after`.
-
-        The files that carry a song already are left out, asked of the kernel (`songs_of`), so a
-        page can hold fewer than `limit` files while more follow: the next page starts after the
-        page's `last`, which is the last id READ, and the walk ends when that is None.
-        """
+        """One page of files still owed a lookup after `after`; a short page is not the end."""
         rows = await self._db.fetch_all(
             _OWED_LOOKUPS, {"after": after, "limit": limit, "shortest_ms": shortest_ms}
         )
         return await self._songless_page([str(row["asset_id"]) for row in rows])
 
     async def keep_lookup(self, asset_id: str, kept: LookupKept) -> None:
-        """Write down what one lookup sent and what came of it, and tell every admin.
-
-        Told on the work's own bell (`About.JOBS`), which the Music pane's counts and the lookup
-        task's row on Tasks follow: an answer of nothing, a refusal and a failure change those
-        counts and nothing any wall of files draws, so they ring no library bell. A song named
-        on the file is told on the library's bell as well, by its writer (`LookupTask._keep`).
-        """
+        """Record one lookup on `About.JOBS`; a named song rings the library bell elsewhere."""
         async with telling(self._db, EVERY_ADMIN, About.JOBS) as connection:
             await connection.execute(_KEEP_LOOKUP, _lookup_row(asset_id, kept))
 
@@ -798,12 +650,12 @@ class NameStore:
         return None if row is None else str(row["secret_id"])
 
     async def set_key_id(self, secret_id: str) -> None:
-        """Point at a newly sealed key. Every admin's settings screen is told: it says "Key set"."""
+        """Point at a newly sealed key, telling every admin's settings screen."""
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             await connection.execute(_SET_KEY_ID, (secret_id, int(time.time())))
 
     async def drop_key_id(self) -> None:
-        """Forget which key was set. The sealed value itself is forgotten by the caller."""
+        """Forget which key was set; the caller forgets the sealed value."""
         async with telling(self._db, EVERY_ADMIN, About.SETTINGS) as connection:
             await connection.execute(_DROP_KEY_ID)
 

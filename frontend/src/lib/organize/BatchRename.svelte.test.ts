@@ -1,10 +1,5 @@
-/*
- * The batch rename sheet: it shows the server's plan before anything moves, asks again when the
- * words or the clash rule change, and renames only on the press, with one Undo for the batch.
- *
- * Rendered rather than read from the source: matching an expression out of the component would be
- * a second copy of the component, not a check.
- */
+/* The batch rename sheet: it shows the server's plan before anything moves, asks again when the
+ * words or the clash rule change, and renames only on the press, with one Undo for the batch. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
 import { reactiveProps } from '$lib/design/testing.svelte';

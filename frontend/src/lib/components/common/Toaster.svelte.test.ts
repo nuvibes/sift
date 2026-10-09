@@ -7,19 +7,7 @@ import toasterSource from './Toaster.svelte?raw';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { place, thing } from '$lib/components/common/toast-pieces';
 
-/*
- * The mark on a toast, and the one that MOVES.
- *
- * Most toasts announce something that already happened and their mark is a still glyph chosen by
- * the tone. A download is the other kind: it says a thing is happening now, and it stands until the
- * thing stops. A still arrow beside "Downloading..." looks exactly like a still arrow beside
- * "Downloaded", so the motion is what separates the two, which makes it a fact worth a test rather
- * than decoration.
- *
- * The movement itself is a CSS animation and jsdom computes no animations, so what is pinned here is
- * the thing that decides whether the rule applies at all: which toasts carry the class, and which
- * must not.
- */
+/* A download's mark moves and others stand still: which toasts carry the class. */
 
 let host: HTMLElement;
 let mounted: Record<string, unknown>;
@@ -51,8 +39,7 @@ describe('the mark that moves', () => {
 	});
 
 	it('does not move on the toast that says the fetch is over', () => {
-		// The words are nearly the same and the meaning is opposite. If both moved, the moving mark
-		// would say nothing at all.
+		// Nearly the same words, opposite meaning.
 		toasts.show('Downloaded. Drag it in from your downloads.');
 		flushSync();
 
@@ -67,14 +54,7 @@ describe('the mark that moves', () => {
 	});
 });
 
-/*
- * The linked name, drawn as part of the sentence rather than as a control beside it.
- *
- * A toast that says "added to the photo set beach days" and gives no way to go and look at it is a
- * message about something you then have to find. What this pins is that the name is an anchor with
- * a real address, and that the sentence a screen reader is handed is the whole one: the buttons
- * are named after the message, and a lead with the name missing names the wrong thing.
- */
+/* A named thing is a real link inside the sentence, and the whole sentence is what is heard. */
 describe('a toast that names something', () => {
 	it('draws the thing as a link to its page, where it sits in the sentence', () => {
 		toasts.show(['3 files went into ', thing('collection', 'c1', 'Best of'), ' just now']);
@@ -112,21 +92,11 @@ describe('a toast that names something', () => {
 	});
 });
 
-/*
- * A long word stays inside the toast.
- *
- * A downloaded file's name is ONE word to the layout, and a flex item's floor is its longest word,
- * so "Downloaded Instagram810000000_10000000001..." would run out of the toast's right edge.
- * The rule is the primitive's, so every caller has it without asking.
- *
- * Asserted against the STYLESHEET as well as the text, because jsdom has no layout: a rendered
- * width here would pass with the rule deleted. The box itself is looked at in the real window.
- */
+/* A long word stays inside the toast, asserted on the stylesheet since jsdom has no layout. */
 describe('a long name', () => {
 	const NAME = `Instagram${'810000000_1000000000001'.repeat(4)}.mp4`.slice(0, 90);
 
-	/** One rule's body, from the stylesheet alone, with its comments taken out so a phrase in a
-	 *  comment cannot stand in for the rule. */
+	/** One rule's body, comments removed so prose cannot stand in for the rule. */
 	function ruleOf(selector: string): string {
 		const styles = toasterSource.slice(toasterSource.lastIndexOf('<style>'));
 		const start = styles.indexOf(`\t${selector} {`);

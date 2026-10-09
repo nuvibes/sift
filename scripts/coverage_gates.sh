@@ -289,7 +289,7 @@ _cov_access() {
 # scheduling setting that was assembled and quietly never applied. Both look like success.
 _cov_mp4() { _cov src/sift/kernel/tests/test_mp4.py --cov=sift.kernel.mp4; }
 
-_cov_subprocess() { _cov src/sift/kernel/tests/test_subprocess.py src/sift/kernel/tests/test_background_priority.py --cov=sift.kernel.subprocess; }
+_cov_subprocess() { _cov src/sift/kernel/tests/test_subprocess.py src/sift/kernel/tests/test_background_priority.py --cov=sift.kernel.subprocess --cov=sift.kernel.subprocess_jobs; }
 # The proxy every download tool goes out through. A branch here that lets a private address past
 # is a tool reaching into the home network on a stranger's say-so, and it looks like a download.
 _cov_public_net() { _cov src/sift/kernel/tests/test_public_net.py --cov=sift.kernel.public_net; }
@@ -616,7 +616,7 @@ _cov_workbench() { _cov src/sift/slices/workbench/tests --cov=sift.slices.workbe
 # `copy_library_aside` are this module's, and with only `test_db.py` run the gate would read both
 # of them as dead code.
 _cov_db() {
-  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
+  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_upkeep.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
     src/sift/kernel/tests/test_db_writer_held.py --cov=sift.kernel.db_writer \
     src/sift/kernel/tests/test_db_steps.py \
     src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \
@@ -642,7 +642,7 @@ _cov_device_load() { _cov src/sift/kernel/tests/test_device_load.py --cov=sift.k
 # The machine's clock: every day and time of day Sift shows or groups by, in Python and in SQL.
 _cov_when() { _cov src/sift/kernel/tests/test_when.py --cov=sift.kernel.when; }
 # The location door: a copy of a file with its GPS taken out, for everything Sift writes or sends.
-_cov_places() { _cov src/sift/kernel/tests/test_places.py --cov=sift.kernel.places; }
+_cov_places() { _cov src/sift/kernel/tests/test_places.py --cov=sift.kernel.places --cov=sift.kernel.places_pictures; }
 # The HEIF door: a HEIC or AVIF still decoded whole, and the JPEG rendition a browser can draw.
 _cov_heif() { _cov src/sift/kernel/tests/test_heif.py --cov=sift.kernel.heif; }
 # A note written beside its target and renamed over it. The desktop shell reads the library switch
@@ -790,7 +790,7 @@ _cov_numbers() { _cov src/sift/kernel/tests/test_numbers.py --cov=sift.kernel.nu
 _cov_attribution() { _cov src/sift/kernel/tests/test_attribution.py --cov=sift.kernel.attribution; }
 # The ffmpeg seam: which encoder this machine gets, and finding a copy of a file that opens. Its
 # own file plus the slices that drive it. The failures here are a job that cannot run.
-_cov_media() { _cov src/sift/kernel/tests/test_media.py src/sift/kernel/tests/test_moments.py src/sift/kernel/tests/test_moving_stream.py --cov=sift.kernel.media; }
+_cov_media() { _cov src/sift/kernel/tests/test_media.py src/sift/kernel/tests/test_moments.py src/sift/kernel/tests/test_moving_stream.py --cov=sift.kernel.media --cov=sift.kernel.media_card --cov=sift.kernel.media_frames --cov=sift.kernel.media_sources; }
 # The shapes a write to the library is described by, and the permission behind them. Reached
 # through the editor and the deleter, which are the two features allowed to move a FILE, and
 # through the library slice, which is the one allowed to arrange the FOLDERS they sit in.

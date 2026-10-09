@@ -253,6 +253,32 @@ WHERE a.probed_at IS NOT NULL
 )
 
 
+def _kept(keep: ProbeKeep | None, asset_id: str, now: int) -> tuple[str, tuple[object, ...]] | None:
+    return (
+        None
+        if keep is None
+        else (
+            _KEEP_PROBE,
+            (asset_id, keep.version, keep.tool, keep.body, now),
+        )
+    )
+
+
+def _said_probed(asset: Asset) -> None:
+    log.info(
+        "content.probed",
+        asset_id=asset.id,
+        media_type=asset.media_type,
+        width=asset.width,
+        height=asset.height,
+        duration_ms=asset.duration_ms,
+        container=asset.container,
+        vcodec=asset.vcodec,
+        acodec=asset.acodec,
+        interleave_gap=asset.interleave_gap,
+    )
+
+
 class Probes(StoreCore):
     """What the readers took off each file."""
 
@@ -286,12 +312,9 @@ class Probes(StoreCore):
         keep: ProbeKeep | None = None,
         keep_fingerprints: bool = False,
     ) -> Asset | None:
-        """Write down what a file turned out to be, once the probe has decoded it; None if the
-        asset has gone. The gate's own fields are not arguments; only `mime` can be corrected.
+        """Write down what the probe found, and `keep`, its whole answer, in one transaction.
 
-        `keep_fingerprints` (a scan-only read) uses a statement that does not NAME the four, and
-        refuses one handed in. `keep`, the tool's whole answer, lands in THIS transaction: the
-        columns and the answer they were read from are one fact.
+        `keep_fingerprints` names none of the four fingerprints and refuses one handed in.
         """
         if keep_fingerprints and any(
             value is not None for value in (phash, videohash, oshash, video_phash)
@@ -299,7 +322,6 @@ class Probes(StoreCore):
             raise ValueError(
                 "record_probe was given a fingerprint and asked to keep the existing ones"
             )
-        # ONE write and ONE tail, whichever statement: they differ only in the columns they name.
         now = self._now()
         common = (
             width,
@@ -336,32 +358,14 @@ class Probes(StoreCore):
                 ),
             )
         )
-        kept = (
-            None
-            if keep is None
-            else (
-                _KEEP_PROBE,
-                (asset_id, keep.version, keep.tool, keep.body, now),
-            )
-        )
+        kept = _kept(keep, asset_id, now)
         # Announced as an arrival: a player waiting on an unread file asks again when it hears it.
         rows = await self._write_moving_files(statement, values, then=kept)
         if not rows:
             return None
 
         asset = asset_from_row(rows[0])
-        log.info(
-            "content.probed",
-            asset_id=asset.id,
-            media_type=asset.media_type,
-            width=asset.width,
-            height=asset.height,
-            duration_ms=asset.duration_ms,
-            container=asset.container,
-            vcodec=asset.vcodec,
-            acodec=asset.acodec,
-            interleave_gap=asset.interleave_gap,
-        )
+        _said_probed(asset)
         return asset
 
     async def record_fingerprints(

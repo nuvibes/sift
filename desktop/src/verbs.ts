@@ -1,10 +1,4 @@
-/* The verbs the page may ask the machine to do, on the main process's side.
- *
- * Each is a named, argument-checked request, never a general capability. EVERY HANDLER CHECKS WHO
- * ASKED, at the moment of the call: the preload is attached only to saved origins, but a window
- * keeps its channel while its page can be navigated away, and a capability must not outlive the page
- * it was granted to.
- */
+/* The verbs the page may ask the machine to do, on the main process's side. */
 
 import {
 	app,
@@ -93,6 +87,18 @@ import { machineName, thisMachine, type LocalMachine } from './machine';
 import type { StartWithWindows } from './startup';
 import { dragAddonFile } from './paths';
 import { applyUpdate, feedAddress, type UpdateOutcome } from './update';
+import type {
+	Suggested,
+	Setup,
+	LibraryBook,
+	SavedServer,
+	ConnectState,
+	ServerBook,
+	DragOutcome,
+	ShellLog,
+	DownloadFolder,
+	BrowserChoice
+} from './verb-shapes';
 
 export {
 	ADD_LIBRARY,
@@ -132,85 +138,24 @@ export {
 	START_DRAG
 };
 
-/** What the folder screen is offered. `existing` says a database is already there. */
-export interface Suggested {
-	path: string;
-	existing: boolean;
-}
-
-export interface Setup {
-	/** Save which way this copy runs, and go wherever that leads. */
-	mode(chosen: 'standalone' | 'client'): Promise<Settled>;
-	/** The folder offered first: a library an earlier installation left, or the default. */
-	suggested(): Promise<Suggested>;
-	/** Settle the library folder: the suggested one, or one chosen from the machine's own dialog.
-	 *  `told` hears each step as it starts, for the screen to say. */
-	library(pick: boolean, told: (step: SetupStep) => void): Promise<Settled>;
-	/** Unsay the mode, so the question before it is asked again: the screen shown is derived from
-	 *  which answers exist, so going back removes an answer, by one rule both ways. */
-	back(): Promise<Settled>;
-}
-
-/**
- * The libraries this copy has opened, and switching to one of them: handed in, since a switch
- * (stop, read, offer an upgrade, write, start) is the backend's supervisor's to do.
- */
-export interface LibraryBook {
-	/** Every library this copy has opened, newest first, and which of them is open now. */
-	list(): LibraryList;
-	/** Open one already on that list. The shell decides what a question about its schema costs. */
-	open(dataDir: string): Promise<Settled>;
-	/** Open one somebody points at in the machine's own picker, and add it to the list. */
-	add(): Promise<Settled>;
-	/** Take one off the list. The library itself is untouched; this forgets the shortcut. */
-	forget(dataDir: string): LibraryList;
-}
-
 export type { LibraryList };
-
-/** One address the shell has been told, as the connect screen lists it. */
-export interface SavedServer {
-	label: string;
-	origin: string;
-}
-
-/** Where the connect screen stands, in one answer. */
-export interface ConnectState {
-	/** The address last tried, so a correction starts from it. */
-	last: string | null;
-	/** Why the last address did not answer, when that is why the screen is up. Null otherwise. */
-	problem: string | null;
-	/** Every address saved, oldest first. */
-	servers: SavedServer[];
-}
-
-/**
- * What the connect screen needs from the shell: try an address, remember the last one, say why it
- * did not answer (so a dead server is a screen, not a crash), and forget one that has gone.
- */
-export interface ServerBook {
-	remember(origin: string): Promise<string | null>;
-	last(): string | null;
-	problem(): string | null;
-	saved(): SavedServer[];
-	forget(origin: string): SavedServer[];
-}
+export type {
+	Suggested,
+	Setup,
+	LibraryBook,
+	SavedServer,
+	ConnectState,
+	ServerBook,
+	DragOutcome,
+	ShellLog,
+	DownloadFolder,
+	BrowserChoice
+};
 
 /** How far a page at this URL may reach: this machine's own Sift, a saved server, or not at all. */
 export type ReachCheck = (url: string) => Reach | null;
 
-/**
- * The verbs a page served by ANOTHER computer may use. Everything else is the local backend's alone.
- *
- * A saved server, or anything that can alter a plain-http page on its way here, gets what a window
- * onto a library elsewhere needs and nothing that acts on this machine's own Sift (sharing, the
- * firewall, storage, the library list, the shell's log, first run, the pickers). The clipboard, a
- * screenshot and this copy's own update (no argument: only a release its feed signs) only just
- * after a real press (`pressed`), a drag of only what the server streams. `FORGET_MODE` is how a
- * client returns to the first question. How THIS window behaves (the browser, close-to-tray, start
- * with Windows) is stored by this shell and is all visible and reversible. `MACHINE_NAME` is read,
- * never set, so a phone can tell two desks apart.
- */
+/** The verbs a page served by ANOTHER computer may use. */
 export const REMOTE_VERBS: ReadonlySet<string> = new Set([
 	START_DRAG,
 	DRAG_PROGRESS,
@@ -247,15 +192,11 @@ export function verbsFor(reach: Reach | null): string[] {
 	return reach === 'local' ? [...EVERY_VERB] : EVERY_VERB.filter((one) => REMOTE_VERBS.has(one));
 }
 
-/**
- * What the settings screen needs in order to offer this library to the network. `mode` lets the
- * screen say WHY a client cannot share, rather than hiding the control.
- */
+/** What the settings screen needs in order to offer this library to the network. */
 export interface Sharing {
 	/** On or off, as the setting says. */
 	enabled: boolean;
-	/** Whether the backend is actually listening on it. Differs from `enabled` only if the change
-	 *  could not be made (see `Backend.listenOnNetwork`). */
+	/** Whether the backend is actually listening on it. */
 	live: boolean;
 	mode: 'standalone' | 'client' | null;
 	/** The address to type on the other computer, e.g. "http://192.168.1.41:5171". Null if unknown. */
@@ -264,9 +205,7 @@ export interface Sharing {
 	port: number;
 }
 
-/* Windows' own dialog, deliberately: the security property of a grant. A page cannot open, drive,
- * read or pre-fill it, so the folder is one a person physically pointed at, which makes listing it
- * safe. `dontAddToRecent` keeps media folders off the recent list every application can read. */
+/* Windows' own dialog, deliberately: the security property of a grant. */
 export async function chooseFolder(parent: BrowserWindow | null): Promise<string | null> {
 	const options = {
 		title: 'Choose a folder Sift may look in',
@@ -287,11 +226,8 @@ export async function chooseFolder(parent: BrowserWindow | null): Promise<string
 	return picked.canceled || chosen === undefined ? null : chosen;
 }
 
-/**
- * The operating system's own file dialog, for one database file (Migrate from Stash's), by the
- * folder dialog's rules. Choosing grants nothing: the server reads it only inside a folder Sift has
- * already been given.
- */
+/** The operating system's own file dialog, for one database file (Migrate from Stash's), by the
+ * folder dialog's rules. */
 export async function chooseFile(parent: BrowserWindow | null): Promise<string | null> {
 	const options = {
 		title: "Choose Stash's database file",
@@ -318,39 +254,6 @@ export async function chooseFile(parent: BrowserWindow | null): Promise<string |
 
 /* --- Taking a file out ------------------------------------------------------------------- */
 
-/**
- * What happened when the page asked to drag something out.
- *
- * OLE's drag loop ends when the button comes up, so a client-mode file on another machine cannot be
- * fetched inside the gesture; Windows' virtual file (a descriptor plus a stream read after the drop,
- * following the download as it arrives) makes it one gesture. See desktop/native/drag/src/drag_win.cc.
- */
-export type DragOutcome = 'dragged' | 'unavailable';
-
-/** The end of the shell's log, in the shape of the server's own log route, so one screen draws both. */
-export interface ShellLog {
-	lines: string[];
-	path: string;
-	size: number;
-	present: boolean;
-}
-
-/** Where a file saved out of Sift lands. */
-export interface DownloadFolder {
-	/** The folder itself, always a real path: the machine's own where none was chosen. */
-	path: string;
-	/** Whether that path was CHOSEN, rather than being whatever this machine calls Downloads: only
-	 * the unchosen one follows the machine if that folder moves. */
-	chosen: boolean;
-}
-
-/** What the page is told about where links go: the list, and which one is chosen. */
-export interface BrowserChoice {
-	/** The executable chosen, or null for whatever Windows would have used. */
-	chosen: string | null;
-	browsers: Browser[];
-}
-
 /** The compiled addon, loaded only where it is used: a binary bound to one Electron version, which
  * at the top would stop the whole main process loading if it were missing. */
 function addon(): {
@@ -361,19 +264,15 @@ function addon(): {
 	return require(dragAddonFile());
 }
 
-/**
- * Drag a file that is already here. Nothing is read and nothing is copied by us. `how` is for the
- * log: a share is the one that can be slow.
- */
+/** Drag a file that is already here. Nothing is read and nothing is copied by us. */
 function dragFile(filePath: string, how: 'local' | 'cached' | 'share'): void {
 	log.info('drag.started', { how, path: filePath });
 	addon().startDrag(filePath);
 }
 
-/**
- * Drag a file that is still arriving: the download starts NOT awaited, the drag begins in the same
- * tick while the button is down, and the receiver reads the stream after the drop as it arrives.
- */
+/** Drag a file that is still arriving: the download starts NOT awaited, the drag begins in the
+ * same tick while the button is down, and the receiver reads the stream after the drop as it
+ * arrives. */
 function dragArriving(at: Arriving, name: string, total: number | null): void {
 	log.info('drag.started', {
 		how: 'streamed',
@@ -383,11 +282,8 @@ function dragArriving(at: Arriving, name: string, total: number | null): void {
 	addon().startStreamedDrag(at.partial, at.finished, name, total ?? -1);
 }
 
-/**
- * The frame that asked, or null when it may not ask: EVERY HANDLER GOES THROUGH THIS, at the moment
- * of the call. Is the page Sift at all, and may a page of its reach use this channel? The preload
- * leaving a method off is a convenience; this is the check.
- */
+/** The frame that asked, or null when it may not ask: EVERY HANDLER GOES THROUGH THIS, at the
+ * moment of the call. */
 /** Whether a page from another computer asks just after a real press here; a refusal is logged. */
 function pressed(event: IpcMainInvokeEvent, reachOf: ReachCheck, what: string): boolean {
 	const ok = reachOf(event.senderFrame?.url ?? '') !== 'remote' || takeGesture(event.sender);
@@ -403,11 +299,9 @@ export function askingFrame(event: IpcMainInvokeEvent, reachOf: ReachCheck, chan
 	return frame;
 }
 
-/**
- * Whether a share path a remote server named is one this machine may hand to a drag: a server
- * describes ITS files, so only a `\\server\share\...` path elsewhere, never a local drive, a device
- * path, an administrative share or a share on this machine.
- */
+/** Whether a share path a remote server named is one this machine may hand to a drag: a server
+ * describes ITS files, so only a `\\server\share\...` path elsewhere, never a local drive, a
+ * device path, an administrative share or a share on this machine. */
 export function isShareFromElsewhere(named: string): boolean {
 	const match = /^\\\\([^\\/?.:][^\\/:]*)\\([^\\/]+)\\[^/]+$/.exec(named);
 	if (match === null) return false;
@@ -449,11 +343,8 @@ function isHexColor(value: unknown): value is string {
 export type MoveOutcome =
 	{ ok: true; locations: DataLocations; renamed: boolean } | { ok: false; reason: string | null };
 
-/**
- * Install a release NEWER than this copy, from `feed`: the page's Install button, and the backend's
- * ask from another computer (`shelllink.ts`), by one rule. `beforeLaunch` runs once the installer
- * is verified, with the version it installs, and before it opens.
- */
+/** Install a release NEWER than this copy, from `feed`: the page's Install button, and the
+ * backend's ask from another computer (`shelllink.ts`), by one rule. */
 export async function installNewer(
 	feed: string,
 	beforeLaunch: (version: string) => Promise<void>
@@ -470,10 +361,7 @@ export async function installNewer(
 	return outcome;
 }
 
-/**
- * What the shell hands the verbs, by name, so a value cannot land in the wrong slot. Every field is
- * optional: a test names the one hook it exercises and the rest default to "no shell to ask".
- */
+/** What the shell hands the verbs, by name, so a value cannot land in the wrong slot. */
 export interface ShellHooks {
 	feedUrl?: () => string | null;
 	/* Close Sift and open it again, for Restart; null where no shell can relaunch itself. */
@@ -496,8 +384,7 @@ export interface ShellHooks {
 		chosen: () => string | null;
 		choose: (dir: string | null) => void;
 	} | null;
-	/* Sift's OWN two folders (the database and the cache). `move` is the whole job (stop, move,
-	 * write, start), which only `main` can do; `forget` only clears which way Sift was set up. */
+	/* Sift's OWN two folders (the database and the cache). */
 	storage?: {
 		read: () => Promise<StorageReport>;
 		move: (target: string, report: (copied: number, total: number) => void) => Promise<MoveOutcome>;
@@ -508,8 +395,7 @@ export interface ShellHooks {
 	/* The caption-button overlay's height, for the reason the port is passed; null where there is
 	 * no overlay, and the repaint verb answers false. */
 	titleBarHeight?: number | null;
-	/* The two questions asked before a backend exists. Registered always, since forgetting the mode
-	 * sends the window back to them. Null in tests and in a shell already set up. */
+	/* The two questions asked before a backend exists. */
 	setup?: Setup | null;
 	/* Stops the backend before an update's installer launches; null in tests and client mode. */
 	stopForUpdate?: (() => Promise<void>) | null;
@@ -543,8 +429,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		startup = null
 	} = hooks;
 
-	/* SYNCHRONOUS, the one verb that is: the preload asks while the page loads, before its scripts
-	   run. It only decides which methods are built; every handler still checks its caller. */
+	/* SYNCHRONOUS, the one verb that is: the preload asks while the page loads, before its
+	   scripts run. */
 	ipcMain.on(BRIDGE_VERBS, (event, href: unknown) => {
 		const named = typeof href === 'string' ? reachOf(href) : null;
 		const frame = event.senderFrame;
@@ -635,26 +521,23 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 			return 'unavailable';
 		}
 
-		/* The whole file is already here: drag it where it lies, with no copy. EXCEPT A FILE THAT
-		 * HOLDS ITS PLACE: no path is ever dragged for it; the copy without the place is fetched. */
+		/* The whole file is already here: drag it where it lies, with no copy. */
 		const placed = file.holds_a_place === true;
 		if (file.path !== null && !placed) {
 			dragFile(file.path, 'local');
 			return 'dragged';
 		}
 
-		/* And a client-mode file fetched by an earlier drag is here too, so it takes the same path.
-		 * Checked before anything is started: it is the difference between a second drag of the same
-		 * clip being instant and it being downloaded again. */
+		/* And a client-mode file fetched by an earlier drag is here too, so it takes the same
+		 * path. */
 		const cached = alreadyFetched(assetId, file);
 		if (cached !== null) {
 			dragFile(cached, 'cached');
 			return 'dragged';
 		}
 
-		/* A LIBRARY ON A NETWORK SHARE NEEDS NO TRANSFER AT ALL: both machines see the NAS, so the
-		 * share path is handed over and read as at home, at any size. Below the cached copy, which
-		 * is faster to read and the same file. */
+		/* A LIBRARY ON A NETWORK SHARE NEEDS NO TRANSFER AT ALL: both machines see the NAS, so
+		 * the share path is handed over and read as at home, at any size. */
 		const began = Date.now();
 		const onTheShare = placed ? null : await reachedHere(file);
 		const waited = Date.now() - began;
@@ -662,8 +545,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 			dragFile(onTheShare, 'share');
 			return 'dragged';
 		}
-		/* How long the share was given: waiting the whole budget means it never answered; a short
-		   wait means it answered no, a different problem. */
+		/* How long the share was given: waiting the whole budget means it never answered; a
+		   short wait means it answered no, a different problem. */
 		log.info('drag.share_not_used', {
 			waited_ms: waited,
 			timed_out: waited >= 1500,
@@ -751,8 +634,7 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		return readClipboard();
 	});
 
-	/* A picture of the window asking, or one area, as PNG bytes; null when there is none. Only the
-	 * page's own pixels. */
+	/* A picture of the window asking, or one area, as PNG bytes; null when there is none. */
 	ipcMain.handle(CAPTURE_WINDOW, async (event, area: unknown): Promise<Uint8Array | null> => {
 		const frame = askingFrame(event, reachOf, CAPTURE_WINDOW);
 		if (frame === null || !pressed(event, reachOf, 'capture')) return null;
@@ -792,8 +674,7 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 	});
 
 	/* WHAT THIS COPY OF SIFT IS, which in client mode is not the library's version: the older of
-	 * the two would be invisible. Null on the library's own machine (one install) and from a
-	 * checkout, where Electron would answer its own version. */
+	 * the two would be invisible. */
 	ipcMain.handle(SHELL_VERSION, async (event): Promise<string | null> => {
 		const frame = askingFrame(event, reachOf, SHELL_VERSION);
 		if (frame === null) return null;
@@ -809,9 +690,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		return firewallState(port);
 	});
 
-	/* THE PAGE SAYS "GO" AND NOTHING ELSE: port and command are this shell's (firewall.ts), or it
-	 * would be "run this as administrator". It answers the state afterwards, so a cancelled prompt
-	 * and a refusal both get the truth. */
+	/* THE PAGE SAYS "GO" AND NOTHING ELSE: port and command are this shell's (firewall.ts), or
+	 * it would be "run this as administrator". */
 	ipcMain.handle(OPEN_FIREWALL, async (event, scope: unknown): Promise<FirewallReport> => {
 		const frame = askingFrame(event, reachOf, OPEN_FIREWALL);
 		if (frame === null || sharing === null)
@@ -827,8 +707,7 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		return { chosen: links.chosen(), browsers: await installedBrowsers() };
 	});
 
-	/* The page picks the shade; the operating system keeps the buttons. Only the two colours reach
-	 * `setTitleBarOverlay`, as plain `#rgb`/`#rrggbb`, since the string reaches the operating system. */
+	/* The page picks the shade; the operating system keeps the buttons. */
 	ipcMain.handle(SET_TITLE_BAR, async (event, colors: unknown): Promise<boolean> => {
 		const frame = askingFrame(event, reachOf, SET_TITLE_BAR);
 		if (frame === null) return false;
@@ -876,9 +755,7 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 		}
 	);
 
-	/* A backup Sift saved here, shown in its folder (the Backup pane). A PATH FROM A PAGE, so only a
-	 * whole path to an existing file named as a backup (`isBackupPath`), local only, and
-	 * `showItemInFolder`, which runs nothing, never `openPath`. */
+	/* A backup Sift saved here, shown in its folder (the Backup pane). */
 	ipcMain.handle(SHOW_IN_FOLDER, async (event, path: unknown): Promise<boolean> => {
 		const frame = askingFrame(event, reachOf, SHOW_IN_FOLDER);
 		if (frame === null || !isBackupPath(path)) return false;
@@ -998,12 +875,8 @@ export function registerVerbs(reachOf: ReachCheck, hooks: ShellHooks = {}): void
 
 /* --- Where a second computer would reach this one ----------------------------------------- */
 
-/**
- * This machine's address on the network, or null when it has none worth naming: IPv4, never
- * loopback, since somebody TYPES IT INTO ANOTHER COMPUTER. A HOME-NETWORK ADDRESS IS PREFERRED over
- * the first listed, which with a VPN is often a carrier-range address the other machine cannot
- * reach. One address, since a list does not answer "what do I type".
- */
+/** This machine's address on the network, or null when it has none worth naming: IPv4, never
+ * loopback, since somebody TYPES IT INTO ANOTHER COMPUTER. */
 export function networkAddress(): string | null {
 	return preferredAddress(ownAddresses());
 }
@@ -1054,10 +927,8 @@ export interface Capturable {
 	getZoomFactor(): number;
 }
 
-/**
- * The area asked for, in the units `capturePage` takes, or undefined for the whole window: anything
- * but four finite numbers with some size is the whole window. CSS pixels times the zoom.
- */
+/** The area asked for, in the units `capturePage` takes, or undefined for the whole window:
+ * anything but four finite numbers with some size is the whole window. */
 export function captureRect(area: unknown, zoom: number): Rectangle | undefined {
 	if (typeof area !== 'object' || area === null) return undefined;
 	const { x, y, width, height } = area as Record<string, unknown>;

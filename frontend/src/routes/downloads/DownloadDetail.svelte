@@ -8,10 +8,7 @@
 		resume?: boolean;
 	}
 
-	/**
-	 * The fixes the opened detail offers for a download, by the ids the row's verbs use. The row
-	 * reads this to leave its own button off while the detail is open, so one act is offered once.
-	 */
+	/** The fixes the opened detail offers for a download, by the ids the row's verbs use. */
 	export function detailOffers(
 		item: Item,
 		sentence: string | null | undefined,
@@ -31,30 +28,7 @@
 </script>
 
 <script lang="ts">
-	/* Everything about one download that is not worth a column.
-	 *
-	 * Opened from the row's chevron, or by pressing the row. Two halves, and the order is the
-	 * point: if something went wrong, that is the first thing here and it comes with the way out
-	 * of it: the sentence, what it cost, the raw code for a bug report, and the buttons. Only
-	 * then the facts, which are reference and are read far less often than they are scrolled
-	 * past.
-	 *
-	 * The facts are a description list rather than a table: each one is a term and its value, and
-	 * a list that says so is a list a screen reader can read as pairs.
-	 *
-	 * ## What is NOT here, and why
-	 *
-	 * "Tried" and "Fetcher" are not on the wire: `DownloadItem` carries no attempt count and no
-	 * downloader name (read `slices/download/models.py`), so a row for either would be a label
-	 * with nothing under it, which reads as a fact Sift has lost rather than one it never had.
-	 *
-	 * "See it in History" is not here either, and that one is a refusal rather than a gap. A
-	 * file's history is a PANE INSIDE the file's own panel and has no address of its own
-	 * (`AssetView` holds which pane is showing in plain state, deliberately, so that opening a
-	 * file lands on About). A row labelled "See it in History" would therefore open exactly what
-	 * "Open" opens, under a second name: the drift the shared vocabulary exists to stop. So the
-	 * file is offered once, by its name, and its history is one press away inside it.
-	 */
+	/* Everything about one download that is not worth a column. */
 	import { AssetLink, Button, Problem } from '$lib/components/common';
 	import { whenText } from '$lib/components/common';
 	import { copyText } from '$lib/shell/clipboard';
@@ -84,8 +58,7 @@
 	let { item, sentence, raw, oncookies, onretry, onresume, onopen, gone = false }: Props = $props();
 
 	/* Everything one paste put in the library, for a download that produced more than one file:
-	   a gallery, a playlist. The row names the count and this names the files, each a door to
-	   its own panel, read only once the detail is open: a closed row asks the server nothing. */
+	   a gallery, a playlist. */
 	type DownloadFiles = components['schemas']['DownloadFiles'];
 	type DownloadFile = DownloadFiles['files'][number];
 	const manyFiles = $derived(item.status === 'done' && (item.progress?.total_files ?? 0) > 1);
@@ -116,13 +89,7 @@
 	/** Held by somebody, with what was fetched still on disk. */
 	const held = $derived(item.status === 'paused');
 
-	/*
-	 * What the failure COST, which the sentence does not say.
-	 *
-	 * The sentence says what happened; this says what it means for the library, which is the
-	 * question somebody actually has in front of a red row. One line, and only the two states that
-	 * have an answer. A guess written for every code would be a sentence saying less than nothing.
-	 */
+	/* What the failure COST, which the sentence does not say. */
 	const consequence = $derived(
 		item.status === 'blocked'
 			? 'Nothing will be downloaded from this Site until Sift has cookies for it.'
@@ -131,36 +98,16 @@
 
 	const shownUrl = $derived(item.shown_url ?? item.url ?? '');
 
-	/*
-	 * WHOSE IP IT USED: your own, or a tunnel's. One label and its value.
-	 *
-	 * The question anybody asks of a download is whether the site saw THEIR address. So a direct
-	 * download says "IP used: Your own" and a tunnelled one names the tunnel under the label
-	 * "Tunnel", with the address of the server it went out through under its own label, "Tunnel
-	 * server", covered the way Settings covers it (it is the server's address, not necessarily the
-	 * one the site saw). That address is the one recorded WHEN the download went, not the tunnel's
-	 * address today: a provider can move a tunnel to another server under the same name.
-	 *
-	 * A row with no route recorded says so, rather than claiming "Your own" for a download that was
-	 * never sent, was refused before anything was sent, or predates the record.
-	 */
+	/* WHOSE IP IT USED: your own, or a tunnel's. One label and its value. */
 	const tunnel = $derived(item.via && item.via.toLowerCase() !== 'direct' ? item.via : null);
 
-	/*
-	 * The download folder, by name and by path: the server's answer, `folder` on the row.
-	 *
-	 * The server works the folder out by the rule the download itself follows (the one chosen, else
-	 * the Site's, else the one for everything) and sends its name and its place on disk, so this
-	 * screen has nothing to look up and nothing to guess, and never says "the default folder"
-	 * without naming it. None comes back only for a download with no folder anywhere in that chain,
-	 * and it says so in those words.
-	 */
+	/* The download folder, by name and by path: the server's answer, `folder` on the row. */
 	const folder = $derived(item.folder ?? null);
 
 	const named = $derived(item.filename ?? item.remembered_filename ?? '');
 
 	/* What the folder line is called: "Saving to" while it is saving, "Saved to" once it landed,
-	   "Save to" otherwise. The rule is `destinationWord`'s, one place for every screen that says it. */
+	   "Save to" otherwise. */
 	const toFolder = $derived(destinationWord(item.status));
 
 	function copyDetails() {
@@ -173,14 +120,7 @@
 
 <div class="detail">
 	{#if held}
-		<!--
-			A held download, and the one question it raises answered before anything else.
-
-			Not drawn as a failure, which is the whole of why this is its own block rather than a
-			third state of the one below: `Problem` is the app's red line and nothing is wrong here.
-			Somebody pressed Pause; what this owes them is the promise that the bytes are still
-			there, and the way to let them go again.
-		-->
+		<!-- A held download, and the one question it raises answered before anything else. -->
 		<div class="held">
 			<p class="consequence">Paused. What is downloaded so far is kept.</p>
 			<div class="fixes">
@@ -230,21 +170,13 @@
 			<dt>Link</dt>
 			<dd>
 				{#if gone || !item.url}
-					<!-- Not a link once the file is gone: the address is what it WAS fetched
-					     from, and offering to open it reads as offering the file back. Paste it
-					     above to fetch it again. The ledger does not count this as already
-					     downloaded. -->
+					<!--
+						Not a link once the file is gone: the address is what it WAS fetched from, and
+						offering to open it reads as offering the file back.
+					-->
 					<span class="address gone">{shownUrl}</span>
 				{:else}
-					<!--
-						The address, as it was pasted, and it opens.
-
-						A link rather than plain text, which is a decision worth naming: following it
-						is a visit to that site from this browser, which is a different act from
-						having fetched the file once. It is in here rather than on the row, so it
-						cannot be hit by a stray click while scanning, and it carries `noreferrer`
-						so the site is not told which page it was reached from.
-					-->
+					<!-- The address, as it was pasted, and it opens. -->
 					<a
 						class="address"
 						href={item.url}
@@ -325,17 +257,7 @@
 			<dt>File</dt>
 			<dd>
 				{#if item.asset_id && !gone}
-					<!--
-						Over THIS page, through `AssetLink`.
-
-						A bare anchor to `/asset/{id}` runs the route written for somebody arriving
-						cold: the screen underneath is torn down, and closing the panel goes to the
-						library rather than back. `asset-view` holds the rule, behind `AssetLink`.
-
-						`onopen` is the page's own door where it has one (the same panel, opened
-						by the list that knows what else is in it), and the link is what is left
-						when it does not, which keeps middle-click and copy-link-address working.
-					-->
+					<!-- Over THIS page, through `AssetLink`. -->
 					{#if onopen}
 						<Button tone="link" onclick={() => onopen?.(item.asset_id ?? '')}>{named}</Button>
 					{:else}
@@ -350,8 +272,8 @@
 </div>
 
 <style>
-	/* Indented past the mark so it reads as belonging to the row above it rather than as a row of
-	   its own. */
+	/* Indented past the mark so it reads as belonging to the row above it rather than as a row
+	   of its own. */
 	.detail {
 		display: flex;
 		flex-direction: column;
@@ -390,8 +312,8 @@
 		gap: var(--space-2);
 	}
 
-	/* Term and value in two columns, so every value starts in the same place and the pairs read as
-	   pairs rather than as a run of sentences. */
+	/* Term and value in two columns, so every value starts in the same place and the pairs read
+	   as pairs rather than as a run of sentences. */
 	.facts {
 		display: grid;
 		grid-template-columns: max-content 1fr;
@@ -422,8 +344,8 @@
 		gap: var(--space-2);
 	}
 
-	/* The folder's name on its own line and its path under it, quieter: the name is what is read,
-	   the path is what tells two of one name apart. */
+	/* The folder's name on its own line and its path under it, quieter: the name is what is
+	   read, the path is what tells two of one name apart. */
 	.folder,
 	.where {
 		display: block;
@@ -440,8 +362,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The ink steps over --dur-instant rather than snapping. The underline arrives immediately,
-	   which is right: a mark either identifies the word under the pointer or it does not. */
+	/* The ink steps over --dur-instant rather than snapping. */
 	.address {
 		color: var(--sift-ink-3);
 		text-decoration: none;

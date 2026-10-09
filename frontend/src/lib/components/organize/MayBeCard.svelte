@@ -1,42 +1,7 @@
 <script lang="ts">
-	/*
-	 * "These groups may be her": one card per person, the unnamed groups that may be them, closest
-	 * first, drawn on Needs your input beside her standing questions.
-	 *
-	 * ## A group, not a face
-	 *
-	 * Every other card here compares one face with a person, so a group whose faces each fall just
-	 * short of the line for asking would never come up at all, however plainly the group as a whole looked
-	 * like her. The server compares the group's middle with her pictures (and adds the groups her
-	 * folder proposes), and this card asks about them together. See `FaceService.groups_that_may_be`.
-	 *
-	 * ## The tick is the answer's scope
-	 *
-	 * Each group starts ticked or not as the server says (close enough, or proposed by her folder),
-	 * and somebody unticks any that are not her. Yes is about the TICKED groups: the faces each row
-	 * shows are confirmed (somebody looked at them) and the rest of each group is asked about.
-	 * No is about the whole card: none of these groups is her, and every face in them is refused
-	 * as her, which is what keeps the question from coming back after the groups are rebuilt.
-	 *
-	 * The ticks are held here and nowhere else: they describe one look at one card, and a reload of
-	 * the list after an answer draws the groups that are left with the server's own starting ticks.
-	 *
-	 * ## Looking at a group face by face
-	 *
-	 * A group's crops open its review ("47 faces that may be her", `MayBeReview`), the same kind of
-	 * face-by-face review a person's card opens, where each face has its own Yes and No. The card's
-	 * menu opens the closest group's.
-	 *
-	 * ## Why a group is on the card, said once
-	 *
-	 * The reasons are about the card as much as about each group (her folder, a stash-box's
-	 * pictures), so each is said once, under the question; a group carries only its own numbers.
-	 *
-	 * ## One height with the question cards
-	 *
-	 * The groups share a question card's strip of two rows of six, a block per group, and each
-	 * tick stands under its block.
-	 */
+	/* "These groups may be her": the unnamed groups that may be one person, closest first. Yes takes
+	 * the ticked groups (the shown faces confirmed, the rest asked), No refuses every group as her;
+	 * the ticks are held here only. A group's crops open its face-by-face review. */
 	import { goto } from '$app/navigation';
 
 	import FaceCovers from '$lib/components/faces/FaceCovers.svelte';
@@ -77,8 +42,7 @@
 	/** Groups a card draws. */
 	const GROUPS_ON_A_CARD = 3;
 
-	/* The closest few, so every card stays near one height; the rest are counted under them and
-	   come up as these are answered. Yes and No are about the groups drawn, never the unseen. */
+	/* The closest few, so cards stay near one height; Yes and No cover only those drawn. */
 	const shown = $derived(card.groups.slice(0, GROUPS_ON_A_CARD));
 	const unseen = $derived(card.groups.length - shown.length);
 
@@ -119,10 +83,7 @@
 		return count === 1 ? '1 face' : `${count.toLocaleString()} faces`;
 	}
 
-	/* How close the group as a whole comes to her, as a percentage: the way every other surface in
-	   this feature says it. Only where a likeness is the reason: her own pictures, or a stash-box's
-	   pictures of her. A group proposed by her folder alone carries a number nobody asked about, and
-	   printed beside the folder's sentence it would read as the evidence. */
+	/* The group's likeness as a percentage, only where likeness is the reason. */
 	function likeness(group: MayBeGroup): string | null {
 		if (group.likeness === null || group.likeness === undefined) return null;
 		const measured = group.reasons.some(
@@ -133,12 +94,8 @@
 	}
 
 	/*
-	 * Why the groups are on the card, in words, said once above them: one sentence per folder that
-	 * proposed any of them, and one where the likeness is to a stash-box's pictures rather than to
-	 * hers. The server marks a group that looks like somebody known by starter pictures alone
-	 * (`STARTER_REASON`), which is weaker evidence than her own faces, and somebody answering needs
-	 * to know that about the number. The reason names the boxes the pictures came from, and the
-	 * sentence says them; "a stash-box" is only for pictures filed before a starter kept its box.
+	 * Why the groups are here, once: each proposing folder, or the boxes whose starter pictures
+	 * matched.
 	 */
 	const reasons = $derived.by(() => {
 		const folders = new Set<string>();
@@ -239,9 +196,7 @@
 	{#snippet question()}{asking}{/snippet}
 	<!-- The words fit the count: one group has no order to be in and no "any" to choose among. -->
 	{#snippet detail()}<Tooltip label={told}><span class="told">{told}</span></Tooltip>{/snippet}
-	<!-- The affirmative leads and the rest sit behind the chevron, the shape every question here
-	     wears: the No about the whole card, ticked or not (none of these groups is them), and the
-	     closest group's review. -->
+	<!-- Yes leads; the No for the whole card and the closest group's review behind the chevron. -->
 	{#snippet answers()}
 		<div class="answer-line">
 			<Answers
@@ -310,8 +265,7 @@
 		white-space: nowrap;
 	}
 
-	/* How close the group comes: a shade nearer the ink than the count, the one number worth
-	   reading first, as on the question cards beside this one. */
+	/* The likeness, a shade nearer the ink: the number worth reading first. */
 	.sure {
 		color: var(--sift-ink);
 	}

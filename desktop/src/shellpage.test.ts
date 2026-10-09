@@ -1,11 +1,4 @@
-/* The scheme that serves the connect screen, and above all what it will NOT serve.
- *
- * It answers static files out of the application's own bundle, which makes it the one place in the
- * shell where a URL becomes a path on the disk. So the tests that matter are the escapes: a path
- * that climbs out of the client folder, one that hides the climb behind an escape sequence, and one
- * carrying a NUL, which truncates a path in every C API underneath, so the check and the
- * filesystem would be reading two different names.
- */
+/* The scheme that serves the connect screen, and above all what it will NOT serve. */
 
 import * as path from 'node:path';
 
@@ -63,8 +56,7 @@ describe('resolveWithin', () => {
 		expect(resolveWithin(ROOT, '/%E0%A4%A')).toBeNull();
 	});
 
-	/* A folder whose name merely STARTS with the root's is a different folder. Without the
-	 * separator in the comparison, `C:\\sift\\web-old` would pass as being inside `C:\\sift\\web`. */
+	/* A folder whose name merely STARTS with the root's is a different folder. */
 	it('refuses a sibling folder whose name starts the same way', () => {
 		expect(resolveWithin(ROOT, '/../web-old/index.html')).toBeNull();
 	});
@@ -83,10 +75,9 @@ describe('serving the connect screen', () => {
 
 	it('is declared as a real, secure origin before anything is served', () => {
 		/* `standard` makes it a real origin rather than an opaque one, which is what lets the
-		   client's own `default-src 'self'` policy match its own files; `secure` puts it in the same
-		   class as https, so the parts of the platform that refuse to work in an insecure context
-		   work here. Both are silently ignored if this is called after the app is ready, which is
-		   why it is a separate function from the one below. */
+		   client's own `default-src 'self'` policy match its own files; `secure` puts it in the
+		   same class as https, so the parts of the platform that refuse to work in an insecure
+		   context work here. */
 		declareShellScheme();
 
 		expect(schemesDeclared).toEqual([
@@ -110,8 +101,8 @@ describe('serving the connect screen', () => {
 	});
 
 	it('refuses a host that is not the one host', async () => {
-		/* Without this, `sift-shell://anything/../../secret` is a URL somebody could put in front of
-		   this handler, and the path check below it is written against one root. */
+		/* Without this, `sift-shell://anything/../../secret` is a URL somebody could put in
+		   front of this handler, and the path check below it is written against one root. */
 		serveShellPages();
 		const handle = protocolHandlers.get(SHELL_SCHEME)!;
 
@@ -122,8 +113,8 @@ describe('serving the connect screen', () => {
 	});
 
 	it('refuses a path that climbs out of the client folder', async () => {
-		/* The escape, asked of the HANDLER rather than only of the pure function it calls: a check
-		   that is written and not wired is the shape this whole file exists to refuse. */
+		/* The escape, asked of the HANDLER rather than only of the pure function it calls: a
+		   check that is written and not wired is the shape this whole file exists to refuse. */
 		serveShellPages();
 		const handle = protocolHandlers.get(SHELL_SCHEME)!;
 

@@ -1,15 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* One folder answering differently from the rest of the library: its words, and what somebody can
- * type to find it.
- *
- * ONE COPY MODULE PER PANE. `ImportingFolders.svelte` draws every word it adds from `COPY`, and the
- * search entry is built from the same object.
- *
- * The controls on that sub-page are built from what the server says a folder may answer, so there
- * is no declared setting for the search index to find, and the row that opens it is a button
- * rather than a preference. Both are why this exists: somebody looking for "don't build previews
- * for this one folder" has a real question and nothing on the pane spells it in those words.
- */
+/* One folder answering differently from the rest of the library: its words, and what somebody
+ * can type to find it. */
 import type { Searchable } from './search';
 import { counted } from '$lib/entity/entity-counts';
 

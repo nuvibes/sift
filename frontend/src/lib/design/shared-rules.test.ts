@@ -1,19 +1,4 @@
-/*
- * A style rule that says what something IS lives in one place.
- *
- * Three rules would otherwise be retyped on nearly every screen: the sentence under a heading, the
- * small upright label over a group, and the row a dialog's two buttons sit in. Every copy can read
- * the right tokens and still drift: a rule retyped twenty times is how an error line comes to reach
- * for the fill red where the readable one was meant.
- *
- * What is shared is only the part that is genuinely the same. Spacing and measure stay with the
- * screen, because those really do differ: a sentence under a settings heading wants different room
- * from one under a page title, and a screen that says so outranks the shared rule.
- *
- * Anything with MEANING attached is a component instead, never a class. The error line carries a
- * screen reader role, and a role that travels separately from its styling is a role that gets
- * chosen differently on the next screen. See `Problem`.
- */
+/* A style rule that says what something IS lives in one place. */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -25,19 +10,7 @@ import { describe, expect, it } from 'vitest';
  *  is started from more than one place and a relative root silently surveys nothing. */
 const SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/**
- * The declarations each shared rule owns, and how a copy of it is recognised.
- *
- * A component may still use any one of these on its own: plenty of things are `--text-label`,
- * and a right-aligned row of anything is `flex-end`. What it may not do is write the whole rule
- * again.
- *
- * Two ways of recognising one, and the difference matters. The upright label is known by its
- * DECLARATIONS: four together, one of them a specific letter-spacing, is not a coincidence, and a
- * copy under some other class name is still a copy. The dialog button row is known by its
- * SELECTOR, because its three declarations are the most ordinary in CSS: a settings row that
- * right-aligns its control writes the same three and is not a copy of anything.
- */
+/** The declarations each shared rule owns, and how a copy of it is recognised. */
 const SHARED: {
 	rule: string;
 	declarations: string[];
@@ -71,14 +44,7 @@ function everyMarkupFile(dir: string): string[] {
 	return found;
 }
 
-/** The declarations inside one style rule, once per selector it is written under.
- *
- * A selector list is read a name at a time, and it may run over several lines. Both matter: read
- * one line only and split nothing, `.lede,\n.empty { ... }` would come back as a rule about
- * `.empty`, and a component retyping a shared rule under the first name of a list would be
- * invisible to every check below. Comments come out first, or a comment sitting above a rule is read as part
- * of its selector.
- */
+/** The declarations inside one style rule, once per selector it is written under. */
 function ruleBodies(source: string): { selector: string; body: string }[] {
 	const styles = source.slice(source.indexOf('<style>')).replace(/\/\*[\s\S]*?\*\//g, '');
 	return [...styles.matchAll(/(?:^|\n)\t([^{};]+)\{([^}]*)\}/g)].flatMap((match) =>
@@ -91,10 +57,8 @@ const APP_CSS = readFileSync(join(SOURCE, 'app.css'), 'utf8');
 const MEDIA_QUERY = 'prefers-reduced-motion';
 const MOTION_GUARD = "[data-motion='reduce']";
 
-/**
- * Rules only. A gate that reads its own explanation is a gate that reports on prose: a note in
- * `app.css` naming the media query it replaced would be flagged.
- */
+/** Rules only. A gate that reads its own explanation is a gate that reports on prose: a note in
+ * `app.css` naming the media query it replaced would be flagged. */
 function rulesOnly(source: string): string {
 	return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '');
 }
@@ -105,22 +69,7 @@ const components = everyMarkupFile(SOURCE).map((path) => ({
 }));
 
 describe('who decides whether the app moves', () => {
-	/*
-	 * NOTHING IN THE STYLESHEETS ASKS THE OPERATING SYSTEM DIRECTLY.
-	 *
-	 * Sift has its own motion switch, and `@media (prefers-reduced-motion: reduce)` asks Windows
-	 * and nothing else, and a media query cannot be un-applied by any later rule, at any
-	 * specificity, by any means. A rule written that way would leave "Full motion" beaten by a
-	 * blanket rule killing every transition with `!important`, while the screen that offered the
-	 * choice reported that it was animating.
-	 *
-	 * The resolved answer (theirs where they gave one, the system's where they asked to follow it)
-	 * is stamped on the root as `data-motion`, and that is what every rule reads.
-	 *
-	 * This is the guard, and it has to read the STYLESHEETS rather than the module. The unit tests
-	 * next door prove the attribute is written; not one of them notices if a rule goes back to
-	 * asking Windows, because the attribute is still perfectly correct while the rule ignores it.
-	 */
+	/* NOTHING IN THE STYLESHEETS ASKS THE OPERATING SYSTEM DIRECTLY. */
 	it('has no rule anywhere that asks Windows instead of asking Sift', () => {
 		const asking = [
 			...components.filter((component) => rulesOnly(component.source).includes(MEDIA_QUERY)),
@@ -177,11 +126,9 @@ describe('the shared rules are declared once', () => {
 	}
 
 	it('the settings sentence is not retyped in a component', () => {
-		/* Written out rather than in the list above, because this one is keyed on its selector: a
-		   component is free to set body-sm ink-3 on something of its own, and what it may not do is
-		   write those two declarations under `.lede` again. The screens that deliberately want the
-		   larger, lighter sentence still say so in their own stylesheet, and that is the point of
-		   sharing only the part that was identical. */
+		/* Written out rather than in the list above, because this one is keyed on its selector:
+		   a component is free to set body-sm ink-3 on something of its own, and what it may not
+		   do is write those two declarations under `.lede` again. */
 		const retyping = components
 			.filter((component) =>
 				ruleBodies(component.source).some(

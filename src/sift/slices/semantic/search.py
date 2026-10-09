@@ -1,21 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Answering "which files look like this" for a surface that must not know how.
-
-The search box and the vector index are different features, and a feature may not import another.
-So this is the shape the search surface depends on, filled in here, and handed over when the
-application is assembled.
-
-**What crosses the boundary is an answer, never a question.** A list of files and how far each sat
-from what was asked, closest first. The read that decides who may see what then orders by that
-list, without ever knowing there is a vector index, which is what keeps a pre-1.0 dependency
-swappable and keeps the permission rules in one place.
-
-**None means "not right now", and it is an ordinary answer.** Switched off, models not obtained, a
-machine that cannot hold the index at all: in every one of those the search box falls back to the
-ordinary order rather than showing somebody an error about a feature they may not know exists. An
-empty list means something different (the question was asked and nothing came near) and the
-difference matters, because one is a fallback and the other is a result.
-"""
+"""Answering "which files look like this" for a search surface that must not know how."""
 
 from __future__ import annotations
 
@@ -31,13 +15,11 @@ from sift.slices.semantic.store import index_writes
 
 log = get_logger(__name__)
 
-#: How many neighbours to ask for: more than a page, as the other filters run after.
+#: More than a page, as the other filters run after.
 CANDIDATES = 200
 
-#: How many recent questions are remembered for each asker, vectors and rankings alike.
 REMEMBERED = 16
 
-#: How many askers' questions are remembered together.
 ASKERS = 16
 
 
@@ -77,10 +59,7 @@ class SemanticSearch:
     async def neighbours(
         self, text: str, *, limit: int = CANDIDATES, asker: Viewer | None
     ) -> tuple[tuple[str, float], ...] | None:
-        """The files `asker` may see that look like what these words describe, closest first.
-
-        Kept for `asker` alone until the mark or what they may see moves; with no asker every
-        file is ranked and nothing is kept."""
+        """The files `asker` may see that look like what these words describe, closest first."""
         kept = self._kept_for(asker)
         try:
             if asker is None or kept is None:
@@ -130,26 +109,14 @@ class SemanticSearch:
         return vector
 
     async def can_answer(self) -> bool:
-        """Whether asking this install about meaning can produce anything, at all, right now.
-
-        For a caller with thousands of files to ask about rather than one. `like_asset` answers
-        None for a file the index has not described AND for an install that cannot use the index,
-        and one file's None cannot tell those apart, so a pass would have no way to find out that
-        every answer it was about to ask for would be None except by asking for all of them.
-
-        False where the machine cannot hold the index or the model in use has described nothing.
-        """
+        """Whether asking this install about meaning can produce anything at all right now."""
         readiness = await self._service.readiness()
         if not readiness.supported:
             return False
         return await self._service.describes_anything()
 
     async def describe_many(self, asset_ids: Sequence[str]) -> dict[str, list[float]] | None:
-        """What each of these files looks like, for a caller comparing them among themselves.
-
-        None where this install cannot use the index, as `like_asset` answers; a file the model in
-        use has not described is simply absent. See `SemanticSeam.describe_many`.
-        """
+        """What each of these files looks like; None where the index cannot be used."""
         readiness = await self._service.readiness()
         if not readiness.supported:
             return None
@@ -158,24 +125,13 @@ class SemanticSearch:
     async def lookalikes(
         self, asset_id: str, *, limit: int = CANDIDATES, asker: Viewer | None
     ) -> tuple[tuple[str, float], ...]:
-        """Files similar to this one, closest first, by whichever way can answer, ranked among
-        what `asker` may see.
-
-        The strip under a file asks the service the same question (`SemanticService.similar_to`),
-        so a wall filtered by `like:` holds what that strip draws, and more of it.
-        """
+        """Files similar to this one, closest first, ranked among what `asker` may see."""
         return (await self._service.similar_to(asset_id, limit=limit, asker=asker)).neighbours
 
     async def like_asset(
         self, asset_id: str, *, limit: int = CANDIDATES
     ) -> tuple[tuple[str, float], ...] | None:
-        """Files that look like this one, closest first, and never including itself.
-
-        Answers None when this install cannot use the index at all, and also when this particular
-        file has not been described yet, which is not a failure but a fact about how far the
-        background pass has got. The caller falls back to the cheaper way of answering the same
-        question, which needs no model and no index.
-        """
+        """Files that look like this one, closest first, never itself; None to fall back."""
         readiness = await self._service.readiness()
         if not readiness.supported:
             return None

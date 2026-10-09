@@ -1,42 +1,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Which live sessions have unlocked the vault.
+"""Which live sessions have unlocked the vault: in memory, keyed by hashed token, empty at restart.
 
-An unlocked vault is a fact about one browser right now, not a permission or a user property, so
-it lives in the process keyed by session and never in a row. A restart empties it, so every
-session comes back locked, which is what lets the PIN be short: it never opens what a restart
-closed. Each browser unlocks for itself, so a vault opened here conceals nothing less on the
-screen somebody else is looking at. Keys are hashes of session tokens, nothing replayable as a
-cookie. Only the event loop touches it, with no await between read and write, so no lock.
+Only the event loop touches it, with no await between read and write, so it needs no lock.
 """
 
 from __future__ import annotations
 
+#: Sessions holding an open vault; past it the oldest is dropped, which costs a PIN, never a reveal.
 MAX_OPEN_SESSIONS = 256
-"""A cap on sessions holding an open vault at the same time.
-
-Entries leave on lock and logout but not when a session expires or is revoked; those leftovers are
-inert (their token hash matches nothing) but unbounded, so the oldest is dropped at the cap. Far
-above a household, and evicting costs a PIN entry: this store's failure must be a re-prompt, never
-a reveal.
-"""
 
 
 class VaultUnlockStore:
-    """The set of sessions whose vault is open, for the life of the process.
-
-    Held on the application so the viewer dependency asks it every request and a test can supply
-    its own. A dict, never a set: insertion order is what makes "drop the oldest" mean something.
-    """
+    """The sessions whose vault is open; a dict, so insertion order says which is oldest."""
 
     def __init__(self, max_open: int = MAX_OPEN_SESSIONS) -> None:
         self._open: dict[str, None] = {}
         self._max_open = max_open
 
     def unlock(self, token_hash: str) -> None:
-        """Open the vault for one session. Called only after the PIN has been verified.
-
-        Re-unlocking moves a session to the back, so the browser in use is evicted last.
-        """
+        """Open the vault for one session, after the PIN; the browser in use is evicted last."""
         self._open.pop(token_hash, None)
         self._open[token_hash] = None
         while len(self._open) > self._max_open:

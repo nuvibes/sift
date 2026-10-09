@@ -1,7 +1,6 @@
 <script lang="ts">
-	/* The files a product gave up on, on a page of their own: each by its name, which opens it, with
-	   why in Sift's words (the wall's own `left_out` filter answers both). The press is the caller's:
-	   the count on an Import task's row, the pill on an Activity row. */
+	/* The files a product gave up on, on a page of their own: each by its name, which opens it,
+	   with why in Sift's words (the wall's own `left_out` filter answers both). */
 	import type { Snippet } from 'svelte';
 	import type { components } from '$lib/api/schema';
 	import { api } from '$lib/api/client';

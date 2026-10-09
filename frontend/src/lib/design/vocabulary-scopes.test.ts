@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { HELD_AT_ZERO, offences, startsWithAVerb } from '../../../scripts/lib/vocabulary.js';
 
-/*
- * A verb with a scope opens a label only on its own screens: the swap's Start, Join, End and They
- * match, and Take where another source's offer is accepted. Anywhere else the label is counted.
- */
+/* A verb with a scope opens a label only on its own screens: the swap's Start, Join, End and
+ * They match, and Take where another source's offer is accepted. */
 describe('a scoped verb belongs to its own screens', () => {
 	it('opens a label on the screens it is scoped to', () => {
 		expect(startsWithAVerb('End the swap', 'lib/components/swap/SwapProgress.svelte')).toBe(true);
@@ -32,10 +30,8 @@ describe('a scoped verb belongs to its own screens', () => {
 	});
 });
 
-/*
- * A name keeps its capital wherever it stands in a sentence, held at zero over the client's copy.
- * A whole string that is the one bare word is a key, and a template's {site} is a gap.
- */
+/* A name keeps its capital wherever it stands in a sentence, held at zero over the client's
+ * copy. */
 describe('a name written without its capital', () => {
 	it('is held at zero', () => {
 		expect(HELD_AT_ZERO).toContain('lower_case_names');

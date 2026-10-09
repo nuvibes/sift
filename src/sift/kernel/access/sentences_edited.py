@@ -125,19 +125,9 @@ def _edited_line(
     whose = "their" if page == HERE[VANTAGE_PERSON] else "its"
     if object_kind in COVER_OBJECTS and object_line:
         face = by == SIFT and task == "faces" and object_kind == "asset"
-        if object_is_page:
-            if face:
-                return Said(
-                    said(by, " chose ", subjects, "'s face in ", object_line, " as the cover")
-                )
-            return Said(_cover_of(by, object_line, subjects, fields_kind))
-        if page is not None:
-            if face:
-                return Said(said(by, f" chose {whose} face in ", object_line, " as the cover"))
-            return Said(said(by, " chose ", object_line, " as the cover"))
-        if face:
-            return Said(said(by, " chose ", subjects, "'s face in ", object_line, " as the cover"))
-        return Said(_cover_of(by, object_line, subjects, fields_kind))
+        return _cover_chosen(
+            by, face, page, object_is_page, subjects, object_line, fields_kind, whose
+        )
     cover = non_empty_str(payload.get("cover"))
     if cover is not None:
         box = non_empty_str(payload.get("box"))
@@ -148,6 +138,44 @@ def _edited_line(
     if number is not None:
         return Said(said(by, f" {number[0]} of ", subjects, number[1]))
     folded = edited_folded(fields, fields_kind)
+    what = _what_was_edited(fields, fields_kind, page, folded, whose)
+    if page is not None:
+        return Said(said(by, f" edited {what}"), folded=folded)
+    if not what:
+        return Said(said(by, " edited ", subjects), folded=folded)
+    return Said(said(by, f" edited {what} of ", subjects), folded=folded)
+
+
+def _cover_chosen(
+    by: str,
+    face: bool,
+    page: str | None,
+    object_is_page: bool,
+    subjects: Line,
+    object_line: Line,
+    fields_kind: str | None,
+    whose: str,
+) -> Said:
+    if object_is_page:
+        if face:
+            return Said(said(by, " chose ", subjects, "'s face in ", object_line, " as the cover"))
+        return Said(_cover_of(by, object_line, subjects, fields_kind))
+    if page is not None:
+        if face:
+            return Said(said(by, f" chose {whose} face in ", object_line, " as the cover"))
+        return Said(said(by, " chose ", object_line, " as the cover"))
+    if face:
+        return Said(said(by, " chose ", subjects, "'s face in ", object_line, " as the cover"))
+    return Said(_cover_of(by, object_line, subjects, fields_kind))
+
+
+def _what_was_edited(
+    fields: Sequence[str],
+    fields_kind: str | None,
+    page: str | None,
+    folded: tuple[str, tuple[str, ...]] | None,
+    whose: str,
+) -> str:
     named = _edited_words(fields, fields_kind)
     if not fields:
         what: str = page or ""
@@ -161,11 +189,7 @@ def _edited_line(
             what = f"{'one' if one else many(len(fields))} of {whose} details"
         else:
             what = "1 detail" if one else f"{many(len(fields))} details"
-    if page is not None:
-        return Said(said(by, f" edited {what}"), folded=folded)
-    if not what:
-        return Said(said(by, " edited ", subjects), folded=folded)
-    return Said(said(by, f" edited {what} of ", subjects), folded=folded)
+    return what
 
 
 def _value_said(stored: object, key: object = None) -> str | None:
@@ -193,6 +217,10 @@ def _value_said(stored: object, key: object = None) -> str | None:
     declared = get_registered(key) if isinstance(key, str) else None
     if declared is not None and declared.names_a_tunnel:
         return None
+    return _plain_value_said(value, declared)
+
+
+def _plain_value_said(value: object, declared: Setting | None) -> str | None:
     if isinstance(value, bool):
         return "on" if value else "off"
     if declared is not None and declared.choices and declared.choice_labels:

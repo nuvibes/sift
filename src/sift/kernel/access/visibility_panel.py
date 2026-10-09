@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, NamedTuple
 
+from sift.kernel.access import visibility_tables as vt
+
 if TYPE_CHECKING:
     from sift.kernel.access.visibility import Counted, _Recompute
     from sift.kernel.db import Connection
@@ -61,7 +63,7 @@ class Panel(NamedTuple):
 
 def kinds() -> tuple[Counted, ...]:
     """The panel's kinds, in the order the kernel's list carries them."""
-    from sift.kernel.access.visibility import Counted
+    from sift.kernel.access.visibility_kinds import Counted
 
     return (
         # A file's kind (video, image, gif), off its own row; moved by `vis_assets_size`.
@@ -124,7 +126,7 @@ def triggers(halves: _Recompute, own: Counted | None) -> Panel:
         "vis_assets_size",
         "UPDATE OF " + ", ".join(columns),
         "assets",
-        *halves.split(v._EVERY_USER_ONE_FILE.format(asset="NEW.id")),
+        *halves.split(vt._EVERY_USER_ONE_FILE.format(asset="NEW.id")),
         v._changed(columns),
     )
     # A count row that reaches nought goes immediately by its own key; the sweeps read every row.
@@ -132,10 +134,10 @@ def triggers(halves: _Recompute, own: Counted | None) -> Panel:
     for table, key in _EMPTIED_KEYS.items():
         name = "vis_" + table + "_emptied"
         same = " AND ".join(column + " = NEW." + column for column in key)
-        body = [v._filled(_EMPTIED, TABLE=table, SAME=same)]
+        body = [vt._filled(_EMPTIED, TABLE=table, SAME=same)]
         ddl = v._trigger(name, "UPDATE OF permitted", table, body, when="NEW.permitted <= 0")
         emptied.append((name, table, ddl))
-    sweeps = (v._COUNTS_EMPTIED, v._PAIRS_EMPTIED)
+    sweeps = (vt._COUNTS_EMPTIED, vt._PAIRS_EMPTIED)
     given = tuple(one for one in halves.given if one not in sweeps)
     return Panel(renamed, sized, emptied, given)
 
@@ -144,13 +146,14 @@ async def count_the_panel(connection: Connection) -> None:
     """The version 16 step, safe to run again: the Filter panel's counts made from the stored rows,
     and the triggers rewritten to keep them."""
     from sift.kernel.access import visibility as v
+    from sift.kernel.access import visibility_kinds as vk
 
     by_kind = {one.kind: one for one in v.counted()}
     panel = [by_kind[kind] for kind in PANEL_KINDS]
-    rows = v._every_kind_joined(v._ENTITY_COUNT_ROWS_ONE, panel)
+    rows = vk._every_kind_joined(vt._ENTITY_COUNT_ROWS_ONE, panel)
     await v._drop_triggers(connection)
     for one in panel:
-        await connection.execute(v._filled(v._DROP_KIND_COUNTS, KIND=one.kind))
-    await connection.execute(v._filled(v._filled(v._FILL_ENTITY_COUNTS, ROWS=rows), SCOPE=""))
+        await connection.execute(vt._filled(vt._DROP_KIND_COUNTS, KIND=one.kind))
+    await connection.execute(vt._filled(vt._filled(vt._FILL_ENTITY_COUNTS, ROWS=rows), SCOPE=""))
     await v._create_triggers(connection)
     v.log.info("visibility.panel_counted")

@@ -5,11 +5,8 @@ import { app, session } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/*
- * Where a saved file goes, without asking: Chromium's Save As would be a second decision, in the
- * operating system's dialog. The asked-for name is kept with Windows' counter for a taken one, and a
- * folder since removed falls back to this machine's Downloads.
- */
+/* Where a saved file goes, without asking: Chromium's Save As would be a second decision, in the
+ * operating system's dialog. */
 export function saveWithoutAsking(folder: () => string): void {
 	session.defaultSession.on('will-download', (_event, item) => {
 		let directory = folder();

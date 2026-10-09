@@ -1,22 +1,5 @@
 <script lang="ts">
-	/*
-	 * Somebody who does not exist yet.
-	 *
-	 * This is a person's own form, blank, so a person can arrive complete (their birthdate, their
-	 * other names, the sites they post on) rather than a name filled in afterwards. See
-	 * `NewEntity`.
-	 *
-	 * ## Why the row is made by name FIRST and the record written straight after
-	 *
-	 * `POST /people` takes a name; the record, the other names, the links and the tags each have
-	 * their own write. That is exactly what pressing Save on somebody's own page does, in the same
-	 * order, through the same store. So this runs the SAME sequence against a row it has just made
-	 * rather than inventing a create that means something different from a save.
-	 *
-	 * A refusal partway therefore leaves the person made and part-described, which is the behaviour
-	 * an edit has. The screen says so and goes to their page, where the rest of the form is already
-	 * waiting, rather than reporting a failure over a person who does exist.
-	 */
+	/* Somebody who does not exist yet. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import NewEntity from '$lib/components/entity/NewEntity.svelte';
@@ -48,9 +31,7 @@
 				await entityTags.set('people', made.id, tag.id, true);
 			}
 			// The picture LAST, because it goes on a row and the row was made by the line above:
-			// there is nothing to put a cover on until the create has answered. Inside this try with
-			// the rest of the record, so a picture the server refuses says what every other unfinished
-			// part of the record says and leaves the thing made.
+			// there is nothing to put a cover on until the create has answered.
 			if (cover) await people.uploadCover(made.id, cover);
 			toasts.show([thing('person', made.id, name), ' was added'], { tone: 'success' });
 			// A pack imported earlier may hold this person's photos under the name: the create
@@ -68,7 +49,7 @@
 			}
 		} catch {
 			// The person exists by this point, so this is not a failed create: it is a record that
-			// did not finish. Said plainly, and the form that finishes it is one navigation away.
+			// did not finish.
 			toasts.show([thing('person', made.id, name), " was added, but the rest couldn't be saved"], {
 				tone: 'error'
 			});

@@ -1,21 +1,5 @@
 <script lang="ts">
-	/* Settings > Updates: which programs do the fetching, and which version of each.
-	 *
-	 * On Updates because the question these answer is "is what Sift runs up to date" (facts
-	 * about what Sift RUNS rather than choices about downloading), and a new yt-dlp arrives with
-	 * a new Sift, so the check below and the update above it are one story.
-	 *
-	 * Sift ships its own copies of these: the downloaders go stale in weeks, and a copy the
-	 * machine happens to have can be months old and fail a public video part way. So the question
-	 * worth a row is not "is it installed" but "which one is Sift actually running", and each row
-	 * says the version and whether that copy is Sift's own or the machine's.
-	 *
-	 * The versions are asked of the tools themselves by the server, once, the first time this
-	 * pane opens. Checking for a newer yt-dlp is a BUTTON and only a button: it is the one thing
-	 * on this pane that reaches the internet, so it happens when a person presses it and at no
-	 * other time. It says what it found and changes nothing: a new yt-dlp arrives with a new
-	 * Sift.
-	 */
+	/* Settings > Updates: which programs do the fetching, and which version of each. */
 	import { onMount } from 'svelte';
 	import { jobChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { api } from '$lib/api/client';
@@ -48,8 +32,8 @@
 	}
 
 	onMount(() => void readTools());
-	/* A tool is fetched or updated by a job, and a job that ends rings the jobs bell: the versions
-	   on this pane follow it rather than waiting for the pane to be opened again. */
+	/* A tool is fetched or updated by a job, and a job that ends rings the jobs bell: the
+	   versions on this pane follow it rather than waiting for the pane to be opened again. */
 	whenChanged(jobChanges, () => void readTools());
 
 	function label(tool: Tool): string {

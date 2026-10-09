@@ -1,13 +1,5 @@
 <script lang="ts">
-	/*
-	 * The one row that imports a folder of people, from the press to the task's end.
-	 *
-	 * Choosing the folder IS the press. On the desktop app it is the operating system's folder
-	 * dialog; in a browser it is the folder picker over the folders Sift has, as every folder
-	 * setting's is, with a way to send a folder from the device the browser runs on. Either way the
-	 * press answers straight away and the row follows the task Sift runs (`folderImport`), the way the
-	 * face scan's row does: its bar, its count, Cancel, and its report when it ends.
-	 */
+	/* The one row that imports a folder of people, from the press to the task's end. */
 	import { onMount } from 'svelte';
 	import {
 		Button,
@@ -128,11 +120,8 @@
 		void start('path', () => importFolderByPath(chosen.path));
 	}
 
-	/*
-	 * A browser hands over nothing until it has listed every file in the folder, which for a
-	 * gallery on a network share is half a minute with no event at all. Its dialog closing gives
-	 * focus back to the page, so that is when the row starts saying it is reading.
-	 */
+	/* A browser hands over nothing until it has listed every file in the folder, which for a
+	 * gallery on a network share is half a minute with no event at all. */
 	function armReading(): void {
 		const settle = () => {
 			window.removeEventListener('focus', onFocus);

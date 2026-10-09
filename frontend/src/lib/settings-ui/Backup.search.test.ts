@@ -29,8 +29,8 @@ it('says one gallery, one marker and one matching folder in the singular', () =>
 	expect(stash.matched(3)).toMatch(/^3 of its folders match folders in this library by name\./);
 });
 
-/* The paragraph over the pane says what a person needs before pressing, and leaves to each row what
-   that row says beside its switch. */
+/* The paragraph over the pane says what a person needs before pressing, and leaves to each row
+   what that row says beside its switch. */
 it('keeps the backup paragraph to what is in it, what is not, how it comes back and the password', () => {
 	const said = [COPY.holds, COPY.notMedia, COPY.mediaYours, COPY.comesBack].join(' ');
 	for (const fact of [

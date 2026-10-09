@@ -1,10 +1,4 @@
-/* What a paste that lands on the downloads screen means.
- *
- * Three rules, and each of them is a judgement that is wrong invisibly: a screen that took every
- * paste would empty somebody's search into the download box, a screen that took a paste with no
- * address in it would collect the sentences they were copying to a friend, and a screen that
- * replaced what was in the box would be the only thing here that destroys work by accident.
- */
+/* What a paste that lands on the downloads screen means. */
 import { describe, expect, it } from 'vitest';
 
 import { forTheScreen, holdsALink, intoBox } from './paste';
@@ -23,8 +17,7 @@ describe('whether a paste is a link at all', () => {
 	});
 
 	/* A bare host is what somebody copies out of an address bar in a hurry, and it is also what
-	   half a sentence looks like. The box takes an address; the refusal is the honest answer and
-	   the paste still reaches whatever it landed in. */
+	   half a sentence looks like. */
 	it('leaves an address with no scheme alone', () => {
 		expect(holdsALink('example.test/clip/1')).toBe(false);
 	});
@@ -41,7 +34,7 @@ describe('whose paste it is', () => {
 	});
 
 	/* A paste into something rich lands on whichever child the cursor was in, so the ancestor is
-	   what has to be asked. Without this the search field's own wrapper would hand its pastes over. */
+	   what has to be asked. */
 	it('is not the screen when it landed inside one', () => {
 		const field = document.createElement('textarea');
 		const wrapper = document.createElement('label');

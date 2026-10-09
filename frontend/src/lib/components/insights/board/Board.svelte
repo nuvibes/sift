@@ -12,6 +12,7 @@
 	import { Skeleton } from '$lib/components/common';
 	import { pressOnCard } from '$lib/components/common/card-press';
 	import RecapCard from '$lib/components/insights/RecapCard.svelte';
+	import Defines from '$lib/components/insights/board/Defines.svelte';
 	import type { Tile } from '$lib/components/insights/board/tiles';
 	import { BOARD_WORDS } from '$lib/components/insights/words';
 
@@ -55,6 +56,11 @@
 						ground={GROUNDED.has(tile.slot) && ground.length > 0 ? ground : null}
 					/>
 					<a class="open" {href}>{BOARD_WORDS.open(tile.title)}</a>
+					<Defines
+						figures={tile.card.figure
+							? [tile.card.figure, ...tile.card.figures]
+							: tile.card.figures}
+					/>
 				{:else}
 					<Skeleton shape="block" />
 				{/if}

@@ -1,6 +1,5 @@
 /* Maintenance's figures, grouped the way every count on screen is: never "120000 files" beside a
- * wall saying "8,000 files". The words are `COPY`'s, and the number in each goes through the one
- * formatter (`$lib/entity/entity-counts`). */
+ * wall saying "8,000 files". */
 import { expect, it } from 'vitest';
 
 import { COPY } from './Maintenance.search';

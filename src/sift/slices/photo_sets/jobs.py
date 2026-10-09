@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The one pass that revisits photo sets already made: taking a raised floor to them.
-
-Every other way a set comes to exist runs forward, at the moment something arrives (a download,
-a folder, an archive, a shoot, a post) and none of them looks back. When `MIN_PICTURES` rises,
-the sets already made under the old floor are exactly the wall of near-pairs the higher floor
-exists to stop, and nothing else would take it to them.
-
-So this pass exists, and it is deliberately narrow. It dissolves only the sets Sift made (`origin`
-other than `manual`) that hold fewer pictures than the floor, through the service's own door, so
-each one is written down as Sift's act and its pictures are untouched: dissolving a set never
-touches a file. A set somebody assembled by hand is theirs whatever its size.
-
-Asked for at boot, once, as background work, and one at a time: on a library where the floor did
-not move it reads one statement and finishes.
-"""
+"""The one pass that revisits photo sets: dissolving those Sift made under a lower floor."""
 
 from __future__ import annotations
 
@@ -27,17 +13,11 @@ from sift.slices.photo_sets.service import PhotoSetService
 
 log = get_logger(__name__)
 
-#: The pass, by the name the queue knows it by.
 DISSOLVE_UNDER_FLOOR = "photo_sets_floor"
 
 
 async def dissolve_under_floor(context: JobContext, *, service: PhotoSetService) -> None:
-    """Dissolve every set Sift made that holds fewer than `MIN_PICTURES` pictures.
-
-    Through `service.delete`, never a statement of its own: that door records the deletion under
-    Sift's name and tells every open screen, and a second path to the same table would be a second
-    chance to do one of those and not the other.
-    """
+    """Dissolve every set Sift made below `MIN_PICTURES`, through `service.delete` only."""
     wanted = await service.under_floor(MIN_PICTURES)
     for done, photo_set_id in enumerate(wanted, start=1):
         await service.delete(
@@ -65,11 +45,9 @@ def register_handlers(*, service: PhotoSetService) -> None:
     register_handler(
         DISSOLVE_UNDER_FLOOR,
         lambda context: dissolve_under_floor(context, service=service),
-        # Delete, not Remove: each set stops existing (`service.delete`), though no photo is touched.
         # Built from the constant, so the number on Activity cannot drift from the rule.
         name=f"Deleting Photo Sets with fewer than {MIN_PICTURES} photos",
         family=Family.OTHER,
-        # One at a time: two of it would read the same list and each try to delete what the
-        # other already has, and the second delete of a set is a fault rather than a no-op.
+        # One at a time: a second delete of the same set is a fault, not a no-op.
         alone=True,
     )

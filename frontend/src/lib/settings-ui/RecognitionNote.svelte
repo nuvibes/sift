@@ -1,16 +1,5 @@
 <script lang="ts">
-	/*
-	 * Where a Recognition feature stands, in one shaded box under its switch.
-	 *
-	 * One box holds everything the feature has to say about itself: the status line, and under it
-	 * whatever is in flight or worth a warning (a download's bar, a run that stopped, files measured
-	 * by a previous model). Two boxes, or a status line with a warning drawn somewhere else, read as
-	 * two things having gone wrong. The box sits under the switch because the status is about the
-	 * switch: whether saying yes has done what somebody expected.
-	 *
-	 * Drawn by `RecognitionPane` on each feature's own section and by `RecognitionSection` beside the
-	 * three switches on Importing, so the two doors say the same thing the same way.
-	 */
+	/* Where a Recognition feature stands, in one shaded box under its switch. */
 	import type { Snippet } from 'svelte';
 	import { Note } from '$lib/components/common';
 
@@ -38,8 +27,8 @@
 </div>
 
 <style>
-	/* The shaded ground is what makes the line read as the switch's answer rather than as one more
-	   row. It stays in the rows' measure, so it never reaches across the control column. */
+	/* The shaded ground is what makes the line read as the switch's answer rather than as one
+	   more row. */
 	.recognition-note {
 		max-width: var(--reading-measure);
 		margin: 0 0 var(--space-3);

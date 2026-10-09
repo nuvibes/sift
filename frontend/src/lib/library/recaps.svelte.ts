@@ -1,26 +1,4 @@
-/* Recaps, as the screens see them: the list, the one being announced, and one recap opened.
- *
- * ## What the server decides, and what is left here
- *
- * Everything a reader may be shown is decided on the server when it is asked: which recaps a locked
- * vault leaves out, which cards are absent or drawn as a locked tile, the words on every card, the
- * heading and the one hidden line. Nothing here knows what is hidden, and nothing here says a
- * sentence: a card's words arrive as pieces and `HistorySentence` draws them. What is left is
- * holding the answer, asking again when what this account may see has moved, and the cross.
- *
- * ## One list, read by three places
- *
- * The card at the top of Insights, the Recaps block on the same page, and the quiet line on
- * Browse's header all read `GET /api/insights/recaps`, whose `announced` is the one recap being
- * announced. Three copies of the list would disagree the moment the cross was pressed in one of
- * them, so they share this one, and a read already in flight is shared rather than asked again.
- *
- * ## Whose list it is
- *
- * Held against the account it was read for and drawn only while that account is the one signed in.
- * A second person signing in on the same window must never see the first one's "Your September",
- * not even for the moment it takes the new list to arrive.
- */
+/* Recaps, as the screens see them: the list, the one being announced, and one recap opened. */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -57,13 +35,7 @@ class RecapShelf {
 	/** The recap being announced, in the server's order: the longest period's first. */
 	readonly announced = $derived<RecapHead | null>(this.#mine?.announced ?? null);
 
-	/**
-	 * Read the list. A read already out is joined rather than repeated.
-	 *
-	 * Never throws: every place that draws this list draws nothing while it has none, so a refusal
-	 * is the same drawing as an empty answer, and a failed read of a quiet line must not become an
-	 * error on Browse.
-	 */
+	/** Read the list. A read already out is joined rather than repeated. */
 	load(): Promise<void> {
 		this.#asking ??= this.#read().finally(() => (this.#asking = null));
 		return this.#asking;
@@ -79,14 +51,7 @@ class RecapShelf {
 		}
 	}
 
-	/**
-	 * The cross: this recap stops being announced, everywhere immediately. It stays in the list, to
-	 * be opened whenever.
-	 *
-	 * Taken off the screen before the server answers, because a line that stays after its cross is
-	 * pressed reads as a cross that does not work. If the server refuses, the list is read again and
-	 * says what is true.
-	 */
+	/** The cross: this recap stops being announced, everywhere immediately. */
 	/** The recap of one period, by its key (`periodKey`), or null where none was created. */
 	of(period: string): RecapHead | null {
 		return this.recaps.find((head) => head.period === period) ?? null;
@@ -116,8 +81,7 @@ class RecapShelf {
 export const recapShelf = new RecapShelf();
 
 /* What this account may see moved (the vault opened or shut, something hidden or shared), and
-   with it which recaps a reader is shown and how many cards each has. Only a list somebody has
-   already asked for is asked again. */
+   with it which recaps a reader is shown and how many cards each has. */
 libraryChanges.subscribe(() => {
 	if (recapShelf.loaded) void recapShelf.load();
 });
@@ -135,10 +99,8 @@ export async function readRecap(id: string): Promise<Recap> {
 	return recap;
 }
 
-/**
- * The key the server files a period's recap under (`recaps_periods.Period.key`), from its span and
- * its first day: a week by its ISO year and week. All of it has no recap.
- */
+/** The key the server files a period's recap under (`recaps_periods.Period.key`), from its span
+ * and its first day: a week by its ISO year and week. */
 export function periodKey(span: string, first: string): string | null {
 	if (span === 'day') return `day:${first}`;
 	if (span === 'month') return `month:${first.slice(0, 7)}`;

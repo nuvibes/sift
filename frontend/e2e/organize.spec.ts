@@ -134,7 +134,7 @@ test('Review opens the pile and decides nothing', async ({ page }) => {
 
 	await cards(page).first().getByRole('button', { name: 'Review Folders to review' }).click();
 
-	await expect(page).toHaveURL(/\/organize\/folders$/);
+	await expect(page).toHaveURL(/\/organize\/folders(\?|$)/);
 	expect(traffic.posted).toEqual([]);
 });
 
@@ -144,7 +144,7 @@ test('a press on the ground of a card opens its pile, as the button does', async
 
 	await cards(page).first().locator('.purpose').click();
 
-	await expect(page).toHaveURL(/\/organize\/folders$/);
+	await expect(page).toHaveURL(/\/organize\/folders(\?|$)/);
 	expect(traffic.posted).toEqual([]);
 });
 

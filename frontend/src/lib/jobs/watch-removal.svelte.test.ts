@@ -1,7 +1,5 @@
-/*
- * Delete face data and Delete index run as jobs: the press is held while the job runs, and the end
- * is said in words that match how it ended.
- */
+/* Delete face data and Delete index run as jobs: the press is held while the job runs, and the
+ * end is said in words that match how it ended. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

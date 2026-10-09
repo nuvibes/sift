@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The sweep that takes jobs back from workers that stopped answering.
-
-Boot recovery handles the crash: the process died, so every `running` row is an orphan and is
-requeued. This handles the other half, which is worse because nothing announces it: the process
-is alive, the worker is not. A handler waiting forever on a socket, a subprocess that will not
-exit, a deadlock. The row says `running`, nothing is running it, and without this it stays that
-way until the next restart.
-
-The signal is the heartbeat: a live job stamps one every few seconds, so a stamp that has gone
-quiet for minutes means nobody is there. The threshold is generous on purpose. Reclaiming a job
-that is merely slow means running it twice.
-"""
+"""Takes back jobs whose workers stopped answering: a heartbeat quiet for minutes means nobody."""
 
 from __future__ import annotations
 
@@ -27,16 +16,7 @@ _STOPPED_RESPONDING = "the worker running this job stopped responding"
 
 
 async def sweep(queue: JobQueue, *, stale_after: int = STALE_AFTER_SECONDS) -> None:
-    """Requeue every running job whose heartbeat has gone quiet, and forget what is settled and old.
-
-    Two housekeeping passes on one timer. They are unrelated jobs of work and share this only
-    because they want the same cadence (often enough to matter, rare enough to cost nothing) and
-    a second timer for a delete that usually removes no rows would be a second thing to reason about
-    for no gain.
-
-    The prune is second deliberately. Reclaiming is what recovers a stuck queue and it should not
-    wait behind housekeeping if the delete is ever slow.
-    """
+    """Requeue jobs with a quiet heartbeat, then prune what is settled and old, reclaiming first."""
     requeued, failed = await queue.reclaim(stale_after=stale_after, error=_STOPPED_RESPONDING)
     if requeued or failed:
         log.warning(
@@ -68,5 +48,5 @@ async def run_watchdog(
         try:
             await sweep(queue, stale_after=stale_after)
         except Exception:
-            # The watchdog is the thing that recovers from failure. It does not get to die of one.
+            # The watchdog recovers from failure; it does not get to die of one.
             log.exception("jobs.watchdog.failed")

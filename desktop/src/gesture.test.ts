@@ -1,8 +1,4 @@
-/* Presses in a window, as the main process sees them.
- *
- * What is asserted is which input counts, how long it counts for, and that one press buys one read:
- * a page from another computer reads the clipboard only on the strength of these.
- */
+/* Presses in a window, as the main process sees them. */
 
 import { describe, expect, it } from 'vitest';
 

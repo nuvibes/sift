@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from sift.slices.auth import schema
 from sift.slices.auth.crypto import Argon2Params, Hasher, resolve_argon2_params
+from sift.slices.auth.errors import LockedOut
 from sift.slices.auth.keys import MASTER_KEYS, MasterKeyStore
 from sift.slices.auth.router import (
     SessionViewer,
@@ -34,7 +35,7 @@ from sift.slices.auth.router import (
     session_key,
     viewer_on,
 )
-from sift.slices.auth.service import SERVICE, AuthService, LockedOut
+from sift.slices.auth.service import SERVICE, AuthService
 from sift.slices.auth.tuning import (
     DEFAULT_SESSION_DAYS,
     SESSION_DAYS_KEY,

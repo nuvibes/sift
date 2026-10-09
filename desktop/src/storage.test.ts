@@ -1,10 +1,6 @@
-/* Moving Sift's own two folders.
- *
- * Every refusal is asserted, because a refusal is the only thing standing between a mistyped path
- * and a library that has been merged into somebody's Documents folder. The move itself is exercised
- * against real directories on the temp disk rather than a mocked filesystem: what is being tested
- * is what `rename` and `copyFile` really do, and a stub of those would be testing the stub.
- */
+/* Moving Sift's own two folders. Every refusal is asserted, because a refusal is the only thing
+ * standing between a mistyped path and a library that has been merged into somebody's Documents
+ * folder. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
@@ -111,8 +107,8 @@ describe('moving', () => {
 		const result = await move(current, busy);
 
 		expect(result.ok).toBe(false);
-		// The refusal has to be decided before anything is touched: the backend is already down
-		// by the time this runs, and a half-moved library is the one state with no way back.
+		// The refusal has to be decided before anything is touched: the backend is already down by
+		// the time this runs, and a half-moved library is the one state with no way back.
 		expect(await sizeOf(current.dataDir)).toBe(550);
 		expect(await fs.readdir(busy)).toEqual(['theirs.txt']);
 	});
@@ -149,7 +145,7 @@ describe('moving', () => {
 		await move(current, to, (progress) => seen.push(progress.total));
 
 		// A rename copies nothing, so the only promise is that the size it is about to move is
-		// known before it starts. 650 is the three files above.
+		// known before it starts.
 		expect(seen[0]).toBe(650);
 	});
 });

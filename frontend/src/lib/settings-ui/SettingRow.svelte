@@ -3,25 +3,7 @@
 	   ink that separate a row's name from its help are the row component's, for every caller. */
 
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
-	/*
-	 * One setting, one row: its name on the left, its control on the right, on the same line.
-	 *
-	 * There is one place a row is defined, so spacing, control width and alignment agree on every
-	 * pane and there is one place to fix them. Three rules live here rather than in thirteen panes:
-	 *
-	 *   The control follows from the setting's own metadata. See `control.ts`: a number cannot be
-	 *   drawn as a switch, because nothing draws a switch by hand.
-	 *
-	 *   Help sits under the name, inside the name's column, one size down and capped at a readable
-	 *   measure. Full-bleed help makes the sentence under one setting read as the heading of the
-	 *   next.
-	 *
-	 *   Every control sits in ONE right-hand column of a fixed width, so they line up down the page
-	 *   whatever they are. Nothing spans the pane.
-	 *
-	 * Saving is the caller's. This reports a new value and shows what it is told to show, so a pane
-	 * can save a batch, roll one back, or write somewhere that is not the settings endpoint.
-	 */
+	/* One setting, one row: its name on the left, its control on the right, on the same line. */
 	import {
 		NumberInput,
 		Select,
@@ -44,21 +26,9 @@
 		disabled?: boolean;
 		/** Off for a row inside a table that carries one sentence of help above all of them. */
 		showHelp?: boolean;
-		/**
-		 * Off where "more about this" is not what the screen is for.
-		 *
-		 * Separate from `showHelp` because they answer different questions: help is what the setting
-		 * DOES, and a disclosure is the detail somebody can ask for. The first-run flow wants neither
-		 * (it is a screen for choosing quickly, not for reading), and the settings screen wants
-		 * both, which is where a stranger goes when they do want to read.
-		 */
+		/** Off where "more about this" is not what the screen is for. */
 		showDisclosure?: boolean;
-		/**
-		 * A picture beside each answer of a menu row, handed to the chooser's own `preview`.
-		 *
-		 * For a setting whose answers are shapes rather than words: Theater's default layout is
-		 * the Layouts chooser on the wall, drawn the same way.
-		 */
+		/** A picture beside each answer of a menu row, handed to the chooser's own `preview`. */
 		preview?: Snippet<[SelectOption]>;
 		/** The words each answer shows when highlighted, as the wall's own chooser does. */
 		tooltip?: (value: string) => string | undefined;
@@ -79,14 +49,12 @@
 	const options = $derived(
 		optionsFor(entry).map((one) => ({ ...one, tooltip: tooltip?.(one.value) }))
 	);
-	/* The units this number may be read in, if it is a number and if its unit has any. A setting
-	   whose unit has no ladder gets the plain word it always got. */
+	/* The units this number may be read in, if it is a number and if its unit has any. */
 	const units = $derived(ladderFor(entry.unit));
 	const helpId = $derived(`${entry.key}-help`);
 	const rowId = $derived(`${entry.key}-control`);
 
-	// A number arrives from an input as a string and is stored as a number. Kept here so every
-	// number field in Settings coerces the same way rather than each pane remembering to.
+	// A number arrives from an input as a string and is stored as a number.
 	function asNumber(raw: string): number | null {
 		// An empty box is not a zero. `Number('')` is 0, so without this a cleared field saves 0,
 		// which on the job count means "let Sift decide" and on a size target means one megabyte.
@@ -95,11 +63,7 @@
 		return Number.isFinite(parsed) ? Math.round(parsed) : null;
 	}
 
-	/* A committed number, or the stored one put back.
-	 *
-	 * The change fires on blur and on the spinner, and an empty or half-typed box (a lone "-", say)
-	 * is not a value to send: left alone it would save NaN, and left in the box it would read as
-	 * a value that had been accepted. */
+	/* A committed number, or the stored one put back. */
 	function commitNumber(raw: string, box?: HTMLInputElement) {
 		const parsed = asNumber(raw);
 		if (parsed === null) {
@@ -114,13 +78,8 @@
 	/** What the control shows: the stored value, or the declared default when nothing is stored. */
 	const shown = $derived(value ?? entry.default);
 
-	/* Where a slider is while it is being dragged.
-	 *
-	 * A range input fires `input` continuously (once per pixel of travel), and `change` once, on
-	 * release. Saving on `input` would be a request per frame of a drag, so the number beside the
-	 * slider follows this while the thumb moves and only the release is written. Cleared when the
-	 * value comes back from the caller, so a rejected write puts the reading back with the value.
-	 */
+	/* Where a slider is while it is being dragged. A range input fires `input` continuously
+	 * (once per pixel of travel), and `change` once, on release. */
 	let dragging = $state<number | null>(null);
 	const reading = $derived(dragging ?? (typeof shown === 'number' ? shown : 0));
 
@@ -135,11 +94,7 @@
 	const disclosure = $derived(showDisclosure ? entry.disclosure : undefined);
 </script>
 
-<!--
-	The row's shape is `LabelledRow`, shared with the facts on About and Users. What is left here
-	is the part that is a SETTING: reading a declared entry, choosing which control it means, and
-	handing the value up. See `LabelledRow` for why the two share one shape.
--->
+<!-- The row's shape is `LabelledRow`, shared with the facts on About and Users. -->
 {#snippet rowName()}
 	<label class="name" for={rowId}>{entry.label ?? entry.key}</label>
 {/snippet}
@@ -209,10 +164,10 @@
 			onchange={(next) => onchange(next)}
 		/>
 	{:else if kind === 'time'}
-		<!-- A clock, not a text box. See `control.ts` for how a setting comes to be one: the quiet
-		     hours hold `23:00` and a string is a string, so as free text they would accept `11pm`.
-		     The segments are the library's, which is what makes an arrow key step the hour without
-		     touching the minute. -->
+		<!--
+			A clock, not a text box. See `control.ts` for how a setting comes to be one: the quiet
+			hours hold `23:00` and a string is a string, so as free text they would accept `11pm`.
+		-->
 		<TimeField
 			id={rowId}
 			value={typeof value === 'string' ? value : ((entry.default as string) ?? '')}
@@ -238,12 +193,9 @@
 </LabelledRow>
 
 <style>
-	/* A row that hangs off a setting that is switched off. The whole row dims, not just its control:
-	   a full-strength name beside a faded box reads as a control that has broken rather than one
-	   that is waiting for something. */
+	/* A row that hangs off a setting that is switched off. */
 	/* A menu is as wide as its widest answer (`Select` measures it) and ends at the column's far
-	   edge like every control on the pane: one right edge, never a box mostly empty. It gives way
-	   to the column where an answer is longer than the column is wide. */
+	   edge like every control on the pane: one right edge, never a box mostly empty. */
 	/* Named for what it holds, not "menu": a class of that name is dressed app-wide as a POP-UP
 	   menu (its own padding, corners, surface and shadow). */
 	.chooser {
@@ -274,10 +226,7 @@
 		font: var(--text-body-sm);
 	}
 
-	/* Only the width. The box (the height, the padding, the edge, the corner, the ground and the
-	   face) is `app.css`'s; restated here with a heavier edge, a smaller corner and a different
-	   ground, the one text setting on a pane would look like no other field in the application.
-	   One rule says what a field looks like; see `check_one_field.js`. */
+	/* Only the width. */
 	.unknown {
 		color: var(--sift-ink-3);
 		font: var(--text-body-sm);

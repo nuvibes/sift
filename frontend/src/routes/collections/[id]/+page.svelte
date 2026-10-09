@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { counted, filesSaid, sizeOf, withSize } from '$lib/entity/entity-counts';
-	/*
-	 * One collection: its files in the Sort by order every wall of files has, pinned first, paged
-	 * like every wall. Dropping a clip here adds it, as on the list screen, and no file moves.
-	 */
+	/* One collection: its files in the Sort by order every wall of files has, pinned first,
+	 * paged like every wall. */
 	import type { Crumb } from '$lib/components/common';
 	import type { Frame } from '$lib/entity/cover-frame';
 	import { onDestroy, untrack } from 'svelte';
@@ -78,8 +76,7 @@
 
 	const id = $derived(page.params.id ?? '');
 
-	/* The tab is read off the address, so every tab is a real place. Files is this page's own wall,
-	   so the strip goes to the frame's header in the slot `EntityGrid` uses. */
+	/* The tab is read off the address, so every tab is a real place. */
 	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
@@ -89,7 +86,7 @@
 	const fileWords = new TabWords();
 
 	/* The numbers beside the tab words: all of them in one request, and whatever the wall on
-	   screen found beating the map for its own tab. See `TabCounts`. */
+	   screen found beating the map for its own tab. */
 	const counts = new TabCounts();
 	$effect(() => counts.follow('collection', id));
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
@@ -97,12 +94,7 @@
 
 	let collection = $state<Collection | null>(null);
 
-	/* WHO MADE IT, for the line under the name. Read on its own rather than off the row: the row's
-	   shape is the WALL's too, so a maker on it would be filled here and null there with nothing to
-	   say which meaning the null had. See `makerOf`.
-
-	   Guarded by the id it was asked for, like every other per-entity read on these screens: a
-	   slower answer for a collection navigated away from must not land under this heading. */
+	/* WHO MADE IT, for the line under the name. */
 	let madeBy = $state<Maker | null>(null);
 	let madeByFor = $state('');
 	$effect(() => {
@@ -113,9 +105,7 @@
 			if (madeByFor === one) madeBy = held;
 		});
 	});
-	/* Items move under the cursor, the same as everywhere else. Set up here because this screen
-	   draws its own tiles rather than using the library grid, and the clip lives inside that
-	   grid. */
+	/* Items move under the cursor, the same as everywhere else. */
 	const previews = new HoverPreviews();
 	onDestroy(() => previews.dispose());
 	/* A page at a time, as every wall of files pages; its rows are the route's own. */
@@ -155,8 +145,7 @@
 			files: wholeFiles
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
-		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   length of the very thread the pane draws, read beside the strip (`readThread`). */
+		   word on a row of numbered ones reads as a tab nobody has looked at yet. */
 		{
 			id: HISTORY,
 			label: 'History',
@@ -168,20 +157,19 @@
 	let rowFailed = $state(false);
 	const failed = $derived(rowFailed || grid.failed !== null);
 	/* The server said there is no such collection for this account (a 404 means "no such id" and
-	   "not yours" alike). Only that answer draws the page saying so: any other failure is Sift's. */
+	   "not yours" alike). */
 	let missing = $state(false);
 	let confirming = $state<CollectionItem[]>([]);
 
 	/* Picking several, the way every other wall does it: a press held on a tile starts a
 	   selection and a sweep across its neighbours extends it (`TileGesture`), the bar rises with
-	   a count, and the drag out of the window carries everything picked. The gesture swallows a
-	   drag that starts during a sweep, in the capture phase, so the two cannot fight. */
+	   a count, and the drag out of the window carries everything picked. */
 	const selection = new Selection();
 	const gesture = new TileGesture(selection, () => order);
 
-	/* Escape clears the picks and Ctrl+Z takes back the last one, from wherever focus is: the same
-	   window-level handling the grid has, for the same reason: the last click left focus on a tile
-	   or nowhere, and a handler on the wall would only hear it while the wall had focus. */
+	/* Escape clears the picks and Ctrl+Z takes back the last one, from wherever focus is: the
+	   same window-level handling the grid has, for the same reason: the last click left focus on
+	   a tile or nowhere, and a handler on the wall would only hear it while the wall had focus. */
 	function onEscape(event: KeyboardEvent) {
 		if (gesture.undoKeys(event)) {
 			event.preventDefault();
@@ -269,8 +257,8 @@
 		untrack(measure);
 	});
 
-	/* Where the page begins, for the question it was turned on; a new question starts at the top.
-	   Previous returns to the page Next left, as on every wall of files. */
+	/* Where the page begins, for the question it was turned on; a new question starts at the
+	   top. */
 	const question = $derived(`${id}\n${JSON.stringify(query)}`);
 	let start = $state<{ for: string; at: PageStart }>({ for: '', at: { at: 0 } });
 	const from = $derived<PageStart>(start.for === question ? start.at : { at: 0 });
@@ -318,7 +306,7 @@
 	});
 
 	/* Its own loader rather than `EntitySubject`: the row and the files are two reads, and a
-	   re-read never blanks the header. It follows what this account may see. */
+	   re-read never blanks the header. */
 	reloadOnLibraryChange(() => void reread());
 
 	/* Which re-read is the latest. A pick moves the filtering while an earlier read is in flight, and
@@ -382,11 +370,8 @@
 		return selection.has(one) ? selection.ordered(order) : [one];
 	}
 
-	/*
-	 * The verbs only a collection has (the cover, membership), appended to `FileVerbs`' list so the
-	 * menu and the bar render one declaration. The cover is `singleOnly`, so the bar keeps Remove.
-	 * Both are an admin's, as the routes behind them are.
-	 */
+	/* The verbs only a collection has (the cover, membership), appended to `FileVerbs`' list so
+	 * the menu and the bar render one declaration. */
 	function ownVerbs(item: CollectionItem): Verb[] {
 		if (!session.isAdmin) return [];
 		return [
@@ -446,40 +431,26 @@
 		}
 	}
 
-	/* Deleting the collection.
-	 *
-	 * The files in it are untouched: a collection is a grouping, so what goes is the grouping and
-	 * its membership rows. The question says so. */
+	/* Deleting the collection. The files in it are untouched: a collection is a grouping, so
+	 * what goes is the grouping and its membership rows. */
 	async function removeCollection() {
 		await collections.remove(id);
 		toasts.show('Deleted. The files in it are still here.', { tone: 'success' });
 		await leaveFor('/collections');
 	}
 
-	/* What the two below are about, in one place: the noun the sentence uses, its plural being the
-	   obvious one, and the write itself. The same lines the Collections wall passes. */
+	/* What the two below are about, in one place: the noun the sentence uses, its plural being
+	   the obvious one, and the write itself. */
 	const hiddenAs = $derived({
 		noun: 'collection',
 		stays: vault.unlocked,
 		set: (one: string, flag: boolean) => collections.setVault(one, flag)
 	});
 
-	/*
-	 * Hiding a collection, and bringing it back, through the ONE mechanism that does it.
-	 *
-	 * `collections.setVault` is the per-account vault route, not the record write an admin makes,
-	 * and everything around it (the Privacy wording, a 401 for no PIN yet read like the 409, and an
-	 * Undo on the sentence) comes from `hiding.ts`, which every wall uses. `hiding.test.ts`
-	 * refuses a second copy anywhere in the client.
-	 *
-	 * `stays` is the vault's state and not a constant: with Hidden open it is still listed, so
-	 * "unlock Hidden to see it" would be advice about something the person is looking at.
-	 */
+	/* Hiding a collection, and bringing it back, through the ONE mechanism that does it. */
 	async function conceal() {
 		const moved = await setHidden([id], true, hiddenAs);
-		// Away from a page that is about to stop answering: hidden, it is a 404 for you. Only on a
-		// write that actually landed. A refusal has already been said, and leaving the page would
-		// take the sentence away with it.
+		// Away from a page that is about to stop answering: hidden, it is a 404 for you.
 		if (moved.length > 0) await leaveFor('/collections');
 	}
 
@@ -497,12 +468,7 @@
 		})();
 	});
 
-	/* This account's own opinion of the collection.
-	 *
-	 * The wall of collections has a heart and stars on every card, and the page about ONE
-	 * collection has them too, so rating one is not only possible from the list. The store settles
-	 * both from the server's own answer, so all these have to do is say when a write failed; silence would be a heart that springs back with nothing on screen to explain it.
-	 */
+	/* This account's own opinion of the collection. */
 	async function heart(favorite: boolean) {
 		try {
 			await collections.setFavorite(id, favorite);
@@ -521,12 +487,8 @@
 		}
 	}
 
-	/* The chips as the shared header wants them.
-	 *
-	 * The tag store's row carries more than the header draws: a count, sharing marks. Filtered
-	 * here, at the boundary, rather than by loosening the header's type: the header should go on
-	 * describing exactly what it needs, or every caller after this one gets to hand it anything.
-	 */
+	/* The chips as the shared header wants them. The tag store's row carries more than the
+	 * header draws: a count, sharing marks. */
 	const chipsForHeader = $derived(chips.map((tag) => ({ id: tag.id, name: tag.name })));
 
 	async function setTag(tagId: string, add: boolean) {
@@ -548,19 +510,17 @@
 	}
 
 	/* How big the WHOLE collection is, for the line under its name: that line is about the
-	   collection, not about what the picks left on the wall. The record's own count while filtered
-	   (scoped to this viewer the same way), and what is on the wall otherwise, which is the same
-	   number and follows an add or a removal the moment it lands. */
+	   collection, not about what the picks left on the wall. */
 	const wholeCount = $derived(
 		narrowed || searched || (grid.loaded === 0 && grid.loading)
 			? (collection?.item_count ?? grid.total)
 			: grid.total
 	);
 	/* How big those files are, off the record, and only while the line's number IS the record's:
-	   an add or a removal moves the wall's count before the record is read again, and a size of the
-	   files before it beside a count of the files after it would describe neither. */
-	/* Nothing is said until the row or the wall has answered: a stand-in "0 files" would be drawn
-	   and then replaced. */
+	   an add or a removal moves the wall's count before the record is read again, and a size of
+	   the files before it beside a count of the files after it would describe neither. */
+	/* Nothing is said until the row or the wall has answered: a stand-in "0 files" would be
+	   drawn and then replaced. */
 	const countKnown = $derived(collection !== null || grid.loaded > 0 || !grid.loading);
 	const wholeBytes = $derived(
 		collection && wholeCount === collection.item_count ? sizeOf(collection) : null
@@ -600,8 +560,7 @@
 
 <!--
 	Who this page is about, drawn on EVERY tab: whose collection it is does not change with what is
-	being shown OF it. The tags are drawn here with it: `EntityHeader` draws a tag row for a person
-	and a site, so a collection has no copy of that control of its own.
+	being shown OF it.
 -->
 {#snippet identity()}
 	<EntityHeader
@@ -639,28 +598,16 @@
 <!--
 	The drop handlers sit on the frame rather than on a chip, because the target here is the whole
 	collection: there is one of it, and a strip to aim at would be a second, smaller place to miss.
-	It carries a name so the region is announced rather than being a silent element that happens to
-	accept a gesture.
 -->
 <!--
 	The Files tab, which is this screen's own wall, and every other tab, which is the shared one.
-
-	Only Files carries the drop target: dropping a clip on a wall of PEOPLE would have no meaning. The identity band and the tab strip are rendered by both, from the same two snippets, so
-	the page does not change shape when somebody moves between tabs.
 -->
 {#if missing}
 	<!-- No header, no tabs and no verbs: a collection that is not there has nothing to act on. -->
 	<Empty scope="page" icon="box" title="That collection isn't here">It may have been deleted.</Empty
 	>
 {:else if showingHistory}
-	<!--
-		The thread, in the frame every other screen uses. Not a wall: nothing to select, nothing to
-		page and nothing to count, so this screen's own drop target and grid would be furniture with
-		no work behind it.
-
-		WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at the page's
-		own left edge where the tabs and the title are.
-	-->
+	<!-- The thread, in the frame every other screen uses. -->
 	<!-- History draws the identity and the tab strip in the shape every other tab does
 	     (`PageAbove`, then the strip as the heading row), so the strip stands at one height
 	     on every tab. -->
@@ -692,14 +639,9 @@
 					ondrop={target.handlers.ondrop}
 				>
 					<!--
-					Every verb, and every sheet behind it, from the one host the library grid draws from.
-					The contents route carries `favorite` and `rating` on every item, so the library verbs
-					have the whole opinion they read.
-
-					What this screen hands over is what only this screen knows: how to look a row up, how to
-					drop one, and how to re-read the wall. `pinnable`, because a collection is a wall somebody
-					curates and is drawn pinned first.
-				-->
+						Every verb, and every sheet behind it, from the one host the library grid draws
+						from.
+					-->
 					<FileVerbs
 						{items}
 						pinnable
@@ -732,14 +674,12 @@
 								onbody={watchSize}
 							>
 								{#snippet floating()}
-									<!-- The bar every wall raises over a selection, drawing the declared verbs and nothing
-								     hand-written: there is no markup here for a button to be added to, which is what
-								     stops this bar and the menu below coming to mean different things.
-
-								     Split once, up here rather than inside the bar's snippets: the few it names and
-								     the door holding the rest read the same list and act on the same files, and a
-								     second copy of either would be a second answer. `barShape` decides which verb
-								     goes where; nothing on this page does. -->
+									<!--
+										The bar every wall raises over a selection, drawing the
+										declared verbs and nothing hand-written: there is no markup
+										here for a button to be added to, which is what stops this bar
+										and the menu below coming to mean different things.
+									-->
 									{@const on = selection.ordered(order)}
 									{@const shape = barShape([
 										...verbs.bar(on),
@@ -840,12 +780,9 @@
 															onclickcapture={(event) => gesture.clicked(item.id, event)}
 														>
 															<!--
-												Named `tileMenu` and passed by name, NOT declared as `{#snippet items()}`.
-												The prop is called `items`, and a snippet of that name shadows this page's own
-												`items`: the array of everything in the collection, which the body below reads
-												to know when a tile is last. It would throw while the menu was rendering, so the
-												menu would open and draw nothing: right-clicking a tile would seem to do nothing.
-											-->
+																Named `tileMenu` and passed by name,
+																NOT declared as `{#snippet items()}`.
+															-->
 															{#snippet tileMenu()}
 																<!-- This wall's rows first (the arrows are the keyboard's way to the order), then
 																     every file verb, both through `VerbMenuItems`. -->
@@ -954,18 +891,15 @@
 />
 
 <style>
-	/*
-	 * The whole screen is the drop target, so this wraps the frame rather than sitting inside it.
-	 * Inside, it would be the scrolling body, and a border drawn on a box that scrolls moves when
-	 * the wall does, which is the one thing a "you may drop here" edge must not do.
-	 */
+	/* The whole screen is the drop target, so this wraps the frame rather than sitting inside
+	 * it. */
 	.drop {
 		display: flex;
 		block-size: 100%;
 		min-block-size: 0;
-		/* An OUTLINE inside the edge, never a border: a border takes a pixel of room on every side,
-		   and would put the identity band and the tab strip on this tab 1px lower than on every
-		   other tab of the page. An outline is drawn over the box and moves nothing. */
+		/* An OUTLINE inside the edge, never a border: a border takes a pixel of room on every
+		   side, and would put the identity band and the tab strip on this tab 1px lower than on
+		   every other tab of the page. */
 		outline: 1px solid transparent;
 		outline-offset: -1px;
 		border-radius: var(--radius-md);

@@ -1,12 +1,6 @@
 <script lang="ts">
-	/*
-	 * A long run's last finished run, in a line: how long ago in the page's words, the exact moment on
-	 * the hover, and what the run did in its own sentence.
-	 *
-	 * Given a TASK, it reads that task's row on Tasks, so the page and the Tasks screen say one run
-	 * to the second and the line moves when the queue does. Given a RUN, it draws the one the page's
-	 * own read carries. Inline, so the page chooses the block it sits in. See `last-run.ts`.
-	 */
+	/* A long run's last finished run, in a line: how long ago in the page's words, the exact
+	 * moment on the hover, and what the run did in its own sentence. */
 	import { onMount } from 'svelte';
 	import { Tooltip } from '$lib/components/common';
 	import { taskList } from '$lib/jobs/tasks.svelte';

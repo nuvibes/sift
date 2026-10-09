@@ -1,27 +1,4 @@
-/* What a download row says, and what it offers to do about it.
- *
- * ## The words
- *
- * The row does not own most of these: the state, its colour and its word live in `Badge`, because
- * the jobs list shows the same states and two screens each deciding what amber means is how one
- * of them ends up disagreeing. What the row owns is the handful of cases where it genuinely knows
- * more than the state does: a download is only ever blocked on COOKIES, and `skipped` and
- * `duplicate` are not job states at all.
- *
- * So the line this file draws is between an override that adds a FACT and one that is a synonym.
- * A second name for the same status ("Set aside" for "Quarantined") is not more information, and
- * a second name is the thing the shared component exists to prevent. The same rule is why
- * `queued` reads "Queued" and not "Waiting": that would be a synonym, and the second line of the
- * figures column is where a waiting row's extra fact belongs.
- *
- * ## The verbs
- *
- * Every act the row offers is declared once and rendered three ways: the glyph buttons, the
- * three-dot menu and the right-click. The property worth testing is not that a button exists but
- * that THE THREE CANNOT COME APART, so the sweep below opens the menu on every state and checks
- * that everything visible on the row is in it. A row that wrote its own buttons would pass any
- * assertion about a button existing.
- */
+/* What a download row says, and what it offers to do about it. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -91,8 +68,8 @@ function item(status: string, known: Partial<DownloadItem> = {}): DownloadItem {
 }
 
 /* Every progress field, for the same reason the item above spells every one of its own out: a
-   partial literal compiles as a wider type and then hands the component `undefined` where it reads
-   a number, which fails as a blank figure rather than as a missing field. */
+   partial literal compiles as a wider type and then hands the component `undefined` where it
+   reads a number, which fails as a blank figure rather than as a missing field. */
 function progress(known: Partial<NonNullable<DownloadItem['progress']>> = {}) {
 	return {
 		bytes_per_second: null,
@@ -107,8 +84,7 @@ function progress(known: Partial<NonNullable<DownloadItem['progress']>> = {}) {
 }
 
 /* Every handler, so a state's verbs are decided by the STATE rather than by which handler a test
-   remembered to pass. A verb with no handler is deliberately not built at all (that is how a
-   caller says "this list does not do that"), so a sweep missing one would report a missing verb. */
+   remembered to pass. */
 const HANDLERS = {
 	oncookies: vi.fn(),
 	oncancel: vi.fn(),
@@ -134,9 +110,7 @@ function render(one: DownloadItem, more: Record<string, unknown> = {}) {
 	flushSync();
 }
 
-/** The glyph buttons on the row, by the name each one says out loud. The three dots is not one of
- *  them: it is the door to the rest. The chevron is not among them either: `DataRow` draws it at
- *  the end of the row. */
+/** The glyph buttons on the row, by the name each one says out loud. */
 function glyphs(): string[] {
 	const actions = host.querySelector('.controls');
 	return [...(actions?.querySelectorAll('button[aria-label]') ?? [])]
@@ -174,8 +148,7 @@ function word(status: string): string {
 describe('the states the row says for itself, because it knows more than the state does', () => {
 	it.each([
 		// "Waiting for cookies", not "Waiting for login": Sift signs in to nothing and holds no
-		// account. It is handed an export of a browser's cookies, so "login" names a thing this
-		// surface does not have.
+		// account.
 		['blocked', 'Waiting for cookies'],
 		['skipped', 'Skipped'],
 		['duplicate', 'Already in library']
@@ -233,8 +206,7 @@ describe('the three marks this screen knows better than the state does', () => {
 	});
 
 	it('leaves the rest to Badge rather than restating them', () => {
-		// `canceled` here must be the SAME mark the jobs list draws for it. A second opinion about a
-		// state both screens hold is the drift the shared component exists to prevent.
+		// `canceled` here must be the SAME mark the jobs list draws for it.
 		expect(markOf('paused')).toBe(glyph('pause'));
 		expect(markOf('canceled')).toBe(glyph('stop_circle'));
 		expect(markOf('failed')).toBe(glyph('cancel'));
@@ -291,7 +263,6 @@ describe('the name comes first, and it is cut in the middle', () => {
 		render(item('running', { filename: `${'a'.repeat(90)}.mp4` }));
 		const drawn = words(host.querySelector('.named'));
 		// The cut is in the MIDDLE, so the end (which says what kind of file it is) survives.
-		// `text-overflow: ellipsis` takes exactly that end, which is why it is not the answer here.
 		expect(drawn.endsWith('.mp4')).toBe(true);
 		expect(drawn).toContain('\u2026');
 		expect(drawn.length).toBeLessThan(50);
@@ -315,8 +286,7 @@ describe('the name comes first, and it is cut in the middle', () => {
 
 describe('every state draws the verbs that state has', () => {
 	it.each([
-		/* The same two places on every live row: hold-or-let-go, then stop. Move to the front is in
-		   the menu: three candidates, two places, and it is the rarest of the three. */
+		/* The same two places on every live row: hold-or-let-go, then stop. */
 		['queued', {}, null, ['Pause', 'Cancel']],
 		['running', {}, null, ['Pause', 'Cancel']],
 		// Resume is the held row's fix, in words; the glyph pair is what is left of the live pair.
@@ -411,8 +381,8 @@ describe('every state draws the verbs that state has', () => {
 		}
 	});
 
-	/* The Site's logo stands on nothing: no ground and no rounded tile behind it, the way a person's
-	   links draw theirs. The letter keeps its tile: that is `Avatar`'s, and held there. */
+	/* The Site's logo stands on nothing: no ground and no rounded tile behind it, the way a
+	   person's links draw theirs. */
 	it("draws the Site's mark bare, with no plate behind it", () => {
 		render(item('running', { url: 'https://www.example.test/watch/1', site: null }));
 		expect(host.querySelector('.mark .avatar')?.classList.contains('bare')).toBe(true);
@@ -437,9 +407,7 @@ describe('every state draws the verbs that state has', () => {
 });
 
 describe('the fix on a narrow row', () => {
-	/* Under the name, the fix follows the facts it answers. At the far end of the line it would
-	   stand in the room kept for the actions, which are hidden until the pointer comes, and read as
-	   loose. */
+	/* Under the name, the fix follows the facts it answers. */
 	it('stands after the facts on their line, not pushed to the far end', () => {
 		render(item('failed'), { narrow: true });
 		const fixCell = host.querySelector('.facts .fix') as HTMLElement;
@@ -454,9 +422,8 @@ describe('the fix on a narrow row', () => {
 });
 
 describe('the buttons and the menu cannot come apart', () => {
-	/* The property the whole shape rests on. Both surfaces read one declaration, so anything on the
-	   row has to be in the menu. A row that wrote its own buttons would pass any assertion about
-	   a button existing, and this is the assertion it would fail. */
+	/* The property the whole shape rests on. Both surfaces read one declaration, so anything on
+	   the row has to be in the menu. */
 	it.each([
 		'queued',
 		'running',
@@ -511,9 +478,8 @@ describe('a download whose file has since been deleted', () => {
 });
 
 describe('cancelling asks only where something is lost', () => {
-	/* A waiting download has fetched nothing, so stopping it costs a click to start again and the
-	   page says so with a toast that undoes. A running one has bytes on disk that go with it, and
-	   there is no resume, so the next attempt starts from nothing. */
+	/* A waiting download has fetched nothing, so stopping it costs a click to start again and
+	   the page says so with a toast that undoes. */
 	function pressCancel() {
 		const button = [...host.querySelectorAll('button[aria-label]')].find(
 			(one) => one.getAttribute('aria-label') === 'Cancel'
@@ -569,8 +535,8 @@ describe('the tick', () => {
 	});
 
 	it('is not drawn at all where the list does not pick', () => {
-		/* The TRACK stays (an empty cell, so the columns of a list that does not pick stand where
-		   they do in one that does), and the box is not in it. */
+		/* The TRACK stays (an empty cell, so the columns of a list that does not pick stand
+		   where they do in one that does), and the box is not in it. */
 		render(item('done', { asset_id: 'a1' }), { onselect: undefined });
 		expect(host.querySelector('.tick')?.children.length).toBe(0);
 	});
@@ -578,8 +544,7 @@ describe('the tick', () => {
 
 describe('a download held where it stands', () => {
 	/* The three things a pause has to say, and the reason each one is here: the state, that the
-	   bytes survived it, and the way to let it go again. A row that merely stopped moving and said
-	   nothing would read as a download that had got stuck. */
+	   bytes survived it, and the way to let it go again. */
 	function paused(known: Partial<DownloadItem> = {}) {
 		return item('paused', {
 			progress: progress({ done_bytes: 148_000_000, total_bytes: 240_000_000 }),
@@ -625,8 +590,8 @@ describe('a download held where it stands', () => {
 describe('where a waiting row is in the queue', () => {
 	/* Nothing without a position from the server: "next in line" on every one of forty rows
 	   would be false for thirty-nine of them. */
-	/* One plain name rather than a table of three, because the sweep that guards this rule finds a
-	   test by the words in its name and a `%i` in a title is not a name anything can look up. */
+	/* One plain name rather than a table of three, because the sweep that guards this rule finds
+	   a test by the words in its name and a `%i` in a title is not a name anything can look up. */
 	it('counts the rows in front of it, and names the first one', () => {
 		const at = (position: number) => {
 			render(item('queued', { position }));
@@ -645,8 +610,7 @@ describe('where a waiting row is in the queue', () => {
 
 describe('P holds it, and lets it go again', () => {
 	/* From the ROW, which is the tab stop Tab lands on first: a key that only worked on the span
-	   holding the tick would pass a test pressed there while doing nothing on the row itself.
-	   `div.row` is `DataRow`'s own element. */
+	   holding the tick would pass a test pressed there while doing nothing on the row itself. */
 	function press(key: string, held: KeyboardEventInit = {}) {
 		const row = host.querySelector('div.row') as HTMLElement;
 		row.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...held }));
@@ -728,7 +692,7 @@ describe('Delete, from the row itself', () => {
 describe('the bar', () => {
 	it('sweeps rather than sitting at zero while nothing has moved yet', () => {
 		// The silence before the first byte: the page is being fetched, a challenge answered, the
-		// formats listed. A bar at zero would claim the transfer had started and stalled.
+		// formats listed.
 		render(item('running', { progress: null }));
 		expect(host.querySelector('.fill')?.className).toContain('indeterminate');
 	});
@@ -781,9 +745,7 @@ describe("a row at a phone's width", () => {
 	});
 });
 
-/* The detail under an opened row is one cell of the row's subgrid. Unplaced it would stand in the
-   pick track, twenty pixels wide, and a link would break at every letter down the page. It starts
-   on the name's line and runs to the row's end, in every arrangement. */
+/* The detail under an opened row is one cell of the row's subgrid. */
 describe('the detail under an opened row', () => {
 	it.each([false, true])('runs from the name to the end of the row (narrow %s)', (narrow) => {
 		render(item('failed', { url: 'https://cdn.example.test/attachments/1/2/clip.mp4' }), {

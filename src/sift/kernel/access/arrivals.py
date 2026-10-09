@@ -1,29 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Files that arrived in a span of time, counted as one user may see them now.
-
-Readers over `assets` joined to the stored verdict (`viewer_assets`): every file that arrived
-between two moments, the same by the Site each file's username belongs to, and the downloads that
-finished with the bytes they brought. They live here
-rather than beside the feature that draws them because they read the table that carries the
-permissions, and the rule of this layer is that nothing outside it does. Each answers rows of the
-shape a figure is filed in (a key, the whole count, and how much of it is hidden for this user),
-so what a user may not see is decided here, once, and never by the caller.
-
-A file with no username is in the total and under no Site. A Site the user has hidden hides every
-file under it, whatever the files' own verdicts say. That is the same reading the vault's own Site
-screen gives. Both are bounded by `ix_assets_added_id` on the span and then one primary-key probe
-per arrived file, so a day's arrivals cost a day's rows, never the library's.
-
-## A file that has since left
-
-Counted too, so a day's arrivals do not shrink when its files are deleted and the day is added up
-again. A departed file has no verdict to ask, so it is read from what was kept as it went
-(`file_departures` and who could see it then, `file_departure_viewers`): counted for a user who
-could see it, and hidden for them as it was then. A file deleted before that was kept says nothing
-about who could see it, and is counted for an admin only, who could see every file. A departed
-file's Sites are the ones it was under when it went; a Site the user has hidden now hides it, as
-it does a file that is still here. Bounded by `ix_file_departures_arrived` on the span.
-"""
+"""Files that arrived in a span of time, counted as one user may see them now, departed files
+included."""
 
 from __future__ import annotations
 
@@ -32,12 +9,10 @@ from typing import Any, Final
 
 from sift.kernel.db import Row, in_clause
 
-#: How a reader runs a statement: what a `Database.fetch_all` bound method is, and what a feature
-#: adding figures up hands in so that one counting path serves a stored day and a live one alike.
+#: How a reader runs a statement: a `Database.fetch_all` bound method, or what a feature hands in.
 Fetch = Callable[[str, Mapping[str, Any]], Awaitable[Sequence[Row]]]
 
-#: Files that arrived, whoever brought them, counted over what this user may see now. One row, or
-#: none when nothing arrived: a zero is not a figure.
+#: Files that arrived, counted over what this user may see now; no row when none did.
 _FILES_ADDED: Final = """
 SELECT '' AS key, COUNT(*) AS whole, SUM(x.concealed) AS hidden
   FROM (SELECT va.concealed AS concealed
@@ -55,8 +30,7 @@ SELECT '' AS key, COUNT(*) AS whole, SUM(x.concealed) AS hidden
 HAVING COUNT(*) > 0
 """
 
-#: The same by Site. A file under two usernames of one Site is one file under it (the DISTINCT);
-#: a Site hidden for this user hides every file it reaches.
+#: The same by Site, a hidden Site hiding every file it reaches.
 _FILES_ADDED_BY_SITE: Final = """
 SELECT x.site_id AS key, COUNT(*) AS whole,
        CASE WHEN EXISTS (SELECT 1 FROM site_user_state h
@@ -80,9 +54,7 @@ SELECT x.site_id AS key, COUNT(*) AS whole,
  GROUP BY x.site_id
 """
 
-#: Downloads that finished in the span, for the user who asked for them (an admin also has the
-#: ones from before anybody was recorded as asking). Hidden is a file this user is not shown, or
-#: one no longer here to ask about.
+#: Downloads that finished in the span, for the user who asked for them.
 _DOWNLOADS_FINISHED: Final = """
 SELECT '' AS key, COUNT(*) AS whole, SUM(COALESCE(va.concealed, 1)) AS hidden
   FROM downloads d
@@ -94,7 +66,6 @@ SELECT '' AS key, COUNT(*) AS whole, SUM(COALESCE(va.concealed, 1)) AS hidden
 HAVING COUNT(*) > 0
 """
 
-#: The same downloads' bytes, over the files still here (a deleted one's size went with it).
 _DOWNLOAD_BYTES: Final = """
 SELECT '' AS key, SUM(a.size_bytes) AS whole,
        SUM(COALESCE(va.concealed, 1) * a.size_bytes) AS hidden
@@ -108,7 +79,7 @@ SELECT '' AS key, SUM(a.size_bytes) AS whole,
 HAVING SUM(a.size_bytes) > 0
 """
 
-#: The statements, by name, for a test to read: every one must join the stored verdict.
+#: The statements by name, for a test that holds each to the stored verdict.
 STATEMENTS: Final[Mapping[str, str]] = {
     "files_added": _FILES_ADDED,
     "files_added_by_site": _FILES_ADDED_BY_SITE,
@@ -118,8 +89,7 @@ STATEMENTS: Final[Mapping[str, str]] = {
 
 
 async def files_added(fetch: Fetch, *, user_id: str, start: int, end: int) -> Sequence[Row]:
-    """The files that arrived in `[start, end)` this user may see: one row (`key` empty, `whole`,
-    `hidden`), or no rows when none did."""
+    """The files that arrived in `[start, end)` this user may see: one row, or none."""
     return await fetch(_FILES_ADDED, {"user": user_id, "start": start, "end": end})
 
 
@@ -138,24 +108,17 @@ async def download_bytes(fetch: Fetch, *, user_id: str, start: int, end: int) ->
     return await fetch(_DOWNLOAD_BYTES, {"user": user_id, "start": start, "end": end})
 
 
-#: What a file is called, by id: its title where somebody typed one, else its name on arrival.
 _FILE_NAMES = (
     "SELECT id, COALESCE(NULLIF(title, ''), original_filename, 'a file') AS name"
     " FROM assets WHERE id IN (?*)"
 )
 
 
-#: A read bound by position, for the one statement whose list of ids is expanded in place.
 FetchListed = Callable[[str, Sequence[Any]], Awaitable[Sequence[Row]]]
 
 
 async def file_names(fetch: FetchListed, ids: Sequence[str]) -> Sequence[Row]:
-    """The names of these files, for a card that names one: a file no longer here has no row.
-
-    Read here rather than in a slice because `assets` carries permissions: a recap's recipe
-    names a file its User viewed, frozen when the recap is made, and what a reader may be told of
-    it is decided when the card is drawn.
-    """
+    """The names of these files, for a card that names one."""
     if not ids:
         return []
     sql, params = in_clause(_FILE_NAMES, list(ids))

@@ -12,22 +12,14 @@
 
 <script lang="ts">
 	/*
-	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a blurred ground and a mark, shape and colour only.
-	 * The face of a Hidden file or row while Hidden is shut: there is something here, and it is not
-	 * being shown.
-	 *
-	 * No picture is behind it (the server sends none), so this is not a layer over anything. It is
-	 * the picture area itself, drawn as the ground it always has, blurred, with the Hidden mark in
-	 * the middle. A flat fill reads as a picture that failed to load; the blur reads as out of focus.
-	 *
-	 * Not `Veil`, and never wearing the `veil` class: that is the dimmed sheet behind a dialog, fixed
-	 * to the window on a dialog's layer, and a card face named after it would wear that layer too.
+	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a blurred ground and a mark, shape
+	 * and colour only. The face of a Hidden thing while Hidden is shut: the picture area blurred,
+	 * the Hidden mark on it. Never `Veil`, whose class brings a dialog's layer.
 	 */
 	import Icon from '$lib/components/Icon.svelte';
 
 	interface Props {
-		/** What the mark is called, for somebody who cannot see it. Left off where the control
-		 *  around it already says so. */
+		/** The mark's name, left off where the control around it says it. */
 		label?: string;
 	}
 
@@ -50,11 +42,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The ground on a layer under the mark rather than a filter on the box, so the mark stays sharp.
-	   A blur of a flat fill draws a flat fill, which is the "failed to load" this is not; so the
-	   ground wears the frost (`--frost-picture`: made-up patches of light and shade, the same on
-	   every face) and the blur is glass, which leaves none of them an edge. The layer reaches past
-	   the box by the blur's own reach, so its edge does not fade to what is behind the face. */
+	/* The frosted ground on a layer under the mark, reaching past the box by the blur's reach. */
 	.withheld::before {
 		content: '';
 		position: absolute;

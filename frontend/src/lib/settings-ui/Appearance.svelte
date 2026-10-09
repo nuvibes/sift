@@ -1,11 +1,5 @@
 <script lang="ts">
-	/* The look of the app (background, accent, lettering) and the sidebar.
-	 *
-	 * The sidebar is here rather than only on the sidebar itself for one reason: a row that has been
-	 * put away is not on the sidebar to be pressed. Rearranging is direct manipulation and belongs
-	 * where the rows are; putting one BACK has to live somewhere that lists them all, including the
-	 * ones that are not showing.
-	 */
+	/* The look of the app (background, accent, lettering) and the sidebar. */
 	import { onMount, tick } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { Button, SectionHeading, Select, Switch, Tooltip } from '$lib/components/common';
@@ -40,14 +34,11 @@
 	} from '$lib/shell/motion.svelte';
 
 	/* The three answers, and "Follow Windows" first because it is the right one for almost
-	   everybody: the operating system already carries an accessibility preference and honouring it
-	   is not optional. The other two are for overruling it in either direction on one machine. */
-	/* Animating FIRST, because it is the default. Windows turns its reduced-motion preference on for
-	   reasons that are often nothing to do with the person (a battery saver, a remote session),
-	   and a library that arrived silent would look broken rather than considerate. Following the
-	   system is one press away, for anybody who wants that behaviour. */
-	/* In the words of movement rather than "animation", a word that reads as a kind of
-	   file (a GIF, as every screen calls it). */
+	   everybody: the operating system already carries an accessibility preference and honouring
+	   it is not optional. */
+	/* Animating FIRST, because it is the default. */
+	/* In the words of movement rather than "animation", a word that reads as a kind of file (a
+	   GIF, as every screen calls it). */
 	const MOTION_OPTIONS = [
 		{ value: 'full', label: 'Full motion' },
 		{ value: 'system', label: 'Follow Windows' },
@@ -57,7 +48,7 @@
 	import { explainAbsentRows } from '$lib/settings-ui/settings-anchor.svelte';
 
 	/* The custom accent's colour has no row of its own: Custom, among the accents, opens its
-	   picker. A search or a link naming it rings the accents and says so. */
+	   picker. */
 	const CUSTOM_ACCENT_IS = 'A color of your own is chosen with Custom, among the accent colors.';
 	/* The saved colors are listed only once there is one. */
 	const NONE_SAVED = 'Colors you keep with Custom are listed here once you have kept one.';
@@ -71,10 +62,8 @@
 		)
 	);
 
-	/* Every destination, in the order the sidebar is in, with the ones this account is not shown left
-	   out, and the rule among them, because it is a position in that order. A row can be dragged past
-	   it here the same way it can on the sidebar, which is the only way to say from this screen which
-	   half of the sidebar something belongs to. */
+	/* Every destination, in the order the sidebar is in, with the ones this account is not shown
+	   left out, and the rule among them, because it is a position in that order. */
 	const rows = $derived(
 		rail.order
 			.map((id) => (id === RAIL_DIVIDER ? RAIL_DIVIDER : navItem(id)))
@@ -84,39 +73,25 @@
 
 	const isItem = (entry: NavItem | typeof RAIL_DIVIDER): entry is NavItem => entry !== RAIL_DIVIDER;
 
-	/* The declarations for the two ordinary settings on this pane. The theme pickers above are
-	   deliberately NOT rows: you pick a theme by looking at a picture of it, which is the one place
-	   in Settings where a swatch beats a word. That exception stops here and goes no further. */
+	/* The declarations for the two ordinary settings on this pane. */
 	const declarations = new SettingsPanel();
 
-	/* Read once here rather than with `{@const}` in the markup: a const tag has to be the immediate
-	   child of a block, and these sit inside ordinary sections. */
-	/* How many stars a rating is drawn as.
-	 *
-	 * On this pane because that is what it is: nothing about it reaches the server, which stores
-	 * every rating out of ten whichever is chosen here. It is the same kind of thing as the accent:
-	 * how the app looks to one person, remembered for them on whatever machine they open it on.
-	 */
+	/* Read once here rather than with `{@const}` in the markup: a const tag has to be the
+	   immediate child of a block, and these sit inside ordinary sections. */
+	/* How many stars a rating is drawn as. On this pane because that is what it is: nothing
+	 * about it reaches the server, which stores every rating out of ten whichever is chosen
+	 * here. */
 	const scaleEntry = $derived(declarations.entry(RATING_SCALE_KEY));
 
 	/* It decides how much of a RECORD is drawn and changes nothing that is stored, so it is a
-	   choice about what is on screen like every other one on this pane. That a stash-box is what
-	   fills those fields in is a fact about where the data comes from, not about what the
-	   setting does. */
+	   choice about what is on screen like every other one on this pane. */
 	const RECORD_FIELDS_KEY = 'records.show_every_field';
 	const recordFieldsEntry = $derived(declarations.entry(RECORD_FIELDS_KEY));
 
-	/* Which system a measurement is READ in. Beside the other record setting, because that is
-	   what it is: nothing about it reaches the server (a height is stored in whole centimetres
-	   whichever answer is chosen), so it is a choice about what is on screen like every other
-	   one on this pane. Written through `appearance` rather than through `declarations` for the
-	   reason the strip above it is: the store is what the records on the screen behind this
-	   sheet are reading, so a change lands there rather than at the next reload. */
+	/* Which system a measurement is READ in. */
 	const unitsEntry = $derived(declarations.entry(UNITS_KEY));
 
-	/* Which clock every time in the app is written on. Saved through the ordinary settings write,
-	   which `clock` follows, so every time on the screen behind this sheet redraws immediately. The
-	   row shows `clock.hours` rather than the pane's copy, because that is what the times read. */
+	/* Which clock every time in the app is written on. */
 	const clockEntry = $derived(declarations.entry(CLOCK_KEY));
 
 	onMount(() => {
@@ -136,17 +111,7 @@
 		}
 	}
 
-	/*
-	 * Rearranging from here as well as from the sidebar itself.
-	 *
-	 * Direct manipulation belongs where the rows are, and this screen already lists every one
-	 * of them, including the ones put away, which are not on the sidebar to be dragged at all. So the
-	 * order can be set in the one place that can see the whole of it.
-	 *
-	 * No mode here, unlike the sidebar. There a row is a link somebody presses dozens of times a day,
-	 * so picking one up has to be asked for; a row on this screen is a row on a settings page, and
-	 * nothing is lost if it is dragged.
-	 */
+	/* Rearranging from here as well as from the sidebar itself. */
 	let listEl = $state<HTMLElement | null>(null);
 	let carrying = $state<string | null>(null);
 	let landed = $state<string | null>(null);
@@ -172,9 +137,9 @@
 		landed = null;
 	}
 
-	/* The rows follow the pointer rather than waiting for the drop, and `landed` is what makes that
-	   affordable: `dragover` fires many times a second over the same row, and each one would otherwise
-	   re-run the move and start another animation over the top of the last. */
+	/* The rows follow the pointer rather than waiting for the drop, and `landed` is what makes
+	   that affordable: `dragover` fires many times a second over the same row, and each one
+	   would otherwise re-run the move and start another animation over the top of the last. */
 	function onDragOver(event: DragEvent, id: string): void {
 		if (carrying === null) return;
 		event.preventDefault();
@@ -191,8 +156,8 @@
 		void rearrange(() => rail.placeBy(moving, id, side));
 	}
 
-	/* The row is already where it is going. This ends the drag, and prevents the browser's own answer
-	   to dropped content, which is to navigate. */
+	/* The row is already where it is going. This ends the drag, and prevents the browser's own
+	   answer to dropped content, which is to navigate. */
 	function onDrop(event: DragEvent): void {
 		if (carrying === null) return;
 		event.preventDefault();
@@ -226,18 +191,7 @@
 	     wanting them reuses one component rather than copying its markup and style. -->
 	<ThemeChoices />
 
-	<!--
-		How many stars a rating is drawn as.
-
-		Here rather than under anything to do with tags, because nothing about it reaches the
-		server's idea of a rating: every one is stored out of ten whichever is chosen, and this says
-		how many boxes to draw. Switching it back and forth writes nothing and loses nothing.
-
-		Drawn through the ordinary row, from the setting's own declaration: the same two words,
-		the same help, the same control the server said it was. This pane names its keys one by one
-		rather than drawing a whole section, so a setting registered into a section nothing reads
-		would save and be obeyed with no row anywhere to press. A gate refuses that.
-	-->
+	<!-- How many stars a rating is drawn as. -->
 	<section class="block">
 		<SectionHeading>Ratings</SectionHeading>
 
@@ -249,8 +203,7 @@
 			/>
 		{/if}
 
-		<!-- What the choice looks like, in the thing being chosen. A number of stars is the one
-		     setting on this pane whose effect can be shown in the row that sets it. -->
+		<!-- What the choice looks like, in the thing being chosen. -->
 		<p class="note">
 			Sift stores every rating out of 10, so switching loses nothing. Three out of five is six out
 			of 10, and switching back shows three again.
@@ -270,14 +223,7 @@
 		{/if}
 	</section>
 
-	<!--
-		Motion. Remembered in THIS BROWSER rather than on the server with the theme, and that is the
-		point of it rather than a shortcut: a theme is a fact about a person and should follow them
-		to another computer, while the reason to turn animation off is usually a fact about the
-		machine in front of you. A weak laptop is no reason for the same account to stop moving on a
-		desktop with a real graphics card. Without this switch on screen, the only way to stop Sift
-		moving would be a system-wide setting.
-	-->
+	<!-- Motion. -->
 	<section class="block">
 		<SectionHeading>Motion</SectionHeading>
 		<p class="note">
@@ -326,12 +272,8 @@
 	</section>
 
 	<!--
-		WHAT A TILE HAS ON IT, drawn as a tile.
-
-		Seven marks, each answerable: the badges along the top, the heart and the score, the clock,
-		the sharing badge. A single "Mark shared files" switch would leave the other six decided
-		once, in code, on behalf of everybody. What somebody chose for the sharing badge carries
-		across as that mark's answer.
+		WHAT A TILE HAS ON IT, drawn as a tile. Seven marks, each answerable: the badges along the top,
+		the heart and the score, the clock, the sharing badge.
 	-->
 	<section class="block">
 		<SectionHeading id="appearance.tile_marks">{TILE_MARKS.name}</SectionHeading>
@@ -348,10 +290,10 @@
 			small tiles stay readable.
 		</p>
 
-		<!-- Admin-only, and a courtesy rather than a control: the server fills the sharing
-		     marks for an admin and for nobody else, so this explains glyphs a guest never sees.
-		     Shown whether or not the badge is turned on: somebody who has just turned it off
-		     and wants to know what they were looking at is exactly the person who needs it. -->
+		<!--
+			Admin-only, and a courtesy rather than a control: the server fills the sharing marks for an
+			admin and for nobody else, so this explains glyphs a guest never sees.
+		-->
 		{#if session.isAdmin}
 			<SharingLegend />
 		{/if}
@@ -374,14 +316,7 @@
 						ondragover={(event) => onDragOver(event, entry.id)}
 						ondrop={onDrop}
 					>
-						<!--
-							The handle is what is draggable, not the whole row.
-
-							The row holds a switch, and a switch inside something draggable is a switch that
-							sometimes gets dragged instead of pressed. It is a button so it is reachable by
-							keyboard, and Alt with an arrow does from the keyboard what dragging it does with a
-							pointer.
-						-->
+						<!-- The handle is what is draggable, not the whole row. -->
 						<Tooltip label="Move {entry.label}">
 							<Button
 								tone="ghost"
@@ -445,7 +380,7 @@
 
 <style>
 	/* No width of its own. A pane carrying a pixel cap of its own would end its rows somewhere
-		   different from every other section's. The shell caps the content once, for every pane. */
+	   different from every other section's. */
 	.appearance {
 		display: flex;
 		flex-direction: column;
@@ -491,15 +426,13 @@
 		border-block-end: 0;
 	}
 
-	/* The row being carried. Dimmed rather than taken out: the space it will come back to is what
-	   makes the rest of the list readable while it moves. */
+	/* The row being carried. Dimmed rather than taken out: the space it will come back to is
+	   what makes the rest of the list readable while it moves. */
 	.rows li.carrying {
 		opacity: 0.4;
 	}
 
-	/* The grip on a sidebar row. Pulled back into the row's own padding so the glyph lines up with
-	   the edge rather than sitting inside it, and it takes the grab cursor: everything else is the
-	   shared button's. `:global` because the class is handed to it. */
+	/* The grip on a sidebar row. */
 	.rows :global(.handle) {
 		flex: none;
 		margin-inline-start: calc(var(--space-2) * -1);
@@ -507,13 +440,9 @@
 		cursor: grab;
 	}
 
-	/*
-	 * The rule, as a row.
-	 *
-	 * A line with a word on it rather than a row with a control, because it is not a destination: it
-	 * is the position that says which half of the sidebar everything after it is in. Quiet enough not
-	 * to read as another switchable thing, and tall enough to be a drop target.
-	 */
+	/* The rule, as a row. A line with a word on it rather than a row with a control, because it
+	 * is not a destination: it is the position that says which half of the sidebar everything
+	 * after it is in. */
 	.rows li.rule {
 		min-block-size: 36px;
 		border-block-end: 1px solid var(--sift-line-strong);

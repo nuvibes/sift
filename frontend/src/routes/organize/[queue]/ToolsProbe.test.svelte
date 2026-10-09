@@ -1,7 +1,7 @@
 <script lang="ts">
-	/* A panel that reports one control to the tab line and takes it back as it goes: the whole of
-	   the `OnTools` contract, and nothing else, so the route's half can be tested without dragging a
-	   real queue into it. See `page.svelte.test.ts`. */
+	/* A panel that reports one control to the tab line and takes it back as it goes: the whole
+	   of the `OnTools` contract, and nothing else, so the route's half can be tested without
+	   dragging a real queue into it. */
 	import { onDestroy } from 'svelte';
 
 	import Button from '$lib/components/common/Button.svelte';

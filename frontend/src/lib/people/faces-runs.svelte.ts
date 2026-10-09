@@ -1,18 +1,4 @@
-/*
- * Recognition's model download, followed from outside any one screen.
- *
- * Held at module level for the reason the semantic one and the graphics-card one are: the download
- * is hundreds of megabytes over whatever connection the machine has, so it outlives the pane that
- * started it. Watched inside the component, closing the settings sheet would throw the watcher away
- * and coming back would show the button again, and the only way to find out whether it had landed
- * would be to reload the page.
- *
- * The first run is a second screen that starts this download. Two components each polling the same job is two answers to one question, and the one that is not
- * on screen is the one that goes wrong quietly.
- *
- * The machinery and the sentence for a download that left no models are `jobs/model-fetch`'s.
- * What is here is about faces: the sentence when they arrive, and whether recognition can run now.
- */
+/* Recognition's model download, followed from outside any one screen. */
 
 import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 import { FETCHING_WEIGHTS, faceSettings, type FaceSettings } from '$lib/people/faces.svelte';

@@ -1,28 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """A stash-box's answer raises one question: is the one face in this file the person it put there?
 
-**A box's answer is a decision Sift took**, the way a folder filed is: a confirmed match puts the
-people the box names on the file (`asset_people.source` is `stash_box`), and nobody pressed
-anything to put them there. So the face in such a file is OFFERED as theirs, under Needs your
-input, and never named on it: a question is not a name, and only Confirmed or Recognized by
-Sift puts somebody on a face. A Yes teaches Sift what they look like (the confirmation files a
-reference, as every Yes does); a No is kept, and the face is never asked about them again.
-
-**Only where the arithmetic has nothing to say.** A person Sift has a picture of to compare has had
-the face compared already: a face it did not put to them is a disagreement, and the Disagreements
-tab is where that is answered. Somebody with no picture at all (a person a stash-box made, before
-anybody has confirmed a face of theirs) has no other way to be offered one. The read that finds
-these faces is the store's (`_BOX_QUESTIONS`), and the two reads split the same files between them.
-
-**Asked wherever the two facts come to meet**, because either may come first: when a box files
-people (the enrichment's write asks for the pass, which settles and then runs), when a file with a
-box's people on it is scanned for faces (`ScanningMixin.scan`), and once at a start for whatever
-is owed (`wiring/catch_up.py`). Each asks only what is not yet asked, so it can run any number of
-times.
-
-Each run is written into History per person, Sift as the one asking: "Sift asked whether the face
-in <file> is <person>, because <box> says they are in it". Final, like the reconcile's record: a
-question is taken back by answering it.
+The face is offered as theirs, never named, and only for somebody Sift has no picture of; asked
+wherever the box's filing and the face meet, once each, and recorded as final in History.
 """
 
 from __future__ import annotations
@@ -44,8 +24,7 @@ from sift.slices.faces.store import Ruling
 
 log = get_logger(__name__)
 
-#: How many faces one read of the library hands the pass. Each page asked leaves the read, so the
-#: pass goes round until a read comes back empty; the bound is on one transaction, not the work.
+#: Faces one read hands the pass; the bound is on one transaction, not the work.
 BOX_QUESTIONS_PAGE = 500
 
 #: What every record of these questions says under its line.
@@ -80,13 +59,8 @@ class BoxQuestionsMixin(FaceServiceBase):
     async def ask_for_the_boxes(
         self, asset_ids: Sequence[str] | None = None, *, boxes: set[str] | None = None
     ) -> int:
-        """Ask about every face a stash-box's answer is a claim about, in these files or in all of
-        them. How many faces were asked about; the boxes that filed them are added to `boxes`,
-        where given, so the job's note can name them.
-
-        Settles the files it asked about (their status counts a question) and tells every admin
-        once, through the record's own write. Nothing where the feature is off.
-        """
+        """Ask about every face a stash-box's answer is a claim about, in these files or all.
+        How many were asked; the boxes are added to `boxes`. Nothing while the feature is off."""
         if not await self.enabled():
             return 0
         asked = 0
@@ -102,8 +76,7 @@ class BoxQuestionsMixin(FaceServiceBase):
             if boxes is not None:
                 boxes |= named
             asked += len(landed)
-            # A page every face of which was answered between the read and the write asks
-            # nothing and would be read again for ever; a short page is the last.
+            # A short page is the last, or an all-answered page would be read again for ever.
             if not landed or len(found) < BOX_QUESTIONS_PAGE:
                 break
         if asked:
@@ -132,9 +105,8 @@ class BoxQuestionsMixin(FaceServiceBase):
         return [one for one in found if one[0] in landed]
 
     async def _box_that_filed(self, asset_id: str, person_id: str) -> str | None:
-        """The stash-box that put this person on this file, by name, as the filing names it
-        (`box_id`); for a filing that names none, the box whose applied answer on this file is the
-        newest: the same read the file's own "Enriched by" marks come from."""
+        """The stash-box that put this person on this file, by name: the filing's `box_id`, or
+        the box whose applied answer here is newest."""
         named = await boxes_that_named(self._store.database, person_id, [asset_id])
         if named:
             return named[0]
@@ -148,9 +120,8 @@ class BoxQuestionsMixin(FaceServiceBase):
         )
 
     async def _record_box_questions(self, asked: Sequence[tuple[str, str, str]]) -> set[str]:
-        """One record per person of what was asked about them, with the files as subjects, so it is
-        on their History and on each file's. The box's name is kept, since which box said so is a
-        fact of this moment. The boxes named, by name."""
+        """One record per person of what was asked about them, on their History and each file's.
+        The boxes named, by name."""
         if not asked:
             return set()
         by_person: dict[str, list[tuple[str, str]]] = {}
@@ -165,8 +136,7 @@ class BoxQuestionsMixin(FaceServiceBase):
             announce_now(EVERY_ADMIN, About.LIBRARY)
             return said
         async with self._store.database.write() as connection:
-            # Rung on the record's own commit: Needs your input and the person's page read again
-            # with the questions and their line both there.
+            # Rung on the record's own commit.
             announce(EVERY_ADMIN, About.LIBRARY)
             for person_id, faces in sorted(by_person.items()):
                 named = sorted(
@@ -196,12 +166,7 @@ class BoxQuestionsMixin(FaceServiceBase):
 
 
 class BoxQuestionRecords:
-    """The record of a box's questions in History, worded, and the answer that it is final.
-
-    A reverser with no card, like the reconcile's (`jobs.AskedOnlyRecords`): History draws the
-    record as final rather than offering an Undo. A question is taken back by answering it, and
-    one withdrawn by hand would be asked again by the next pass over the same files.
-    """
+    """The record of a box's questions in History, worded, and final: answering is the undo."""
 
     name = BOX_QUESTIONS_QUEUE
     #: Final. See the class.

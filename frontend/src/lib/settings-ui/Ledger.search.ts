@@ -1,12 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The whole-install record (the App History tab of Tasks and Activity), its words, and what somebody can type to
- * find it. A pane with no registry key at all (nothing on it is a setting), so the index would
- * never find it unless it said so here. The keywords are what somebody types when they are looking for a thing they
- * remember happening rather than for a switch: "what happened to", "who deleted", "audit".
- *
- * ONE COPY MODULE PER PANE. `Ledger.svelte` draws every word it adds from `COPY`, and the search
- * entry is built from the same object. Each line's own sentence is the server's, built by the History
- * builders every History screen uses, not this pane's. */
+/* The whole-install record (the App History tab of Tasks and Activity), its words, and what
+ * somebody can type to find it. */
 import type { Searchable } from './search';
 
 export const COPY = {
@@ -18,7 +12,7 @@ export const COPY = {
 	type: { label: 'Type', help: 'Show only one type of thing.' },
 	action: { label: 'Action', help: 'Show only one action.' },
 	/* Everything, or only the decisions: what was decided on Organize and what Sift filed by
-	   itself, each with its Undo. One choice of the one feed, never a list of its own. */
+	   itself, each with its Undo. */
 	show: {
 		label: 'Show',
 		help: 'Everything, or only the decisions, each with its Undo.',

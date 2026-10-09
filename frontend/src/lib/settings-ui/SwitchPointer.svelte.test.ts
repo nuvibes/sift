@@ -1,8 +1,4 @@
-/* The row on a recognition feature's pane that says whether its switch is on and where it is.
- *
- * While the switch is off, the rows it hides are not drawn, so a link to one of them lands on this
- * row instead and says which choice hides it. While it is on, the row says nothing about them.
- */
+/* The row on a recognition feature's pane that says whether its switch is on and where it is. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';

@@ -1,10 +1,7 @@
 import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/* The signal that reaches a grid the Library screen cannot. Each screen builds its own Library, so
- * there is no instance for the grid to watch; removing a folder in Settings has to reach a grid
- * mounted behind it, and it does it by bumping one shared number. What is worth pinning down is that
- * the folder-shape changes actually bump it: a removal enqueues no job, so nothing else would. */
+/* The signal that reaches a grid the Library screen cannot. */
 
 const del = vi.fn();
 const post = vi.fn();
@@ -45,9 +42,7 @@ function root(id = 'r1') {
 		restricted: false,
 		shared_here: false,
 		restricted_here: false,
-		// Which disk it is on. Null is what the server answers where the site will not say, and
-		// what this test is about is a removal signal rather than a badge, so null is the honest
-		// stand-in rather than a made-up drive letter.
+		// Which disk it is on.
 		machine: null
 	};
 }
@@ -81,8 +76,8 @@ describe('the shared library-change signal', () => {
 });
 
 describe('a history thread re-reading itself', () => {
-	/* Set up the way a history does it: inside a component's setup, which `$effect.root` stands in
-	   for. Returns the teardown a screen going away would run. */
+	/* Set up the way a history does it: inside a component's setup, which `$effect.root` stands
+	   in for. */
 	function watching(reread: () => void): () => void {
 		const stop = $effect.root(() => {
 			rereadOnHistoryChange(reread);
@@ -101,7 +96,7 @@ describe('a history thread re-reading itself', () => {
 
 	it('asks once for a burst of bells, after the settle window and not before', () => {
 		// One press rings both (this tab's own `recorded`, then the server's announcement a beat
-		// later), and a chunked bulk write rings once per chunk. Each of those is one read, not N.
+		// later), and a chunked bulk write rings once per chunk.
 		const reread = vi.fn();
 		const stop = watching(reread);
 

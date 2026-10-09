@@ -19,25 +19,24 @@ from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.ledger import Estimate
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.switchboard import Switchboard
-from sift.slices.media_jobs.router import (
+from sift.slices.media_jobs.activity_families import (
     AFTER_THE_BENCHMARK,
     NOT_KNOWN_UNTIL_COUNTED,
     PACE_WINDOW_SECONDS,
     PACED_BY_SHARE,
     PAUSED_FOR_THE_BENCHMARK,
-    WAITING_FOR_THE_SCAN,
-    FamilyOfWork,
-    KindOfWork,
     ShareWaits,
     _families,
     not_before_the_read,
     not_known_yet,
     pictured_in_the_read,
 )
+from sift.slices.media_jobs.router import WAITING_FOR_THE_SCAN, FamilyOfWork, KindOfWork
 
 pytestmark = pytest.mark.unit
 
 ROUTER = sys.modules[not_known_yet.__module__]
+ROUTES = sys.modules["sift.slices.media_jobs.router"]
 
 
 def _family(label: str, *, waiting: int, quick: int | None, slow: int | None) -> FamilyOfWork:
@@ -265,12 +264,12 @@ def test_a_pass_whose_task_is_not_registered_keeps_its_own_runs(
     def task(job_type: str | None) -> Any:
         return lambda task_id: SimpleNamespace(job_type=job_type and f"{job_type}-{task_id}")
 
-    monkeypatch.setattr(ROUTER, "get_schedule", task("run"))
-    tasked = ROUTER._run_types()
-    monkeypatch.setattr(ROUTER, "get_schedule", lambda _task: None)
-    unregistered = ROUTER._run_types()
-    monkeypatch.setattr(ROUTER, "get_schedule", task(None))
-    assert ROUTER._run_types() == unregistered
+    monkeypatch.setattr(ROUTES, "get_schedule", task("run"))
+    tasked = ROUTES._run_types()
+    monkeypatch.setattr(ROUTES, "get_schedule", lambda _task: None)
+    unregistered = ROUTES._run_types()
+    monkeypatch.setattr(ROUTES, "get_schedule", task(None))
+    assert ROUTES._run_types() == unregistered
     for family, task_id in ROUTER.FAMILY_TASKS.items():
         assert tasked[family] == [*unregistered[family], f"run-{task_id}"]
 

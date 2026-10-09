@@ -18,7 +18,7 @@ from sift.main import create_app
 from sift.slices import auth
 from sift.slices.auth import AuthService, Hasher
 from sift.slices.auth.crypto import resolve_argon2_params
-from sift.slices.auth.service import SignInBusy
+from sift.slices.auth.errors import SignInBusy
 
 pytestmark = [pytest.mark.integration]
 

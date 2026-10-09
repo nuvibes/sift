@@ -1,26 +1,5 @@
-/*
- * A caller's class is ADDED to a shared component's own, never substituted for them.
- *
- * ## What goes wrong
- *
- * A spread is applied in the order it is written. A `class` arriving inside `{...rest}` written
- * after a literal `class` attribute replaces that attribute outright, so `class="btn secondary
- * medium"` becomes `class="row"`, and the control keeps the caller's layout and loses every rule
- * that makes it a button, the reset included. What is left is the site's own grey slab with
- * somebody's positioning on it.
- *
- * In a shared component it draws every call site bare together (in `Pressable`: the facet panel's
- * value rows, the organize board's cards, the folder rows and tiles, the face tiles, the settings
- * nav), and only a browser measuring pixels can see it.
- *
- * ## Why both halves
- *
- * The rendered half proves the three components that take the prop today really merge it. The
- * static half is the one that matters for the NEXT component: it refuses a spread written after a
- * literal class attribute unless `class` has been taken out of what is spread. That is the exact
- * shape of both faults, and no other check in this folder can see it: the markup is valid, the
- * types are satisfied, the stylesheet is untouched and every rule in it still matches something.
- */
+/* A caller's class is added to a shared component's own, never substituted: a `class` in a spread
+ * after a literal one replaces it. Rendered for today's components, a static scan for the next. */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -41,19 +20,14 @@ let host: HTMLElement | undefined;
 let mounted: Record<string, unknown> | undefined;
 
 afterEach(() => {
-	// `unmount`, not `host.remove()`: removing the host hides the markup and leaves every listener
-	// the component put on the window still answering.
+	// `unmount`, so the component's window listeners go too.
 	if (mounted) unmount(mounted);
 	host?.remove();
 	mounted = undefined;
 	host = undefined;
 });
 
-/** A fresh host for one component, and the element it put in it.
- *
- * Written per component rather than through one helper taking a component: a helper wide enough to
- * take all three has to type its props as a bare record, and Svelte's own component type refuses
- * that, which is a type error in a TEST file, where nothing else would ever have noticed. */
+/** A fresh host per component, since a shared helper would need loose prop types. */
 function into(): HTMLElement {
 	host = document.createElement('div');
 	document.body.append(host);
@@ -93,11 +67,10 @@ describe('a class from the caller is added, not substituted', () => {
 	});
 
 	it('is asking a question the fault could not answer', () => {
-		/* The other direction. A component that substituted would still carry the caller's class:
-		   that is the half that keeps working and the reason the fault is invisible at the call site,
-		   so an assertion naming only the caller's class passes against the bug. What has to be
-		   true is that the component's OWN class survived. Drawn with no caller class at all, so the
-		   two states can be told apart. */
+		/*
+		 * The component's own class must survive; drawn with no caller class to tell the states
+		 * apart.
+		 */
 		mounted = mount(Button, { target: into(), props: { children: words } }) as Record<
 			string,
 			unknown
@@ -120,13 +93,7 @@ function everyComponent(dir: string): string[] {
 	return found;
 }
 
-/**
- * Every opening tag whose attributes hold a spread written AFTER a literal class attribute.
- *
- * The order is the whole of it. `{...props} class="veil"` is safe and is what the library's own
- * snippets produce everywhere in this app: the literal is written last and wins. The reverse is
- * the fault.
- */
+/** Every opening tag with a spread after a literal class; the reverse order is safe. */
 function spreadAfterClass(source: string): string[] {
 	const found: string[] = [];
 	for (const tag of source.matchAll(/<([a-zA-Z][\w.-]*)((?:[^<>"']|"[^"]*"|'[^']*')*?)\/?>/g)) {
@@ -155,19 +122,10 @@ describe('nothing spreads over a class it has already written', () => {
 	});
 
 	it('finds the five components that do it, so the scan is not matching nothing', () => {
-		/*
-		 * The positive control, and not decoration: this scan is a regular expression over markup,
-		 * and it fails by finding nothing and passing for ever. These write a spread after their
-		 * class on purpose and take `class` out of it, exactly the shape looked for; if the scan
-		 * stops seeing them it has stopped seeing anything. `NarrowBox` takes the caller's class
-		 * out of `...rest` and writes its own after it.
-		 */
+		/* The positive control: these take `class` out of the spread, so the scan must see them. */
 		const doing = files.filter((file) => spreadAfterClass(file.source).length > 0);
 
-		/*
-		 * `TextInput` and `TextArea` likewise take the caller's class out of the spread and write
-		 * their own after it.
-		 */
+		/* `TextInput` and `TextArea` do the same. */
 		expect(doing.map((file) => file.where).sort()).toEqual([
 			'lib/components/common/Button.svelte',
 			/* `Chip` handles its class the same way. */

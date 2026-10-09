@@ -11,21 +11,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * A control pressed to be one way or the other, which holds which.
-	 *
-	 * The library's Toggle owns a `pressed` state and hands back the props (`aria-pressed`, the
-	 * keyboard, the click); it does not decide what the pressed thing looks like. A run of
-	 * monospace text that shows the rest of an address when pressed is not a bordered button, and
-	 * the shared `Button` (with `pressed` for icon toggles on a bar) would give it a control's
-	 * shape. So this renders a bare button and takes the caller's class, dressed in the caller's
-	 * own file through an anchored `:global`.
-	 *
-	 * Not `Heart` (the server owns whether something is a favourite; a toggle holding its own
-	 * answer cannot be corrected) and not `Switch` (a setting with a label, on or off). The fence
-	 * keeps the library inside the primitives, so this is the door to it (used by the exit-address
-	 * line in Settings).
-	 */
+	/* A bare button pressed one way or the other, on the library's Toggle; its look is the caller's.
+	 * Not Heart (server-owned) or Switch (a labelled setting). */
 	import type { Snippet } from 'svelte';
 	import { Toggle } from 'bits-ui';
 

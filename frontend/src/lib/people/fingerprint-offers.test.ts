@@ -1,6 +1,4 @@
-/*
- * The reads behind a group's fingerprints question and the Waiting for a face list.
- */
+/* The reads behind a group's fingerprints question and the Waiting for a face list. */
 import { afterEach, expect, it, vi } from 'vitest';
 
 const calls = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));

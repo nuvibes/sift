@@ -1,6 +1,4 @@
-/* The words Windows shows beside Sift. The installer writes the package description onto the Start
- * menu and desktop shortcuts, where it is the tooltip over the app, and into the uninstall entry as
- * its comment, so it names the app and explains nothing. */
+/* The words Windows shows beside Sift. */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -19,43 +19,12 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: `<details>` is the site's disclosure and it is already right: open or
-	   closed, on the keyboard, in the accessibility tree, and found by find-in-page. bits-ui's
-	   Collapsible would replace all of that with script. */
+	closed, on the keyboard, in the accessibility tree and found by find-in-page. */
 
-	/*
-	 * A part of a pane folded away: every Site's own tunnel, the whole table of supported Sites.
-	 *
-	 * `MoreAbout` folds the second half of an explanation under words that never change. This folds
-	 * a part of the pane that somebody opens on purpose, so its words say what is behind it and how
-	 * much ("Show all 26 Sites"): the count is often the reason it is folded. One shape for every
-	 * such fold, words that underline under a pointer and no box, so two on one pane cannot be
-	 * drawn two ways.
-	 *
-	 * `section` is the other shape: a whole section of a screen that folds under its own band
-	 * heading (who is in a file, what is similar to it, its record). The heading's words and the
-	 * arrow saying which way pressing goes are ONE press, drawn as the Collapse control under the
-	 * picture is: one ghost ground over both under a pointer, the arrow centred on the line, and
-	 * the press centred ACROSS the row as that control is, with the heading's own controls at the
-	 * row's end. A heading whose words lead onwards (`href`) is the exception: the words are a
-	 * link, underlined at rest, and the arrow beside them is its own press; the words and their
-	 * arrow are centred the same way, as one. The heading's own controls go with what they act on
-	 * while it is shut. Not a `<details>`: a section's words can be a link
-	 * onwards and its heading carries controls, and neither may sit inside a `<summary>`, which is
-	 * itself a control. Open until somebody shuts it, since a section is part of the screen rather
-	 * than something opened on purpose.
-	 *
-	 * `weight` is the section heading's weight: 600, every heading inside a page, unless a caller
-	 * says 450. Only the popout player's sections under the picture (Enrichment, Who is in this,
-	 * Similar to this, Same music, File info) say 450, and that is the Expand and Collapse control's
-	 * own text: the same face, size and ink the band heading already wears (`--text-body-sm`,
-	 * `--sift-ink-2`), at the weight that token carries, so the heading and the control beside the
-	 * picture read as one line of the same text. The text only: the heading gains no ground and no ghost-button treatment of its own. A prop,
-	 * not a rule in that screen, so the primitive keeps one heading weight everywhere else and the
-	 * exception is named where it is used.
-	 *
-	 * `remember` keeps the last press in this browser under that key, as a band's open or shut
-	 * does everywhere else: it is the arrangement of one screen, not a preference.
-	 */
+	/* A part of a pane folded away, its words saying what and how many ("Show all 26 Sites"). `section`
+	 * folds a screen's section under its band heading, centred across its row with its controls at
+	 * the
+	 * end; `weight` 450 matches the popout's Collapse control; `remember` keeps the last press. */
 	import type { Snippet } from 'svelte';
 
 	import Button from './Button.svelte';
@@ -65,8 +34,7 @@
 	import { readStored, writeStored } from '$lib/shell/remembered.svelte';
 
 	interface Props {
-		/** What is behind it, counted where a count is why it is folded: "Show all 26 Sites". A
-		 *  section's heading, in the section shape. */
+		/** What is behind it, counted where that is why it is folded; a section's heading. */
 		summary: string;
 		/** An address, so a link to something inside can open it. */
 		id?: string;
@@ -76,7 +44,6 @@
 		remember?: string;
 		/** Where a section heading's words lead, making them a link (`SectionHeading`'s). */
 		href?: string;
-		/** That link's tooltip. */
 		tip?: string;
 		/** A section heading's tail: the count, in the quieter ink, after the words. */
 		tail?: string;
@@ -139,13 +106,11 @@
 		{id}
 	>
 		{#if href}
-			<!-- The words lead onwards (a wall of every match), so they are a link, underlined at rest
-			     so they read as one before anybody points at them, and the arrow beside them folds. -->
+			<!-- Words leading onwards are a link; the arrow beside them folds. -->
 			<SectionHeading band {href} {tip} {onclick}>
 				{summary}{#if tail}<span class="tail">{tail}</span>{/if}
 				{#snippet actions()}
-					<!-- Beside the words rather than among the controls: it belongs to the heading.
-					     The button is named by the section it opens; `aria-expanded` says which way it is. -->
+					<!-- Named by its section; `aria-expanded` says which way. -->
 					<Tooltip label={open ? 'Collapse' : 'Expand'}>
 						<Button
 							tone="ghost"
@@ -161,9 +126,7 @@
 				{/snippet}
 			</SectionHeading>
 		{:else}
-			<!-- The words and the arrow are ONE press, drawn the way the Collapse control under the
-			     picture is: a ghost ground over both under a pointer, and the arrow a glyph of the
-			     button centred on its line rather than riding at the words' cap height. -->
+			<!-- Words and arrow as one press, as the Collapse control under the picture. -->
 			<SectionHeading band leading={open ? lead : undefined}>
 				<Button
 					tone="ghost"
@@ -211,8 +174,7 @@
 		font-weight: 600;
 		border-radius: var(--radius-sm);
 		text-decoration: underline;
-		/* Underlined only under a pointer, and the resting rule declares it clear rather than
-		   absent, so the change is a step both ways. There is no ground to step. */
+		/* Underlined only under a pointer, stepping both ways. */
 		text-decoration-color: transparent;
 		text-underline-offset: 3px;
 		transition:
@@ -235,9 +197,7 @@
 		margin-block-start: var(--space-3);
 	}
 
-	/* A section spaces itself as a strip under its heading always has: the heading, then its body
-	   one small gap under, and the things in the body that far apart too. Padding rather than
-	   margin, so the slide that opens it carries the gap. */
+	/* Padding, so the slide that opens it carries the gap. */
 	.fold.section {
 		margin-block: 0;
 	}
@@ -249,19 +209,16 @@
 		margin-block-start: 0;
 		padding-block-start: var(--space-2);
 	}
-	/* The heading's own press: the heading's words in the heading's face, with the ground a ghost
-	   button steps in under a pointer. `:global` because the class is handed to `Button`. */
+	/* Global: the class is handed to Button. */
 	.section :global(.fold-press) {
 		font: inherit;
 		color: inherit;
 	}
 
-	/* THE HEADING STANDS CENTRED ACROSS ITS ROW, as the Collapse control under the picture does:
-	   two equal outer columns share what the heading leaves, so its middle is the row's middle
-	   whatever stands at the end. The heading's own controls (File info's Save and Cancel) take
-	   the last column, at the row's end; the press that opens them (Edit) the first. A heading that leads onwards has its arrow
-	   in the column beside the words instead, so the words and the arrow are centred as one, the
-	   way the press's words and arrow are. */
+	/*
+	 * Centred across its row by two equal outer columns; its controls at the end, Edit at the
+	 * start.
+	 */
 	.section :global(.heading-line) {
 		display: grid;
 		grid-template-columns: 1fr auto auto 1fr;
@@ -279,8 +236,7 @@
 		justify-self: end;
 	}
 
-	/* A control that opens what the end of the row then holds (File info's Edit) stands at the
-	   row's START, in the first column, so the heading stays centred between the two. */
+	/* A leading control in the first column. */
 	.section :global(.heading-line > .leading) {
 		grid-row: 1;
 		grid-column: 1;
@@ -292,12 +248,7 @@
 		margin-inline-start: var(--space-2);
 	}
 
-	/* The section heading in the Expand control's text where its caller asked (`weight`): the
-	   weight inside `--text-body-sm`, the token the control and the band heading are both set in,
-	   so only the weight differs from the band's and it is the control's. The words, whether a
-	   press or a link, take the heading's weight, so the one rule on the heading reaches both. The
-	   number is written out because the band's 600 overrides the token's own; the test beside this
-	   file holds it equal to the token's. */
+	/* The asked-for weight; the test beside this file holds 450 equal to the token's. */
 	.section.beside-control :global(.heading-line > h3) {
 		font-weight: 450;
 	}

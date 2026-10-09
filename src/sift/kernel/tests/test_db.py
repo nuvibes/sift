@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Tests for the database kernel.
-
-Everything here runs against a real SQLite file in WAL mode. The bugs this module can have
-(a pragma that did not stick, a writer that collides with another writer, a migration that runs
-twice) do not reproduce against a mock.
-"""
+"""Tests for the database kernel, against a real SQLite file in WAL mode: a mock reproduces none of its bugs."""
 
 from __future__ import annotations
 
@@ -20,7 +15,6 @@ import aiosqlite
 import pytest
 
 from sift.kernel import db as db_module
-from sift.kernel import db_writer
 from sift.kernel.db import (
     DEFAULT_READERS,
     PRAGMAS,
@@ -33,8 +27,6 @@ from sift.kernel.db import (
     after_commit,
     check_sqlite_capabilities,
     in_clause,
-    keep_the_log_folded,
-    keep_the_statistics_current,
     point_read,
     probe_sqlite,
     readers_for,
@@ -44,9 +36,6 @@ from sift.kernel.db import (
 )
 
 pytestmark = pytest.mark.usefixtures("clean_registry")
-
-
-# --- what the machine's SQLite can do ----------------------------------------------------
 
 
 @dataclass
@@ -192,9 +181,6 @@ def test_the_callers_that_run_before_logging_can_check_without_saying_anything(
     assert said.warnings == []
 
 
-# --- pragmas ----------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_the_pragma_set_is_exactly_what_the_schema_assumes() -> None:
     assert PRAGMAS == (
@@ -251,9 +237,6 @@ async def test_a_bad_foreign_key_is_rejected(temp_db: Database) -> None:
     await temp_db.execute("DELETE FROM parent WHERE id = ?", ("p1",))
 
     assert await temp_db.fetch_all("SELECT id FROM child") == []
-
-
-# --- the single writer ------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -400,9 +383,6 @@ async def test_using_a_closed_database_says_so(tmp_path: Path) -> None:
     with pytest.raises(DatabaseError, match="not open"):
         async with database.write():
             pass
-
-
-# --- the schema registry ----------------------------------------------------------------
 
 
 def _initializer(order: list[str], name: str) -> Initializer:
@@ -754,9 +734,6 @@ async def test_a_fresh_boot_records_what_it_applied(temp_db: Database) -> None:
     assert await temp_db.schema_version("never-registered") == 0
 
 
-# --- SQL injection ----------------------------------------------------------------------
-
-
 @pytest.mark.regression
 @pytest.mark.parametrize(
     "payload",
@@ -807,9 +784,6 @@ async def test_an_injection_payload_is_inert_in_full_text_search(temp_db: Databa
 
     rows = await temp_db.fetch_all("SELECT title FROM assets_fts")
     assert [r["title"] for r in rows] == ["a holiday video"]
-
-
-# --- in_clause --------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -887,14 +861,6 @@ def test_a_write_cannot_go_through_a_read_connection(sql: str) -> None:
 )
 def test_ordinary_reads_are_not_refused(sql: str) -> None:
     _refuse_writes(sql)
-
-
-# --- the sweep lane -----------------------------------------------------------------------------
-#
-# Whole-library reads take turns. Not because SQLite readers block each other (they do not), but
-# because the cost is rows crossing out of SQLite into Python and it multiplies by however many
-# readers are doing it at the same time. A table scan that takes milliseconds alone can take many
-# seconds beside a dozen others, while the identical scan returning a count stays in milliseconds.
 
 
 async def test_the_lane_lets_one_pass_through_at_a_time(tmp_path: Path) -> None:
@@ -1036,9 +1002,6 @@ async def test_a_write_through_the_lane_is_refused(tmp_path: Path) -> None:
         await database.close()
 
 
-# --- the pool tracks the worker count, a setting raised while the process runs -------------------
-
-
 async def test_raising_the_worker_count_raises_the_pool(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1175,119 +1138,6 @@ async def test_a_pass_that_fails_does_not_leave_a_transaction_open(tmp_path: Pat
         await database.close()
 
 
-# --- the write-ahead log folding back --------------------------------------------------------
-#
-# Every write goes to a log beside the database and is copied back later. SQLite does the copying,
-# but the step that lets it start the log OVER needs a moment with no reader in it, and a pool of
-# readers under continuous background work never has one, so on a busy install the log only grows,
-# to nearly the size of the database.
-
-
-@pytest.mark.unit
-async def test_folding_the_log_back_shrinks_it(tmp_path: Path) -> None:
-    """The whole point, end to end against a real file rather than a mocked pragma."""
-    database = Database(tmp_path / "test.sqlite3")
-    await database.connect()
-    try:
-        await database.execute("CREATE TABLE wide (id INTEGER PRIMARY KEY, blob TEXT)")
-        for _ in range(200):
-            await database.execute("INSERT INTO wide (blob) VALUES (?)", ("x" * 4000,))
-        log_file = tmp_path / "test.sqlite3-wal"
-        assert log_file.exists() and log_file.stat().st_size > 0
-
-        folded, remaining = await database.fold_the_log_back()
-
-        assert folded is True
-        assert remaining == 0, "it started the log over rather than only copying out of it"
-        assert log_file.stat().st_size == 0, "which is the disk actually coming back"
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_folding_an_empty_log_is_not_an_error(tmp_path: Path) -> None:
-    """It runs on a timer, so the ordinary case is that there is nothing to do."""
-    database = Database(tmp_path / "test.sqlite3")
-    await database.connect()
-    try:
-        assert await database.fold_the_log_back() == (True, 0)
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_folding_the_log_takes_the_writer_rather_than_cutting_in(tmp_path: Path) -> None:
-    """It runs on the writer's connection, and a statement fired at a connection somebody else has
-    a transaction open on is `database table is locked`: a fold that silently did not happen, on
-    the timer whose whole purpose is that the log does not grow. Proved by the guard's own rule:
-    anything going through `write()` refuses to be opened inside another one.
-    """
-    database = Database(tmp_path / "fold.sqlite3")
-    await database.connect()
-    try:
-        async with database.write() as connection:
-            await connection.execute("CREATE TABLE note (id TEXT)")
-            with pytest.raises(DatabaseError, match="cannot be opened inside"):
-                await database.fold_the_log_back()
-        assert await database.fold_the_log_back() == (True, 0), "and it folds outside one"
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_the_keeper_stops_when_it_is_told_to(tmp_path: Path) -> None:
-    """It holds the writer's connection, so it has to be gone before the database closes."""
-    database = Database(tmp_path / "test.sqlite3")
-    await database.connect()
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.01))
-        await asyncio.sleep(0.05)
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_a_failed_fold_does_not_take_the_keeper_down(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Housekeeping that dies of one bad pass is housekeeping that silently stopped."""
-    database = Database(tmp_path / "test.sqlite3")
-    await database.connect()
-    calls = 0
-
-    tried_again = asyncio.Event()
-
-    async def angry() -> tuple[bool, int]:
-        nonlocal calls
-        calls += 1
-        if calls >= 2:
-            tried_again.set()
-        raise RuntimeError("no")
-
-    monkeypatch.setattr(database, "fold_the_log_back", angry)
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
-        # Waited FOR rather than slept THROUGH. A fixed sleep makes this a test of how fast the
-        # machine happens to be, which is a test that passes here and fails in a full run.
-        await asyncio.wait_for(tried_again.wait(), timeout=5.0)
-
-        assert calls >= 2, "it kept going after the first failure"
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-
-# --- the connection extensions ------------------------------------------------------------------
-#
-# Loading is attempted, never required. A SQLite built without extension support must cost the
-# feature built on the extension and not the application, and the feature asks afterwards.
-
-
 @pytest.fixture
 def clean_extensions() -> Iterator[None]:
     """The registry, emptied for the test and put back afterwards.
@@ -1390,14 +1240,6 @@ async def test_a_sqlite_that_cannot_load_extensions_at_all_loses_all_of_them(
         await database.close()
 
 
-# --- what a whole-library read is ---------------------------------------------------------------
-#
-# The lane's gate reads this, and so does the check that refuses a new unmarked sweep. What it must
-# not do is either kind of mistake: calling a paged read a sweep queues screens behind background
-# work, and calling a sweep narrow leaves a read that can make the application unusable outside
-# the lane.
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "sql",
@@ -1438,9 +1280,6 @@ def test_a_read_of_the_whole_library_is_recognised(sql: str) -> None:
 )
 def test_a_read_that_is_not_the_whole_library_is_left_alone(sql: str) -> None:
     assert db_module.is_whole_library_read(sql) is False
-
-
-# --- opening, sizing and closing ----------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1519,9 +1358,6 @@ async def test_a_whole_read_through_the_lane_comes_back_with_its_rows(tmp_path: 
         await database.close()
 
 
-# --- registering a component --------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_a_component_at_version_zero_is_refused() -> None:
     """Zero is the version a fresh database reports, so a component claiming it would be migrated
@@ -1532,9 +1368,6 @@ def test_a_component_at_version_zero_is_refused() -> None:
 
 async def _no_migration(_connection: Connection, _on_disk: int) -> None:
     return None
-
-
-# --- what the probe says ------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1548,129 +1381,6 @@ def test_the_probe_answers_in_a_shape_a_log_line_can_carry() -> None:
         "fts5": probed.fts5,
         "load_extension": probed.load_extension,
     }
-
-
-# --- how big the log is -------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_a_database_with_no_log_beside_it_measures_nothing(tmp_path: Path) -> None:
-    """Asked on a timer against a database that may not have been written to yet. An error here
-    would take the keeper down on the first tick of a quiet install."""
-    assert db_module._log_bytes(tmp_path / "never-opened.sqlite3") == 0
-
-
-@pytest.mark.unit
-async def test_the_keeper_says_so_when_it_reclaims_something_worth_saying(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A quiet install must not narrate every tick, and a big reclaim must not be silent: the
-    threshold is the whole of what separates the two."""
-    database = Database(tmp_path / "test.sqlite3", readers=1)
-    await database.connect()
-    said_lines: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(
-        db_writer.log, "info", lambda event, **fields: said_lines.append((event, fields))
-    )
-    sizes = iter([db_module.RECLAIM_WORTH_SAYING_BYTES * 2, 0])
-    monkeypatch.setattr(db_writer, "_log_bytes", lambda _path: next(sizes, 0))
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
-        await asyncio.sleep(0.05)
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-    assert [event for event, _ in said_lines if event.startswith("db.log")] == ["db.log_folded"]
-
-
-@pytest.mark.unit
-async def test_a_reclaim_too_small_to_be_worth_saying_is_not_said(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The other side of the threshold, and the one that decides whether the line is worth having.
-
-    This runs on a timer for the life of the process. A line per tick on an install that reclaims a
-    few kilobytes is a log nobody can find a real event in.
-    """
-    database = Database(tmp_path / "test.sqlite3", readers=1)
-    await database.connect()
-    said_lines: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(
-        db_writer.log, "info", lambda event, **fields: said_lines.append((event, fields))
-    )
-    sizes = iter([db_module.RECLAIM_WORTH_SAYING_BYTES // 2, 0])
-    monkeypatch.setattr(db_writer, "_log_bytes", lambda _path: next(sizes, 0))
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
-        await asyncio.sleep(0.05)
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-    assert [event for event, _ in said_lines if event.startswith("db.log")] == []
-
-
-@pytest.mark.unit
-async def test_a_log_that_could_not_be_started_over_is_a_quiet_line_and_not_a_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A reader in the way is the ordinary case on a busy install. A log that never shrinks needs
-    an explanation somewhere, or it reads as housekeeping that was never wired up."""
-    database = Database(tmp_path / "test.sqlite3", readers=1)
-    await database.connect()
-    said_lines: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr(
-        db_writer.log, "debug", lambda event, **fields: said_lines.append((event, fields))
-    )
-
-    async def busy() -> tuple[bool, int]:
-        return False, 12
-
-    monkeypatch.setattr(database, "fold_the_log_back", busy)
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_log_folded(database, stop, interval=0.005))
-        await asyncio.sleep(0.05)
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-    assert ("db.log_busy", {"log_mb": 0.0, "pages": 12}) in said_lines
-
-
-@pytest.mark.unit
-async def test_a_keeper_told_to_stop_before_it_starts_does_nothing_at_all(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Shutdown can beat startup, and a pass that ran anyway would be holding the writer's
-    connection while the database is being closed."""
-    database = Database(tmp_path / "test.sqlite3", readers=1)
-    await database.connect()
-    folds = 0
-
-    async def counted() -> tuple[bool, int]:
-        nonlocal folds
-        folds += 1
-        return True, 0
-
-    monkeypatch.setattr(database, "fold_the_log_back", counted)
-    stop = asyncio.Event()
-    stop.set()
-    try:
-        await asyncio.wait_for(keep_the_log_folded(database, stop, interval=0.005), timeout=1.0)
-    finally:
-        await database.close()
-
-    assert folds == 0
-
-
-# --- point reads -------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1823,12 +1533,6 @@ def test_the_probe_statement_reads_the_database_rather_than_a_constant() -> None
     )
 
 
-# --- what happens once a write has landed ------------------------------------------------------
-#
-# The mechanism knows nothing about what is registered through it. What it knows is the one thing
-# only this module can know: whether the change the work goes with is actually durable.
-
-
 async def test_work_registered_in_a_write_runs_once_it_has_committed(tmp_path: Path) -> None:
     done: list[str] = []
     database = Database(tmp_path / "after.sqlite3")
@@ -1926,127 +1630,6 @@ async def test_two_writes_do_not_see_each_other_s_work(tmp_path: Path) -> None:
         assert done == ["first"]
     finally:
         await database.close()
-
-
-# --- keeping the query planner's statistics true ------------------------------------------------
-#
-# SQLite chooses between indexes from counts it writes only when it is asked to, and asked nothing
-# it can record a table at a hundredth of its size. Nothing reports that; a statement simply picks
-# the wrong side of a join one day and stays slow.
-
-
-@pytest.mark.unit
-async def test_refreshing_tells_the_planner_how_big_a_table_really_is(tmp_path: Path) -> None:
-    database = Database(tmp_path / "stats.sqlite3")
-    await database.connect()
-    try:
-        async with database.write() as connection:
-            await connection.execute("CREATE TABLE note (id INTEGER PRIMARY KEY, who TEXT)")
-            await connection.execute("CREATE INDEX ix_note_who ON note (who)")
-            await connection.executemany(
-                "INSERT INTO note (who) VALUES (?)", [(f"n{n}",) for n in range(2000)]
-            )
-        assert await database.refresh_statistics(reason="test", force=True) is True
-        rows = await database.fetch_all(
-            "SELECT stat FROM sqlite_stat1 WHERE idx = ?", ("ix_note_who",)
-        )
-        assert rows, "the planner has nothing recorded about the index at all"
-        assert str(rows[0]["stat"]).startswith("2000"), str(rows[0]["stat"])
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_the_boot_refreshes_the_statistics_after_the_migrations(tmp_path: Path) -> None:
-    """Proved by the debounce: the next ask inside the minute is turned away, which can only happen
-    if the boot had already run one."""
-    database = Database(tmp_path / "boot.sqlite3")
-    await database.connect()
-    try:
-        await database.initialize_schema()
-        assert await database.refresh_statistics(reason="pass:scan") is False
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_a_second_ask_inside_the_minute_costs_nothing_and_a_person_is_never_refused(
-    tmp_path: Path,
-) -> None:
-    """Several whole-library passes drain in one tick and each of them asks. A person pressing the
-    button on the maintenance screen is a different case and must never be told no by a timer."""
-    database = Database(tmp_path / "debounce.sqlite3")
-    await database.connect()
-    try:
-        assert await database.refresh_statistics(reason="pass:scan") is True
-        assert await database.refresh_statistics(reason="pass:identify") is False
-        assert await database.refresh_statistics(reason="tidy", force=True) is True
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_refreshing_the_statistics_needs_an_open_database(tmp_path: Path) -> None:
-    database = Database(tmp_path / "closed.sqlite3")
-    with pytest.raises(DatabaseError):
-        await database.refresh_statistics(reason="test")
-
-
-@pytest.mark.unit
-async def test_the_statistics_keeper_stops_when_it_is_told_to(tmp_path: Path) -> None:
-    """It writes on the writer's own connection, so it has to be gone before the database closes."""
-    database = Database(tmp_path / "keeper.sqlite3")
-    await database.connect()
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_statistics_current(database, stop, interval=0.01))
-        await asyncio.sleep(0.05)
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_a_failed_refresh_does_not_take_the_statistics_keeper_down(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Housekeeping that dies of one bad pass is housekeeping that silently stopped."""
-    database = Database(tmp_path / "keeper.sqlite3")
-    await database.connect()
-    calls = 0
-    tried_again = asyncio.Event()
-
-    async def angry(*, reason: str, every_table: bool = False, force: bool = False) -> bool:
-        nonlocal calls
-        calls += 1
-        if calls >= 2:
-            tried_again.set()
-        raise RuntimeError("no")
-
-    monkeypatch.setattr(database, "refresh_statistics", angry)
-    stop = asyncio.Event()
-    try:
-        keeper = asyncio.create_task(keep_the_statistics_current(database, stop, interval=0.005))
-        # Waited FOR rather than slept THROUGH, so this is not a test of how fast the machine is.
-        await asyncio.wait_for(tried_again.wait(), timeout=5.0)
-        assert calls >= 2, "it kept going after the first failure"
-        stop.set()
-        await asyncio.wait_for(keeper, timeout=1.0)
-    finally:
-        await database.close()
-
-
-@pytest.mark.unit
-async def test_a_keeper_told_to_stop_before_it_starts_does_nothing(tmp_path: Path) -> None:
-    """A shutdown that lands before the first tick must not cost a refresh on the way out."""
-    stop = asyncio.Event()
-    stop.set()
-    # Never connected: a keeper that touched the database here would raise, not return.
-    await asyncio.wait_for(
-        keep_the_statistics_current(Database(tmp_path / "never.sqlite3"), stop, interval=0.01),
-        timeout=1.0,
-    )
 
 
 @pytest.mark.unit

@@ -1,14 +1,4 @@
-/* Reading preferences out of the shape the server actually sends.
- *
- * This file exists because getting it wrong is silent. `sections` is a list of sections, each
- * with its own list of entries; treating it as a map of name to entries yields the section
- * objects themselves, every lookup by key finds nothing, and every caller quietly falls back to
- * its default forever. Nothing throws, nothing is logged, and the preference simply never takes
- * effect, which is indistinguishable from one that was never saved.
- *
- * So the fixture below is the server's real shape, and the assertion is that a value can be found
- * through it.
- */
+/* Reading preferences out of the shape the server actually sends. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -74,8 +64,8 @@ describe('reading', () => {
 
 	it('survives a section that carries no list of its own', async () => {
 		// An empty section arrives as `{name}` with no `settings` in some answers, and flattening
-		// straight through it throws a TypeError that takes the whole settings screen down, from
-		// a section that has nothing in it, which is the most ordinary state there is.
+		// straight through it throws a TypeError that takes the whole settings screen down, from a
+		// section that has nothing in it, which is the most ordinary state there is.
 		mocked.get.mockResolvedValue({
 			sections: [{ name: 'Library' }, { name: 'Privacy', settings: [{ key: 'k', value: 1 }] }]
 		});
@@ -204,11 +194,7 @@ describe('writing', () => {
 });
 
 describe('being told a setting moved somewhere else', () => {
-	/* The whole point of the mechanism. The server announces a change on the live connection,
-	 * `$lib/settings-ui/settings` re-reads and hands the values to every watcher, so a look chosen on a
-	 * phone, or by this account in another window, reaches the stores that draw it without
-	 * anybody reloading a page.
-	 */
+	/* The whole point of the mechanism. */
 	it('re-reads and hands the values to the watchers', async () => {
 		const told = vi.fn();
 		onSettingsSaved(told);
@@ -220,12 +206,7 @@ describe('being told a setting moved somewhere else', () => {
 		expect(told.mock.calls[0][0]['vault.lock_on_blur']).toBe(true);
 	});
 
-	/* A read that was in the air when a save began describes the state BEFORE that save. Handing it
-	 * to the watchers would put the old value back a beat after the new one appeared, and the
-	 * stores apply on the screen first, so what it would undo is something somebody is looking at.
-	 *
-	 * Abandoned rather than retried: the save announces itself, and that announcement brings the
-	 * read straight back. */
+	/* A read that was in the air when a save began describes the state BEFORE that save. */
 	it('drops a read that a save overtook while it was in the air', async () => {
 		const told = vi.fn();
 		onSettingsSaved(told);
@@ -247,9 +228,7 @@ describe('being told a setting moved somewhere else', () => {
 		// The save's own call still counts: that one is not stale. The read behind it does not.
 		expect(told.mock.calls.length).toBe(afterTheSave);
 
-		/* THE KNOWN POSITIVE. Silence and success are the same thing to the assertion above, so the
-		 * same read is made again with no save across it: if that one does not arrive either, this
-		 * test was only ever proving that a promise nobody resolved delivers nothing. */
+		/* THE KNOWN POSITIVE. */
 		mocked.get.mockResolvedValue(ANSWER);
 		settingChanges.changed();
 		await vi.waitFor(() => expect(told.mock.calls.length).toBe(afterTheSave + 1));

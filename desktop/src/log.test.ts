@@ -1,11 +1,6 @@
 /* The shell's log, and above all the two things that would each be a real fault and look like
  * nothing at all: a record that carries somebody's name into a bug report, and a logger that
- * throws and takes the thing it was logging with it.
- *
- * The shape is asserted too: the server's own log route parses these records and the Application
- * log screen draws them, so a field renamed here is a screen that silently stops showing a
- * column.
- */
+ * throws and takes the thing it was logging with it. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -47,14 +42,13 @@ function written(): Record<string, unknown>[] {
 
 describe('where it goes', () => {
 	it('sits beside the shell settings rather than in the library', () => {
-		// The library is another computer in client mode, and the shell has to be able to write a log
-		// on the machine somebody is actually sitting at. That is the whole point of the file.
+		// The library is another computer in client mode, and the shell has to be able to write a
+		// log on the machine somebody is actually sitting at.
 		expect(log.where()).toBe(path.join(home, 'shell.log'));
 	});
 
 	it('reports itself absent before anything is written, rather than empty', () => {
-		// Two different answers: a log that exists and is quiet, and no log at all. A screen showing
-		// "nothing written yet" for a file that was never created teaches the wrong thing.
+		// Two different answers: a log that exists and is quiet, and no log at all.
 		const found = tail(10);
 		expect(found.present).toBe(false);
 		expect(found.lines).toEqual([]);
@@ -70,7 +64,7 @@ describe('where it goes', () => {
 describe('the record', () => {
 	it('is one JSON object per line, in the shape the server writes', () => {
 		// `slices/logs` parses `timestamp`, `level` and `event` off each line and the screen draws
-		// them. These names are a contract with another language, and nothing else checks it.
+		// them.
 		const one = JSON.parse(record('warning', 'drag.refused', { why: 'no-origin' }));
 		expect(one.event).toBe('drag.refused');
 		expect(one.level).toBe('warning');
@@ -80,8 +74,8 @@ describe('the record', () => {
 	});
 
 	it('keeps numbers and booleans as themselves', () => {
-		// `waited_ms=1500` has to be a number, or the one field that answers "did the share time out"
-		// arrives as a string and every comparison on it is a string comparison.
+		// `waited_ms=1500` has to be a number, or the one field that answers "did the share time
+		// out" arrives as a string and every comparison on it is a string comparison.
 		const one = JSON.parse(
 			record('info', 'drag.share_not_used', { waited_ms: 1501, timed_out: true })
 		);
@@ -125,8 +119,7 @@ describe('the detail, at the level the setting says', () => {
 });
 
 describe('redaction, which happens where the record is written', () => {
-	/* The server's rule, from kernel/log.py: a path is REDUCED, not erased. The mount point, the
-	   folder layout and the filename are what say what went wrong and none of them names anybody. */
+	/* The server's rule, from kernel/log.py: a path is REDUCED, not erased. */
 	it('takes the account name out of a Windows path and leaves the rest', () => {
 		expect(scrub('C:\\Users\\someone\\AppData\\Local\\Sift\\data\\sift.log')).toBe(
 			`C:\\Users\\${REDACTED}\\AppData\\Local\\Sift\\data\\sift.log`
@@ -162,8 +155,7 @@ describe('redaction, which happens where the record is written', () => {
 	});
 
 	it('leaves a route alone', () => {
-		// `/health` looks like a home directory to a careless regex. Nothing matches unless it is a
-		// home root followed by a name.
+		// `/health` looks like a home directory to a careless regex.
 		expect(scrub('/health')).toBe('/health');
 		expect(scrub('/homes/shared/clip.mp4')).toBe('/homes/shared/clip.mp4');
 	});
@@ -203,8 +195,7 @@ describe('redaction, which happens where the record is written', () => {
 
 describe('it cannot be the reason something failed', () => {
 	it('says nothing and throws nothing when the file cannot be written', () => {
-		// A folder where the log file should be: every write fails, for ever. The drag that was being
-		// logged must still happen.
+		// A folder where the log file should be: every write fails, for ever.
 		fs.mkdirSync(path.join(home, 'shell.log'), { recursive: true });
 		expect(() => log.info('drag.started', { how: 'local' })).not.toThrow();
 	});
@@ -218,15 +209,12 @@ describe('it cannot be the reason something failed', () => {
 
 describe('the cost of a record is linear in its size', () => {
 	/* Writing is synchronous and on the main thread, so a pathological scrub is a frozen window,
-	   and redaction regexes are the kind that go quadratic unnoticed. `performance.now` rather
-	   than `Date.now` because a wall clock can step backwards. */
+	   and redaction regexes are the kind that go quadratic unnoticed. */
 	it('scrubs a very long field in no time at all', () => {
 		const long = 'x'.repeat(64 * 1024);
 		const began = performance.now();
 		scrub(long);
-		// The bounded pattern is immeasurable here and an unbounded one takes over a second. The
-		// bound is loose on purpose: what it is watching for is an order of magnitude, not a
-		// millisecond.
+		// The bounded pattern is immeasurable here and an unbounded one takes over a second.
 		expect(performance.now() - began).toBeLessThan(250);
 	});
 
@@ -238,13 +226,7 @@ describe('the cost of a record is linear in its size', () => {
 		expect(scrub(long)).not.toContain('a-secret');
 	});
 
-	/* The same two questions of the home-path rules. They run four times over every string, each
-	 * with a lookbehind, and they are the ones most likely to be rewritten.
-	 *
-	 * The stress is near misses rather than length alone: a run of `x` never starts one of these
-	 * patterns, so it measures nothing about them. Ten thousand things that begin like a home
-	 * path and are not one make a rule do its worst work, and look like a real log line.
-	 */
+	/* The same two questions of the home-path rules. */
 	it('reduces a home path in a long line of things that nearly are one, in no time at all', () => {
 		const long = `${'/homex/ C:\\Userss\\ '.repeat(10_000)} /home/someone/pictures`;
 		const began = performance.now();
@@ -253,8 +235,8 @@ describe('the cost of a record is linear in its size', () => {
 	});
 
 	it('still takes the name out of that line', () => {
-		// The known positive again, and for the same reason: a home rule that stopped matching would
-		// be the fastest one in the file.
+		// The known positive again, and for the same reason: a home rule that stopped matching
+		// would be the fastest one in the file.
 		const long = `${'/homex/ C:\\Userss\\ '.repeat(10_000)} /home/someone/pictures`;
 		const scrubbed = scrub(long);
 		expect(scrubbed).toContain(`/home/${REDACTED}/pictures`);

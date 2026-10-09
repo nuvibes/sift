@@ -1,11 +1,4 @@
-/* Starting, watching and stopping the Python backend.
- *
- * Only standalone does this. In client mode somebody else is running the backend and this file is
- * never touched.
- *
- * This module is the backend's supervisor: it restarts it after a crash, keeps its output
- * somewhere findable, and refuses to start on a port that is already held.
- */
+/* Starting, watching and stopping the Python backend. */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -17,21 +10,12 @@ import { log as shellLog } from './log';
 import { backendLogFile, bundlePaths } from './paths';
 import type { DataLocations } from './paths';
 
-/* Fixed, and not negotiable by the application. A shell
- * that quietly picks a free port produces a different address every launch, which breaks a saved
- * bookmark, breaks a second machine pointed at this one, and makes "it is on 5171" (the one thing
- * the documentation can say) untrue. If the port is held, Sift says so and does not move. */
+/* Fixed, and not negotiable by the application. */
 export const PORT = 5171;
 export const HOST = '127.0.0.1';
 export const ORIGIN = `http://${HOST}:${PORT}`;
 
-/* The address the backend listens on when the library is offered to the network.
- *
- * `0.0.0.0` is "every address this machine has", which is what makes it reachable from a second
- * computer. The window itself still loads ORIGIN either way: going through the loopback address is
- * correct even while sharing, and it keeps the page a secure context, which is what the browser
- * requires before it will hand over the clipboard.
- */
+/* The address the backend listens on when the library is offered to the network. */
 export const SHARED_HOST = '0.0.0.0';
 
 /* Enough to cover a first start that has to create a database and run migrations, and little enough
@@ -44,13 +28,7 @@ const HEALTH_INTERVAL_MS = 250;
 export const READY_LINE = 'sift.listening';
 const READY = /(?:^|\n)sift\.listening\r?\n/;
 
-/* How long a clean shutdown is given before it is taken instead.
- *
- * At least the backend's own grace for a running job (thirty seconds, `SHUTDOWN_GRACE_SECONDS`
- * in the Python tree, which a gate there pins this number above) plus the database's close.
- * Anything shorter takes the process in the middle of the wait that lets a job finish. Almost
- * every stop is immediate; this is spent only when a job is mid-flight.
- */
+/* How long a clean shutdown is given before it is taken instead. */
 const STOP_TIMEOUT_MS = 40_000;
 
 /* Three restarts inside five minutes and it stops and says so, as a service manager would. */
@@ -69,32 +47,10 @@ export function exitCodeWords(code: number | null): string {
 }
 
 /* What the backend exits with when the stop was ASKED FOR: somebody pressed Restart in Settings,
- * which is how the graphics-card runtime is made to take effect.
- *
- * It has to be told apart from a crash, and not as a nicety: a deliberate restart counted against
- * the crash budget above means four of them in five minutes leaves Sift refusing to start its own
- * backend, with a message about it having stopped four times. Kept in step with
- * `RESTART_EXIT_CODE` in sift/kernel/lifecycle.py, and there is a test on each side naming the
- * number, because the two halves are in different languages and nothing else would notice a
- * change. */
+ * which is how the graphics-card runtime is made to take effect. */
 export const ASKED_TO_RESTART = 86;
 
-/*
- * How the interpreter is run, and why it is not simply `python -m sift.main`.
- *
- * `-I` is isolated mode. A normal interpreter reads two places before its own packages: the
- * per-user folder at `%APPDATA%\\Python\\Python313\\site-packages`, and whatever `PYTHONPATH`
- * names. Anybody who has run `pip install --user` on a Python 3.13 of their own has packages there
- * that would override the ones Sift ships: an older `typing_extensions`, for one, fails FastAPI's
- * import with `cannot import name 'sentinel'`, the backend dies before it opens a socket, and four
- * such crashes stop Sift for good. Reinstalling does not help, because the folder belongs to the
- * person.
- *
- * `-I` also implies `-E`, which ignores every `PYTHON*` variable, so `-u` does PYTHONUNBUFFERED's
- * job: a log written as it happens is what makes a failed start readable.
- *
- * One flag rather than a list of variables to strip: a deny-list is only as good as its last edit.
- */
+/* How the interpreter is run, and why it is not simply `python -m sift.main`. */
 export const INTERPRETER_ARGS = ['-I', '-u'] as const;
 
 export class BackendStartError extends Error {
@@ -112,14 +68,7 @@ export class BackendStartError extends Error {
 }
 
 /* Checked before spawning rather than after failing, because uvicorn's own bind error is a
- * traceback ending in WinError 10048. The usual cause is Sift already running.
- *
- * Both addresses are checked because Windows lets a socket bind 127.0.0.1:5171 while a different
- * process holds 0.0.0.0:5171 (Linux refuses this). Traffic to localhost then goes to the more
- * specific binding, so the start looks successful while another server (an older Sift, say)
- * goes on answering on the machine's network address. The symptom is an empty library that looks
- * like a lost collection, so this refuses to start and names the likely cause.
- */
+ * traceback ending in WinError 10048. */
 export async function assertPortIsFree(port: number): Promise<void> {
 	const net = await import('node:net');
 
@@ -176,8 +125,7 @@ export class Backend {
 		private readonly takesOverRestart: () => boolean = () => false,
 		/** The release feed the backend's update check reads. Null starts it with no feed at all. */
 		private readonly releaseFeed: string | null = null,
-		/** Where the backend asks this shell for the acts only it can do (see `shelllink.ts`). Null
-		 *  starts it with no shell to ask, as a backend run by hand has. */
+		/** Where the backend asks this shell for the acts only it can do (see `shelllink.ts`). */
 		private readonly shellLink: { url: string; token: string } | null = null,
 		/** Face recognition, Smart Search and watermark reading held off for this launch. */
 		private readonly holdOptional = false
@@ -190,11 +138,8 @@ export class Backend {
 		await this.waitForHealth();
 	}
 
-	/**
-	 * Change whether other computers can reach this library now: a socket's address is fixed when
-	 * it opens, so it stops and starts again, and saved keys are sealed as at a launch. False means
-	 * the old address was put back and the switch did not take.
-	 */
+	/** Change whether other computers can reach this library now: a socket's address is fixed
+	 * when it opens, so it stops and starts again, and saved keys are sealed as at a launch. */
 	async listenOnNetwork(share: boolean): Promise<boolean> {
 		if (share === this.shareOnNetwork) return true;
 		const previous = this.shareOnNetwork;
@@ -214,8 +159,7 @@ export class Backend {
 	private async relisten(share: boolean): Promise<boolean> {
 		await this.stop();
 		this.shareOnNetwork = share;
-		/* `stop` sets the flag that tells the exit handler this death was deliberate. Cleared here
-		 * and not in `stop`, so a backend that dies on its own between the two is still a crash. */
+		/* `stop` sets the flag that tells the exit handler this death was deliberate. */
 		this.stopping = false;
 		try {
 			await this.start();
@@ -243,35 +187,23 @@ export class Backend {
 		const log = openStart();
 		this.startNumber = log.start;
 
-		/* Everything the backend needs arrives as environment variables. It already reads every
-		 * setting from SIFT_-prefixed ones, so the shell can configure it without writing a second
-		 * settings file that could then disagree with what the shell believes. */
+		/* Everything the backend needs arrives as environment variables. */
 		const childEnv: NodeJS.ProcessEnv = {
 			...process.env,
 			SIFT_DATA_DIR: this.locations.dataDir,
 			SIFT_CACHE_DIR: this.locations.cacheDir,
-			/* The one setting that decides whether this is a program on a computer or a service on a
-			 * network. Read from the shell's settings at START, because that is the only moment a
-			 * listening socket's address can still be chosen. */
+			/* The one setting that decides whether this is a program on a computer or a service
+			 * on a network. */
 			SIFT_HOST: this.shareOnNetwork ? SHARED_HOST : HOST,
 			SIFT_PORT: String(PORT),
 			SIFT_FFMPEG_PATH: path.join(vendorBin, 'ffmpeg.exe'),
 			SIFT_FFPROBE_PATH: path.join(vendorBin, 'ffprobe.exe'),
 			SIFT_WEBPINFO_PATH: path.join(vendorBin, 'webpinfo.exe'),
 			SIFT_ANIM_DUMP_PATH: path.join(vendorBin, 'anim_dump.exe'),
-			/* The folder itself is not passed. The tunnel client is started deep inside the
-			 * downloader, which has no Settings in hand, so the backend finds it by walking up
-			 * from its own location (`vendored_tool` in sift/kernel/config.py). An unrecognised
-			 * `SIFT_` variable is a hard error in the backend, so there is one mechanism rather
-			 * than two.
-			 */
+			/* The folder itself is not passed. */
 			/* Unbuffered output is asked for on the command line, not here: `-I` ignores every
-			 * `PYTHON*` variable, so `PYTHONUNBUFFERED` set here would be read by nothing. See
-			 * INTERPRETER_ARGS.
-			 */
-			/* Turns on the backend's clean-shutdown watch. Opt-in, and it has to be: the behaviour it
-			 * enables is "stop when stdin reaches EOF", and stdin is at EOF from the first instant in
-			 * any container started without `-i`. See stop_when_the_parent_lets_go in sift/main.py. */
+			 * `PYTHON*` variable, so `PYTHONUNBUFFERED` set here would be read by nothing. */
+			/* Turns on the backend's clean-shutdown watch. */
 			SIFT_STOP_ON_STDIN_EOF: 'true',
 			/* Where this shell's own logs are, for the backend's Download log. */
 			SIFT_APP_LOG_DIR: path.dirname(backendLogFile()),
@@ -279,9 +211,7 @@ export class Backend {
 			/* The feed this shell installs updates from, so the backend's "a new version is out" and
 			 * the shell's Install button read one address and cannot disagree. */
 			...(this.releaseFeed === null ? {} : { SIFT_RELEASE_FEED_URL: this.releaseFeed }),
-			/* The shell this backend may ask, and this launch's secret for asking it. Handed down
-			 * here because only the process that spawns the backend can set its environment, so
-			 * nothing else on the machine learns the secret without already being this user. */
+			/* The shell this backend may ask, and this launch's secret for asking it. */
 			...(this.shellLink === null
 				? {}
 				: { SIFT_SHELL_URL: this.shellLink.url, SIFT_SHELL_TOKEN: this.shellLink.token })
@@ -289,11 +219,7 @@ export class Backend {
 
 		this.child = spawn(python, [...INTERPRETER_ARGS, '-m', 'sift.main'], {
 			env: childEnv,
-			/* A pipe for stdin, and nothing is ever written down it. Closing it is how this shell
-			 * asks the backend to shut down cleanly, and only the process that spawned it holds
-			 * the other end, so there is no port to reach and no token to leak. 'ignore' would
-			 * hand the child a null device that is at EOF immediately.
-			 */
+			/* A pipe for stdin, and nothing is ever written down it. */
 			stdio: ['pipe', 'pipe', 'pipe'],
 			windowsHide: true
 		});
@@ -324,8 +250,7 @@ export class Backend {
 				return;
 			}
 			if (code === ASKED_TO_RESTART) {
-				/* Asked for, so it is started again and NOT counted as a fault. The clean shutdown has
-				 * already run on the other side: the database is closed and its log is folded. */
+				/* Asked for, so it is started again and NOT counted as a fault. */
 				shellLog.info('backend.restart_asked', {});
 				if (this.takesOverRestart()) return;
 				this.startAgain('asked');
@@ -370,9 +295,7 @@ export class Backend {
 		this.startAgain('stopped');
 	}
 
-	/* Polling /health, not sleeping for a guessed interval. A first start creates the database and
-	 * checks what SQLite can do, which takes as long as it takes, and on a warm start it is ready
-	 * almost immediately. Either way the window opens the moment it is actually true. */
+	/* Polling /health, not sleeping for a guessed interval. */
 	private async waitForHealth(): Promise<void> {
 		const deadline = Date.now() + HEALTH_TIMEOUT_MS;
 		let lastError = '';
@@ -432,21 +355,8 @@ export class Backend {
 		}
 	}
 
-	/* Asked to stop, then killed if it will not go. A backend killed outright can leave the
-	 * database's write-ahead log unfolded: recoverable, but it makes the next start slower and
-	 * noisier for no reason. */
-	/**
-	 * Ask the backend to stop, and wait for it.
-	 *
-	 * `child.kill()` is not a polite request on Windows: Node turns every signal name into
-	 * TerminateProcess, which stops the process where it stands and leaves the write-ahead log
-	 * unfolded.
-	 *
-	 * Closing stdin is the request instead. The backend watches that pipe and stops the way it
-	 * would for Ctrl-C, running its lifespan's shutdown on the way out. The kill below is the
-	 * fallback for a backend that has stopped answering, which is exactly when a hard stop is
-	 * right.
-	 */
+	/* Asked to stop, then killed if it will not go. */
+	/** Ask the backend to stop, and wait for it. */
 	async stop(): Promise<void> {
 		this.stopping = true;
 		const child = this.child;

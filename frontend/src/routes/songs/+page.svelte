@@ -1,25 +1,6 @@
 <script lang="ts">
-	/*
-	 * Music: the songs the library's files carry. One card per song, on as many files as carry it.
-	 * The page, its sidebar entry and every tab that shows songs are called Music, the word a
-	 * file's own Music field and Settings > Music use; one row of it is still a song.
-	 *
-	 * A destination of its own and not a column of Browse, because a song is a thing a library is
-	 * looked through by, the way a Photo Set or a tag is: "everything set to this song" is a question
-	 * somebody asks, and the answer is a page with the song's own files, people and Sites on it.
-	 *
-	 * The same wall as every other wall of things: the same card, the same declared verbs, the same
-	 * selection gesture and the same sheets (`WallVerbs`, `EntityWallFlows`), so a person who has
-	 * learned to right-click one of these walls has learned this one: Share, Visibility and Hide
-	 * among them. What a song has fewer of is decided there, not here: no tags of its own.
-	 *
-	 * Under each card's name, who the song credits (`SongArtists`): each artist a press that filters
-	 * this wall to that artist, the same filter as the panel's Artists column, which the order by
-	 * artist sits beside.
-	 *
-	 * A card whose song has no chosen cover is the music glyph on the letter's tint, never a file's
-	 * picture: a wall of songs is a wall of music.
-	 */
+	/* Music: the songs the library's files carry. One card per song, on as many files as carry
+	 * it. */
 	import { untrack } from 'svelte';
 	import { Selection, TileGesture, VerbMenuItems } from '$lib/components/common';
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
@@ -63,7 +44,6 @@
 		'id' | 'name' | 'locked' | 'cover_asset_id' | 'cover_upload_id' | 'item_count'
 	> &
 		// The opinions, the card's count row, its size, and the cover's moment, window and token.
-		// Optional, because a row this page makes itself carries none of them.
 		Partial<
 			Pick<
 				components['schemas']['SongSummary'],
@@ -88,16 +68,15 @@
 	let loading = $state(true);
 	let failed = $state<string | null>(null);
 
-	/* A page is the rows that fill a screenful, measured off a real card: the same machinery every
-	   other card wall uses. */
+	/* A page is the rows that fill a screenful, measured off a real card: the same machinery
+	   every other card wall uses. */
 	const paging = new CardPaging(24, 'wall.songs');
 
-	/* The order the wall is in, SENT rather than applied here. Held in `./sort.svelte` because
-	   opening a song unmounts this screen. */
+	/* The order the wall is in, SENT rather than applied here. */
 	const order = $derived(songsSort.value);
 
-	/* What the bar has filtered this shelf to, out of the address, as a derived string beside it so
-	   the effects below wake only when it really changes. See the Photo Sets wall. */
+	/* What the bar has filtered this shelf to, out of the address, as a derived string beside it
+	   so the effects below wake only when it really changes. */
 	const narrowedBy = $derived(facetParams('song', address.url.searchParams));
 	const narrowedKey = $derived(JSON.stringify(narrowedBy));
 	/* What is typed in the box, and what the list is asked with once the typing settles. */
@@ -135,7 +114,7 @@
 	});
 
 	/* What this wall offers the bar above it: the shared orders, the card size and the filters
-	   from the server. A cover is a still, so the wall plays nothing. */
+	   from the server. */
 	const mine = Symbol('songs-wall');
 
 	$effect(() => {
@@ -166,8 +145,8 @@
 
 	const byId = (id: string) => items.find((one) => one.id === id);
 
-	/* The one artist this wall is filtered to, by the name the rows on it credit, or null where it is
-	   filtered to none, to several, or to "not this artist". */
+	/* The one artist this wall is filtered to, by the name the rows on it credit, or null where
+	   it is filtered to none, to several, or to "not this artist". */
 	const oneArtist = $derived.by(() => {
 		const asked = address.url.searchParams.getAll(ARTIST_FIELD);
 		if (asked.length !== 1 || asked[0].startsWith('-')) return null;
@@ -228,8 +207,7 @@
 		}
 	}
 
-	/* Re-run when the page moves, its size changes, or the order or filtering does. `loading` is
-	   deliberately not read. See the Photo Sets wall, which says why at length. */
+	/* Re-run when the page moves, its size changes, or the order or filtering does. */
 	$effect(() => {
 		const wanted = paging.offset;
 		const size = paging.size;
@@ -300,8 +278,8 @@
 
 	const pickedIds = $derived(selection.ordered(items.map((one) => one.id)));
 
-	/* The row moves immediately and the server's answer is kept: the same optimistic write the heart on
-	   a tile makes. */
+	/* The row moves immediately and the server's answer is kept: the same optimistic write the
+	   heart on a tile makes. */
 	function put(id: string, state: components['schemas']['SongStateView']) {
 		items = items.map((one) => (one.id === id ? { ...one, ...state } : one));
 	}
@@ -335,7 +313,7 @@
 	}
 
 	/* Files dragged from the grid onto a song. The one membership row is all that is written; no
-	   file moves. A file carries one song, so a file on another moves to this one. */
+	   file moves. */
 	async function addDropped(assetIds: string[], songId: string) {
 		const song = byId(songId);
 		const named = song ? thing('song', songId, song.name) : 'that song';
@@ -405,8 +383,7 @@
 				words={oneArtist.name}
 			/>
 		{/if}
-		<!-- The Add and the search, in the one shape every entity wall wears. Add opens the blank
-		     record form at `/songs/new`; the box filters through the list route's `prefix`. -->
+		<!-- The Add and the search, in the one shape every entity wall wears. -->
 		<WallControls
 			noun="song"
 			plural="songs"

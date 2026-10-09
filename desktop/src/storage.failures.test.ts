@@ -1,25 +1,5 @@
 /* What `storage.ts` does when the filesystem answers badly: the half `storage.test.ts` cannot
- * reach, because it works against real directories that behave.
- *
- * On one disk a move is a rename: atomic, instant, and the old path simply stops existing. Across
- * two it is a copy, then a check that the copy is all there, and only then a delete: three steps,
- * each of which can fail with the library in a different place. A test cannot count on two volumes
- * being to hand, so the ONE call that tells the two apart is stood in for: `rename` answers
- * `EXDEV`, exactly as the kernel does, and every other filesystem call is real. What is being
- * tested is still what `copyFile` and `rm` really do.
- *
- * The three claims, and each is a way somebody loses a library:
- *
- *   - the old copy is what survives a failure, because the old copy is the one with the library in
- *     it. A half-finished copy must never be the thing that is kept;
- *   - a rename that failed for any OTHER reason is not a cross-volume move and must not be turned
- *     into one, since a copy started on a permissions error would work on top of whatever is there;
- *   - the cache goes first. It is the rebuildable half, so a failure part way through costs
- *     thumbnails rather than the database.
- *
- * The refusals at the end are here for the same reason: each is a sentence somebody reads while
- * choosing a different folder, and two of the three need a disk that will not cooperate.
- */
+ * reach, because it works against real directories that behave. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as os from 'node:os';
@@ -75,9 +55,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 		},
 		async copyFile(from: string, to: string) {
 			fake.copied.push(from);
-			/* A short write rather than no write at all. A file that is simply ABSENT fails at the
-			   `stat` right after the copy, which is a different refusal on a different line, and a
-			   test that took that path would leave the size check itself unexercised. */
+			/* A short write rather than no write at all. */
 			if (fake.truncateCopyOf !== null && from.endsWith(fake.truncateCopyOf)) {
 				return actual.writeFile(to, 'short');
 			}
@@ -223,10 +201,7 @@ describe('refusals that need the disk to be in a bad mood', () => {
 	});
 
 	it('refuses a folder it cannot write to, BEFORE anything has been stopped', async () => {
-		/* The write test is the last of the refusals and the only one that finds out by trying. An
-		   empty folder on a read-only volume passes every check above it and fails at the first
-		   copy, with the backend already down, which is a Sift that is off the air for a reason
-		   the person could have been told a moment earlier. */
+		/* The write test is the last of the refusals and the only one that finds out by trying. */
 		const target = await emptyFolder('other-drive');
 		fake.refuseWrites = true;
 
@@ -234,8 +209,7 @@ describe('refusals that need the disk to be in a bad mood', () => {
 	});
 
 	it('counts a file that went between the listing and the stat as nothing rather than failing', async () => {
-		/* The number is a size on screen, not an invariant. A folder being scanned while something
-		   else is writing in it is the ordinary case, not an edge one. */
+		/* The number is a size on screen, not an invariant. */
 		fake.vanishing = 'thumb.jpg';
 
 		expect(await sizeOf(current.cacheDir)).toBe(0);
@@ -244,10 +218,7 @@ describe('refusals that need the disk to be in a bad mood', () => {
 
 describe('a source folder that cannot be listed', () => {
 	it('refuses and leaves the originals where they are, rather than deleting what it never copied', async () => {
-		/* A folder that cannot be listed must fail the move. `sizeOf` reports an unlistable
-		   folder as nought (rightly, for a size on screen), so a copy that stepped over it
-		   would pass the "is the copy all there" check with nought against nought, answer `ok:
-		   true`, and the delete would take the originals. */
+		/* A folder that cannot be listed must fail the move. */
 		const target = await emptyFolder('other-drive');
 		fake.readdirCode = 'EACCES';
 		fake.readdirFailsOn = `${path.sep}quarantine`;

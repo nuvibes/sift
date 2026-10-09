@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The stash-box list's own words, and its search entry built from the same object, so the heading on
- * the pane and the result a search finds cannot say two different things. None of this is in the
- * settings registry: a stash-box is a row in a table, not a preference. */
+/* The stash-box list's own words, and its search entry built from the same object, so the
+ * heading on the pane and the result a search finds cannot say two different things. */
 import type { Searchable } from './search';
 
 /** The list of stash-boxes and their keys. */
@@ -10,10 +9,7 @@ export const STASH_BOX_KEYS = {
 	help: 'Add a stash-box and your API key for it, so Sift can look up your files.'
 };
 
-/**
- * The words the section writes itself: the status line and the page one level in. The registered
- * rows carry their own words.
- */
+/** The words the section writes itself: the status line and the page one level in. */
 export const COPY = {
 	status: {
 		off: "Turned off. Sift doesn't look up your files on any stash-box.",

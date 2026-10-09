@@ -10,18 +10,7 @@
 		withSize
 	} from '$lib/entity/entity-counts';
 	import { untrack } from 'svelte';
-	/*
-	 * One site, and the usernames on it.
-	 *
-	 * A username is a person's name on this Site, and it has no page of its own: the People tab
-	 * draws each person's usernames here under that person's card, with the files posted under each
-	 * and the Site's own number where it is known (see `usernamesHere`). The same lines stand
-	 * under this Site's card on each person's own Sites tab.
-	 *
-	 * The same username on another site is a different row belonging to a different person. That is
-	 * why a username is only ever shown beside the Site it is on, rather than in one flat list
-	 * where two strangers would look like one.
-	 */
+	/* One site, and the usernames on it. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import { page } from '$app/state';
@@ -95,15 +84,7 @@
 	const siteId = $derived(page.params.id ?? '');
 	/* Fetched BY ID, never read out of a wall's page: a wall is one capped page in a chosen
 	   order, so anything ranked past the cap would have no page at all, and anything that
-	   replaced the cached page would take the subject out from under an already-open one.
-
-	   The subject, and the three flags that go with fetching it, shared with every other
-	   entity detail page rather than written out here. See `EntitySubject` for what it decides,
-	   which is one thing: a placeholder belongs on a screen with nothing on it, so re-reading
-	   this row leaves this row on screen.
-
-	   `follow` takes both subscriptions, so a name, a heart or a cover that has moved is re-read
-	   rather than left until somebody reloads the page. */
+	   replaced the cached page would take the subject out from under an already-open one. */
 	const subject = new EntitySubject<Site>((id) => sites.one(id));
 	subject.follow(() => siteId);
 	/* Read through a `const` so the markup keeps its narrowing (see the person page). */
@@ -116,20 +97,17 @@
 	async function saveRecord(draft: Record<string, unknown>) {
 		if (!site) return;
 		const name = String(draft.name ?? '').trim() || site.name;
-		/* The site's whole list of addresses; its first IS the site's address. Every field is sent
-		   every time: this IS the record form, so its silence about a field means it was emptied. */
+		/* The site's whole list of addresses; its first IS the site's address. */
 		const links = ((draft.links as string[]) ?? []).map((one) => one.trim()).filter(Boolean);
 		const notes = String(draft.details ?? '').trim() || null;
 		const aliases = ((draft.aliases as string[]) ?? []).map((one) => one.trim()).filter(Boolean);
 		const parent = String(draft.parent ?? '').trim() || null;
-		/* The reply carries the record with the parent's id, which only the server knows (saving a
-		   network nobody has typed before creates it). The tally is not on a write's reply, and a
-		   save moves no file, so the one on screen is kept. */
+		/* The reply carries the record with the parent's id, which only the server knows (saving
+		   a network nobody has typed before creates it). */
 		const saved = await sites.save(site.id, name, { notes, aliases, parent, links });
 		subject.value = { ...saved, o_count: subject.value?.o_count ?? saved.o_count };
 
-		/* Tags, which the form edits into its draft rather than writing as they are pressed. See
-		   `RecordForm`. The same diff the person's page does, against the same store. */
+		/* Tags, which the form edits into its draft rather than writing as they are pressed. */
 		const wantedTags = (draft.tags as { id: string }[] | undefined) ?? [];
 		for (const gone of tags.filter((one) => !wantedTags.some((held) => held.id === one.id))) {
 			await entityTags.set('sites', site.id, gone.id, false);
@@ -142,8 +120,8 @@
 		toasts.show('Saved', { tone: 'success' });
 	}
 
-	/* Which wall this page is showing, read off the address so every tab is a real place: the back
-	   button steps between them and a shared link opens on the one the sender was on. */
+	/* Which wall this page is showing, read off the address so every tab is a real place: the
+	   back button steps between them and a shared link opens on the one the sender was on. */
 	/* History has no wall behind it, so it is kept out of `tabsFor`. */
 	const HISTORY = 'history';
 
@@ -152,33 +130,17 @@
 	const shown = $derived<RelatedKind>(chosenTab('site', asked));
 	const fileWords = new TabWords();
 
-	/*
-	 * The numbers beside the tab words.
-	 *
-	 * `follow` asks for all of them in one request the moment the page settles on a subject, so the
-	 * strip opens complete rather than filling in as somebody presses each tab. `saw` is what the
-	 * wall on screen actually found, which is the fresher of the two and wins. Both come from the
-	 * same listings, so they are one population and not two.
-	 */
+	/* The numbers beside the tab words. */
 	const counts = new TabCounts();
 	$effect(() => counts.follow('site', siteId));
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
 	reloadOnLibraryChange(() => counts.refresh());
 
-	/* How many fields a stash-box disagrees with about this record, out of the strip's own numbers.
-	 *
-	 * Off the counts map rather than asked for separately, because it arrives with every other number
-	 * on that strip (one request, one moment), and because the panel on the History tab OVERWRITES
-	 * it through `saw` the moment it has read them itself. Two readers of one number is how a mark
-	 * comes to stand over a panel that has nothing in it.
-	 *
-	 * Undefined until the strip has answered, which draws no mark: a mark that appeared and then went
-	 * again would report a question that was never there. */
+	/* How many fields a stash-box disagrees with about this record, out of the strip's own
+	 * numbers. */
 	const disagreeing = $derived(counts.current.disagreements ?? 0);
 
-	/* How many files the Files tab holds while picks filter it (null: nothing picked). Asked of
-	   the same listing the tab reads, once per change of the picks, with a sequence number so a
-	   slower answer for picks moved away from cannot land over the current one. */
+	/* How many files the Files tab holds while picks filter it (null: nothing picked). */
 	let narrowedFiles = $state<number | null>(null);
 	let narrowedAsk = 0;
 	$effect(() => {
@@ -201,41 +163,19 @@
 			files: narrowedFiles ?? site?.asset_count
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
-		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   length of the very thread the pane draws, read beside the strip (`readThread`). */
+		   word on a row of numbered ones reads as a tab nobody has looked at yet. */
 		{
 			id: HISTORY,
 			label: 'History',
 			icon: 'history' as const,
 			href: `/sites/${siteId}?show=${HISTORY}`,
 			count: counts.current.history,
-			/* And a mark where a stash-box disagrees with this record. It is on THIS word
-			   because the panel that settles it is at the top of this tab, so the mark is
-			   what says the question is there without anybody opening anything. Absent at
-			   nought and absent for anyone who may not settle them, which is what an absent
-			   count from the strip already means. */
+			/* And a mark where a stash-box disagrees with this record. */
 			attention: disagreeing > 0 ? waitingText(disagreeing, counts.boxes) : undefined
 		}
 	]);
-	/*
-	 * THE USERNAMES ON THIS SITE, filed by the person behind each, for the People tab.
-	 *
-	 * The People tab's cards come from `RelatedWall`, which asks the server for them on its own
-	 * terms; what the tab needs from here is the usernames: one read of every username on this
-	 * Site, filed by the person behind it. See the note below for the two filings.
-	 *
-	 * Read only while the People tab is showing, and again whenever the library moves.
-	 */
-	/*
-	 * ONE READ, FILED TWO WAYS. A Site's People wall counts people whose only presence here is a
-	 * username with nothing filed under it (a stash-box's answer about them wrote it), and under
-	 * such a card that username is the whole reason the card is on this wall. So the read keeps
-	 * both kinds; see `usernames-here.ts`, which files them.
-	 *
-	 * The rising counter is `UsernamesByCard`'s own rule, for its reason: a slower answer for a
-	 * Site somebody has already left must not land under the one they are on. A failed read leaves
-	 * nothing under the cards rather than failing the wall.
-	 */
+	/* THE USERNAMES ON THIS SITE, filed by the person behind each, for the People tab. */
+	/* ONE READ, FILED TWO WAYS. */
 	let usernamesAll = $state<readonly Username[]>([]);
 	let usernamesAsked = 0;
 	const filed = $derived(fileUsernames(usernamesAll));
@@ -262,8 +202,7 @@
 	});
 
 	let busy = $state(false);
-	/* Sharing a site shares what came from it, and keeps doing so. The same logical share as a
-	   person, over the other axis somebody actually thinks in. */
+	/* Sharing a site shares what came from it, and keeps doing so. */
 	let shareOpen = $state(false);
 	let reachOpen = $state(false);
 	const shareTarget = $derived<ShareTarget | null>(
@@ -272,26 +211,20 @@
 
 	const tags = $derived(entityTags.items);
 
-	/* Everything the record is made of, in one place: the summary under the name, the panel beside
-	   it and the form are three surfaces over the same facts. See the person's page. */
+	/* Everything the record is made of, in one place: the summary under the name, the panel
+	   beside it and the form are three surfaces over the same facts. */
 	/* The stash-boxes agreed to know this site. Its own read, from another slice, and optional:
 	 * an install with none configured gets an empty list and this page is exactly as it was. */
 	let sources = $state<StashBoxLink[]>([]);
-	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`).
-	   Null for everything nothing recorded, which is most of a library. */
+	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`). */
 	let madeBy = $state<Maker | null>(null);
 	let sourcesFor = $state('');
 	let lookUpOpen = $state(false);
 	let mergeOpen = $state(false);
 
-	/* What this page can do to this Site, behind the one door every entity page wears.
-	 *
-	 * Merging keeps its component and does not draw its own button, the same seam the wall's menu
-	 * uses.
-	 */
+	/* What this page can do to this Site, behind the one door every entity page wears. */
 	/* WHERE THIS ROW STANDS WITH ENRICHMENT, so the two rows that send its name outside are
-	   drawn refused rather than refused on the press. See `EntityEnrichment`: one route answers
-	   it, and pressing the row below writes the reply back. */
+	   drawn refused rather than refused on the press. */
 	const enrichment = new EntityEnrichment('site');
 	enrichment.follow();
 	const enrichState = $derived(enrichment.of(site?.id));
@@ -306,8 +239,7 @@
 		if (session.isAdmin) loadEnrichBoxes();
 	});
 	/* AUTO-ENRICH, THE SAME ROWS EVERY SURFACE DRAWS: every box, then each box by name, and the
-	   box handed on. With no list it is a plain press, which asks what Settings says. See
-	   `autoEnrichRows`, which also says why there is no "Sift's own" row. */
+	   box handed on. */
 	function autoEnrichThis(id: string, box: string = ''): void {
 		if (enrichRefused) return void sayKeptLocal();
 		void enrichMany('site', [id], box);
@@ -340,8 +272,7 @@
 					},
 					/* KEPT LOCAL, beside the two rows it refuses: the pair every other surface
 					   draws, on the one page somebody stands on when they decide a Site should
-					   never leave. The label reverses on something already kept local, as it does on the
-					   wall. */
+					   never leave. */
 					{
 						id: 'keep-local',
 						label: enrichKept ? 'Allow enrichment' : "Don't enrich",
@@ -357,10 +288,7 @@
 						icon: 'group' as const,
 						run: () => (shareOpen = true)
 					},
-					/* What the sharing above it comes to. Share is where a decision is made; this
-					   reports who can actually reach this, however the reach was arranged: through
-					   a folder, a tag, a set, or the network above a label, none of which are
-					   written here. */
+					/* What the sharing above it comes to. */
 					{
 						id: 'visibility',
 						label: 'Visibility',
@@ -376,17 +304,7 @@
 				]
 	);
 
-	/* Arriving with the chooser already open, because a menu somewhere else asked for it.
-	 *
-	 * `Enrich` on the wall cannot draw this sheet itself (it needs the record's own values and
-	 * its save), so it navigates here and says so in the address. Reading it here rather than
-	 * passing state through the navigation means the address is the whole story: it survives a
-	 * reload, and it can be sent to somebody.
-	 *
-	 * Once, on arrival, and not as a `$derived`: this is a door being opened, not a fact about the
-	 * page. Left reactive, closing the sheet with the parameter still in the address would
-	 * immediately re-open it.
-	 */
+	/* Arriving with the chooser already open, because a menu somewhere else asked for it. */
 	$effect(() => {
 		if (untrack(() => lookUpOpen)) return;
 		// Refused before the sheet opens, even where the address asked for it: the chooser's whole
@@ -396,9 +314,8 @@
 	});
 
 	const recordValues = $derived({
-		/* The site's own row first, so anything the record gains is here without a line being added.
-		 * The five below are not columns on it: three live in other tables, one is read by its own
-		 * route, and the links list holds every address the site has. */
+		/* The site's own row first, so anything the record gains is here without a line being
+		 * added. */
 		...(site?.record ?? {}),
 		name: site?.name ?? '',
 		/* Every address the site has, from the record. The first IS the site's address; there is
@@ -448,8 +365,7 @@
 		if (id) void entityTags.load('sites', id);
 	});
 
-	/* Set the still the site is drawn as, from one of its own files. Admin-only, like the server
-	 * behind it. */
+	/* Set the still the site is drawn as, from one of its own files. */
 	/** Whether the picture chooser is open. Opened by the pencil on the cover, while editing. */
 	let pickingPicture = $state(false);
 
@@ -475,10 +391,8 @@
 	/** The id the header's Save submits. One form is open at a time, so one name is enough. */
 	const RECORD_FORM = 'site-record-form';
 
-	/* Deleting the site.
-	 *
-	 * The FILES that came from it are untouched: what goes is the site, what was recorded about
-	 * it, and the rows joining it to files. The question says so. */
+	/* Deleting the site. The FILES that came from it are untouched: what goes is the site, what
+	 * was recorded about it, and the rows joining it to files. */
 	async function removeSite() {
 		await sites.remove(siteId);
 		toasts.show('Deleted. The files that came from it are still here.', { tone: 'success' });
@@ -524,8 +438,8 @@
 	function countsFor(): string {
 		if (!site) return '';
 		const files = filesSized(site.asset_count, sizeOf(site));
-		/* This account's own O tally over everything the site reaches goes beside this line as the
-		   header's own drop and figure (`oCount`), not in its words. */
+		/* This account's own O tally over everything the site reaches goes beside this line as
+		   the header's own drop and figure (`oCount`), not in its words. */
 		return joinCounts(files, peopleSaid(site.people_count));
 	}
 
@@ -546,14 +460,7 @@
 	<EntityDropZone kind="site" id={site.id} name={site.name} />
 {/if}
 
-<!--
-	ONE frame and one scrolling region: the grid's. See the person page: a heading band with a
-	percentage cap and an `overflow-y` of its own would leave the wall below it whatever was left.
-
-	The band goes to the grid, which draws it in its own frame's header. The tall parts (the notes,
-	the edit form, and the list of people this site has media of) fold into a dialog, because a
-	band that does not scroll cannot hold a list whose length nobody controls.
--->
+<!-- ONE frame and one scrolling region: the grid's. -->
 {#if subject.settling}
 	<Skeleton lines={3} />
 {:else if subject.unreadable}
@@ -563,11 +470,7 @@
 		>It may have been deleted, or merged into another Site.</Empty
 	>
 {:else}
-	<!--
-		Its media, which is what the page is about. The same grid Browse draws, asking the same query
-		language: `sites=` is the parameter the Filters modal sends and what `sites:` in the
-		box parses to, so this screen adds no language of its own and nothing here can drift.
-	-->
+	<!-- Its media, which is what the page is about. -->
 	<!-- Whose page this is, drawn on EVERY tab: what is being shown OF a site changes, and which
 	     site it is does not. -->
 	{#snippet identity()}
@@ -675,15 +578,7 @@
 			{/snippet}
 		</PageFrame>
 	{:else if showingHistory}
-		<!--
-			The thread, in the frame every other screen uses. Not a wall: nothing to select, nothing
-			to page and nothing to count, so the grid's furniture would be furniture with no work
-			behind it. The identity band stays: this is a different view OF the thing, not a
-			different page.
-
-			WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at the
-			page's own left edge where the tabs and the title are.
-		-->
+		<!-- The thread, in the frame every other screen uses. -->
 		<!-- History draws the identity and the tab strip in the shape every other tab does
 		     (`PageAbove`, then the strip as the heading row), so the strip stands at one height
 		     on every tab. -->
@@ -695,11 +590,10 @@
 			{#snippet children()}
 				<EntityHistory subject="site" id={siteId} name={site.name}>
 					{#snippet waiting()}
-						<!-- Where a stash-box disagrees with THIS record, at the top of the thread rather
-						     than in the header. Draws nothing at all when nothing does, which is the
-						     ordinary case. Admin-only: what a box wrote is shared vocabulary, like every
-						     other stash-box control, and the strip answers None rather than a number for
-						     anybody else, so the mark and the panel appear and disappear together. -->
+						<!--
+							Where a stash-box disagrees with THIS record, at the top of the thread
+							rather than in the header.
+						-->
 						{#if session.isAdmin}
 							<Disagreements
 								subject="site"
@@ -793,10 +687,10 @@
 									onchanged={() => void readUsernames(siteId)}
 								/>
 								{#if !usernamesHere.has(row.id)}
-									<!-- Somebody on this wall only by a username with nothing under it: said as
-								     that, so the card's "0 files" has its reason beside it. Plain words, not a
-								     control. There is nothing here to open, and the card's picture and name
-								     already go to the person. -->
+									<!--
+										Somebody on this wall only by a username with nothing under it:
+										said as that, so the card's "0 files" has its reason beside it.
+									-->
 									{#each bareHere.get(row.id) ?? [] as one (one.id)}
 										<p class="bare">{bareLine(one)}</p>
 									{/each}
@@ -813,8 +707,7 @@
 <ShareDialog bind:open={shareOpen} targets={shareTarget ? [shareTarget] : []} />
 <VisibilityDialog bind:open={reachOpen} target={shareTarget} />
 
-<!-- No button of its own: the row in the Options menu opens it. What stays here is the chooser and
-     the warning, which is the whole of what this component is. -->
+<!-- No button of its own: the row in the Options menu opens it. -->
 {#if site}
 	<MergeEntities
 		people={[{ id: site.id, name: site.name }]}
@@ -825,8 +718,7 @@
 	/>
 {/if}
 
-<!-- The same sheet the person's page uses, with a different subject. One screen, three kinds of
-     thing, and the fields it draws come from the registry rather than from anything written here. -->
+<!-- The same sheet the person's page uses, with a different subject. -->
 {#if site}
 	<LinkToStashBox
 		bind:open={lookUpOpen}
@@ -837,8 +729,7 @@
 		onlinked={afterLinked}
 	/>
 
-	<!-- The pencil's sheet, same as the person's page. The site's own files, and the same route the
-	     right-click menu already writes through. -->
+	<!-- The pencil's sheet, same as the person's page. -->
 	<PickPicture
 		bind:open={pickingPicture}
 		name={site.name}
@@ -850,9 +741,7 @@
 {/if}
 
 <style>
-	/* A username with nothing filed under it, under a card on the People tab. Caption ink and the
-	   label face, the register `UsernameLines` draws a line's facts in, because it is the same kind
-	   of fact about the same card, just one with no files to press. */
+	/* A username with nothing filed under it, under a card on the People tab. */
 	.bare {
 		margin: 0;
 		font: var(--text-label);

@@ -1,12 +1,7 @@
 <script lang="ts">
 	import Scroller from '$lib/components/common/Scroller.svelte';
 	import BackButton from '$lib/components/common/BackButton.svelte';
-	/* Settings: a list of sections down the left, the chosen one filling the rest.
-	 *
-	 * Every entry is a real link, so a section can be bookmarked, opened in a tab and reached by
-	 * Back. On a phone the list is the whole screen and a section replaces it: two addresses, no
-	 * drawer state.
-	 */
+	/* Settings: a list of sections down the left, the chosen one filling the rest. */
 	import { untrack, type Snippet } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import { Empty, MarkedText, Pressable } from '$lib/components/common';
@@ -37,11 +32,9 @@
 		current: string;
 		/** Whether the section pane is the one on screen. Only differs from `true` on a phone. */
 		showingSection: boolean;
-		/**
-		 * Told which section was chosen, instead of the list being links: in the panel the rows are
-		 * buttons, since a navigation would unmount the panel over the screen somebody was on. The
-		 * panel still changes the address, so sections stay linkable and Back works.
-		 */
+		/** Told which section was chosen, instead of the list being links: in the panel the rows
+		 * are buttons, since a navigation would unmount the panel over the screen somebody was
+		 * on. */
 		onselect?: (id: string) => void;
 		children: Snippet;
 	}
@@ -52,29 +45,23 @@
 	 * plus what the panes declare. Empty until that lands, rather than answering half. */
 	let found = $state<Searchable[]>([]);
 
-	/*
-	 * What has been typed into the box, held HERE: what it matches, where results go and what the
-	 * pane shows are facts about the two columns, which the box cannot see.
-	 */
+	/* What has been typed into the box, held HERE: what it matches, where results go and what
+	 * the pane shows are facts about the two columns, which the box cannot see. */
 	let typed = $state('');
 	const searching = $derived(typed.trim().length > 0);
 
 	/* The pane's scrolling box, handed over by the shared scroll region once it exists. */
 	let paneBox: HTMLElement | null = null;
 
-	/*
-	 * A section opens at its top: the pane is one scrolling box for every section. Reset before the
-	 * new section draws (`$effect.pre`), so a link naming a row still scrolls to it from the top.
-	 */
+	/* A section opens at its top: the pane is one scrolling box for every section. */
 	$effect.pre(() => {
 		void current;
 		if (paneBox) paneBox.scrollTop = 0;
 	});
 
 	$effect(() => {
-		/* Read again when a setting moves: which settings are declared depends on the role (a guest
-		 * is not sent installation-wide ones). Here, not `whenChanged`, since this effect already
-		 * abandons an overtaken read. */
+		/* Read again when a setting moves: which settings are declared depends on the role (a
+		 * guest is not sent installation-wide ones). */
 		void settingChanges.generation;
 		let alive = true;
 		void fetchSettings()
@@ -89,9 +76,8 @@
 		};
 	});
 
-	/* Opening a result, through the two calls a link would make (`showSettingsSection` inside the
-	 * panel, `openSettings` outside). A result with no key (a heading, a card) is looked for on its
-	 * pane by `name`, and whatever hides it is opened. */
+	/* Opening a result, through the two calls a link would make (`showSettingsSection` inside
+	 * the panel, `openSettings` outside). */
 	function open(section: string, key?: string, show?: string, name?: string) {
 		const named = () => {
 			if (!key && name) void revealNamed(name, resolveAddress(section, key, show).section);
@@ -106,15 +92,13 @@
 			named();
 			return;
 		}
-		/*
-		 * A result that names a ROW, inside the panel: the section swaps and the row is rung as ONE
-		 * history step, since a replace then a push would leave closing the panel two clicks away.
-		 */
+		/* A result that names a ROW, inside the panel: the section swaps and the row is rung as
+		 * ONE history step, since a replace then a push would leave closing the panel two clicks
+		 * away. */
 		showSettingsSection(section, key, show);
 	}
 
-	/* A guest is shown the sections a guest can use. The server refuses the rest regardless: this
-	   just stops the list offering them. */
+	/* A guest is shown the sections a guest can use. */
 	const groups = $derived(
 		SETTINGS_GROUPS.map((group) => ({
 			...group,
@@ -125,19 +109,14 @@
 	/** Every section this account is offered, flat: what a result is allowed to be about. */
 	const offered = $derived(groups.flatMap((group) => group.sections));
 
-	/* What was found, under the section each thing is on (`grouped`), from the same list the guest
-	   filter allows, so a search offers no pane the list lacks. */
+	/* What was found, under the section each thing is on (`grouped`), from the same list the
+	   guest filter allows, so a search offers no pane the list lacks. */
 	const results = $derived(grouped(found, offered, typed));
 
-	/*
-	 * THE PANE FOLLOWS THE FIRST THING FOUND, as it is typed, so the two columns are one thought.
-	 * Through `open` with no key (`replaceState`): eight letters are one history entry, and no row
-	 * is rung that nobody pressed. `untrack` around `current`, which this effect's own call changes.
-	 */
-	/*
-	 * EVERY RESULT ROW, FLAT, IN THE ORDER THEY ARE DRAWN: what the arrow keys walk, so "down" means
-	 * down across a section boundary too.
-	 */
+	/* THE PANE FOLLOWS THE FIRST THING FOUND, as it is typed, so the two columns are one
+	 * thought. */
+	/* EVERY RESULT ROW, FLAT, IN THE ORDER THEY ARE DRAWN: what the arrow keys walk, so "down"
+	 * means down across a section boundary too. */
 	const walk = $derived(
 		results.flatMap((group) => [
 			{
@@ -170,17 +149,15 @@
 
 	const active = $derived(cursor >= 0 ? walk[cursor] : undefined);
 
-	/*
-	 * The arrows and Enter, heard on the SLOT, since the list is this screen's and a box is a box.
-	 * Escape never arrives: the box swallows it, so one press does not also close Settings.
-	 */
+	/* The arrows and Enter, heard on the SLOT, since the list is this screen's and a box is a
+	 * box. */
 	function onSearchKeys(event: KeyboardEvent) {
 		if (!searching || walk.length === 0) return;
 		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
 			event.preventDefault();
 			const down = event.key === 'ArrowDown';
 			// From nowhere, down lands on the first and up lands on the last: the two ends a person
-			// means by those keys before anything is picked. Then it wraps.
+			// means by those keys before anything is picked.
 			cursor =
 				cursor < 0
 					? down
@@ -199,19 +176,14 @@
 		}
 	}
 
-	/*
-	 * Opening a result, as a person rather than as a preview: the box empties, so the section list
-	 * comes back rather than yesterday's search over it.
-	 */
+	/* Opening a result, as a person rather than as a preview: the box empties, so the section
+	 * list comes back rather than yesterday's search over it. */
 	function choose(section: string, key?: string, show?: string, name?: string) {
 		open(section, key, show, name);
 		typed = '';
 	}
 
-	/*
-	 * A settings path pasted into the box goes there immediately: the paste IS the choice. Typed by
-	 * hand, it is the one result, and Enter opens it.
-	 */
+	/* A settings path pasted into the box goes there immediately: the paste IS the choice. */
 	function onSearchPaste(event: ClipboardEvent) {
 		const text = event.clipboardData?.getData('text/plain') ?? '';
 		const crumbs = crumbsOf(text);
@@ -259,15 +231,12 @@
 </script>
 
 <div class="settings" class:showing-section={showingSection}>
-	<!--
-		Not a heading: the page's one h1 is the section's. Outside the nav, on a row of its own above
-		both columns, so the search box and the section's title start on one line.
-	-->
+	<!-- Not a heading: the page's one h1 is the section's. -->
 	<p class="title">Settings</p>
 
 	<!--
 		Above the list, as a way to a section you are NOT in (above the pane it would read as filtering
-		it). Its index is built once here, not per keystroke.
+		it).
 	-->
 	<!-- The keys are heard here (`onSearchKeys`); `role="none"`, a slot around the field. -->
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -284,9 +253,8 @@
 		<Scroller>
 			{#if searching}
 				<!--
-					What was found, gathered under the section each thing is on: a section is a row (pressing
-					it opens that pane), its finds indented under it without icons. Matched letters wear the
-					shared mark the search dropdown uses.
+					What was found, gathered under the section each thing is on: a section is a row
+					(pressing it opens that pane), its finds indented under it without icons.
 				-->
 				<nav class="results" aria-label="Search results">
 					{#if results.length === 0}
@@ -327,10 +295,9 @@
 															choose(entry.section, entry.key, entry.show, nameToFind(entry))}
 													>
 														<!--
-															The name and, for a row found by its HELP, the
-															sentence that matched, inside the one `found`
-															box (no flex gap). A row found by its name is
-															marked there already (`matchedIn`).
+															The name and, for a row found by its HELP,
+															the sentence that matched, inside the one
+															`found` box (no flex gap).
 														-->
 														<span class="found">
 															<MarkedText text={entry.name} {typed} />
@@ -397,9 +364,7 @@
 
 	<!-- A section, not a second <main>: the app shell already renders one around this. -->
 	<div class="pane-slot">
-		<!-- Only on a phone, where the list is More, so the way back is More's own address. OUTSIDE the
-		     scroller, a strip the section scrolls under, level with the panel's close at its other
-		     end. Wrapped, so the width rule reaches an element this file renders. -->
+		<!-- Only on a phone, where the list is More, so the way back is More's own address. -->
 		<div class="back-slot">
 			<BackButton to={SETTINGS_LIST_ON_A_PHONE.href} label={SETTINGS_LIST_ON_A_PHONE.label} />
 		</div>
@@ -459,12 +424,8 @@
 		min-inline-size: 0;
 	}
 
-	/*
-	 * Two columns, two scrollbars: one scroller around the shell would carry the section list off
-	 * screen. The shell is exactly as tall as its holder and each column scrolls itself, the frame
-	 * told not to (below). Only where both columns exist; below the breakpoint each screen scrolls
-	 * the ordinary way.
-	 */
+	/* Two columns, two scrollbars: one scroller around the shell would carry the section list
+	 * off screen. */
 	@media (min-width: 768px) {
 		.settings {
 			block-size: 100%;
@@ -475,26 +436,21 @@
 			align-items: stretch;
 		}
 
-		/*
-		 * And the title takes the same allowance as the list, so "Settings" and the section names share
-		 * one line: the column's ring allowance plus the row's own padding, written as that sum.
-		 */
+		/* And the title takes the same allowance as the list, so "Settings" and the section
+		 * names share one line: the column's ring allowance plus the row's own padding, written
+		 * as that sum. */
 		.title {
 			padding-inline-start: calc(var(--space-2) + var(--space-3));
 		}
 
-		/*
-		 * The pane ends where the shell's own padding ends, matching the panel's other margin; a
-		 * scrollbar is painted at its element's edge, so moving the bar means moving the pane.
-		 */
+		/* The pane ends where the shell's own padding ends, matching the panel's other margin; a
+		 * scrollbar is painted at its element's edge, so moving the bar means moving the pane. */
 		.pane {
 			padding-inline-end: 0;
 		}
 
-		/*
-		 * THE BOX LINES UP WITH THE ROWS UNDER IT: inset at the start by the list's ring allowance,
-		 * and at the end by the scrollbar's, so field and results share both edges.
-		 */
+		/* THE BOX LINES UP WITH THE ROWS UNDER IT: inset at the start by the list's ring
+		 * allowance, and at the end by the scrollbar's, so field and results share both edges. */
 		.search-slot {
 			padding-inline: var(--space-2) var(--space-3);
 			/* The pane's own top inset, from the same token, so box and section title start level. */
@@ -505,16 +461,15 @@
 		.results,
 		.pane {
 			min-block-size: 0;
-			/* A scrolling container clips a focus ring at its edge, so three sides get room; the end
-			   stays unpadded, or the scrollbar moves in from the panel edge. */
+			/* A scrolling container clips a focus ring at its edge, so three sides get room; the
+			   end stays unpadded, or the scrollbar moves in from the panel edge. */
 			padding-block: var(--space-2);
 			padding-inline-start: var(--space-2);
 		}
 
-		/*
-		 * The gutter the copy button stands in, left of every name on a pane (`PathCopy`): the scroller
-		 * reaches into the column gap by its width and the pane pads it back, so nothing is clipped.
-		 */
+		/* The gutter the copy button stands in, left of every name on a pane (`PathCopy`): the
+		 * scroller reaches into the column gap by its width and the pane pads it back, so
+		 * nothing is clipped. */
 		.pane-slot {
 			margin-inline-start: calc(-1 * (var(--space-6) + var(--space-1)));
 		}
@@ -523,11 +478,9 @@
 			padding-inline-start: calc(var(--space-2) + var(--space-6) + var(--space-1));
 		}
 
-		/*
-		 * A ROW STOPS SHORT OF THE SCROLLBAR RATHER THAN RUNNING UNDER IT: padding on the CONTENT
-		 * (`--space-3`, the sheet's gutter in `app.css`), since a margin would move the bar too. The pane
-		 * answers it its own way, below.
-		 */
+		/* A ROW STOPS SHORT OF THE SCROLLBAR RATHER THAN RUNNING UNDER IT: padding on the
+		 * CONTENT (`--space-3`, the sheet's gutter in `app.css`), since a margin would move the
+		 * bar too. */
 		.sections,
 		.results {
 			padding-inline-end: var(--space-3);
@@ -538,20 +491,17 @@
 			padding-inline-end: var(--space-4);
 		}
 
-		/*
-		 * The frame stops scrolling so the columns can, and drops its padding (the shell has its own):
-		 * which element scrolls is this screen's to say, aimed by `:has` at the frame holding settings.
-		 * Inside the media query, or a phone would clip a long section. `.settings .pane` for
-		 * specificity: one class would tie the layout's scoped `main` and lose to chunk load order.
-		 */
+		/* The frame stops scrolling so the columns can, and drops its padding (the shell has its
+		 * own): which element scrolls is this screen's to say, aimed by `:has` at the frame
+		 * holding settings. */
 		:global(main:has(.settings .pane)) {
 			padding: 0;
 			overflow: hidden;
 		}
 	}
 
-	/* No bottom margin: the grid's row gap is what holds the space under it, and a margin as well
-	   would push the list down past the section title it is meant to line up with. */
+	/* No bottom margin: the grid's row gap is what holds the space under it, and a margin as
+	   well would push the list down past the section title it is meant to line up with. */
 	.title {
 		margin: 0;
 		font: var(--text-display);
@@ -566,8 +516,8 @@
 	.heading {
 		margin: 0 0 var(--space-2);
 		padding-inline: var(--space-3);
-		/* Not a target. A heading that highlights under the pointer is a heading somebody tries to
-		   click, which is exactly the confusion between a group and a section this avoids. */
+		/* Not a target. A heading that highlights under the pointer is a heading somebody tries
+		   to click, which is exactly the confusion between a group and a section this avoids. */
 		cursor: default;
 		user-select: none;
 	}
@@ -581,8 +531,8 @@
 		gap: 2px;
 	}
 
-	/* One rule for both, so a row cannot look like a link on one screen and a button on the other.
-	   The button resets are what a button brings with it and an anchor does not. */
+	/* One rule for both, so a row cannot look like a link on one screen and a button on the
+	   other. */
 	nav :global(.item) {
 		position: relative;
 		/* Flex, so an item's icon and label share a line; a heading has no icon, which tells them apart. */
@@ -617,10 +567,9 @@
 		color: var(--sift-accent-text);
 	}
 
-	/*
-	 * The bar that says which section you are in, INSIDE the row's empty leading padding, since a
-	 * scrolling box clips anything drawn past its edge (the rule `app.css` records for focus rings).
-	 */
+	/* The bar that says which section you are in, INSIDE the row's empty leading padding, since
+	 * a scrolling box clips anything drawn past its edge (the rule `app.css` records for focus
+	 * rings). */
 	nav :global(.item.active::before) {
 		content: '';
 		position: absolute;
@@ -631,38 +580,33 @@
 		background: var(--sift-accent);
 	}
 
-	/*
-	 * Air between one section's results and the next, on the outer list only, so a group keeps the
-	 * list's 2px rhythm.
-	 */
+	/* Air between one section's results and the next, on the outer list only, so a group keeps
+	 * the list's 2px rhythm. */
 	.results > ul > li + li {
 		margin-block-start: var(--space-4);
 	}
 
-	/*
-	 * What was found ON a section, under it, with no indent of its own: one left edge down the column;
-	 * the section is told apart by its icon and accent.
-	 */
+	/* What was found ON a section, under it, with no indent of its own: one left edge down the
+	 * column; the section is told apart by its icon and accent. */
 	.results .under {
 		padding-inline-start: 0;
 	}
 
-	/* One name, whatever it is made of. See the markup: without it every marked run is a flex child
-	   of the row and wears the row's gap, which puts a hand's width inside a word. */
+	/* One name, whatever it is made of. See the markup: without it every marked run is a flex
+	   child of the row and wears the row's gap, which puts a hand's width inside a word. */
 	.results .found {
 		min-inline-size: 0;
 	}
 
-	/* The sentence that explains a row nothing else on it explains. Quieter than the name and on its
-	   own line, because it is the ANSWER to "why is this here" rather than a second name. */
+	/* The sentence that explains a row nothing else on it explains. */
 	.results .why {
 		display: block;
 		font: var(--text-body-sm);
 		color: var(--sift-ink-3);
 	}
 
-	/* Nothing matched. The sentence is `Empty`; only the INSET is this screen's, so that the line
-	   starts where a row's label starts rather than hard against the edge. */
+	/* Nothing matched. The sentence is `Empty`; only the INSET is this screen's, so that the
+	   line starts where a row's label starts rather than hard against the edge. */
 	.results .no-match {
 		padding: var(--space-2) var(--space-3);
 	}
@@ -684,8 +628,8 @@
 	}
 
 	@media (max-width: 767px) {
-		/* The strip at the top of a section: the way back at its start, the panel's close over its end;
-		   a finger's height, so the two stand level. */
+		/* The strip at the top of a section: the way back at its start, the panel's close over
+		   its end; a finger's height, so the two stand level. */
 		.back-slot {
 			display: flex;
 			flex: none;
@@ -694,10 +638,9 @@
 			padding-inline-end: calc(var(--touch-target) + var(--space-2));
 		}
 
-		/*
-		 * A phone scrolls the SECTION, as the wide layout does: the panel is the whole screen and clips,
-		 * so the shell takes its height and the section's scroller takes what the strip leaves.
-		 */
+		/* A phone scrolls the SECTION, as the wide layout does: the panel is the whole screen
+		 * and clips, so the shell takes its height and the section's scroller takes what the
+		 * strip leaves. */
 		.settings {
 			block-size: 100%;
 			min-block-size: 0;
@@ -706,15 +649,15 @@
 		.pane-slot {
 			display: flex;
 			flex-direction: column;
-			/* Filling its row, not as tall as its content: the grid sets every cell to the top (see
-			   the wide layout's `stretch`, which is the same answer to the same question). */
+			/* Filling its row, not as tall as its content: the grid sets every cell to the top
+			   (see the wide layout's `stretch`, which is the same answer to the same question). */
 			align-self: stretch;
 		}
 
 		.pane-slot > :global(.scroll-root) {
 			flex: 1 1 0;
-			/* The bar at the screen's edge, not over the ends of lines: the scroller reaches out through
-			   the inset and the section pads it back, on both sides. */
+			/* The bar at the screen's edge, not over the ends of lines: the scroller reaches out
+			   through the inset and the section pads it back, on both sides. */
 			margin-inline: calc(-1 * (var(--space-4) + var(--safe-left)))
 				calc(-1 * (var(--space-4) + var(--safe-right)));
 		}
@@ -732,8 +675,8 @@
 
 		.settings {
 			grid-template-columns: minmax(0, 1fr);
-			/* One column, one of the last two rows filled; every area named, or an element would be
-			   placed at `auto`. */
+			/* One column, one of the last two rows filled; every area named, or an element would
+			   be placed at `auto`. */
 			grid-template-areas:
 				'title'
 				'search'
@@ -741,8 +684,8 @@
 				'pane';
 			grid-template-rows: auto auto auto minmax(0, 1fr);
 			gap: 0;
-			/* The screen's edges, less what the phone draws over them: the notch at the top or at a
-			   side when it is turned. No foot: the section scrolls to the glass (see `.pane`). */
+			/* The screen's edges, less what the phone draws over them: the notch at the top or
+			   at a side when it is turned. */
 			padding: calc(var(--space-4) + var(--safe-top)) calc(var(--space-4) + var(--safe-right)) 0
 				calc(var(--space-4) + var(--safe-left));
 		}
@@ -762,8 +705,7 @@
 			display: none;
 		}
 
-		/* The screen's name goes with the list it names. On a section, the section's own h1 and the
-		   Back link above it say where you are, and a second title over them says it twice. */
+		/* The screen's name goes with the list it names. */
 		.settings.showing-section .title {
 			display: none;
 		}

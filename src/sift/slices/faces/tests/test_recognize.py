@@ -1,11 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Turning one aligned face into numbers, and comparing two of them.
-
-The two families want their pictures presented differently (one centred around zero, one raw),
-and handing a model the other family's arrangement does not fail. It quietly produces numbers that
-match nothing, which is why the arrangement is part of each model's description rather than a
-default with an override.
-"""
+"""Turning one aligned face into numbers, and comparing two of them; each family's pixel
+arrangement is part of its description, as the wrong one quietly matches nothing."""
 
 from __future__ import annotations
 
@@ -47,15 +42,13 @@ def a_chip(value: int = 200) -> np.ndarray:
 
 
 def test_a_description_comes_back_at_unit_length() -> None:
-    """Which is what makes comparing two of them a single multiply-and-add, and makes the answer
-    run from -1 to 1 regardless of how confident the model happened to be."""
+    """Unit length makes comparing one multiply-and-add, from -1 to 1."""
     runner = Canned(np.array([3.0, 4.0], dtype=np.float32))
 
     described = Recognizer(runner, loaded_for("accurate")).embed(a_chip())  # type: ignore[arg-type]
 
     assert described.vector == pytest.approx((0.6, 0.8))
-    # And the length that scaling threw away comes back beside it rather than being lost in the
-    # same expression that used it. 3-4-5.
+    # And the length scaling threw away comes back beside it. 3-4-5.
     assert described.strength == pytest.approx(5.0)
 
 
@@ -71,12 +64,7 @@ def test_a_model_that_describes_a_face_as_nothing_is_left_alone_rather_than_divi
 
 
 def test_how_firmly_a_model_answered_becomes_a_nought_to_one_term() -> None:
-    """A ramp between two measured ends, flat outside them.
-
-    Below the floor there is nothing left to rank (a picture that is not of a face is not more or
-    less not-a-face), and above the ceiling an ordinary face is already ordinary. The interesting
-    part is the stretch between, which is where the ranking happens.
-    """
+    """A ramp between two measured ends, flat outside them."""
     ramp = (14.0, 21.0)
 
     assert recognisability(10.0, ramp) == 0.0
@@ -87,12 +75,7 @@ def test_how_firmly_a_model_answered_becomes_a_nought_to_one_term() -> None:
 
 
 def test_a_family_nobody_has_calibrated_gets_no_term_at_all() -> None:
-    """Rather than the floor and ceiling of the family that HAS been measured.
-
-    The length is one model's own scale. Borrowing another model's ends would not be an
-    approximation, it would be a threshold about a different quantity, and it would silently
-    demote real faces on whichever family was not the one measured.
-    """
+    """Another model's ends would be a threshold about a different quantity."""
     assert recognisability(3.0, None) == 1.0
     assert recognisability(300.0, None) == 1.0
     runner = Canned(np.array([3.0, 4.0], dtype=np.float32))
@@ -102,9 +85,7 @@ def test_a_family_nobody_has_calibrated_gets_no_term_at_all() -> None:
 
 
 def test_a_model_that_answered_nothing_at_all_is_not_ranked_last_for_it() -> None:
-    """Zero is what a face carries when nothing measured it (every face found before this
-    existed), and it has to read as "no evidence" rather than as the worst possible evidence, or
-    one upgrade would push a whole library's faces below anything scanned since."""
+    """Zero is "nothing measured it", not the worst evidence."""
     assert recognisability(0.0, (14.0, 21.0)) == 1.0
     assert recognisability(-1.0, (14.0, 21.0)) == 1.0
 
@@ -133,8 +114,7 @@ class Batched:
 
 
 def test_a_files_faces_are_described_in_one_run_of_the_model() -> None:
-    """What makes the card do in one pass what would otherwise take thirty. The point of the test
-    is the COUNT: one ask, not one per face."""
+    """The point is the count: one ask, not one per face."""
     runner = Batched(np.array([[3.0, 4.0], [0.0, 5.0], [5.0, 0.0]], dtype=np.float32))
 
     described = Recognizer(runner, loaded_for("accurate")).embed_many(  # type: ignore[arg-type]
@@ -151,8 +131,7 @@ def test_a_files_faces_are_described_in_one_run_of_the_model() -> None:
 
 
 def test_each_face_gets_its_own_answer_and_they_stay_in_order() -> None:
-    """A batch that handed every face the first answer would look exactly like a working one from
-    outside, and would put one person's numbers on everybody in the file."""
+    """A batch that handed every face the first answer would look like a working one."""
     runner = Batched(np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
     recognizer = Recognizer(runner, loaded_for("accurate"))  # type: ignore[arg-type]
 
@@ -170,9 +149,7 @@ def test_each_face_gets_its_own_answer_and_they_stay_in_order() -> None:
 
 
 def test_a_model_that_will_not_read_a_batch_is_refused_rather_than_repeated() -> None:
-    """The failure this has to make loud. A model exported at batch one answers ONE description
-    however many faces it is handed, and taking that first row for all of them would describe
-    every face in the file as the first one, silently, and stored for ever."""
+    """A model exported at batch one would describe every face as the first: refused loudly."""
     runner = Canned(np.array([3.0, 4.0], dtype=np.float32))
 
     with pytest.raises(ValueError, match="does not read a batch"):

@@ -1,14 +1,6 @@
 <script lang="ts">
-	/* Settings > Faces: the people a facial fingerprints file or a folder brought whom no face in
-	 * the library matches yet. Listed so they can be seen at all, each with how many faces, the file
-	 * or folder and when, and the two answers a person can give now: Create a person, or Remove.
-	 *
-	 * Shaped as People Sift can recognize is, just above it: the same box filtering the list as
-	 * you type, the count, and the list in a scroll of its own capped at that list's height, so a
-	 * file of five hundred people is one scroll among the rows rather than the pane growing by all
-	 * of them. The whole list is read in one go (the route holds no pages), so the box narrows what
-	 * is held rather than asking again.
-	 */
+	/* Settings > Faces: the people a facial fingerprints file or a folder brought whom no face
+	 * in the library matches yet. */
 	import { goto } from '$app/navigation';
 	import { Button, ConfirmDialog, Empty, NarrowBox, Scroller } from '$lib/components/common';
 	import { ApiError } from '$lib/api/client';
@@ -178,14 +170,12 @@
 	}
 
 	/* The cap on the box that SCROLLS, which the shared region draws, hence `:global`; the same
-	   height as the list of People Sift can recognize above. See `Faces.svelte`. */
+	   height as the list of People Sift can recognize above. */
 	.held-box :global(.scroll-root) {
 		max-block-size: var(--settings-list-cap);
 	}
 
-	/* The name and its line on the left, the two presses on the right. The padding is the room a
-	   press's focus ring needs inside the scroller, which clips at its edge, and the inset the list
-	   above starts its names at, so the two lists' names stand on one edge. */
+	/* The name and its line on the left, the two presses on the right. */
 	.held {
 		margin: 0;
 		padding: var(--space-1) var(--space-3) var(--space-1) var(--space-2);
@@ -195,8 +185,8 @@
 		gap: var(--space-2);
 	}
 
-	/* Wrapping where the row is too narrow for both halves: the presses then take a line of their
-	   own, still at its end. */
+	/* Wrapping where the row is too narrow for both halves: the presses then take a line of
+	   their own, still at its end. */
 	.held li {
 		display: flex;
 		flex-wrap: wrap;

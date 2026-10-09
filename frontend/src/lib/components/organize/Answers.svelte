@@ -15,10 +15,7 @@
 		disabled?: boolean;
 	}
 
-	/**
-	 * An affirmative that opens a chooser rather than acting: "Add as person" needs somebody picked
-	 * before anything can be written, so the button opens the picker in place.
-	 */
+	/** An affirmative that opens a chooser first ("Add as person"). */
 	export interface Door {
 		label: string;
 		icon?: IconName;
@@ -36,18 +33,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * The answers to one question on Organize, in the one shape every question wears.
-	 *
-	 * The affirmative is the button, and every other answer sits behind the chevron joined to it.
-	 * The question already carries the count and the name, so the button has one word to say and
-	 * the rest are a menu away rather than a second and third button that change size from card to
-	 * card. A question with a single answer draws that answer alone. An affirmative that needs a
-	 * choice first (a `Door`) opens it from the same button.
-	 *
-	 * At the end of its row, pushed to the foot of whatever holds it, so a row of cards or a list of
-	 * rows has its answers on one line whatever the pictures above them did.
-	 */
+	/* The answers to one Organize question: the affirmative is the button, the rest behind its
+	 * chevron, at the end of the row and the foot of what holds it. */
 	import {
 		Button,
 		ContextMenuGroup,
@@ -76,13 +63,7 @@
 	const act = $derived('menu' in yes ? null : yes);
 </script>
 
-<!--
-	The other answers, in their parts, a line between one part and the next: the answers decided
-	here, in the order the question reads them; then the ones that go somewhere to look first (the
-	forward arrow is what says a row goes, so the part and the glyph cannot disagree); and last,
-	alone, any answer that destroys something. A part with no answers is not drawn, so its line
-	never separates nothing.
--->
+<!-- The other answers in parts: decided here, then those that go somewhere, then destructive. -->
 {#snippet others()}
 	{@const destroys = rest.filter((one) => one.destructive)}
 	{@const goes = rest.filter((one) => !one.destructive && one.icon === 'arrow_forward')}
@@ -158,10 +139,9 @@
 </div>
 
 <style>
-	/* At the end of the row and at the foot of whatever holds it: `margin-block-start: auto` does
-	   nothing in a row and pushes the answers down in a column, so one rule serves both. Inside an
-	   Organize card they start the line instead: the card says so (`DecisionCard`,
-	   `--card-actions-justify`), so the side is decided in one place for every card. */
+	/*
+	 * At the row's end and the foot of its holder; inside a card, `--card-actions-justify` decides.
+	 */
 	.answers {
 		display: flex;
 		justify-content: var(--card-actions-justify, flex-end);

@@ -20,17 +20,20 @@ import pytest
 from sift.kernel.config import Settings
 from sift.kernel.content import LibraryStore
 from sift.kernel.db import Database
+from sift.slices.backup import naming
 from sift.slices.backup import service as backup_service
+from sift.slices.backup.naming import (
+    filename_for,
+    is_backup_filename,
+    moment_in_name,
+    the_backup_from,
+)
 from sift.slices.backup.service import (
     FOLDER_KEY,
     INCLUDE_DETECTED_KEY,
     KEEP_KEY,
     BackupService,
     DestinationRefused,
-    filename_for,
-    is_backup_filename,
-    moment_in_name,
-    the_backup_from,
 )
 from sift.slices.backup.tests.conftest import a_full_path, database_in
 from sift.slices.settings_hub import SettingsService
@@ -463,7 +466,7 @@ def test_rotation_orders_by_the_moment_not_the_spelling(
     first = Path(f"sift-backup-{_MINE}-20261101-013000-0400-0.1.211.zip")
     second = Path(f"sift-backup-{_MINE}-20261101-011000-0500-0.1.211.zip")
     assert sorted([second, first]) == [second, first]
-    assert sorted([second, first], key=backup_service._by_age) == [first, second]
+    assert sorted([second, first], key=naming._by_age) == [first, second]
 
 
 def test_the_name_sorts_by_age() -> None:
@@ -557,7 +560,7 @@ def test_a_backup_being_packed_is_not_listed_until_it_is_whole(
     files_under = backup_service._files_under
 
     def watching(path: Path) -> list[Path]:
-        listed = backup_service._unmarked_in(folder, mark)
+        listed = naming._unmarked_in(folder, mark)
         listed_while_packing.append([one.name for one in listed])
         return files_under(path)
 
@@ -567,7 +570,7 @@ def test_a_backup_being_packed_is_not_listed_until_it_is_whole(
     backup_service._pack(destination, snapshot, carried, {})
 
     assert listed_while_packing == [[]]
-    assert [one.name for one in backup_service._unmarked_in(folder, mark)] == [destination.name]
+    assert [one.name for one in naming._unmarked_in(folder, mark)] == [destination.name]
     assert sorted(entry.name for entry in folder.iterdir()) == [destination.name]
 
 

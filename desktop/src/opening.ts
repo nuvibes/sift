@@ -1,10 +1,6 @@
-/* The window on screen immediately: Sift's own frame in the saved theme, drawn by the shell's copy of the
- * client in a view laid over the real page while that one loads, and taken away once the real page
- * says it has painted. Both draw the same frame in the same theme, so nothing flashes between them.
- *
- * What is kept between starts is the theme and the canvas colour, never a picture of the screen: a
- * picture would show the library before the password, from a file anyone at the computer can open.
- */
+/* The window on screen immediately: Sift's own frame in the saved theme, drawn by the shell's
+ * copy of the client in a view laid over the real page while that one loads, and taken away once
+ * the real page says it has painted. */
 
 import { app, WebContentsView, type BrowserWindow } from 'electron';
 import * as fs from 'node:fs';

@@ -1,39 +1,4 @@
-/*
- * One settings sub-page at a time, and who owns which settings.
- *
- * ## What a drill-in is
- *
- * A group of settings that answer one question gets ONE control on the pane ("For every field:
- * Fill in what is missing"), and an Edit that replaces the pane with a page holding all of them,
- * with a way back. It is the shape a game's graphics menu uses, and the reason is arithmetic: the
- * stash-box rules are forty-three settings, and a pane that draws forty-three three-way menus is a
- * pane nobody reads a single row of.
- *
- * ## Why the state is here and not in the group
- *
- * Because what has to change is the PANE, and the group is inside it. Seven groups each reaching
- * out to replace their own pane would be seven copies of the same logic and seven chances for a
- * back arrow to behave differently. `SettingsPane` reads this and draws one thing or the other, so
- * the mechanism exists once and every pane has it without knowing.
- *
- * ## Why the open pane is HIDDEN rather than unmounted
- *
- * The sub-page's content is a snippet belonging to the component that declared it. Unmount that
- * component and the snippet goes with it, taking the rows, their loaded values and anything
- * half-typed. So the pane stays mounted and is hidden with `display: none`, which also takes it out
- * of the tab order and out of the accessibility tree. See `SettingsPane`.
- *
- * ## Why a group declares the KEYS it owns
- *
- * So a deep link still works. `/settings/stash-boxes#enrich.person.name` names a setting that is
- * now one level down, and `$lib/settings-ui/settings-anchor` has no way to know that. It asks here, the group
- * that owns the key opens itself, and the hunt for the row then finds it on the sub-page.
- *
- * It is the register of WHATEVER HIDES A ROW, not only of sub-pages. A fold that draws its rows
- * only while it is open (a Details block, a mode) claims its keys here with the call that opens
- * it, and a deep link then opens it the same way. (A native `<details>` needs nothing: its rows are
- * in the document while it is shut, and the hunt opens it itself.)
- */
+/* One settings sub-page at a time, and who owns which settings. */
 
 import type { Snippet } from 'svelte';
 
@@ -62,12 +27,7 @@ class Drilldown {
 		this.door = null;
 	}
 
-	/**
-	 * Claim a set of setting keys, and say how to open the page they are on.
-	 *
-	 * Returns the release, for `onDestroy`. A group that unmounted without releasing would leave a
-	 * closure over a dead component behind, and the next deep link would call it.
-	 */
+	/** Claim a set of setting keys, and say how to open the page they are on. */
 	own(keys: readonly string[], open: () => void): () => void {
 		for (const key of keys) this.#owners.set(key, open);
 		return () => {
@@ -77,12 +37,8 @@ class Drilldown {
 		};
 	}
 
-	/**
-	 * Claim every key on a SECTION that nothing claims by name, and say how to open the place they
-	 * are drawn. For a pane of tabs whose first tab draws rows it cannot list ahead of time (one per
-	 * task, from the server): a link to one of them, followed while another tab is showing, opens
-	 * that tab, and the hunt then finds the row the ordinary way.
-	 */
+	/** Claim every key on a SECTION that nothing claims by name, and say how to open the place
+	 * they are drawn. */
 	ownSection(section: string, open: () => void): () => void {
 		this.#sections.set(section, open);
 		return () => {
@@ -103,17 +59,8 @@ class Drilldown {
 
 export const drilldown = new Drilldown();
 
-/**
- * The keys a pane's search declaration files on one of its sub-pages: the rows the page draws by
- * hand, which the registry knows nothing about.
- *
- * Read from the declaration rather than listed again beside the page. A row drawn on a sub-page
- * has to be in the settings index (or a search and a pasted path cannot find it) and has to be
- * claimed by the page (or a deep link to it stops at the pane), and those are one fact: the entry
- * says which page the row is on, and the page claims whatever says it. A second list is the one
- * that gets forgotten. `test_every_settings_sub_page_row_can_be_found.py` holds each row drawn on a page to
- * an entry filed under that page's title.
- */
+/** The keys a pane's search declaration files on one of its sub-pages: the rows the page draws by
+ * hand, which the registry knows nothing about. */
 export function filedUnder(
 	declared: readonly { key?: string; name?: string; page?: string }[],
 	page: string
@@ -125,11 +72,8 @@ export function filedUnder(
 	});
 }
 
-/**
- * What a page claims for a thing it draws that has a name and no key: a heading over a group, a
- * card, a row drawn by hand. A result naming one opens the page through the same claim a key does
- * (`Drilldown.own`), and the name is then looked for on it.
- */
+/** What a page claims for a thing it draws that has a name and no key: a heading over a group, a
+ * card, a row drawn by hand. */
 export function byName(name: string): string {
 	return `name:${name.trim().toLowerCase()}`;
 }

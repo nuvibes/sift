@@ -1,24 +1,6 @@
 <script lang="ts">
-	/* Playback: what happens when you open a video, and what this device will do to make it play,
-	 * and, as a group of its own, what a Theater wall starts as.
-	 *
-	 * Volume, muting and how a clip ends are NOT here, though they are stored: the player
-	 * writes them as you use it and reads them back when you open the next video. A second
-	 * control on this screen would be one preference with two places to set it and no way to tell
-	 * which one you last used. The volume rocker and the repeat button are where those live.
-	 *
-	 * The conversion ceiling at the bottom is the install's rather than yours, so a guest is not
-	 * sent it and the pane simply draws one row fewer.
-	 *
-	 * ## Theater, folded in
-	 *
-	 * Theater's four rows are starting points rather than rules (the layout, what brings a
-	 * preview into focus, whether cells start playing and when a cell moves on are all changed
-	 * per cell on the wall itself), and a person asking "how does Theater start" looks on the
-	 * pane about playing things. An address naming the Theater section lands here, ringing the
-	 * row it named: see `MOVED_TO` in `sections.ts`. Volume is absent for the reason it is absent
-	 * above: a cell has its own control.
-	 */
+	/* Playback: what happens when you open a video, and what this device will do to make it
+	 * play, and, as a group of its own, what a Theater wall starts as. */
 	import { onMount } from 'svelte';
 	import { LabelledRow, Problem, Select, Skeleton, Switch } from '$lib/components/common';
 	import { Destinations } from '$lib/library/destinations.svelte';
@@ -41,24 +23,18 @@
 	const panel = new SettingsPanel();
 
 	const BLOCKS: SettingBlock[] = [
-		/* The pair, together: one says whether a place is kept at all and the other says for which
-		   videos, and reading either alone leaves the question the other answers. The second is
-		   greyed out while the first is off, because a length threshold for something that is not
-		   happening is a control that cannot do anything. */
+		/* The pair, together: one says whether a place is kept at all and the other says for
+		   which videos, and reading either alone leaves the question the other answers. */
 		{
 			keys: ['playback.resume_enabled', 'playback.resume_minimum_seconds'],
 			dependsOn: { 'playback.resume_minimum_seconds': 'playback.resume_enabled' }
 		},
 		{ keys: ['playback.dwell_pictures', 'playback.max_transcode_height'] },
-		/* What the converting costs in disk, beside what it costs in quality. A setting
-		   reachable only through an environment variable is, on an application somebody
-		   installs, not reachable at all. */
+		/* What the converting costs in disk, beside what it costs in quality. */
 		{ keys: ['playback.cache_max_gb'] }
 	];
 
-	/* What a screenshot does, taken from the player's drawer: copied, or saved into the library.
-	   The folder a saved one goes to is drawn by hand below, as the list of the library's folders:
-	   it is a folder, chosen, never a path typed into a box. */
+	/* What a screenshot does, taken from the player's drawer: copied, or saved into the library. */
 	const SCREENSHOTS: SettingBlock[] = [
 		{ heading: COPY.screenshots, keys: ['playback.screenshot'] }
 	];
@@ -88,8 +64,7 @@
 	);
 
 	/* Theater's rows, as one group under its own heading, LAST: one video first, then the popout
-	   it plays in, then the phone that can drive either, then the wall of several. `center_stage` is drawn here as well as on a wall's
-	   cell, so its search result opens a pane that has it. */
+	   it plays in, then the phone that can drive either, then the wall of several. */
 	const THEATER: SettingBlock[] = [
 		{
 			heading: COPY.theater,
@@ -100,20 +75,20 @@
 				'theater.timer_seconds',
 				'theater.resume'
 			],
-			/* The default layout is the Layouts chooser on the wall, so it draws each shape as the
-			   wall's own chooser does, from the same glyph. */
+			/* The default layout is the Layouts chooser on the wall, so it draws each shape as
+			   the wall's own chooser does, from the same glyph. */
 			pictures: { 'theater.layout': layoutPicture },
 			tooltips: { 'theater.layout': (value) => layout(value).tooltip }
 		}
 	];
 
-	/* This account's own answer rather than a registry setting, which is why it is read here and not
-	   through `panel`: it lives in the interface document beside the popout's other preference. Read
-	   once on arrival, and the switch below is the only writer while the pane is open. */
+	/* This account's own answer rather than a registry setting, which is why it is read here and
+	   not through `panel`: it lives in the interface document beside the popout's other
+	   preference. */
 	let toMini = $state(true);
 
 	/* Whether this page is Sift's own app, which offers what it plays to the phone whatever the
-	   switch says (`screenOffer`). Asked once: a page does not move between the app and a browser. */
+	   switch says (`screenOffer`). */
 	const inTheApp = bridge.isDesktop();
 
 	onMount(() => {
@@ -159,9 +134,7 @@
 		</SettingGroup>
 	{/if}
 
-	<!-- The popout, which is where a video is actually watched. Under Playback rather than under a
-	     heading of its own because it is about what happens to what is PLAYING, which is this pane's
-	     whole subject, and one row does not earn a door in the rail. -->
+	<!-- The popout, which is where a video is actually watched. -->
 	<SettingGroup heading={COPY.popout}>
 		<LabelledRow
 			id="playback.popout.leave_to_mini"

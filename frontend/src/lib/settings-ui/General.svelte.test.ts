@@ -1,13 +1,5 @@
-/* General: what the application does on this device, each row drawn only where the shell answers,
- * and the choices about the whole app that belong to no one feature.
- *
- * What is decided here and nowhere else: in a browser the pane says where the device rows are
- * rather than leaving a gap, the confirmations are drawn everywhere, the way back to setup and the
- * restart are offered only where the shell can do them, and the "Start Sift when Windows starts"
- * row reads and writes
- * through the shell's login-item verb: absent until a shell has that verb, and never drawn
- * before the shell has answered (a switch showing "off" while the question is in flight says the
- * wrong thing first). */
+/* General: what the application does on this device, each row drawn only where the shell
+ * answers, and the choices about the whole app that belong to no one feature. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -52,8 +44,8 @@ vi.mock('$lib/shell/interface-state.svelte', () => ({
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show } }));
 
 /* The computer running Sift is asked about from another computer only; this file is about this
-   device's own rows, so the server answers that it cannot be asked (`General.server.svelte.test.ts`
-   draws the other case). */
+   device's own rows, so the server answers that it cannot be asked
+   (`General.server.svelte.test.ts` draws the other case). */
 vi.mock('$lib/desktop/server-shell', () => ({
 	offersServer: () => false,
 	readServerDesktop: async () => null,
@@ -127,8 +119,8 @@ it('is not drawn by a shell that cannot answer it', async () => {
 	expect(host.textContent).not.toContain(COPY.inABrowser);
 });
 
-/* The confirmations are about the whole app, so they are drawn in a browser as much as in the app,
-   under the row ids they had on Editing, so an old link still rings them. */
+/* The confirmations are about the whole app, so they are drawn in a browser as much as in the
+   app, under the row ids they had on Editing, so an old link still rings them. */
 it('draws the two confirmations everywhere, under their old addresses', async () => {
 	canStartWithWindows.mockReturnValue(false);
 
@@ -154,8 +146,7 @@ it('offers setup again, and says what pressing it does', async () => {
 	expect(show).toHaveBeenCalledWith(COPY.again.done, { tone: 'success' });
 });
 
-/* Restart follows Run setup again, and only where the shell can restart itself. A window onto a
-   library elsewhere can forget its mode but not close this app, so there it says what to do. */
+/* Restart follows Run setup again, and only where the shell can restart itself. */
 it('restarts through the shell where it can, and says to reopen Sift where it cannot', async () => {
 	canForgetMode.mockReturnValue(true);
 	canRestartApp.mockReturnValue(true);

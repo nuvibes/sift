@@ -1,12 +1,4 @@
-/* Whether a folder sits on a drive this computer reaches over the network.
- *
- * The library's database runs in write-ahead-log mode, which SQLite documents as unsupported on a
- * network filesystem: the shared-memory file behind it is not shared across machines, and a
- * second writer (or one machine's own two connections, over some servers) corrupts the
- * database silently. So the DATA folder is refused on a network drive, with a sentence, before
- * the backend is started on it. A network folder is a fine place for the media; that is what the
- * library roots are for.
- */
+/* Whether a folder sits on a drive this computer reaches over the network. */
 
 import { execFile } from 'node:child_process';
 
@@ -37,13 +29,8 @@ const askWindows: DriveKindAsker = (letter) =>
 export const KEEP_IT_HERE =
 	"Sift keeps its library on this device's own drive. A network folder can hold your photos and videos; the database that describes them has to stay here.";
 
-/**
- * Whether the folder is on a network drive: a UNC path, or a drive letter Windows calls `Network`.
- *
- * A kind that could not be asked reads as not remote. The refusal exists to stop a database being
- * put where it will be corrupted, and a PowerShell that does not answer is not evidence of that;
- * refusing every folder when it fails would lock somebody out of first run over a policy setting.
- */
+/** Whether the folder is on a network drive: a UNC path, or a drive letter Windows calls
+ * `Network`. */
 export async function isRemoteDrive(target: string, ask: DriveKindAsker = askWindows): Promise<boolean> {
 	if (target.startsWith('\\\\') || target.startsWith('//')) return true;
 	const letter = /^([A-Za-z]):/.exec(target)?.[1];

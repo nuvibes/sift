@@ -1,15 +1,4 @@
-/* The sweep watcher, which has to survive the screen that started it.
- *
- * Held on a settings pane, the bar and the count would vanish the moment somebody clicked away
- * and come back to nothing when they returned, while the scanning carried on the whole time.
- * The screen would really be reporting that it had stopped looking.
- *
- * So what is under test is picking a run up rather than drawing one: that a sweep still queueing
- * is found, that a sweep whose queueing has finished but whose scans are still going is ALSO
- * found (the state somebody reopening the screen is most likely to arrive in), that a finished
- * run is not, and that the run is identified by the job it started from rather than by whichever
- * page happens to be newest.
- */
+/* The sweep watcher, which has to survive the screen that started it. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,9 +24,7 @@ function sweepPage(id: string, state: string, at: number, parent: string | null 
 	return { id, parent_id: parent, state, created_at: at, note: null };
 }
 
-/* The two routes `resume` reads, answered by what each query asks for. Written as one router
- * rather than a queue of replies, because the order the calls go out in is the implementation's
- * business and a test that pins it fails on a refactor that changed nothing. */
+/* The two routes `resume` reads, answered by what each query asks for. */
 function answering(options: { sweeps: ReturnType<typeof sweepPage>[]; scansWaiting?: number }) {
 	mocked.get.mockImplementation((path: string, init?: { query?: Record<string, unknown> }) => {
 		const query = init?.query ?? {};
@@ -73,8 +60,7 @@ describe('picking up a sweep that is already running', () => {
 	it('follows a run that has finished queueing while its scans carry on', async () => {
 		/* The state somebody reopening the screen is most likely to arrive in, and the easy one
 		 * to get wrong: no sweep job is working, so "is a sweep running" reads as no, and the
-		 * hours of actual scanning would have nothing on screen at all.
-		 */
+		 * hours of actual scanning would have nothing on screen at all. */
 		answering({
 			sweeps: [sweepPage('page-2', 'done', 200, 'page-1'), sweepPage('page-1', 'done', 100, null)],
 			scansWaiting: 412
@@ -122,10 +108,7 @@ describe('picking up a sweep that is already running', () => {
 
 describe('saying roughly how long is left', () => {
 	it('rounds to what somebody would plan around', () => {
-		/* Deliberately vague. The number behind it is a rate over the last minute and the files
-		 * ahead are not the files behind, so "19 minutes 4 seconds" is the same guess wearing three
-		 * digits of invented precision, and it is worse for being precise, because it reads as a
-		 * promise. */
+		/* Deliberately vague. */
 		expect(describeWait(20)).toBe('under a minute left');
 		expect(describeWait(59)).toBe('under a minute left');
 		expect(describeWait(60)).toBe('a few minutes left');
@@ -143,9 +126,8 @@ describe('saying roughly how long is left', () => {
 
 describe('what a failure says', () => {
 	it('drops the exception class the queue records in front of the message', async () => {
-		/* The queue stores the class name and the message, which is what an admin reading the jobs
-		 * dashboard wants. Here it is the sentence somebody is being asked to act on, and opening it
-		 * by naming a Python class at somebody whose library has no faces in it explains nothing. */
+		/* The queue stores the class name and the message, which is what an admin reading the
+		 * jobs dashboard wants. */
 		mocked.get.mockImplementation((path: string, init?: { query?: Record<string, unknown> }) => {
 			const query = init?.query ?? {};
 			if (query.state === 'failed' && query.limit === 1 && query.parent_id === undefined) {
@@ -163,26 +145,14 @@ describe('what a failure says', () => {
 	});
 });
 
-/*
- * What a run that was switched off halfway says when it ends.
- *
- * The bar itself is sound: it is drawn from how many scans are QUEUED OR RUNNING, which is the
- * queue and not a count of files left to do, so it drains to nothing and the watcher stops. The
- * sentence at the end is the risk. Switching recognition off does not cancel what is already
- * queued; every one of those scans runs, checks the switch, finds it off, and finishes having done
- * nothing. The queue empties exactly as it would after a real run, and a toast saying the library
- * had been gone through would be false.
- */
+/* What a run that was switched off halfway says when it ends. */
 describe('what is said when a run ends', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		sweep.stopped();
 	});
 
-	/** Follow a run, let one tick pass, and hand back whatever was announced.
-	 *
-	 *  `queued` is how many files the run really put through, which is what the server's own count
-	 *  of the run's children answers. Zero is a run that found nothing needing a look. */
+	/** Follow a run, let one tick pass, and hand back whatever was announced. */
 	async function ranToTheEnd(options: {
 		enabled: boolean;
 		note?: string | null;
@@ -199,8 +169,7 @@ describe('what is said when a run ends', () => {
 			if (path === '/faces/settings') return Promise.resolve({ enabled: options.enabled });
 			const query = init?.query ?? {};
 			if (query.type === 'face_sweep') return Promise.resolve({ jobs: [page] });
-			// The run's children: how many files it queued. `failed` is asked for separately and is
-			// none of them here.
+			// The run's children: how many files it queued.
 			if (query.type === 'face_scan' && query.state === undefined) {
 				return Promise.resolve({ jobs: [], total: options.queued ?? 0 });
 			}
@@ -228,15 +197,8 @@ describe('what is said when a run ends', () => {
 	});
 
 	it('says what the run DID, not what it was about to do', async () => {
-		/*
-		 * Not the sweep's own note, which is about QUEUEING and is written the moment the walk over
-		 * the library finishes, while every one of those scans is still to run. Read out at the
-		 * other end, once the queue has drained, it would announce forty files as about to be
-		 * scanned at the moment the last of them had been scanned.
-		 *
-		 * The note itself is not wrong; it is the right sentence on the Jobs screen, beside a sweep
-		 * that is still queueing. It is the wrong sentence here.
-		 */
+		/* Not the sweep's own note, which is about QUEUEING and is written the moment the walk
+		 * over the library finishes, while every one of those scans is still to run. */
 		const said = await ranToTheEnd({
 			enabled: true,
 			note: '40 files queued to scan.',
@@ -254,8 +216,8 @@ describe('what is said when a run ends', () => {
 	});
 
 	it('lets the sweep speak for a run that found nothing to do', async () => {
-		/* The one case where the sweep's own sentence is the right one out here: it is already in
-		   the past tense, and it names the reason (the settings), which nothing at this end
+		/* The one case where the sweep's own sentence is the right one out here: it is already
+		   in the past tense, and it names the reason (the settings), which nothing at this end
 		   knows. */
 		const said = await ranToTheEnd({
 			enabled: true,
@@ -278,8 +240,7 @@ describe('what is said when a run ends', () => {
 
 	it('still announces the ending when the settings answer cannot be read', async () => {
 		/* A settings read that fails must not turn a completed run into a warning about a switch
-		   nobody touched, and it must not swallow the ending either. Silence on that question means
-		   carry on. */
+		   nobody touched, and it must not swallow the ending either. */
 		mocked.get.mockImplementation((path: string, init?: { query?: Record<string, unknown> }) => {
 			if (path === '/faces/settings') return Promise.reject(new Error('offline'));
 			const query = init?.query ?? {};

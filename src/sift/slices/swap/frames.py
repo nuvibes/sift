@@ -144,15 +144,20 @@ class Conn:
             if isinstance(nxt, Chunk):
                 raise ProtocolError("a chunk inside a message")
             frame = nxt
-        try:
-            value = json.loads("".join(parts))
-        except ValueError as error:
-            raise ProtocolError("a message in parts that isn't JSON") from error
-        if not isinstance(value, dict):
-            raise ProtocolError("a message that isn't an object")
-        return value
+        return _object_of(parts)
 
     def close(self) -> None:
         self.closed = True
         with contextlib.suppress(Exception):
             self.writer.close()
+
+
+def _object_of(parts: list[str]) -> dict[str, Any]:
+    """A message sent in parts, joined and read as the JSON object it must be."""
+    try:
+        value = json.loads("".join(parts))
+    except ValueError as error:
+        raise ProtocolError("a message in parts that isn't JSON") from error
+    if not isinstance(value, dict):
+        raise ProtocolError("a message that isn't an object")
+    return value

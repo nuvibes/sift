@@ -1,22 +1,5 @@
 <script lang="ts">
-	/*
-	 * Settings > Folders: where a file SAVED OUT of Sift lands on this device.
-	 *
-	 * ## Why it is on Folders, and not beside the download folder
-	 *
-	 * "Where do my files end up" sounds like one question with two answers, and it is not: the
-	 * download folder is a LIBRARY folder the server fetches into, chosen per Site beside the
-	 * naming, while this one is a folder on the device you are sitting at that nothing is imported
-	 * from. Pairing them would make the Downloads pane carry a choice that is not about
-	 * downloading. It sits on Folders, beside where Sift keeps its own files, the other folder on
-	 * this device that Sift writes to and never imports from.
-	 *
-	 * It belongs to the machine you are sitting at: a second computer running the same library has
-	 * its own answer, which is why it is remembered on this device only.
-	 *
-	 * Absent entirely outside the desktop client, rather than shown and inert: in a browser the
-	 * browser decides where a download goes, and Sift cannot answer this or change it.
-	 */
+	/* Settings > Folders: where a file SAVED OUT of Sift lands on this device. */
 	import { onMount } from 'svelte';
 
 	import { Button, SectionHeading } from '$lib/components/common';
@@ -35,8 +18,7 @@
 	});
 
 	/* The picker is the operating system's, and it has to be: a page naming a folder for this
-	   application to write into would be a page choosing where it writes. All this can do is ask for
-	   the picker, and take null back to the machine's own. */
+	   application to write into would be a page choosing where it writes. */
 	async function pickSaveFolder() {
 		saveTo = await bridge.chooseDownloadFolder(true);
 	}

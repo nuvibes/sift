@@ -1,11 +1,4 @@
-/* The picker's own drawing, whose top level is not a folder.
- *
- * The walking is tested in `picker.test.ts` against a stubbed server. What is left here is what a
- * person sees, and two parts of it follow from that top level: there is a way back from the
- * outermost granted folder to the list of them, and the file-count footnote must not appear on that
- * list: a count of "files in this folder" over something that is not a folder is a sentence about
- * nothing.
- */
+/* The picker's own drawing, whose top level is not a folder. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -107,9 +100,7 @@ describe('the list of granted folders', () => {
 		expect(where.querySelectorAll('.picker')).toHaveLength(1);
 	});
 
-	/* The footnote is about a FOLDER. Drawn over the list of granted folders it would be counting
-	 * the files in something that is not one, and the server answers zero there, so it would say
-	 * "this folder is empty" about somebody's whole set of libraries. */
+	/* The footnote is about a FOLDER. */
 	it('says nothing about file counts', () => {
 		const where = render(picker({ ...TOP, fileCount: 0 }));
 

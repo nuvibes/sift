@@ -9,9 +9,7 @@ vi.mock('$app/navigation', () => ({
 	replaceState: (...args: unknown[]) => replaceState(...args)
 }));
 
-/* The panel reads `page.state` to carry `direct` from one section to the next. A stand-in, so the
-   flag can be set to both of the things it can be. A stand-in that could only ever answer one of
-   them would make the carrying rule untestable in exactly the direction it matters. */
+/* The panel reads `page.state` to carry `direct` from one section to the next. */
 const pageState: { direct?: boolean } = {};
 const address = { path: '/settings/privacy' };
 vi.mock('$app/state', () => ({
@@ -39,13 +37,7 @@ const {
 	showSettingsSection
 } = await import('./settings-view');
 
-/* Opening settings without leaving the screen you were on.
- *
- * The address still changes, and it changes to the section's own real address: that is what keeps
- * a section linkable and the back button meaningful. What is worth pinning down is the click
- * handling, because the whole reason these stayed anchors is that a modified click must still do
- * what the browser would have done with it.
- */
+/* Opening settings without leaving the screen you were on. */
 
 beforeEach(() => {
 	pushState.mockClear();
@@ -75,9 +67,8 @@ describe('opening the panel', () => {
 	});
 
 	it('replaces rather than pushes when moving between sections', () => {
-		/* Six sections looked at is six presses of Back before somebody is returned to the grid they
-		 * opened settings from. The panel is one stop in the history; which section it happens to be
-		 * showing is not a place you navigated to. */
+		/* Six sections looked at is six presses of Back before somebody is returned to the grid
+		 * they opened settings from. */
 		showSettingsSection('backup');
 
 		expect(replaceState).toHaveBeenCalledWith('/settings/backup', { settings: 'backup' });
@@ -109,8 +100,7 @@ describe('a click on a settings link', () => {
 		['a middle click', { button: 1 }]
 	] as const) {
 		it(`leaves ${name} alone, because it asked for something this window cannot give`, () => {
-			/* Every one of these means "open it somewhere else". Answering with a panel in THIS window
-			 * ignores what was asked for AND swallows the navigation, so nothing happens at all. */
+			/* Every one of these means "open it somewhere else". */
 			const event = click(over);
 
 			openSettingsInstead(event);
@@ -129,15 +119,7 @@ describe('a click on a settings link', () => {
 	});
 });
 
-/*
- * Landing on a settings address COLD, which is the case that has no screen behind it.
- *
- * There is no page form of settings: one address that draws a panel or a whole screen depending on
- * how it was reached is two screens, and refreshing while watching something would replace the
- * player with a different one. So the route puts the panel up either way, and the panel has to
- * know which it is, because closing one that was landed on cold cannot be a step BACK. There is
- * nothing behind it but the browser, and a step back leaves Sift.
- */
+/* Landing on a settings address COLD, which is the case that has no screen behind it. */
 describe('an address landed on cold', () => {
 	it('opens the panel with nothing behind it, and says so', () => {
 		enterSettings('playback');
@@ -166,8 +148,8 @@ describe('an address landed on cold', () => {
 	});
 
 	it('carries that forward when somebody walks to another section', () => {
-		// Walking between sections does not put a screen behind the panel, so a panel opened cold is
-		// still one after five of them, and closing it still has to go to the library.
+		// Walking between sections does not put a screen behind the panel, so a panel opened cold
+		// is still one after five of them, and closing it still has to go to the library.
 		pageState.direct = true;
 		showSettingsSection('privacy');
 
@@ -189,11 +171,7 @@ describe('an address landed on cold', () => {
 	});
 });
 
-/*
- * EVERY DOOR THROUGH THE ONE RESOLVER. A link, a search result and a cold address can each carry an
- * OLD address (a section folded into another, one that became a tab, a row that moved panes),
- * and each has to write the CURRENT address and hunt for the row where it is drawn now.
- */
+/* EVERY DOOR THROUGH THE ONE RESOLVER. */
 describe('an old address, through any door', () => {
 	it('a link to a retired section opens the section that inherited it, keeping the row', () => {
 		openSettings('theater', 'theater.layout');
@@ -231,11 +209,8 @@ describe('an old address, through any door', () => {
 	});
 });
 
-/*
- * On a phone the list of sections is a screen of its own (More), because there is room for the list
- * or a section and never both. An address that names no section is asking for that list, and landing
- * it on the first section instead would lead every way back to Folders again.
- */
+/* On a phone the list of sections is a screen of its own (More), because there is room for the
+ * list or a section and never both. */
 describe('Settings with no section, on a phone', () => {
 	function atWidth(phone: boolean) {
 		vi.stubGlobal('matchMedia', (query: string) => ({ matches: phone, media: query }));

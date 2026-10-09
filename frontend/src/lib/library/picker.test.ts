@@ -2,13 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { UNREACHABLE } from '$lib/shell/unreachable';
 import { Picker, type Listing } from './picker.svelte';
 
-/* Walking the picker.
- *
- * What is worth testing here is the walking, not the drawing: which path gets asked for when
- * somebody clicks a folder or a crumb, what is selected at each point, and what a failed request
- * leaves on screen. The server decides what is inside a folder and proves the path is allowed:
- * that is tested where it happens, against a real filesystem, because it is the part that matters.
- */
+/* Walking the picker. */
 
 const originalFetch = globalThis.fetch;
 
@@ -32,8 +26,7 @@ function listing(over: Partial<Listing> = {}): Listing {
 function serve(byPath: Record<string, Listing>, fallback = listing()) {
 	const mock = vi.fn(async (url: URL | RequestInfo): Promise<Response> => {
 		// The empty string is the request with NO path: the list of granted folders, which is what
-		// the server answers when it is asked for nothing. Keyed apart from '/media' on purpose:
-		// mapping a no-path request onto a real folder's key would make the fallback unreachable.
+		// the server answers when it is asked for nothing.
 		const asked = new URL(String(url), 'http://sift.test').searchParams.get('path') ?? '';
 		return new Response(JSON.stringify(byPath[asked] ?? fallback), {
 			status: 200,
@@ -133,9 +126,8 @@ describe('going back', () => {
 	});
 
 	it('goes from the outermost granted folder back to the list of them', async () => {
-		/* One crumb means standing IN a granted folder, whose parent is not a folder Sift may look
-		 * in, so back means the request with no path at all, not a parent crumb. Sending the
-		 * parent would ask to browse above the grant, which the server refuses. */
+		/* One crumb means standing IN a granted folder, whose parent is not a folder Sift may
+		 * look in, so back means the request with no path at all, not a parent crumb. */
 		const top = listing({ path: '', breadcrumb: [], entries: [{ name: 'media', path: '/media' }] });
 		const inside = listing({ path: '/media', breadcrumb: [{ name: 'media', path: '/media' }] });
 		const fetched = serve({ '/media': inside }, top);
@@ -150,9 +142,7 @@ describe('going back', () => {
 		expect(askedFor(fetched).at(-1)).toBeNull();
 	});
 
-	/* A granted folder can be indexed as it stands. Somebody who handed over `D:\Media` because
-	 * that is where their media is should not have to go a level deeper to say so.
-	 */
+	/* A granted folder can be indexed as it stands. */
 	it('lets the granted folder itself be chosen', async () => {
 		const inside = listing({ path: '/media', breadcrumb: [{ name: 'media', path: '/media' }] });
 		serve({ '/media': inside });
@@ -294,9 +284,8 @@ describe('when the server refuses', () => {
 describe('what is in the folder that the list does not show', () => {
 	it('carries the file count, so a folder of media is not drawn as an empty box', async () => {
 		/* The picker lists folders and never files, which is what stops it being a way to read
-		 * somebody's filenames, and which would make a folder full of media look exactly like
-		 * an empty one. The count is the whole of the answer and it has to reach the screen.
-		 */
+		 * somebody's filenames, and which would make a folder full of media look exactly like an
+		 * empty one. */
 		serve({}, listing({ entries: [], file_count: 42 }));
 		const picker = new Picker();
 
@@ -315,12 +304,7 @@ describe('what is in the folder that the list does not show', () => {
 	});
 });
 
-/* Which set of folders is being walked.
- *
- * The scope is on every request rather than only the first, and that is the whole of what could go
- * wrong here: one call that forgot it is a folder that lists on the way in and is refused on the way
- * back out, which reads as the server losing a folder somebody is standing in.
- */
+/* Which set of folders is being walked. */
 describe('the scope', () => {
 	/** Every scope a run of requests asked for, in order. */
 	function scopesFrom(mock: ReturnType<typeof serve>): (string | null)[] {
@@ -352,9 +336,7 @@ describe('the scope', () => {
 		expect(scopesFrom(mock)).toEqual(['machine', 'machine', 'machine']);
 	});
 
-	/* Ticking a folder asks about that one folder, only to learn whether Sift may write in it.
-	   Without the scope that request is answered against the granted list, so a folder picked off
-	   the machine comes back refused and is silently recorded as read-only. */
+	/* Ticking a folder asks about that one folder, only to learn whether Sift may write in it. */
 	it('asks about a ticked folder in the scope it was ticked in', async () => {
 		const mock = serve({});
 		const picker = new Picker();
@@ -365,13 +347,10 @@ describe('the scope', () => {
 		expect(scopesFrom(mock).at(-1)).toBe('machine');
 	});
 
-	/*
-	 * A FAILED WRITE-CHECK IS NOT A READ-ONLY FOLDER, and drawing them the same way would state a
-	 * fact about somebody's disk that Sift did not have: a greyed switch and "handed to Sift as
-	 * read-only, so Sift cannot change anything in it" over a folder with full write access, while
-	 * a cancelled check was all that happened. Read-only stays the safe answer to an unknown; what
-	 * changes is that the screen says it could not tell rather than asserting a no.
-	 */
+	/* A FAILED WRITE-CHECK IS NOT A READ-ONLY FOLDER, and drawing them the same way would state
+	 * a fact about somebody's disk that Sift did not have: a greyed switch and "handed to Sift
+	 * as read-only, so Sift cannot change anything in it" over a folder with full write access,
+	 * while a cancelled check was all that happened. */
 	it('records a check that never answered as unknown, not as read-only', async () => {
 		globalThis.fetch = vi.fn(async () => {
 			throw new TypeError('Failed to fetch');
@@ -385,21 +364,10 @@ describe('the scope', () => {
 		expect(picker.chosen[0].checked).toBe(false);
 	});
 
-	/*
-	 * THE TICK IS THE PRESS, NOT THE ANSWER TO IT.
-	 *
-	 * A row added only once the write-check came back would leave the box empty for the length of a
-	 * request: on a network share, the one storage this check is slow on, long enough to look
-	 * like a control that does nothing: a completed click leaving the box reading
-	 * `aria-checked="false"`. What somebody does then is press it again, and a second press is an
-	 * untick.
-	 *
-	 * Held open deliberately here rather than measured with a timer: the request is still out, and
-	 * the folder is already ticked.
-	 */
+	/* THE TICK IS THE PRESS, NOT THE ANSWER TO IT. */
 	it('ticks the folder the moment it is pressed, before the write-check answers', async () => {
-		// A function from the start, not a null: the type checker cannot see the assignment inside the
-		// closure below, and narrows a `| null` to `null` at the call.
+		// A function from the start, not a null: the type checker cannot see the assignment inside
+		// the closure below, and narrows a `| null` to `null` at the call.
 		let answer: () => void = () => {};
 		globalThis.fetch = vi.fn(async () => {
 			await new Promise<void>((settle) => (answer = settle));
@@ -435,8 +403,8 @@ describe('the scope', () => {
 		expect(picker.chosen[0].checked).toBe(true);
 	});
 
-	/* The two sets do not overlap in any way a breadcrumb could survive, so switching goes back to
-	   the top. Left where it was, the trail would name folders the new scope may refuse to list. */
+	/* The two sets do not overlap in any way a breadcrumb could survive, so switching goes back
+	   to the top. */
 	it('goes back to the top when the scope changes', async () => {
 		const mock = serve({});
 		const picker = new Picker();

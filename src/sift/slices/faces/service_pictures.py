@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The pictures behind a face: the recognizer's square on disk, and a display-sized cover cut from
-the frame the face was found in.
-"""
+its frame."""
 
 from __future__ import annotations
 
@@ -22,8 +21,7 @@ if TYPE_CHECKING:  # numpy is only needed for a signature
 
 
 def _place(destination: Path, picture: bytes) -> None:
-    """Write a cut picture where it belongs, making the directory for it. Off the loop. See the
-    face store, where the same pair of calls is made for a whole pass in one go."""
+    """Write a cut picture where it belongs, making its directory. Off the loop."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(picture)
 
@@ -32,16 +30,8 @@ class PicturesMixin(FaceServiceBase):
     """Serving and cutting a face's pictures."""
 
     async def crop_file(self, track_id: str) -> Path | None:
-        """The picture behind one appearance, on disk. None when there is nothing to serve.
-
-        **Says nothing about permission and is not to be called before `may_see_crop`.** It is
-        split that way on purpose: a function that both checked and fetched would be one whose
-        callers could not be read at a glance to see whether the check happened, and this is the
-        surface where that matters most.
-
-        The clearest of the appearance's few faces, chosen exactly as matching chooses it, so the
-        picture a screen shows is the one the decision was made from.
-        """
+        """The picture behind one appearance, its clearest face, or None; checks no permission,
+        so `may_see_crop` comes first."""
         faces = await self._store.faces_of(track_id)
         if not faces:
             return None
@@ -54,20 +44,8 @@ class PicturesMixin(FaceServiceBase):
         return await asyncio.to_thread(located)
 
     async def cover_file(self, track_id: str) -> Path | None:
-        """A display-sized picture of this face, cut from the frame it was found in.
-
-        Cut once and kept. The aligned square the recognizer reads is 112 pixels across and cropped
-        to the eyes, nose and mouth: a measurement, which blown up as a cover could not look like
-        anything else.
-
-        Cut here rather than when the cover is chosen, so a cover set earlier is fixed by being
-        looked at instead of by having to be set again. The cost is one decode, once, per face that
-        is ever used as a cover.
-
-        None when there is nothing to cut from: no such face, the file has gone, or the decoder
-        could not produce the frame. The caller falls back to the recognizer's square, which is
-        better than a hole.
-        """
+        """A display-sized picture of this face, cut from its frame once and kept, or None, where
+        the caller falls back to the recognizer's square."""
         await self._require_enabled()
         stored = self._store.cover_path(track_id)
         if await asyncio.to_thread(stored.is_file):
@@ -84,13 +62,8 @@ class PicturesMixin(FaceServiceBase):
         try:
             source = await resolve_decodable(self._content, track.asset_id, settings=self._settings)
         except (LookupError, NoReadableCopy):
-            # A drive that is not plugged in is the commonest of these and is not an error worth
-            # raising here: the caller falls back to the recognizer's square. A cover is worth one
-            # decode, never a 500.
+            # A drive not plugged in is the commonest cause: a fallback, never a 500.
             return None
-        # No guard on the kind of file. Every asset is a video, an image or a GIF (the
-        # table refuses anything else), so a check here would be a branch nothing can reach and a
-        # reader of this function would reasonably assume it can.
         asset = source.asset
         reader = Reader(self._settings)
         picture: np.ndarray | None = None
@@ -107,10 +80,7 @@ class PicturesMixin(FaceServiceBase):
         if picture is None:
             return None
 
-        # The box was found in a frame reduced to the pass's size, and this one was decoded
-        # larger, so it has to be carried across before it means anything here. Read off the two
-        # frames rather than recomputed from the settings: the number that matters is what this
-        # picture actually is, and a second derivation of it is a second thing to keep in step.
+        # The box is in the reduced frame's pixels, so it is carried across, read off both frames.
         scanned_width, _ = frames.output_size(asset.width or 0, asset.height or 0)
         scale = (picture.shape[1] / scanned_width) if scanned_width else 1.0
         box = Box(

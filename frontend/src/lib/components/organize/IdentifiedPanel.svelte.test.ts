@@ -1,24 +1,6 @@
-/*
- * The people Sift knows, and what each card says about one of them.
- *
- * The card answers three questions in one reading and in this order: what you confirmed, what Sift
- * named on its own, and what needs your input; a card with nothing waiting says so in the third
- * one's own words.
- *
- * The three phrases are the same on every screen: confirmed, recognized by Sift, needs your
- * input. What a beginner needs is whether Sift is asking them anything, which only the third is.
- *
- * The two acts are two questions, and each appears only when there is something of its kind to
- * answer: an offer to agree with what Sift named, on a card where it named nothing, would be a row
- * that does nothing.
- *
- * One control rather than two buttons, which would not fit a card fourteen rems wide. Which act
- * leads is decided by state: the answer leads whenever there is one to give, however few, and the
- * nod leads only where nothing is asked.
- *
- * The control must fit the card. Two things at the foot of this file hold that: the words on the
- * lead half are short, and the card is the width measured for a card with a row of controls.
- */
+/* The people Sift knows, and each card's one reading: confirmed, recognized by Sift, needs your
+ * input. Each act shows only when it has something to answer; one control leads by state and fits.
+ * */
 import { readFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,8 +35,7 @@ const said = vi.hoisted(() => [] as unknown[]);
 vi.mock('$lib/shell/toasts.svelte', () => ({
 	toasts: { show: (words: unknown) => said.push(words) }
 }));
-/* `replaceState` as well as `goto`: the wall writes its own anchor into the address as it settles,
-   and a mock naming only what this file asserts takes that away and fails the load. */
+/* `replaceState` too: the wall writes its anchor as it settles. */
 const goto = vi.fn();
 vi.mock('$app/navigation', () => ({
 	goto: (...a: unknown[]) => goto(...a),
@@ -134,8 +115,7 @@ function lead(root: HTMLElement): string {
 	return readable(half);
 }
 
-/* The library opens on POINTERDOWN, not on click: sending both is one press that opens and
-   closes again, which reads in an assertion as a door that never opened. */
+/* The library opens on pointerdown; a click too would close it again. */
 function openMenu(root: HTMLElement) {
 	const door = root.querySelector<HTMLButtonElement>('.row .trail button');
 	if (!door) throw new Error('the card has no menu half');
@@ -170,8 +150,7 @@ it('says the three numbers in the words every faces screen says them in', async 
 });
 
 it('says the one that is waiting in the singular when there is one of it', async () => {
-	/* A card one press from empty is the most-looked-at state this wall has, and "1 need your
-	   answer" is the easy fault for a count. */
+	/* "1 need your answer" is the easy fault for a count. */
 	const root = await render(card({ waiting: 1 }));
 
 	const said = [...root.querySelectorAll('.one')].map((one) => one.textContent?.trim());
@@ -180,8 +159,7 @@ it('says the one that is waiting in the singular when there is one of it', async
 });
 
 it('says nothing needs an answer rather than that the card looks good', async () => {
-	/* "Looks good" would be the card grading itself. What somebody wants off a card with nothing on it
-	   is what is LEFT, which is nothing, said in the same words the number beside it uses. */
+	/* What is left, in the count's own words, not a grade. */
 	const root = await render(card({ waiting: 0 }));
 
 	expect(root.textContent).toContain('Nothing needs your input');
@@ -189,10 +167,7 @@ it('says nothing needs an answer rather than that the card looks good', async ()
 });
 
 it('leads with the answer whenever there is one to give, however few', async () => {
-	/*
-	 * The lead is chosen by state, not by the act with more faces behind it: thirteen questions
-	 * beside 344 faces Sift has already named is still the card asking thirteen questions.
-	 */
+	/* The lead is chosen by state, not by the bigger pile. */
 	const fewWaiting = await render(card({ matched: 344, waiting: 13 }));
 	expect(lead(fewWaiting)).toBe('Yes (13)');
 
@@ -205,10 +180,7 @@ it('leads with the answer whenever there is one to give, however few', async () 
 });
 
 it('answers a question with a yes rather than with a count and a neutral verb', async () => {
-	/*
-	 * The lead is a yes, not "Answer N": the count line already says how many need an answer, and
-	 * the press's outcome is agreement, so its word says so.
-	 */
+	/* The lead is a yes; the count line says how many. */
 	const root = await render(card({ matched: 344, waiting: 13 }));
 
 	expect(lead(root)).toBe('Yes (13)');
@@ -216,12 +188,7 @@ it('answers a question with a yes rather than with a count and a neutral verb', 
 });
 
 it('wears ONE shape on the lead whichever of the two acts it is about', async () => {
-	/*
-	 * One label shape, Yes (N), whichever act leads: a wall of cards is read one word and one
-	 * number at a time, and a label rewording itself with the state would make somebody re-read the
-	 * button before every press. The number is what the press settles; the counts above say the
-	 * state.
-	 */
+	/* One label shape, Yes (N), whichever act leads. */
 	const asking = await render(card({ matched: 344, waiting: 13 }));
 	expect(lead(asking)).toBe('Yes (13)');
 
@@ -236,10 +203,7 @@ it('wears ONE shape on the lead whichever of the two acts it is about', async ()
 });
 
 it('puts a no that WRITES in the menu, over exactly what the yes confirms', async () => {
-	/*
-	 * The refusal writes, rather than only opening the screen: each door writes a record History
-	 * can take back, which is what makes a bulk refusal safe on a card.
-	 */
+	/* The refusal writes a record History can take back. */
 	const root = await render(card({ matched: 344, waiting: 13 }));
 
 	openMenu(root);
@@ -251,10 +215,7 @@ it('puts a no that WRITES in the menu, over exactly what the yes confirms', asyn
 });
 
 it('refuses the matches where the matches are what the yes confirms', async () => {
-	/*
-	 * The two halves of one question: the menu row follows the lead rather than the state it
-	 * happens to find, since a card leading with the nod has nothing waiting to refuse.
-	 */
+	/* The menu row follows the lead. */
 	const root = await render(card({ matched: 19, waiting: 0 }));
 
 	openMenu(root);
@@ -277,11 +238,7 @@ it('keeps the row that opens them one at a time, for somebody who wants to look'
 });
 
 it('draws the same three rows behind the chevron whatever the card is about', async () => {
-	/*
-	 * One shape, so the menu is learned once. The act that did not lead is not a row here: it lives
-	 * on that person's own screen, on the tab holding those faces, where what is being agreed to is
-	 * on the page.
-	 */
+	/* The act that did not lead lives on the person's own screen. */
 	const asking = await render(card({ matched: 344, waiting: 2444 }));
 
 	openMenu(asking);
@@ -304,8 +261,7 @@ it('leads with the nod where nothing is being asked at all', async () => {
 });
 
 it('draws no control at all on a card with nothing to do', async () => {
-	/* Neither act has anything behind it, and a control that can do nothing is one somebody has to
-	   press to find that out. The card is then the three numbers and the name. */
+	/* Nothing to do: the card is the numbers and the name. */
 	const root = await render(card({ matched: 0, waiting: 0 }));
 
 	expect(root.querySelector('.row')).toBeNull();
@@ -313,12 +269,8 @@ it('draws no control at all on a card with nothing to do', async () => {
 });
 
 it('agrees with every match for the person rather than with the faces on the card', async () => {
-	/* A card draws a handful of crops of however many there are, so a press built from its own list
-	   would settle the handful and leave the rest, with the card then saying a smaller number and
-	   nothing saying why. The person is what the server is asked about.
+	/* Asked of the person, not the card's crops; nothing waiting, so the nod leads. */
 
-	   Nothing waiting, so the nod is the half under the pointer: with a question standing it is
-	   behind the chevron instead, which the test below presses it from. */
 	const root = await render(card({ matched: 344, waiting: 0 }));
 
 	press(root, 'Yes (344)')?.click();
@@ -390,9 +342,7 @@ it('hands a press on the card ground to the faces it opens', async () => {
 });
 
 it('asks the PERSON from the menu as well as from the lead half', async () => {
-	/* Every press here is asked of the person, never of the card's own list: a card draws a handful
-	   of crops of however many there are, so a press built from that list would settle the handful
-	   and leave the rest, with the card then saying a smaller number and nothing saying why. */
+	/* Every press is asked of the person, never the card's own list. */
 	const matchesLead = await render(card({ matched: 344, waiting: 2444 }));
 
 	openMenu(matchesLead);
@@ -417,11 +367,7 @@ it('asks the PERSON from the menu as well as from the lead half', async () => {
 });
 
 it('sends Show me to the faces the thumbnails open, on the tab the card is about', async () => {
-	/*
-	 * One way to this person's faces rather than two: the same address the crops above carry, and
-	 * it names the tab, because the screen it opens defaults to the faces needing an answer and a
-	 * card leading with the nod has none.
-	 */
+	/* The crops' address, naming the tab with something on it. */
 	const root = await render(card());
 
 	openMenu(root);
@@ -433,8 +379,7 @@ it('sends Show me to the faces the thumbnails open, on the tab the card is about
 });
 
 it('opens the attributed faces from a card whose act is about them', async () => {
-	/* The other half of the same rule: nothing waiting, six attributed, so the tab with something
-	   on it is the attributed one. */
+	/* Nothing waiting, six attributed: the attributed tab. */
 	const root = await render(card({ matched: 6, waiting: 0 }));
 
 	const crops = root.querySelector('a[href^="/organize/known-people/"]');
@@ -442,49 +387,28 @@ it('opens the attributed faces from a card whose act is about them', async () =>
 });
 
 it('narrows itself not at all by how a face was named', async () => {
-	/*
-	 * No row of tabs on this wall: every card already carries both numbers, so filtering would cut
-	 * the list to cards holding a figure none of them hides. The split worth having is on one
-	 * person, which is what her own screen's tabs are. The one narrowing is by what Sift knows a
-	 * person from, the control on the tab line (`IdentifiedPanel.starters.test.ts`).
-	 */
+	/* No tabs on this wall; the one narrowing is the starters control (its own test). */
 	const root = await render(card());
 
 	expect(root.querySelector('.narrowing')).toBe(null);
-	// And the read asks for everybody: a filter sent from here would be a filter with no
-	// control over it, which is the worst of both.
+	// The read asks for everybody.
 	expect(identifiedPeople).toHaveBeenCalledWith(expect.objectContaining({ limit: 24 }), null, '');
 });
 
-/*
- * The control fits the card, at the narrowest the wall can draw one.
- *
- * jsdom lays nothing out, so the box is measured in a real engine. What is pinned here is what that
- * measurement depends on, each one word from being undone: the card's width, and the length of the
- * words on the half that must not fold.
- *
- * At 13.5px in this typeface the lead half is its padding (2 x 16), its tick (16), the gap after it
- * (8) and its words, and the chevron is a square of the control height (36); a 15.25rem card leaves
- * 220px after its inset. The lead is "Yes" on every card that asks anything. The nod, "Yes, Sift is
- * right (344)", leads only where nothing is asked and is the long one; it may wrap rather than
- * spill (see `SplitButton`). What is pinned is the card's width and that the refused wording has
- * not come back.
- */
+/* The control fits the narrowest card: the card's width and the lead's short words are pinned;
+ * the box itself is measured in a real engine. */
 describe('the one control fits the narrowest card this wall draws', () => {
 	const source = readFileSync('src/lib/components/organize/IdentifiedPanel.svelte', 'utf8');
 
 	it('draws its cards on the one Organize wall, in the one Organize card', () => {
-		// The wall `FaceGroups` uses too: two walls of one feature at two widths is how a control
-		// that fits one comes to overflow the other.
+		// The wall FaceGroups uses too.
 		expect(source).toContain('<CardWall cards={paging.cards}>');
 		expect(source).toContain('<DecisionCard opens=');
 		expect(source).not.toContain('grid-template-columns');
 	});
 
 	it('keeps the refused words off the card', () => {
-		// The three forms a removed wording could come back as: the lead half's own words, the menu
-		// row naming the same act with its count, and a phrase too long for the card. Literals
-		// rather than a shape, because each is a specific wording.
+		// The removed wordings, as literals.
 		expect(source).not.toContain("'These matches are right'");
 		expect(source).not.toContain('`These matches are right');
 		expect(source).not.toContain("'Matches are right'");
@@ -494,13 +418,7 @@ describe('the one control fits the narrowest card this wall draws', () => {
 
 describe('a person the vault conceals', () => {
 	it('says Hidden on the card rather than Not named', async () => {
-		/*
-		 * The server withholds the name and the id together and gathers everybody concealed under one
-		 * nameless card, so a card with no id on this wall can only be that gather: every face here
-		 * is already attached to somebody, and a face nobody has named is a question on the other tab.
-		 * "Not named" would be the opposite state: somebody Sift found and nobody has named.
-		 * "Hidden" is the word the vault uses on a tile and in the band.
-		 */
+		/* A card with no id is the concealed gather, worded as the vault's "Hidden". */
 		const root = await render(card({ person_id: null, person_name: null }));
 
 		expect(root.querySelector('.who')?.textContent?.trim()).toBe('Hidden');

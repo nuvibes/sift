@@ -1,6 +1,6 @@
 <script lang="ts">
-	/* A settings pane in miniature, for the line test: three groups, rows side by side, rows held
-	   one level down (each task's block on Tasks), and a group of one row. */
+	/* A settings pane in miniature, for the line test: three groups, rows side by side, rows
+	   held one level down (each task's block on Tasks), and a group of one row. */
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import ActionRow from './ActionRow.svelte';
 	import SettingGroup from './SettingGroup.svelte';

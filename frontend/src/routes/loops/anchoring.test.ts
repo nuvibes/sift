@@ -1,20 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * The Loops wall keeps the page it was left on.
- *
- * It is the one wall of the six drawn by the MEDIA GRID rather than by a wall of cards. The route
- * resolves a mark into its place in this same list, and `LOOP_SOURCE.anchored` is what tells the
- * grid so.
- *
- * ## Why the mock moves the browser's address
- *
- * `replaceState` puts the new address in the bar and never assigns `page.url`, so the screen goes
- * on being handed the address it arrived at. A mock that only records the call cannot show what
- * that costs. The stand-in below does both halves, the way the router does.
- *
- * The first test is the known positive: it asserts the wall asked for the row and drew it. Without
- * it, "the address names the row" is also true of a wall that fetched nothing at all.
- */
+/* The Loops wall keeps the page it was left on. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Wall from './+page.svelte';
@@ -68,8 +53,7 @@ vi.mock('$lib/api/client', () => ({
 			const query = options?.query ?? {};
 			if (path !== '/loops') return { items: [], total: 0, limit: 50, offset: 0, complete: true };
 			server.asks.push(query);
-			// The server resolves a mark into its position in the scoped, ordered list. Here the row
-			// the address names sits at `AT`, so the stand-in can answer the same question.
+			// The server resolves a mark into its position in the scoped, ordered list.
 			const anchored = 'from' in query;
 			const offset = anchored ? AT : Number(query.offset ?? 0);
 			const limit = Number(query.limit ?? 24);

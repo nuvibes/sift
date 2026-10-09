@@ -1,16 +1,5 @@
-/*
- * A stash-box's constant, said as the word it stands for: `BLONDE` is "Blonde", `NON_BINARY` is
- * "Non binary".
- *
- * A box answers a choice (hair color, breast type, ethnicity) with its own upper-case constant,
- * and a record that drew it raw would read `BLONDE` beside a History line saying "Blonde" about the
- * same value. The server says it in words by one rule (`records.value_said`, for a `word` field);
- * this is the same rule for the record's own cells, and `tests/gates/test_word_values_agree.py`
- * holds the two patterns equal.
- *
- * Only a `word` field's value, and only one spelled wholly as a constant: a word somebody typed in
- * ordinary case is left exactly as typed.
- */
+/* A stash-box's constant, said as the word it stands for: `BLONDE` is "Blonde", `NON_BINARY` is
+ * "Non binary". */
 
 /** The shape of a box's constant: a capital letter, then capitals, digits and underscores. */
 export const CONSTANT = /^[A-Z][A-Z0-9_]*$/;

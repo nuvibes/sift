@@ -2,23 +2,9 @@
 	import { Button, Empty, SectionHeading, Skeleton, Switch } from '$lib/components/common';
 	import { bridge, type UpdateOutcome } from '$lib/bridge';
 	import Scroller from '$lib/components/common/Scroller.svelte';
-	/* The Updates section: what you are running, what exists, what changed in it, and the button that
-	 * installs it: in the desktop app on the device running this library, the one place that can.
-	 * Anywhere else the screen says where to go instead. At its foot, the licence and source, which
-	 * the AGPL requires to stay reachable.
-	 *
-	 * The notes are drawn from a small Markdown subset as plain text nodes (see `notesBlocks`), so a
-	 * release body cannot put markup on this screen, and it links nowhere but its own release page.
-	 *
-	 * ## Everybody reads the version and the foot; an admin reads the rest
-	 *
-	 * The check is admin-only on the server because it can make Sift reach the internet. For
-	 * anybody the check's answer is not drawn for, the version comes from a public endpoint that
-	 * makes no outbound request, in the same sentence the check's answer uses, so a guest reads the
-	 * version and the terms in full and is never shown a check that would only be refused. There is
-	 * no About block: it would say the version a second time under a heading, and for an admin it
-	 * would be a heading over one sentence and nothing else.
-	 */
+	/* The Updates section: what you are running, what exists, what changed in it, and the button
+	 * that installs it: in the desktop app on the device running this library, the one place
+	 * that can. */
 	import { onMount } from 'svelte';
 	import { ApiError, api } from '$lib/api/client';
 	import { serverBootId } from '$lib/shell/health';
@@ -44,9 +30,7 @@
 	} from '$lib/shell/updates.svelte';
 	import { COPY } from './Updates.search';
 	import { explainAbsentRows } from '$lib/settings-ui/settings-anchor.svelte';
-	/* The versions of the programs Sift downloads with, and the yt-dlp check. Here because
-	   "is what Sift runs up to date" is this pane's question, and a newer yt-dlp arrives with a newer
-	   Sift. They carry their own words and search entry (`DownloadTools.search.ts`). */
+	/* The versions of the programs Sift downloads with, and the yt-dlp check. */
 	import DownloadTools from './DownloadTools.svelte';
 	import DeviceId from './DeviceId.svelte';
 	import Copyable from '$lib/components/record/Copyable.svelte';
@@ -54,13 +38,13 @@
 	import { jobChanges, whenChanged } from '$lib/library/changes.svelte';
 
 	/* WHEN Sift reads the public release page is the update check task's When, a background task
-	   nobody needs to set, so it is drawn on no pane. What is left here is reading the answer. */
+	   nobody needs to set, so it is drawn on no pane. */
 	const DISMISSED_KEY = 'updates.dismissed_version';
 
 	const SOURCE_URL = 'https://github.com/nuvibes/sift';
 	const LICENSE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html';
-	/* The notices for the tools Sift bundles and the code it derives from, kept beside the source.
-	   `HEAD` is the repository's default branch, whatever it is called. */
+	/* The notices for the tools Sift bundles and the code it derives from, kept beside the
+	   source. */
 	const NOTICES_URL = `${SOURCE_URL}/blob/HEAD/NOTICE`;
 
 	/* The installed version, from the public endpoint: null until it answers, empty from source. */
@@ -97,14 +81,8 @@
 		await updates.load();
 	}
 
-	/* What the application in front of you is, which is a different question from what the library
-	 * is running.
-	 *
-	 * AN ANSWER MEANS THERE ARE TWO COMPUTERS. The shell answers this only in client mode: on the
-	 * machine holding the library the backend travels inside the application, so the two are one
-	 * install and cannot differ. So this screen needs no mode flag and makes no comparison: a
-	 * version here is a second computer to name, and null is a browser, a checkout, or the machine
-	 * the library lives on. Same shape as the hardware block on the Performance screen. */
+	/* What the application in front of you is, which is a different question from what the
+	 * library is running. */
 	const here = $derived(updates.here);
 
 	onMount(() => {
@@ -130,16 +108,8 @@
 	 * says nothing about a client two releases behind it. */
 	const behindHere = $derived(updates.behindHere);
 
-	/*
-	 * WHETHER SIFT LOOKS FOR A NEW VERSION ON ITS OWN: the one request it makes to the internet
-	 * without being asked. One plain switch, and no When or schedule row: nobody decides when upkeep
-	 * like this runs, only whether it runs at all.
-	 *
-	 * The switch is the update check's retired on/off key, which the server answers from the
-	 * check's When and writes into it (off is Only when I press it; on is every few hours, or in
-	 * quiet hours where that was chosen). Read from the When, which the settings list carries; the
-	 * row carries the old key's address, so a link naming the switch lands here.
-	 */
+	/* WHETHER SIFT LOOKS FOR A NEW VERSION ON ITS OWN: the one request it makes to the internet
+	 * without being asked. */
 	const CHECK_SWITCH = 'updates.check_for_new_versions';
 	const CHECK_WHEN = 'tasks.update-check.when';
 	const checkWhen = $derived(declarations.value(CHECK_WHEN));
@@ -150,8 +120,7 @@
 		await declarations.load();
 	}
 
-	/* Check now: the update check's own run, through the one press every task has. The answer
-	   is read again as the run settles, which the jobs bell says. */
+	/* Check now: the update check's own run, through the one press every task has. */
 	let checking = $state(false);
 	async function checkNow(): Promise<void> {
 		checking = await pressTask('update-check', 'now');
@@ -160,8 +129,8 @@
 		if (checking) void updates.load();
 	});
 	/* The run is over when the check's time MOVES, not when the answer is merely read again: the
-	   bell rings as the run is queued too, and that re-read carries the old time in a new object;
-	   ending the wait there would leave Last checked where it was until a reload. */
+	   bell rings as the run is queued too, and that re-read carries the old time in a new
+	   object; ending the wait there would leave Last checked where it was until a reload. */
 	let checkedAt: number | null | undefined;
 	$effect(() => {
 		const at = current?.last_checked;
@@ -170,14 +139,10 @@
 		checking = false;
 	});
 
-	/* Two computers, said whenever there are two, not only when the numbers differ. Somebody
-	 * checking whether their client is up to date has to be able to READ both, and a screen that
-	 * only speaks up when they disagree answers that question by silence. */
+	/* Two computers, said whenever there are two, not only when the numbers differ. */
 	const split = $derived(here !== null && current !== null);
 
-	/* Whether THIS window can install: only the desktop app, a browser has no installer to run. It
-	 * installs on this device, so a window onto a library elsewhere offers it only when this copy is
-	 * the one behind; the library's computer is updated there. */
+	/* Whether THIS window can install: only the desktop app, a browser has no installer to run. */
 	const canInstall = bridge.canApplyUpdate();
 	const installsHere = $derived(canInstall && (here === null || behindHere));
 
@@ -189,10 +154,7 @@
 	const REFUSALS: Record<string, string> = COPY.refusals;
 
 	/* The computer running Sift, where this window cannot install and the Sift app there answers
-	 * through the server (`server-shell.ts`). Installing THERE is the same one button: the app there
-	 * reads its own feed, checks the signature, refuses anything not newer than itself, and opens
-	 * the installer on its own screen, where somebody confirms it. This page then waits for the new
-	 * run to answer. */
+	 * through the server (`server-shell.ts`). */
 	let desk = $state<ServerDesktop | null>(null);
 	let installingThere = $state<'checking' | 'confirm-there' | null>(null);
 
@@ -241,8 +203,7 @@
 	}
 </script>
 
-<!-- The version, copied by pressing it: the one copy helper the file name uses. The number alone
-     goes on the clipboard, which is what a bug report or a release page asks for. -->
+<!-- The version, copied by pressing it: the one copy helper the file name uses. -->
 {#snippet sayVersion(number: string | null | undefined)}
 	{#if number}
 		<Copyable text={number} what="The version"><strong>Sift {number}</strong></Copyable>
@@ -286,21 +247,7 @@
 {:else if current}
 	<section class="versions" id="updates.version">
 		{#if split}
-			<!--
-				TWO COMPUTERS, AND THE SCREEN HAS TO SAY WHICH IS WHICH.
-
-				In client mode this whole page is served by the machine holding the library, so
-				every version on it is that machine's, while the button further down installs on
-				the one in front of you. Without this a copy two releases behind would read as "the
-				newest version", because the number it was compared against was never its own.
-
-				BOTH ARE SHOWN WHETHER THEY AGREE OR NOT. The question somebody has here is "is this
-				computer up to date", and a screen that speaks up only when the answer is no makes
-				them work that out from silence.
-
-				It does not guess which machine is which. It states the two facts it has: this
-				application, and the library it is showing you.
-			-->
+			<!-- TWO COMPUTERS, AND THE SCREEN HAS TO SAY WHICH IS WHICH. -->
 			<p class="running">
 				{COPY.thisCopy} <strong>{here}</strong>.
 			</p>
@@ -443,14 +390,8 @@
 
 {#if session.isAdmin && hidden}
 	<!--
-		A BUTTON, not a box. A text field to type a version number into (the version you hid) is
-		not a preference anybody can hold an opinion about and not a string anybody can type
-		correctly. The value is written by the Dismiss button on the notice and read to decide
-		whether that notice comes back.
-
-		So the row is the ACTION its value stands for, and it is only here while there is something
-		to undo: with nothing hidden, a button offering to unhide it would be a control that does
-		nothing to a thing that does not exist.
+		A BUTTON, not a box. A text field to type a version number into (the version you hid) is not a
+		preference anybody can hold an opinion about and not a string anybody can type correctly.
 	-->
 	<SettingGroup id="updates.notice" heading={COPY.notice}>
 		<LabelledRow
@@ -498,9 +439,7 @@
 		color: var(--sift-ink);
 	}
 
-	/* The two sections this pane is: what you are running, and what to do about it. Each has its
-	   own rule, so the headings and the paragraphs under them do not run together between the
-	   first block and the second. */
+	/* The two sections this pane is: what you are running, and what to do about it. */
 	.versions {
 		margin-block-end: var(--space-6);
 	}
@@ -549,12 +488,8 @@
 		margin: 0 0 var(--space-2);
 	}
 
-	/*
-	 * The cap moves onto the box that SCROLLS, and the rule is `:global` because that box is rendered
-	 * by the shared region rather than written here. Left on the content, a `max-block-size` with no
-	 * `overflow` of its own simply CLIPS, and a scoped rule aimed at somebody else's element
-	 * matches nothing at all, silently, which is the trap this shape keeps setting.
-	 */
+	/* The cap moves onto the box that SCROLLS, and the rule is `:global` because that box is
+	 * rendered by the shared region rather than written here. */
 	.notes :global(.scroll-root) {
 		max-block-size: 20rem;
 	}

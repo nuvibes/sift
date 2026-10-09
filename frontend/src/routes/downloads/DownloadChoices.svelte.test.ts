@@ -1,9 +1,4 @@
-/* The line under the paste box: which way the pasted Site goes out. The switch and where
- * downloads land are the page's Options rows (`DownloadOptions.svelte.test.ts`).
- *
- * What is guarded is that the connection line says what actually happens to a Site's traffic, including the two states a glance would get wrong: a Site with no
- * choice of its own following a tunnel, and a Site pointed at a tunnel that has since been deleted.
- */
+/* The line under the paste box: which way the pasted Site goes out. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { words } from '$lib/design/testing.svelte';
@@ -98,9 +93,8 @@ async function draw(props: { pastedSites?: { key: string; name: string }[] } = {
 /** The connection lines, as their words. */
 const lines = () => [...host.querySelectorAll('.lines li')].map((one) => words(one));
 
-/* With a link in the box, ONE line for the Site it is from: a table of every routed Site would be
-   Settings, Sites drawn a second time above the queue. The rule is not what is written beside a
-   Site: with no route of its own it follows the default. */
+/* With a link in the box, ONE line for the Site it is from: a table of every routed Site would
+   be Settings, Sites drawn a second time above the queue. */
 it('says which way the pasted Site goes, in one line', async () => {
 	await draw({ pastedSites: [{ key: 'sunhollow', name: 'Sunhollow' }] });
 	expect(lines()).toEqual([expect.stringMatching(/^Sunhollow uses Harborline .*Connected$/)]);
@@ -154,8 +148,8 @@ it('says the tunnels are locked rather than drawing lines that cannot be true', 
 });
 
 /* The partial, covered IP next to the tunnel name: the value Settings shows, by the one rule
-   Settings uses (only while the tunnel is up) in the same control, which paints over
-   everything after the first part rather than blurring it. */
+   Settings uses (only while the tunnel is up) in the same control, which paints over everything
+   after the first part rather than blurring it. */
 it('puts the address a connected tunnel is on beside its name, covered as Settings covers it', async () => {
 	const withAddresses = [
 		{ ...TUNNELS[0], endpoint: '198.51.100.23' },

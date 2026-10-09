@@ -31,7 +31,7 @@ from sift.kernel.content.entity_state import opinion_before
 from sift.kernel.content.user_state import OpinionKind, record_opinion
 from sift.kernel.cover_frame import CoverFrame
 from sift.kernel.covers import ChosenCover, chosen_from_row, cover_change
-from sift.kernel.db import Database, in_clause
+from sift.kernel.db import Connection, Database, in_clause
 from sift.kernel.ledger import ACTOR_USER, Actor, Object, record_event
 from sift.kernel.sorting import sort_key
 from sift.kernel.vocabulary import Subject
@@ -124,6 +124,21 @@ class Merged:
 
 def _opinion_of(row) -> tuple[bool, int | None]:  # type: ignore[no-untyped-def]
     return bool(row["favorite"]), None if row["rating"] is None else int(row["rating"])
+
+
+async def _credit_from_first(connection: Connection, into: str, gone: Sequence[Song]) -> None:
+    """Credit `into` with the artists of the first song going that credits any."""
+    for one in gone:
+        credited = await songs.credits_of(connection, one.id)
+        if credited:
+            await songs.credit(
+                connection,
+                into,
+                [artist.name for artist in credited],
+                made=songs.UNSAID,
+                source=None,
+            )
+            break
 
 
 class SongService:
@@ -393,17 +408,7 @@ class SongService:
                 await connection.execute(_TAKE_NOTES, (notes, into))
             # And the artists, where it credits none: the first song going that credits any.
             if not await songs.credits_of(connection, into):
-                for one in gone:
-                    credited = await songs.credits_of(connection, one.id)
-                    if credited:
-                        await songs.credit(
-                            connection,
-                            into,
-                            [artist.name for artist in credited],
-                            made=songs.UNSAID,
-                            source=None,
-                        )
-                        break
+                await _credit_from_first(connection, into, gone)
             for one in gone:
                 await record_event(
                     connection,

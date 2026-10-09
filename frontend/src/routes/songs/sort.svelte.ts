@@ -3,15 +3,7 @@ import { COLLECTION_ORDERS } from '$lib/library/collections.svelte';
 import { ARTIST_ORDER } from '$lib/grid/sort-state.svelte';
 import { WallSort } from '$lib/grid/wall-sort.svelte';
 
-/* Which order the Music wall is in, and where that choice is kept.
- *
- * A MODULE rather than a `$state` inside the screen, for the reason the Photo Sets wall gives:
- * opening a song unmounts the wall, and an order held in the component would go with it.
- *
- * Remembered in the browser under THIS WALL'S OWN KEY: a display preference the browser can answer
- * before the first paint, and not the grid's, whose orders (duration, relevance) mean nothing on a
- * wall of songs. The keys are the server's own; an unknown one read back reads as the default.
- */
+/* Which order the Music wall is in, and where that choice is kept. */
 
 const KEY = 'sift.songs.sort';
 

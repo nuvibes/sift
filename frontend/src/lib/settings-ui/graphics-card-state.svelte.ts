@@ -1,10 +1,6 @@
-/* The graphics card, as Performance asks the server about it: one reading shared by the block that
- * describes the card and the danger row at the foot of the pane, so deleting the support from the
- * one is what the other draws the moment it happens.
- *
- * What the block says in each state, and why there are five, is written beside the block in
- * `GraphicsCard.svelte`.
- */
+/* The graphics card, as Performance asks the server about it: one reading shared by the block
+ * that describes the card and the danger row at the foot of the pane, so deleting the support
+ * from the one is what the other draws the moment it happens. */
 import { api, ApiError } from '$lib/api/client';
 import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
 import { accelWatch } from '$lib/jobs/accelerator.svelte';
@@ -35,8 +31,8 @@ export class GraphicsCardState {
 		try {
 			this.accel = await api.get<Accelerator>('/performance/accelerator');
 		} catch {
-			// A failed read says nothing about the card. Drawing "no card" here would be a confident
-			// wrong answer about somebody's machine, so the block draws nothing at all.
+			// A failed read says nothing about the card. Drawing "no card" here would be a
+			// confident wrong answer about somebody's machine, so the block draws nothing at all.
 			this.accel = null;
 		}
 	}

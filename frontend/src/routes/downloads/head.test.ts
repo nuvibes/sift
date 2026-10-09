@@ -1,15 +1,4 @@
-/* The head of the downloads screen, and what is not under it.
- *
- * No summary strip sits between the paste box and the list: every figure it would carry is said
- * somewhere closer: the counts by the state tabs and the rail, the speed by the running row,
- * the tunnel by that row's detail. Two things such a strip would carry that are said nowhere else
- * are held here: the queue's Pause, in the head beside the page's Options, and the one live region
- * that speaks the queue's milestones aloud. The doors and the paste's choices are the Options
- * menu's rows (`DownloadOptions.svelte.test.ts`).
- *
- * Read from the source for the reason `pointing.test.ts` gives: mounting this page is mounting
- * the frame, the cookies sheet and four requests to see a handful of lines.
- */
+/* The head of the downloads screen, and what is not under it. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -62,8 +51,7 @@ describe('there is no summary strip', () => {
 		expect(markup).not.toMatch(/QueueStrip/);
 	});
 
-	/* With no strip, the milestones still need a voice. A progress bar is not announced as it
-	   moves, so without this somebody listening hears nothing about the queue at all. */
+	/* With no strip, the milestones still need a voice. */
 	it('still says the milestones aloud, in exactly one live region', () => {
 		expect(markup.split('aria-live=').length - 1).toBe(1);
 		expect(markup).toMatch(/aria-live="polite">\{announced\}/);

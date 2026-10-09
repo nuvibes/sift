@@ -1,37 +1,5 @@
 <script lang="ts">
-	/* Where a download starts: one box, one button, and the line saying which way it goes out.
-	 *
-	 * ## The choices are in the page's Options
-	 *
-	 * The repeats and galleries switches and Download folder are rows of the page's Options menu
-	 * (`DownloadOptions`), choices FOR THIS PASTE that start from the settings. What is under the
-	 * box is `DownloadChoices`: which way out the pasted Site takes.
-	 *
-	 * ## The button is the box's height, always
-	 *
-	 * The box and the button beside it are one control row: both start at the control height and
-	 * the row stretches the button to whatever height the box has, so a list pasted into the box
-	 * (which grows with its lines where the browser can size a box by its content) never leaves a
-	 * short button beside a tall box. On a window too narrow for both on one line the button is
-	 * the box's width instead, under it.
-	 *
-	 * ## Why the Site pills
-	 *
-	 * A pasted address either is a site Sift has a record for or it is not, and that is the
-	 * single most useful thing to know BEFORE pressing Download: it is what decides whether the
-	 * file gets filed under whoever posted it. It costs nothing to say: the list of sites is
-	 * already fetched for the sentence in the empty state.
-	 *
-	 * ## With no download folder set, the first paste ASKS
-	 *
-	 * "Not set: each download asks" is what the folder row says in Settings and under Options,
-	 * Download folder, and this is where it is kept. A paste that has nowhere to land (no folder
-	 * chosen under Download folder, no default, and no folder of its own for the pasted Site) is not
-	 * sent: the box says so and the page opens its Options on Download folder. Sent anyway, the server would take the link,
-	 * fetch the whole file and only then refuse it for want of a folder: a download spent to
-	 * learn a setting. A folder is never chosen for somebody here; the question is only ever
-	 * asked.
-	 */
+	/* Where a download starts: one box, one button, and the line saying which way it goes out. */
 	import { onMount, tick } from 'svelte';
 	import { Button, Chip, ChipRow, Field, TextArea } from '$lib/components/common';
 	import { Destinations } from '$lib/library/destinations.svelte';
@@ -59,8 +27,7 @@
 		onall: () => void;
 		/** Queue the one link that was pasted, and nothing else behind it. */
 		onjustone: () => void;
-		/** Where the next download goes: '' for the default folder, else a folder id. Chosen under
-		 *  the page's Options, Download folder; read here to know whether a paste has anywhere to go. */
+		/** Where the next download goes: '' for the default folder, else a folder id. */
 		dest?: string;
 		/** A paste had nowhere to go: the page opens its Options, where Download folder is. */
 		onask?: () => void;
@@ -82,16 +49,12 @@
 
 	const pasted = $derived(lines(value));
 
-	/* The button counts what it will do. "Download" over three links says nothing about the third
-	   one, and the count is the only warning somebody gets that a stray line came along with the
-	   paste. */
+	/* The button counts what it will do. "Download" over three links says nothing about the
+	   third one, and the count is the only warning somebody gets that a stray line came along
+	   with the paste. */
 	const label = $derived(pasted.length > 1 ? `Download ${pasted.length}` : 'Download');
 
-	/** The site a pasted address belongs to, by host, or nothing where Sift has no record.
-	 *
-	 *  Matched against the same `hosts` the server matches on, rather than on a name in the
-	 *  address: a second rule here would be a second answer to "which site is this", and the two
-	 *  would disagree the first time one of them learned a host. */
+	/** The site a pasted address belongs to, by host, or nothing where Sift has no record. */
 	function siteOf(address: string): SupportedSite | undefined {
 		let host: string;
 		try {
@@ -114,12 +77,7 @@
 		return [...seen].map(([key, name]) => ({ key, name }));
 	});
 
-	/* The box itself, so the page can put the cursor in it.
-	 *
-	 * A paste anywhere on the screen fills this box, and a box that fills without taking the cursor
-	 * leaves somebody looking at a link they cannot correct without reaching for it. Found through
-	 * the form rather than kept as a second binding: `Field` mints the control's id and `TextArea`
-	 * owns the element, so the form is the one thing this file holds that certainly contains it. */
+	/* The box itself, so the page can put the cursor in it. */
 	let form: HTMLFormElement | undefined = $state();
 
 	export function focus(): void {
@@ -174,11 +132,11 @@
 	<Field label="Paste a link" error={error ?? asking}>
 		{#snippet control({ id, describedBy, invalid })}
 			<div class="row" class:narrow>
-				<!-- A textarea rather than an input, so it takes a list as well as one link: it starts
-				     one control row tall, beside its button, and grows with what is pasted (see the
-				     style below). An input's `type="url"` refuses anything with a newline in it,
-				     which is exactly what a pasted list is, so the browser would reject the paste
-				     before it was sent. -->
+				<!--
+					A textarea rather than an input, so it takes a list as well as one link: it starts
+					one control row tall, beside its button, and grows with what is pasted (see the
+					style below).
+				-->
 				<TextArea
 					{id}
 					rows={1}
@@ -251,34 +209,19 @@
 		gap: var(--space-2);
 	}
 
-	/* Under the box rather than beside it, on a window that cannot hold both.
-	 *
-	 * Not a wrap: a wrapped button would sit at the left of its own line, and every verb in this
-	 * application sits on the right of the row it belongs to. A column puts the box and the button
-	 * each across the whole width, which is the one arrangement at this size where neither is too
-	 * narrow to read, and the button is then the width of the thing it acts on, which is what a
-	 * phone-sized layout does with a primary verb. The width itself is `narrow.svelte.ts`'s. */
+	/* Under the box rather than beside it, on a window that cannot hold both. */
 	.row.narrow {
 		flex-direction: column;
 		align-items: stretch;
 	}
 
-	/* How the paste box shares the row with the button beside it, and nothing else. The focus ring
-	   is the global `:focus-visible` rule's, not restated here. `:global`, because the box is
-	   `TextArea`'s own element, compiled in that file's scope. */
+	/* How the paste box shares the row with the button beside it, and nothing else. */
 	.row :global(.link) {
 		flex: 1;
 	}
 
-	/*
-	 * ONE HEIGHT FOR THE BOX AND ITS BUTTON: the control height, the token every field and press
-	 * in a row is built from (a finger's height on a phone, where app.css raises it). The box does
-	 * not start at the two-line height app.css gives every text area, which would leave a button
-	 * half its height beside it; it grows with what is pasted where the browser can size a
-	 * box by its content, up to four control heights, and the row above takes the button with it.
-	 * No hand resize: a box dragged taller by its corner is the one height nothing else follows.
-	 * `:global`, because the box is `TextArea`'s element and the button `Button`'s.
-	 */
+	/* ONE HEIGHT FOR THE BOX AND ITS BUTTON: the control height, the token every field and press
+	 * in a row is built from (a finger's height on a phone, where app.css raises it). */
 	.row :global(.link),
 	.row :global(.send) {
 		min-block-size: var(--control-height);
@@ -326,8 +269,8 @@
 		margin-inline-start: auto;
 	}
 
-	/* Where the settings sit under the box: the room between them and it, and the room before the
-	   queue. What they look like is `DownloadChoices`'s. */
+	/* Where the settings sit under the box: the room between them and it, and the room before
+	   the queue. */
 	.choices {
 		margin-block: var(--space-3) var(--space-5);
 	}

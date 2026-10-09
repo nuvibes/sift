@@ -5,14 +5,7 @@ import type { components } from '$lib/api/schema';
 
 export type PackImported = components['schemas']['PackImported'];
 
-/* Take in a pack of reference faces.
- *
- * Importing the same pack twice adds nothing the second time (every reference is keyed by the
- * identity of its picture), so this is safe to repeat without thinking about it.
- *
- * Nothing here decides who anybody is: the people the file names are held as facial fingerprints,
- * and the pass after it places each one by face, never by the name the file gives.
- */
+/* Take in a pack of reference faces. */
 export async function importPack(file: File): Promise<PackImported> {
 	const form = new FormData();
 	form.append('file', file);
@@ -20,9 +13,7 @@ export async function importPack(file: File): Promise<PackImported> {
 }
 
 /* Build the file from People here and people waiting for a matching face; neither list is
- * everybody. `name` is the library's: the other side keys a file by it, so two libraries' files
- * never replace each other. Pictures are opt-in.
- */
+ * everybody. */
 export async function exportPack(
 	name: string,
 	options: { personIds?: string[]; entryIds?: string[]; includePictures?: boolean } = {}

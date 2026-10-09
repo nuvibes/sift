@@ -146,6 +146,22 @@ def event_said(
     )
 
 
+def _swapped_or_added(
+    verb: str, by: str, payload: Mapping[str, object], count: int | None
+) -> Said | None:
+    if verb == "swap_started":
+        return Said(swap_started(by, payload))
+    if verb == "swap_ended":
+        return Said(swap_ended(payload))
+    if verb == "added" and (moved := songs_moved(by, payload, count)) is not None:
+        return Said(moved)
+    if verb == "added" and (departed := departures_kept(by, payload)) is not None:
+        return Said(departed)
+    if verb == "added" and (boxed := boxes_recorded(by, payload)) is not None:
+        return Said(boxed)
+    return None
+
+
 def _said_by_its_own(
     *,
     verb: str,
@@ -161,16 +177,8 @@ def _said_by_its_own(
     """The acts whose line is said by a builder of its own."""
     if verb == "decided":
         return Said(said(today_words(title) or "A decision was taken"))
-    if verb == "swap_started":
-        return Said(swap_started(by, payload))
-    if verb == "swap_ended":
-        return Said(swap_ended(payload))
-    if verb == "added" and (moved := songs_moved(by, payload, count)) is not None:
-        return Said(moved)
-    if verb == "added" and (departed := departures_kept(by, payload)) is not None:
-        return Said(departed)
-    if verb == "added" and (boxed := boxes_recorded(by, payload)) is not None:
-        return Said(boxed)
+    if (own := _swapped_or_added(verb, by, payload, count)) is not None:
+        return own
     if verb == "scanned" and payload.get(FINGERPRINTS_EMPTY) is True and not from_object:
         return Said(nothing_to_fingerprint(by, word))
     if verb == "pressed":
@@ -419,10 +427,8 @@ def _feed_own_words(
         return Said(said(by, before, pieces[0], after) if after else said(by, before, pieces[0]))
     if verb == "decided":
         return Said(said(today_words(title) or "A decision was taken"), groups=_grouped(subjects))
-    if verb == "swap_started":
-        return Said(swap_started(by, payload))
-    if verb == "swap_ended":
-        return Said(swap_ended(payload))
+    if (own := _swapped_or_added(verb, by, payload, count)) is not None:
+        return own
     if (
         verb == "linked"
         and object_kind == "person"
@@ -436,12 +442,6 @@ def _feed_own_words(
                 object_piece, said("in ", listed([(one,) for one in files_here])), sures or ()
             )
         )
-    if verb == "added" and (moved := songs_moved(by, payload, count)) is not None:
-        return Said(moved)
-    if verb == "added" and (departed := departures_kept(by, payload)) is not None:
-        return Said(departed)
-    if verb == "added" and (boxed := boxes_recorded(by, payload)) is not None:
-        return Said(boxed)
     # One file's empty read only: a run folded into a count says the run, by the count.
     if verb == "scanned" and payload.get(FINGERPRINTS_EMPTY) is True and count is None and pieces:
         return Said(nothing_to_fingerprint(by, listed([(one,) for one in pieces])))

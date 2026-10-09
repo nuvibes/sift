@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The General pane's words, and what somebody can type to find the rows it draws itself.
- *
- * General is what the application does on THIS device, and the choices about the whole app that
- * belong to no one feature. The browser choice and the close button keep their own modules beside
- * their components (`LinksOpenIn.search.ts`, `ClosingTheWindow.search.ts`), and so does network
- * sharing (`NetworkSharing.search.ts`); the rest is drawn by the pane itself, so its words are
- * here. The two confirmations keep the row ids they had on Editing, so an old link still rings
- * them. */
+/* The General pane's words, and what somebody can type to find the rows it draws itself. */
 import type { Searchable } from './search';
 
 export const COPY = {
@@ -81,8 +74,7 @@ export const COPY = {
 				"Approve this on the computer running Sift. Windows shows its own prompt there, and it can't be approved from here.",
 			unchanged: "Nothing changed. Windows on that computer didn't get permission to open the port."
 		},
-		/* The sharing switch of the computer running Sift, from another computer. Its name is the
-		   Network sharing section's own (`NETWORK_SHARING.name`). */
+		/* The sharing switch of the computer running Sift, from another computer. */
 		sharing: {
 			help: (address: string | null) =>
 				address === null

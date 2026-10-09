@@ -1,11 +1,4 @@
-/*
- * The line under the menu row, which is the whole of what somebody reads before deciding.
- *
- * `lastEnriched` is pure and is tested here rather than through a menu, for the reason every other
- * wording test in this app is: what could go wrong is the SENTENCE (a thing that has never been
- * enriched drawing a line that says so, or a box that has been removed drawing an id nobody
- * recognises), and a DOM around it would only make those two harder to see.
- */
+/* The line under the menu row, which is the whole of what somebody reads before deciding. */
 import { describe, expect, it } from 'vitest';
 import { KEPT_LOCAL_SAID, lastEnriched, refusedOutside } from '$lib/entity/enrichment.svelte';
 import type { EnrichmentState } from '$lib/entity/enrichment.svelte';
@@ -49,14 +42,8 @@ describe('the last-enrichment line', () => {
 	});
 });
 
-/*
- * WHETHER THE ENRICH ROWS ARE DRAWN REFUSED, which is a different question from the switch itself.
- *
- * The pair exists because a FILE can be refused by something it is filed under while its own
- * switch is off, and the menu has to draw two different things from those two facts: a greyed
- * Enrich row, and a switch that still reads "Do not enrich" because pressing it would change
- * nothing about what leaves.
- */
+/* WHETHER THE ENRICH ROWS ARE DRAWN REFUSED, which is a different question from the switch
+ * itself. */
 describe('what refuses a subject', () => {
 	it('refuses nothing where nothing has been asked yet', () => {
 		expect(refusedOutside(null)).toEqual({ refused: false, why: undefined });

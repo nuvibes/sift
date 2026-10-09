@@ -1,13 +1,5 @@
-/* The Sift desktop shell.
- *
- * Two lifecycles over one backend:
- *
- *   standalone: start the Python backend on 127.0.0.1:5171 and load it.
- *   client: load a server somebody else is running, and start nothing.
- *
- * Both load one origin and hand over to the ordinary application, whose requests are relative
- * /api paths: no second origin, no CORS, no separate sign-in, so client mode is nearly free.
- */
+/* The Sift desktop shell: standalone starts the Python backend on 127.0.0.1:5171 and loads it;
+   client loads a server somebody else is running. */
 
 import { app, BrowserWindow, dialog, net, session, shell, type Tray } from 'electron';
 import * as fs from 'node:fs';
@@ -27,11 +19,9 @@ import {
 import { isWebAddress, openIn } from './browsers';
 import {
 	adoptDatabase,
-	backUpLibrary,
 	find as findLibrary,
 	forgotten,
 	inspectDatabase,
-	inspectLibrary,
 	nameFor,
 	openingAtStart,
 	planForDatabase,
@@ -39,10 +29,10 @@ import {
 	sameFolder,
 	takeSwitchNote,
 	unmakeEmpty,
-	type DatabasePlan,
-	type LibraryReport
+	type DatabasePlan
 } from './libraries';
 import { firewallState, openFirewall } from './firewall';
+import { OLDER_FROM_AFAR, pickDatabaseFile, refusalForFile, settleSchema } from './library-reading';
 import { StartFrame } from './opening';
 import { log, tail as tailShellLog } from './log';
 import { registerLogArchive } from './logbundle';
@@ -78,36 +68,29 @@ import {
 } from './verbs';
 import { wayBack } from './wayback';
 
-/* The Vite dev server, which forwards /api and /health to the backend, so the page sees one origin;
- * behind a flag, so a shipped app is never pointed at it. */
+/* The Vite dev server, which forwards /api and /health to the backend; only behind a flag. */
 const DEV_ORIGIN = 'http://localhost:5173';
 const isDevShell = process.argv.includes('--dev');
 
-/* Before anything else: a privileged scheme cannot be declared once the app is ready, and this one
- * serves the connect screen when there is no server. */
+/* First: a privileged scheme cannot be declared once the app is ready. */
 declareShellScheme();
 
 let settings: DesktopSettings = load();
 let backend: Backend | null = null;
-/* Where the backend asks this shell for acts only it can do, so a window from another computer acts
- * on THIS machine (`shelllink.ts`). Opened at the first backend start and reused, same secret; null
- * in client mode. */
+/* Where the backend asks this shell for acts only it can do (`shelllink.ts`). */
 let shellLink: ShellLink | null = null;
 let mainWindow: BrowserWindow | null = null;
 
 /* The icon in the notification area, while there is one: it follows the close-to-tray setting. */
 let tray: Tray | null = null;
 
-/* WHETHER SIFT IS ON ITS WAY OUT: a window that hides on close would otherwise hide on the tray's
- * own Quit too. Set by `before-quit`, which every route out passes through. */
+/* WHETHER SIFT IS ON ITS WAY OUT, or a window that hides on close would hide on the tray's Quit. */
 let quitting = false;
 
-/* WHETHER THIS START IS WINDOWS STARTING SIFT AT SIGN-IN, spent by the first window shown; a later
- * window is somebody at the keyboard. */
+/* WHETHER WINDOWS STARTED SIFT AT SIGN-IN, spent by the first window shown. */
 let signInStart = startedAtSignIn(process.argv);
 
-/* Whether the running backend is listening to the network, as against what the setting says: the
- * two part while a restart runs and stay parted if it failed, when only this is honest. */
+/* Whether the running backend listens to the network, which can differ from the setting. */
 let liveSharing = false;
 
 /* The dialog after Sift has stopped, and the start with the optional features held off. */
@@ -127,9 +110,7 @@ let shownOnce = false;
 /* Sift's own frame over the window while the first page loads (`opening.ts`). */
 const frame = new StartFrame(startedAt);
 
-/* THE SMOKE RUN COMES FIRST, BEFORE THE LOCK: Sift exits 0 when another copy holds the lock, so a
- * smoke run after it would pass without starting anything (`smoke.ts`; main.test.ts holds the
- * order). It takes no lock and opens nothing. */
+/* THE SMOKE RUN COMES FIRST, BEFORE THE LOCK: after it, a smoke run would pass on a held lock. */
 if (
 	answerSmokeRun(
 		process.argv,
@@ -137,8 +118,6 @@ if (
 		(n) => app.exit(n)
 	)
 ) {
-	/* Nothing else: the process has already been asked to stop. One Sift per machine otherwise: two
-	 * would race for port 5171, and focusing the open one is what every desktop app does. */
 } else if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
@@ -159,15 +138,13 @@ async function main(): Promise<void> {
 		uptime_ms: Math.round(process.uptime() * 1000)
 	});
 
-	/* Anything a previous run fetched to drag is thrown away at STARTUP, since a crash never reaches
-	 * a shutdown sweep. */
+	/* A previous run's fetched drags are thrown away at STARTUP, since a crash skips the sweep. */
 	clearFetchedFiles();
 	serveShellPages();
 
-	/* Before any window exists, so no page is ever shown unwired verbs. Read through functions,
-	 * since `settings` changes during first run. */
-	/* The shell's own connect screen is this machine's too (static files from the bundle); the dev
-	 * server stands in for the local backend. */
+	/* Before any window exists, so no page is ever shown unwired verbs. */
+	/* The shell's connect screen is this machine's too; the dev server stands in for the
+	   backend. */
 	const trust: ReachCheck = (url) => {
 		if (url.startsWith(SHELL_ORIGIN)) return 'local';
 		if (isDevShell) return url.startsWith(DEV_ORIGIN) ? 'local' : null;
@@ -176,7 +153,6 @@ async function main(): Promise<void> {
 	registerLogArchive(trust, crashDialog.archive);
 	registerWindowStage(trust, frame.drawn);
 	registerVerbs(trust, {
-		/* Read through a function, as the trust check is. */
 		feedUrl: () => settings.feedUrl,
 		servers: {
 			remember: rememberServer,
@@ -216,20 +192,15 @@ async function main(): Promise<void> {
 		},
 		storage: {
 			read: async () => storageSizes.read(locations(settings)),
-			/*
-			 * THE ORDER IS THE WHOLE OF THE SAFETY, and only the backend's supervisor can keep it:
-			 * stop, move, write, start. The database's files are held open until the backend is
-			 * down, and the settings change only after the bytes arrive, so no crash leaves them
-			 * pointing at an empty folder. A failed move restarts on the intact old folder.
-			 */
+			/* THE ORDER IS THE WHOLE OF THE SAFETY (stop, move, write, start): the supervisor's
+			   to keep. */
 			move: moveFolders,
 			forget: forgetMode
 		},
 		port: PORT,
 		titleBarHeight: TITLE_BAR_HEIGHT,
 		setup: {
-			/* What each first-run ANSWER does lives here: only the supervising process can write
-			 * the setting, decide what is next, start the backend and load the library. */
+			/* What each first-run ANSWER does: only the supervising process can write and start. */
 			mode: async (chosen) => {
 				settings = { ...settings, mode: chosen };
 				save(settings);
@@ -262,19 +233,19 @@ async function main(): Promise<void> {
 				return { ok: true, refusal: null };
 			},
 			back: async () => {
-				/* The backend is stopped first, cleanly: Back is reachable from the sign-in screen,
-				 * and a backend left holding 5171 would refuse the next start. */
+				/* Stopped first, cleanly: a backend left holding 5171 would refuse the next
+				   start. */
 				await backend?.stop();
 				backend = null;
-				/* The settings screen's own "set this up again" write, which leaves the library
-				 * folder, so going back and forward loses nothing. */
+				/* The settings screen's "set this up again" write, which leaves the library
+				   folder. */
 				forgetMode();
 				await advanceFirstRun();
 				return { ok: true, refusal: null };
 			}
 		},
-		/* The installer runs only once the backend has been ASKED to stop and has gone, as a quit
-		 * does, so no job is cut off. Null in client mode. */
+		/* The installer runs only once the backend has stopped, as a quit does. Null in client
+		   mode. */
 		stopForUpdate: async () => {
 			await backend?.stop();
 		},
@@ -312,10 +283,7 @@ async function main(): Promise<void> {
 	/* Downloads land in that folder without a dialog. Registered once, on the window's session. */
 	saveWithoutAsking(() => settings.downloadDir ?? app.getPath('downloads'));
 
-	/*
-	 * The window comes first: the first-run questions are Sift's own screens, answered through verbs
-	 * that call `advanceFirstRun`, the shape `/connect` has.
-	 */
+	/* The window comes first: the first-run questions are Sift's own screens. */
 	mainWindow = createWindow();
 	/* On screen immediately in Sift's own frame, unless Windows started Sift at sign-in (`reveal`). */
 	const window = mainWindow;
@@ -335,8 +303,7 @@ async function loadPage(window: BrowserWindow, address: string): Promise<void> {
 	frame.loaded(address, SHELL_ORIGIN);
 }
 
-/* Put the icon in the notification area, or take it away, to match the setting. Idempotent; an icon
- * is destroyed, never dropped, or the tray collects copies. */
+/* Put the icon in the notification area, or take it away, to match the setting. */
 function dressTheTray(): void {
 	if (settings.keepRunningWhenClosed && tray === null) {
 		tray = showInTray(trayIconFile(), {
@@ -356,11 +323,7 @@ function dressTheTray(): void {
 	}
 }
 
-/**
- * Show the window a start has just loaded, unless Windows started Sift at sign-in. A screen waiting
- * on a person (`needsSomebody`: a first-run question, an unreachable library) is always shown;
- * only a cleanly loaded library stays out of the way (`howToAppear`).
- */
+/** Show the window a start has just loaded, unless Windows started Sift at sign-in. */
 function reveal(window: BrowserWindow, needsSomebody: boolean): void {
 	const how = needsSomebody ? 'show' : howToAppear(signInStart, tray !== null);
 	signInStart = false;
@@ -384,18 +347,13 @@ function showMainWindow(): void {
 	window.focus();
 }
 
-/**
- * Unsay which way this copy is set up, so first run asks again: the mode and the last server only.
- * `dataDir` stays, so switching back finds the library. Shared by every caller, so none can take
- * the folder with it.
- */
+/** Unsay which way this copy is set up, so first run asks again. */
 function forgetMode(): void {
 	settings = withoutMode(settings);
 	save(settings);
 }
 
-/** Offer this copy's library to the network or stop: the page's switch, and the backend's ask
- * from another computer (`shelllink.ts`). Restarts the backend on the other address. */
+/** Offer this copy's library to the network or stop, restarting the backend on the address. */
 async function writeSharing(on: boolean): Promise<void> {
 	/* Refused for a client (see `mayShare`) and cleared by `forgetMode`. */
 	if (!mayShare(settings.mode)) {
@@ -413,13 +371,11 @@ async function writeSharing(on: boolean): Promise<void> {
 	}
 
 	const took = await backend.listenOnNetwork(on);
-	/* The setting is not put back when the restart fails: `enabled` and `live` then disagree, and
-	 * the screen says the change is asked for and applies at the next open. */
+	/* The setting is not put back when the restart fails: the screen says it applies next open. */
 	liveSharing = took ? on : !on;
 }
 
-/** Move both storage folders under `target`: the page's Move, after its picker, and the backend's
- * ask from another computer (`shelllink.ts`). See the order note where the verbs are wired. */
+/** Move both storage folders under `target`; see the order note where the verbs are wired. */
 async function moveFolders(
 	target: string,
 	report: (copied: number, total: number) => void
@@ -451,16 +407,14 @@ async function moveFolders(
 
 /* --- Asked by the backend, for an admin on another computer (see `shelllink.ts`) ------------ */
 
-/* Each act here stops the backend whose request is asking, so it is answered FIRST: every refusal is
- * said before anything stops, and the act runs after the answer has left. */
+/* Each act stops the backend asking, so it is answered FIRST and runs after the answer leaves. */
 
 const NOT_RUNNING_HERE: Settled = {
 	ok: false,
 	refusal: 'Sift is not running its own library on this computer.'
 };
 
-/** What the last move asked from another computer came to, for the screen there to say once Sift
- *  is back. Null until one is asked; this launch only. */
+/** What the last move asked from another computer came to; this launch only. */
 let lastMove: Settled | null = null;
 /* The two folders' sizes, from one shared and kept walk: the door answers without waiting on it. */
 const storageSizes = new StorageSizes();
@@ -485,12 +439,7 @@ async function moveFromAfar(folder: string): Promise<Deferred<Settled>> {
 	};
 }
 
-/**
- * An update asked from another computer: the check the page's Install makes (`installNewer`), so the
- * signature and "newer than this copy" are one rule. Answered once the installer is verified, with
- * its version, and only then is the backend stopped for it; a refusal is answered as one. The
- * installer opens on THIS screen, where somebody agrees to it.
- */
+/** An update asked from another computer: the same check as the page's Install. */
 function updateFromAfar(): Promise<Deferred<UpdateOutcome>> {
 	return new Promise((settle) => {
 		let stopped = false;
@@ -511,11 +460,7 @@ function updateFromAfar(): Promise<Deferred<UpdateOutcome>> {
 	});
 }
 
-/**
- * A library this copy has opened before, asked for from another computer: the checks `openLibrary`
- * makes, all before anything stops, except that an older library is refused in words rather than
- * asked about (see `settleSchema`).
- */
+/** A library asked for from another computer: `openLibrary`'s checks, an older one refused. */
 async function openLibraryFromAfar(dataDir: string): Promise<Deferred<Settled>> {
 	const known = findLibrary(settings.libraries, dataDir);
 	if (known === null) {
@@ -537,21 +482,14 @@ async function openLibraryFromAfar(dataDir: string): Promise<Deferred<Settled>> 
 	};
 }
 
-/**
- * Close Sift and open it again, so a setup asked for again is reached now. The backend stops as for
- * a quit; Electron relaunches once this copy exits by the ordinary path (`before-quit`), and the new
- * copy takes the single-instance lock.
- */
+/** Close Sift and open it again, so a setup asked for again is reached now. */
 async function restartApp(): Promise<void> {
 	await backend?.stop();
 	app.relaunch();
 	app.quit();
 }
 
-/**
- * Move first run along: draw the next question, or finish and open the library. `firstRunRoute` is
- * the single place that decides whether anything is outstanding.
- */
+/** Move first run along: draw the next question, or finish and open the library. */
 async function advanceFirstRun(): Promise<void> {
 	const window = mainWindow;
 	if (window === null) return;
@@ -572,8 +510,7 @@ async function advanceFirstRun(): Promise<void> {
 		await loadPage(window, target);
 		reveal(window, false);
 	} catch (err) {
-		/* In client mode a failed load is a server that stopped answering: the connect screen, not
-		 * the dialog meant for a local backend that will not start. */
+		/* In client mode a failed load is a server that stopped answering: the connect screen. */
 		if (settings.mode === 'client' && !(err instanceof BackendStartError)) {
 			connectProblem = `Sift could not reach ${settings.lastServer ?? 'the saved address'}. ${
 				err instanceof Error ? err.message : String(err)
@@ -588,11 +525,7 @@ async function advanceFirstRun(): Promise<void> {
 	}
 }
 
-/*
- * Send a link out of the window, to the browser somebody chose, or the one Windows would use. Only
- * http and https leave: `shell.openExternal` hands any scheme to whatever Windows has registered,
- * and the address comes from a page.
- */
+/* Send a link out of the window, to the browser somebody chose, or the one Windows would use. */
 function openOutside(url: string): void {
 	// Silently: no legitimate Sift link is anything else, and a dialog would only teach dismissal.
 	if (!isWebAddress(url)) return;
@@ -638,11 +571,7 @@ async function prepareTarget(): Promise<string> {
 	return LOCAL_ORIGIN;
 }
 
-/**
- * Start the backend on the library chosen to open when Sift starts (`openingAtStart`), or on the
- * one open last. A chosen library that will not start falls back to the last one, so a preference
- * never leaves Sift unable to open.
- */
+/** Start the backend on the library chosen to open at start (`openingAtStart`), or the last. */
 async function startOnTheOpeningLibrary(): Promise<void> {
 	const last = settings;
 	const opening = openingAtStart(locations(last).dataDir);
@@ -664,10 +593,7 @@ async function startOnTheOpeningLibrary(): Promise<void> {
 	}
 }
 
-/**
- * Try an address, and go there if it answers. A sentence back when it does not. CHECKED before it
- * is saved, so a dead address never strands the next launch away from the screen that fixes it.
- */
+/** Try an address, and go there if it answers. A sentence back when it does not. */
 async function rememberServer(typed: string): Promise<string | null> {
 	const normalised = normaliseOrigin(typed);
 	if (normalised === null) {
@@ -694,10 +620,7 @@ async function rememberServer(typed: string): Promise<string | null> {
 	return null;
 }
 
-/**
- * Why the saved address did not answer, for the connect screen to say, or null. Held, not saved: it
- * describes this launch only.
- */
+/** Why the saved address did not answer, for the connect screen to say, or null. */
 let connectProblem: string | null = null;
 
 /** Take one address off the saved list. The last address goes with it when it is the same one. */
@@ -718,8 +641,7 @@ async function answersAsSift(origin: string): Promise<string | null> {
 		const response = await net.fetch(`${origin}/health`, {
 			signal: AbortSignal.timeout(10_000)
 		});
-		/* A 401 is a good answer (Sift is there and wants a sign-in), but only from a Sift: the
-		 * response's mark and shape decide (`looksLikeSift`). */
+		/* A 401 is a good answer, but only from a Sift (`looksLikeSift`). */
 		const body = await response.text();
 		return looksLikeSift(response.status, response.headers, body);
 	} catch {
@@ -743,23 +665,15 @@ function libraryList(): LibraryList {
 	};
 }
 
-/**
- * Open a library this copy has opened before: anything off the list is refused, and only a backend
- * started on a folder granted through the operating system's picker puts one there.
- */
+/** Open a library this copy has opened before: anything off the list is refused. */
 async function openLibrary(dataDir: string): Promise<Settled> {
 	const known = findLibrary(settings.libraries, dataDir);
 	if (known === null) return { ok: false, refusal: 'Sift has not opened that library before.' };
-	/* `mustBeThere`: no database where one was means the library has gone (a drive out, a share
-	 * down), and starting anyway would report success over an apparently deleted collection. */
+	/* `mustBeThere`: a missing database means the library has gone, not that it is new. */
 	return switchTo({ dataDir: known.dataDir, cacheDir: known.cacheDir }, { mustBeThere: true });
 }
 
-/**
- * Open a library from a database file chosen in the machine's own picker, the only thing that grants
- * a path. A library's own `sift.sqlite3` opens where it is; any other `.sqlite3` becomes a new
- * library from a copy of it (`planForDatabase`). A file, since that is what a backup in hand is.
- */
+/** Open a library from a database file chosen in the machine's own picker. */
 async function addLibrary(): Promise<Settled> {
 	const chosen = await pickDatabaseFile();
 	/* Closing the picker is neither a failure nor an answer, exactly as it is on first run. */
@@ -773,30 +687,7 @@ async function addLibrary(): Promise<Settled> {
 	return switchTo(plan.locations);
 }
 
-/**
- * The machine's own file dialog, filtered to Sift's databases, or null when closed. Kept off the
- * Windows recent list, which every application can read.
- */
-async function pickDatabaseFile(): Promise<string | null> {
-	const picked = await dialog.showOpenDialog({
-		title: 'Choose a Sift database',
-		properties: ['openFile', 'dontAddToRecent'],
-		filters: [{ name: 'Sift database', extensions: ['sqlite3'] }],
-		buttonLabel: 'Open'
-	});
-	const chosen = picked.filePaths[0];
-	if (picked.canceled || chosen === undefined) return null;
-	return chosen;
-}
-
-/**
- * Make a library from a database file that is not one's own, and open it.
- *
- * Nothing is made before a yes to a dialog naming the new folder; the file is read FIRST, so a
- * newer or foreign file is refused before any folder exists; the backend makes the copy and the
- * chosen file is never written; the switch then opens the copy, with its backup if it is behind.
- * The upgrade question is asked once, here (`agreed`).
- */
+/** Make a library from a database file that is not one's own, and open it. */
 async function adoptAndOpen(plan: Extract<DatabasePlan, { kind: 'adopt' }>): Promise<Settled> {
 	if (backend === null) {
 		return {
@@ -857,36 +748,7 @@ async function adoptAndOpen(plan: Extract<DatabasePlan, { kind: 'adopt' }>): Pro
 	return switchTo(plan.locations, { mustBeThere: true, agreed: true });
 }
 
-/* What each reading of a CHOSEN FILE says, or undefined to carry on: no "new" or "gone" readings for
- * a file just picked, and `newer` is the folder's own sentence. */
-function refusalForFile(report: LibraryReport): string | undefined {
-	const verdict = report.verdict;
-	if (verdict === 'current' || verdict === 'older') return undefined;
-	if (verdict === 'newer') return NEWER_REFUSAL;
-	if (verdict === 'empty')
-		return 'That file is not a Sift library, so there is nothing in it to open.';
-	if (verdict === 'unreadable') {
-		return report.detail || 'That file is not a Sift library this copy can read.';
-	}
-	return 'Sift could not read that file to see what is in it.';
-}
-
-const NEWER_REFUSAL =
-	'That library was last opened by a newer version of Sift than this one. Update Sift, ' +
-	'then open it again. Nothing has been changed.';
-
-/* An older library asked for from another computer: its upgrade dialog is on this screen. */
-const OLDER_FROM_AFAR =
-	'That library was last opened by an older Sift, and opening it upgrades it. Open it in the Sift ' +
-	'app on the computer running Sift, which asks first. Nothing has been changed.';
-
-/**
- * Stop the backend, point it at another library, and start it again.
- *
- * THE ORDER IS THE WHOLE OF THE SAFETY, as for `move`: ask, decide, stop, write, start. Asking while
- * the old library is up makes a refusal free; the settings are written only once the new backend
- * answers; a failed start puts the old library back.
- */
+/** Stop the backend, point it at another library, and start it again. */
 async function switchTo(
 	target: DataLocations,
 	{ mustBeThere = false, agreed = false }: { mustBeThere?: boolean; agreed?: boolean } = {}
@@ -905,10 +767,7 @@ async function switchTo(
 	return restartOn(target);
 }
 
-/**
- * Stop the backend if it is running, start one on `target`, and load it, or put the old one back:
- * one copy of what a switch DOES, for this shell's switch and the one the server asked for.
- */
+/** Stop the backend, start one on `target` and load it, or put the old one back. */
 async function restartOn(target: DataLocations): Promise<Settled> {
 	if (backend === null) {
 		return {
@@ -943,18 +802,13 @@ async function restartOn(target: DataLocations): Promise<Settled> {
 	save(settings);
 	recordForUninstaller(locations(settings));
 	log.info('library.switched', { from: before.dataDir ?? '', library: target.dataDir });
-	/* The new backend starts with every saved secret sealed, as a launch does, so the stale sign-in
-	   goes too (`requireSignIn`). */
+	/* The new backend starts with every secret sealed, so the stale sign-in goes too. */
 	await requireSignIn(LOCAL_ORIGIN);
 	await mainWindow?.loadURL(LOCAL_ORIGIN);
 	return { ok: true, refusal: null };
 }
 
-/**
- * Whether a backend that has just stopped asked for ANOTHER LIBRARY, and if so, start that one; true
- * means this has taken the restart over. The server checked it, backed it up and left a note
- * (`takeSwitchNote`), read synchronously before anything could restart the old library.
- */
+/** Whether a stopped backend asked for ANOTHER LIBRARY; true when this took the restart over. */
 function takeOverRestart(): boolean {
 	const target = takeSwitchNote(locations(settings).dataDir);
 	if (target === null) return false;
@@ -962,10 +816,7 @@ function takeOverRestart(): boolean {
 	return true;
 }
 
-/**
- * Start on the library the server asked for: the schema was settled on the page, so only this
- * machine's checks run (network drive, writable). A refusal restarts the library that was open.
- */
+/** Start on the library the server asked for: only this machine's checks run. */
 async function switchTheServerAsked(target: DataLocations): Promise<void> {
 	log.info('library.switch_asked_by_server', {});
 	const problem = await refuseLocation(target);
@@ -978,65 +829,6 @@ async function switchTheServerAsked(target: DataLocations): Promise<void> {
 		await requireSignIn(LOCAL_ORIGIN);
 		await mainWindow?.loadURL(LOCAL_ORIGIN);
 	}
-}
-
-/**
- * Whether the target's schema lets it be opened, asking first where the answer is a decision:
- * `undefined` carries on, a string is the sentence to show, null is somebody saying no.
- *
- * The upgrade warning shows once with no flag: an upgraded library is no longer behind, and a flag
- * would stay set through a restore of an older backup. `agreed` callers already asked (the backup
- * is still made). `fromAfar` cannot see this screen's dialog, so an older library is refused in
- * words.
- */
-async function settleSchema(
-	target: DataLocations,
-	mustBeThere: boolean,
-	agreed = false,
-	fromAfar = false
-): Promise<string | null | undefined> {
-	const report = await inspectLibrary(target);
-	if (report.verdict === 'empty') {
-		/* Empty is NEW when just pointed at, and GONE when this copy opened it before. */
-		return mustBeThere
-			? 'That library is not there any more. If it is on a drive or a share, check it is connected.'
-			: undefined;
-	}
-	if (report.verdict === 'current') return undefined;
-	if (report.verdict === 'newer') return NEWER_REFUSAL;
-	/* The reading's own sentence where it has one: it says how to open an older library. */
-	if (report.verdict === 'unreadable') {
-		return report.detail || 'There is no Sift library in that folder that this copy can read.';
-	}
-	if (report.verdict === 'unknown') {
-		return 'Sift could not read that folder to see what is in it.';
-	}
-	if (fromAfar) return OLDER_FROM_AFAR;
-
-	const UPGRADE = 0;
-	const chosen = agreed
-		? { response: UPGRADE }
-		: await dialog.showMessageBox({
-				type: 'warning',
-				title: 'Open this library?',
-				message: 'This library was last opened by an older Sift.',
-				detail:
-					'Opening it upgrades it in one direction; that Sift will not read it afterwards. Sift ' +
-					'backs it up first.',
-				buttons: ['Upgrade and open', 'Cancel'],
-				defaultId: UPGRADE,
-				cancelId: 1,
-				noLink: true
-			});
-	if (chosen.response !== UPGRADE) return null;
-
-	const copy = await backUpLibrary(target);
-	/* A REFUSAL, not a warning: an upgrade promised a way back. */
-	if (copy === null) {
-		return 'Sift could not back up that library, so it has not been opened.';
-	}
-	log.info('library.backed_up', { copy });
-	return undefined;
 }
 
 async function startBackend(): Promise<void> {
@@ -1092,8 +884,7 @@ async function startBackend(): Promise<void> {
 		took_ms: Date.now() - began
 	});
 	crashDialog.started();
-	/* RECORDED HERE, where a library is OPENED, never where one is chosen: a refused folder must not
-	 * become an entry. */
+	/* RECORDED HERE, where a library is OPENED: a refused folder must not become an entry. */
 	settings = {
 		...settings,
 		libraries: remembered(settings.libraries, locations(settings), Date.now())
@@ -1101,23 +892,12 @@ async function startBackend(): Promise<void> {
 	save(settings);
 }
 
-/* The one that looks like deleted keys.
- *
- * The master key unsealing saved logins, stash-box keys and tunnel settings is held in memory and
- * filled from the password at sign-in, so every launch starts sealed while the browser still says
- * signed in. Discarding the stale sign-in sends the person to the ordinary sign-in, where the
- * password authenticates and unseals in one go. Client mode's backend outlives this window and is
- * left alone.
- */
+/* The one that looks like deleted keys. */
 async function requireSignIn(origin: string): Promise<void> {
 	await session.defaultSession.cookies.remove(origin, 'sift_session');
 }
 
-/*
- * How tall the strip holding the caption buttons is: `WindowBar`'s height. `--window-chrome` in
- * `app.css` is the same 36; one is read before any page loads and, in client mode, from another
- * computer, so they cannot be one declaration, and a mismatch only nudges the buttons.
- */
+/* How tall the strip holding the caption buttons is: `WindowBar`'s height. */
 const TITLE_BAR_HEIGHT = 36;
 
 function createWindow(): BrowserWindow {
@@ -1131,19 +911,14 @@ function createWindow(): BrowserWindow {
 		// The page's own canvas colour as the last start saw it, so nothing flashes before it paints.
 		backgroundColor: frame.look.canvas,
 		autoHideMenuBar: true,
-		/*
-		 * NO OPERATING-SYSTEM TITLE BAR: a fixed-colour caption strip reads as somebody else's window.
-		 * `hidden` keeps the three buttons and drops the strip; these colours are the default theme's,
-		 * for the first paint, until the page repaints them (`SET_TITLE_BAR` in `verbs.ts`).
-		 */
+		/* NO OPERATING-SYSTEM TITLE BAR: a fixed-colour strip reads as somebody else's window. */
 		titleBarStyle: 'hidden',
 		titleBarOverlay: {
 			color: '#1e2024',
 			symbolColor: '#eef1f6',
 			height: TITLE_BAR_HEIGHT
 		},
-		/* Spread: the project forbids passing `undefined` to an optional field. Packaged builds take
-		   the icon off the executable. */
+		/* Spread: the project forbids passing `undefined` to an optional field. */
 		...(icon === undefined ? {} : { icon }),
 		webPreferences: {
 			preload: path.join(__dirname, 'preload.js'),
@@ -1155,9 +930,7 @@ function createWindow(): BrowserWindow {
 		}
 	});
 
-	/* Presses in this window, as the operating system delivers them: a page from another computer
-	 * reads the clipboard only just after one (`READ_CLIPBOARD` in verbs.ts). A page that is not
-	 * Sift goes to the real browser and never inherits the preload. */
+	/* Presses here: a page from another computer reads the clipboard only just after one. */
 	watchGestures(window.webContents);
 
 	window.webContents.setWindowOpenHandler(({ url }) => {
@@ -1172,12 +945,7 @@ function createWindow(): BrowserWindow {
 		openOutside(url);
 	});
 
-	/*
-	 * THE CLOSE BUTTON IS NOT THE QUIT BUTTON, unless somebody has said it should be: a closed window
-	 * may still be scanning, downloading or serving another computer, so the setting defaults on.
-	 * `preventDefault`, not `destroy`, so reopening is instant. `tray.ts` decides; main.test.ts
-	 * presses the button.
-	 */
+	/* THE CLOSE BUTTON IS NOT THE QUIT BUTTON: a closed window may still be working. */
 	window.on('close', (event) => {
 		if (whatClosingDoes(settings.keepRunningWhenClosed, quitting) !== 'hide') return;
 		event.preventDefault();
@@ -1208,8 +976,7 @@ function showStartFailure(err: unknown): void {
 	);
 }
 
-/* Windows quits when the last window closes. Stopping the backend first keeps the database's
- * write-ahead log folded, so the next start is quiet. */
+/* Stopping the backend before quitting keeps the database's write-ahead log folded. */
 app.on('window-all-closed', () => {
 	void (async () => {
 		await backend?.stop();

@@ -1,46 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Making libraries, and switching the running server from one to another.
 
-## Where the libraries are
-
-A LIBRARIES FOLDER that the server owns: `libraries` beside the first library's data folder. Every
-library made here is `<folder>/<name>/data` and `<folder>/<name>/cache` (the same two folders
-first run makes), so each one is a whole library that the desktop app, a backup or a person with a
-file manager can find and recognise.
-
-The folder is found again from INSIDE it, and that is the one subtle thing here. Running a library
-made in the folder, the data folder is `<folder>/<name>/data`, and "beside the data folder" would
-be a DIFFERENT place: a folder that moved every time the library did, so each library would see a
-list of its own. So the folder is marked, by the small file below that also lists the libraries
-kept elsewhere, and a library whose grandparent holds that mark is one of its members.
-
-## Why a switch is a restart, and not a reopen inside this process
-
-A library is not only its database. It is the database AND two directories: the data folder holds
-the faces somebody confirmed and the log, and the cache folder holds the covers somebody uploaded
-and every thumbnail. Those two paths are read from the process's settings by some seventy places,
-many of them once, at start-up. Swapping only the database underneath a running server would show
-one library's records with another library's confirmed faces, covers and thumbnails, and every
-in-memory cache, watcher and index built at start-up would go on describing the library that was
-closed. A restore can reopen in place because it replaces a library WITH ITSELF: same folders, a
-different moment.
-
-So this does what the desktop app's own switch does: stop, point at the other library, start. The
-difference is who asks. The server leaves a note naming the library in its own data folder and asks
-whatever supervises it to start it again (`sift.kernel.lifecycle`); the desktop app reads the note
-when its backend stops for that reason and starts the new one on the folder named. That is what
-makes the switch work from a browser, on any machine, and it runs every step a start runs, because
-it IS a start.
-
-Where nothing supervises the process (run by hand from a terminal), there is nothing to start it
-again, and a switch is refused before anything is made or written, rather than taking the library
-off the air to find out.
-
-## What the page may name
-
-Never a path. It names a library by the id this module handed it in the list, and the id is looked
-up again in a list read fresh from the disk. A new library is named by a NAME, which is checked to be
-one folder name and nothing else; the folder it goes in is the server's.
+Libraries live in a folder the server owns beside the first library's data folder, found again
+from inside it by its mark. A switch is a restart, not a reopen: some seventy places read a
+library's two folders at start. So the server leaves a note and asks its supervisor to start it
+again; with no supervisor a switch is refused. The page names a library by an id, never a path.
 """
 
 from __future__ import annotations
@@ -108,18 +72,14 @@ from sift.slices.backup.service import free_bytes as _free_bytes
 
 log = get_logger(__name__)
 
-#: The mark on the libraries folder, and the list of libraries kept outside it. Written by this
-#: module only, from the server's own settings, never from anything a request carried. Declared
-#: in the kernel's config beside `libraries_folder`, because the device's model store is found by
-#: the same rule and the kernel may not import a slice.
+#: The folder's mark, with the libraries kept outside it; declared in the kernel's config.
 #: What fills a new library before it opens: handed the database file and the data folder.
 Seed = Callable[[Path, Path], Awaitable[None]]
 
 
 REGISTRY_FILENAME = LIBRARIES_MARK
 
-#: The note a server leaves in its OWN data folder before it asks to be started again, naming the
-#: library to start on. `SWITCH_NOTE` in the desktop app's libraries.ts, pinned by a test there.
+#: The note naming the library to start on: `SWITCH_NOTE` in the desktop app's libraries.ts.
 HANDOFF_FILENAME = "library-switch.json"
 
 #: The two folders every library holds, the same pair first run makes.
@@ -129,13 +89,10 @@ CACHE_FOLDER = "cache"
 #: The longest a library name may be. A name is a folder, and a folder name is not prose.
 MAX_NAME = 64
 
-#: One folder name that reads the same on every system Sift runs on: letters and digits of any
-#: script, spaces, and a few joining marks. Nothing that names a path (`/`, `\\`, `:`), nothing a
-#: file system reserves, and it cannot start with a dot, which would hide it.
+#: One folder name that reads the same everywhere: no path marks, nothing reserved, no leading dot.
 _NAME = re.compile(r"^[^\W_][\w .()'&+-]*$")
 
-#: Names Windows gives to devices. A folder called `CON` cannot be made there, and `nul.txt` is
-#: still the device, so the stem is what is compared.
+#: Windows device names: `nul.txt` is still the device, so the stem is compared.
 _RESERVED = frozenset(
     {"con", "prn", "aux", "nul"}
     | {f"com{n}" for n in range(1, 10)}
@@ -199,27 +156,13 @@ class NotDeletable(LibraryError):
     """This library cannot be deleted from here: it is open, kept elsewhere, or not named right."""
 
 
-# --- a library that is a second copy of one -------------------------------------------------------
-#
-# Three doors make a library out of an existing one's database: importing a backup, duplicating
-# the running library, and a database file the desktop app adopts. Each way the new library's
-# database arrives holding the old one's sign-ins and its unfinished work. All three go through
-# `make_its_own_library` before the new library is ever opened.
-
 #: The job that makes a duplicate: minutes of copying, so it goes through the queue with progress.
 LIBRARY_DUPLICATE = "library_duplicate"
 
 _SIGN_OUT = "DELETE FROM sessions"
 _HAS_TABLE = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
 
-#: What a second copy does with the work the original had waiting. Canceled, not deleted: the
-#: copy's Activity then says what happened to it, and a row's children are kept with it. Every one
-#: of them is about the SAME files the original is still looking after, so a copy that picked them
-#: up would do each one twice, and a download or a rename done twice to one file is not harmless.
-#:
-#: The columns it names are in the jobs table's first step (`kernel/jobs/schema.py`), and every
-#: database this build agrees to open has taken that step: an older one is refused by
-#: `too_old_to_bring_forward` before any door makes a library from it.
+#: A copy's waiting work, canceled not deleted: it is about the same files the original keeps.
 _CANCEL_UNFINISHED = (
     "UPDATE jobs SET state = 'canceled', note = ?, updated_at = ? "
     "WHERE state IN ('queued', 'running', 'blocked', 'paused')"
@@ -229,10 +172,7 @@ COPIED_NOTE = "Canceled when this library was made from a copy of another librar
 
 
 def sign_everyone_out(database: Path) -> None:
-    """Remove every sign-in from a database that is becoming a library of its own. Blocking.
-
-    Guarded on the table, because a library with no sign-ins table has none to remove.
-    """
+    """Remove every sign-in from a database becoming a library of its own, if it has the table."""
     if fetch_blocking(database, _HAS_TABLE, ("sessions",)):
         execute_blocking(database, _SIGN_OUT)
 
@@ -244,28 +184,10 @@ def cancel_unfinished(database: Path, *, now: int, note: str) -> None:
 
 
 def make_its_own_library(database: Path, *, now: int, note: str) -> None:
-    """Take out of a copied database what still belongs to the library it was copied from. Blocking.
-
-    THE ONE PLACE every door that makes a library from another library's database goes through: a
-    duplicate, an import on this page, and a database file the desktop app adopts
-    (`--adopt-library` in `sift.main`). Its sign-ins go, so opening it signs everybody out as the
-    screen promises, and its unfinished work is canceled, so the copy does not do again what the
-    original is still doing. Called before the new library is ever opened.
-    """
+    """Take a copied database's sign-ins and waiting work out, before the new library opens."""
     sign_everyone_out(database)
     cancel_unfinished(database, now=now, note=note)
 
-
-# --- where an imported library came from ----------------------------------------------------------
-#
-# An imported library's first History line says where it came from: "Sift restored this library
-# from the backup from 12 September 2026", or "Sift created this library from the database file
-# old.sqlite3". THE NEW LIBRARY WRITES IT, once it is open, rather than this door writing it into
-# the new database here: that database may be a version behind, brought forward only by the start
-# that opens it, and a line written into an older ledger through today's statement is written
-# against a shape it may not have. So the import leaves a note in the new library's own data
-# folder, and the start that opens it writes the line through the ordinary door, after the schema
-# is brought forward and before any work runs, then removes the note (`record_origin`).
 
 #: The note, in the NEW library's data folder: nothing else reads that folder before it opens.
 ORIGIN_FILENAME = "library-origin.json"
@@ -282,12 +204,7 @@ _CONTROLS = re.compile(r"[\x00-\x1f\x7f]")
 
 
 def file_name_said(chosen: str | None) -> str | None:
-    """The name of the file somebody chose, as a line may say it, or None where there is none.
-
-    What a browser sends is its word, not a path Sift may use: only the last part of it is kept
-    (an older browser sends the whole path, and some send one under `C:\\fakepath`), without
-    control characters, and no longer than `_MOST_NAME`.
-    """
+    """The chosen file's name as a line may say it (its last part, cleaned, short), or None."""
     if not chosen:
         return None
     last = re.split(r"[\\/]", chosen)[-1]
@@ -311,12 +228,7 @@ def _origin_from_file(name: str | None) -> dict[str, Any]:
 
 
 def leave_origin_note(data_dir: Path, name: str | None) -> None:
-    """Leave the note a library made from a database file reads at its first start (`record_origin`).
-
-    The desktop application's own door (`--adopt-library` in `sift.main`) makes a library the same
-    way the Import button does, so it leaves the same note and the new library says where it came
-    from. Blocking; called right after `make_its_own_library`.
-    """
+    """Leave the note a library made from a database file reads at its first start."""
     _write_json(data_dir / ORIGIN_FILENAME, _origin_from_file(name))
 
 
@@ -345,8 +257,7 @@ def _read_origin(note: Path) -> dict[str, Any] | None:
 
 
 async def _record_origin(connection: Connection, origin: dict[str, Any]) -> None:
-    """The line, on the caller's connection. Sift's act under Backup and restore (`VIA_BACKUP`):
-    whoever pressed Import may have no row in the library it made, and the act is the task's."""
+    """The line, on the caller's connection, as the task's act (`VIA_BACKUP`)."""
     actor = Actor.sift(VIA_BACKUP)
     if origin["from"] == FROM_BACKUP:
         await record_restored(connection, origin, actor)
@@ -364,16 +275,11 @@ async def _record_origin(connection: Connection, origin: dict[str, Any]) -> None
     )
 
 
-#: Folders in a cache that hold work in flight rather than pictures: segments made for one
-#: playback, files part way through arriving, a job's scratch space, a download's temporary
-#: folder. Left out of a duplicate's pictures; a name missed here costs some copying, never a
-#: wrong library, because everything in a cache is Sift's to make again.
+#: Cache folders holding work in flight rather than pictures, left out of a duplicate.
 _IN_FLIGHT = frozenset({"transcode", "incoming", "jobs"})
 _IN_FLIGHT_PREFIX = "sift-download-"
 
-#: How many files are copied per trip off the event loop. Enough that a library of a hundred
-#: thousand thumbnails is not a hundred thousand thread hand-offs; few enough that progress and a
-#: Cancel are heard every second or so.
+#: Enough to spare thread hand-offs; few enough that progress and Cancel are heard each second.
 _COPY_BATCH = 200
 
 
@@ -386,12 +292,7 @@ class CopiedFolder:
 
 
 def _walk(folder: Path) -> Iterator[tuple[Path, int]]:
-    """Every file under a folder with its size, never following a link or a junction. Blocking.
-
-    `scandir`, because on Windows the size comes with the directory listing and asking for it costs
-    nothing more: a cache is hundreds of thousands of files. A link is not followed: a folder
-    somebody pointed somewhere else is not Sift's to copy.
-    """
+    """Every file under a folder with its size, never following a link or a junction. Blocking."""
     if not folder.is_dir():
         return
     stack = [folder]
@@ -406,8 +307,7 @@ def _walk(folder: Path) -> Iterator[tuple[Path, int]]:
                 continue
             if entry.is_dir(follow_symlinks=False):
                 stack.append(Path(entry.path))
-            # Neither a folder nor a file is a pipe or a socket: POSIX only, and never copied,
-            # since copying a pipe waits for a writer that is not coming. No Windows test makes one.
+            # Neither is a pipe or a socket, never copied: copying a pipe waits for ever.
             elif entry.is_file(follow_symlinks=False):  # pragma: no branch
                 yield Path(entry.path), entry.stat(follow_symlinks=False).st_size
 
@@ -449,12 +349,7 @@ class Library:
 
 
 def library_id(data_dir: Path) -> str:
-    """An opaque name for a library, stable for as long as it stays where it is.
-
-    A digest of the path rather than the path, so what the page sends back cannot be read as, or
-    edited into, a place on the disk: it only ever matches an entry in a list read fresh.
-    Case-folded, because Windows is case-insensitive and one folder must not be two entries.
-    """
+    """An opaque, case-folded digest of a library's path: it can only match a fresh listing."""
     spelled = os.path.normcase(os.path.abspath(data_dir))
     return hashlib.sha256(spelled.encode("utf-8")).hexdigest()[:20]
 
@@ -507,12 +402,7 @@ def _write_json(target: Path, value: Any) -> None:
 
 
 def _read_opening(folder: Path) -> dict[str, str] | None:
-    """The library chosen to open when Sift starts, as written, or None. Blocking.
-
-    Kept in the folder's mark beside the libraries kept elsewhere, and separately from which
-    library opened LAST (the desktop app's own list): one is a choice somebody made, the other a
-    record of what happened, and a switch must not quietly change the first.
-    """
+    """The library chosen to open when Sift starts, as written, or None. Blocking."""
     try:
         written = json.loads((folder / REGISTRY_FILENAME).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -527,8 +417,7 @@ def _read_opening(folder: Path) -> dict[str, str] | None:
     return None
 
 
-#: The key in the mark naming the library that opens when Sift starts. `OPENS_AT_START` in the
-#: desktop app's libraries.ts, which reads it before it starts a backend; pinned by a test there.
+#: `OPENS_AT_START` in the desktop app's libraries.ts, read before it starts a backend.
 OPENS_AT_START = "opens_at_start"
 
 #: Leave the library that opens at start as the mark has it.
@@ -536,11 +425,7 @@ _KEEP = object()
 
 
 def _mark(folder: Path, elsewhere: list[dict[str, str]], opening: object = _KEEP) -> None:
-    """Make the folder if it is missing and write its mark with this list. Blocking.
-
-    The library that opens at start is kept as written unless `opening` says otherwise: a dict of
-    the two folders, or None for "whichever opened last".
-    """
+    """Make the folder if missing and write its mark with this list; `opening` as given."""
     folder.mkdir(parents=True, exist_ok=True)
     chosen = _read_opening(folder) if opening is _KEEP else opening
     written: dict[str, Any] = {"format": 1, "elsewhere": elsewhere}
@@ -601,8 +486,6 @@ class LibrariesService:
         """Whether anything would start this process again. Asked before anything is made."""
         return self._can_restart()
 
-    # --- the list ------------------------------------------------------------------------------
-
     def _current(self) -> Library:
         data_dir = self._settings.data_dir
         return Library(
@@ -658,8 +541,7 @@ class LibrariesService:
                     "in_folder": one.in_folder,
                     "current": index == 0,
                     "verdict": VERDICT_CURRENT if index == 0 else report.verdict,
-                    # Why it can't be read, where its database can say: the mark alone reads the
-                    # same for a stranger's file and a library that only needs an older Sift once.
+                    # Why it can't be read, where its database can say.
                     "detail": (
                         report.detail if index != 0 and report.verdict == VERDICT_UNREADABLE else ""
                     ),
@@ -668,29 +550,18 @@ class LibrariesService:
             )
         return answer
 
-    # --- switching ------------------------------------------------------------------------------
-
     async def name_of(self, library: str) -> str | None:
         """The name a library on the list goes by, or None where the list has no such id."""
         known = await asyncio.to_thread(self._known)
         return next((one.name for one in known if one.id == library), None)
 
     async def open(self, library: str, *, upgrade: bool = False) -> bool:
-        """Ask to be started on a library from the list. False when it is the one running.
-
-        Refused while a backup, a restore or a duplicate is running: a restart in the middle of
-        one leaves a half-written copy behind it. See `BackupService.exclusively`.
-        """
+        """Ask to be started on a library from the list; False when it is the one running."""
         async with self._backup.exclusively(SWITCHING):
             return await self._open(library, upgrade=upgrade)
 
     async def _open(self, library: str, *, upgrade: bool) -> bool:
-        """`open`, once nothing else is running on the library as a whole.
-
-        Every refusal is made while this library is still up: an unknown id, nothing to restart
-        this process, a library that has gone or is from a newer Sift, one that is behind and was
-        not agreed to be upgraded, and a backup copy of that one that could not be made.
-        """
+        """`open`, once nothing else runs on the library as a whole; every refusal comes first."""
         known = await asyncio.to_thread(self._known)
         chosen = next((one for one in known if one.id == library), None)
         if chosen is None:
@@ -720,9 +591,7 @@ class LibrariesService:
                     "That library was last opened by an older Sift. Opening it upgrades it in one "
                     "direction; Sift makes a backup copy first."
                 )
-            # The promise on the screen is a way back, so a copy that could not be made is a
-            # refusal and not a warning: a one-way upgrade with nothing behind it is the one thing
-            # this must never do quietly.
+            # A backup copy that could not be made is a refusal: the screen promises a way back.
             try:
                 copy = await asyncio.to_thread(copy_database_aside, database)
             except (OSError, DatabaseError) as failed:
@@ -740,17 +609,7 @@ class LibrariesService:
             return await self._create(name, actor, seed=seed)
 
     async def _create(self, name: str, actor: Viewer, *, seed: Seed | None = None) -> Library:
-        """Make an empty library in the folder, with its maker as its admin, and switch to it.
-
-        WHY THE MAKER COMES ALONG rather than the library being left for the first-run question. A
-        library with no user is claimed by whoever reaches its setup screen first (that is what
-        first run IS) and a library made from a browser is, by construction, being made on a
-        server other machines can reach. The person who made it would be racing the network for
-        their own library. So the maker's own row is carried in: the same name, the same password,
-        and the same wrapped key, which the same password unwraps. Nothing else is (no sessions,
-        no saved logins, no other users), so the new library starts signed out, and every other
-        first-run step (folders, what to scan) is still ahead of it.
-        """
+        """Make an empty library with its maker as its admin, so nobody else claims it first."""
         self._require_supervisor()
         found = await self._db.fetch_one(_READ_MAKER, (actor.id,))
         if found is None:
@@ -768,8 +627,7 @@ class LibrariesService:
             finally:
                 await fresh.close()
             await asyncio.to_thread(_write_maker, data_dir / DATABASE_FILENAME, maker)
-            # A caller's seed fills the new library before it opens (a Stash import's folders, its
-            # plan and its queued run); a seed that fails takes the half-made library with it.
+            # A seed fills the new library before it opens; one that fails takes it with it.
             if seed is not None:
                 await seed(data_dir / DATABASE_FILENAME, data_dir)
         except BaseException:
@@ -781,43 +639,21 @@ class LibrariesService:
         return made
 
     async def import_file(self, source: Path, name: str, *, chosen: str | None = None) -> Library:
-        """Make a library from an uploaded file and switch to it, refused while other work runs.
-
-        `chosen` is the name the file had where somebody chose it (the upload's own name, not the
-        staged copy's), which the new library's first line says for a database file.
-        """
+        """Make a library from an uploaded file and switch to it; `chosen` is the file's name."""
         async with self._backup.exclusively(SWITCHING):
             return await self._import_file(source, name, chosen)
 
     async def _import_file(self, source: Path, name: str, chosen: str | None = None) -> Library:
-        """Make a library from an uploaded file (a backup, or a Sift database) and switch to it.
-
-        A backup archive goes through the backup feature's own unpacking, which is what Restore
-        reads it with, and brings its confirmed faces and covers along. A bare database is judged
-        by the reading every other door uses and copied in by `VACUUM INTO`. Either way the upload
-        is a copy somebody still holds, so the new library is not given a second one before an
-        older schema is brought forward: the file they chose IS the way back.
-
-        THE IMPORTED LIBRARY STARTS SIGNED OUT, WITH NOTHING LEFT WAITING. A backup carries the
-        sign-ins that were live when it was taken, and so does a database file; left in, a browser
-        still holding one of those would be signed straight in to the new library. It carries the
-        work that was queued then too, about files the original still looks after. Both go
-        (`make_its_own_library`).
-
-        ITS FIRST LINE SAYS WHERE IT CAME FROM, written by the new library once it opens (see
-        `record_origin`): a backup by its day, a database file by the name it was chosen under.
-        """
+        """Make a library from an uploaded backup or database, signed out with nothing waiting."""
         self._require_supervisor()
-        # Judged before anything is made: a refused file must leave no libraries folder, no mark
-        # and no claimed name behind, and the reading writes nothing.
+        # Judged first: a refused file leaves nothing behind.
         archive = await asyncio.to_thread(is_backup_archive, source)
         if not archive:
             report = await asyncio.to_thread(inspect_database, source)
             if report.verdict == VERDICT_NEWER:
                 raise NotALibrary(NEWER_REFUSAL)
             if report.verdict not in (VERDICT_CURRENT, VERDICT_OLDER):
-                # The reading's own sentence where it has one: a library too old to bring
-                # forward IS a Sift library, and saying otherwise sends somebody the wrong way.
+                # The reading's own sentence: one too old to bring forward is still Sift's.
                 raise NotALibrary(
                     report.detail or "That file isn't a Sift library or a Sift backup."
                 )
@@ -847,18 +683,8 @@ class LibrariesService:
         await self._switch(made)
         return made
 
-    # --- duplicating this one -----------------------------------------------------------------
-
     def _copied_folders(self, root: Path, *, pictures: bool) -> list[CopiedFolder]:
-        """The folders a duplicate made at `root` copies, beside its database. Blocking.
-
-        ALWAYS what a backup always carries (the faces somebody confirmed and the covers somebody
-        uploaded), read from the backup's own list (`carried_in`), so a duplicate can never carry
-        less than a backup does. With `pictures`, also everything Sift made that a scan makes
-        again: the other face pictures, and the cache less the work in flight (`_IN_FLIGHT`).
-        Never the models, which are the device's (`Settings.models_dir`), and never this library's
-        backups, sign-in log, quarantine or files part way through arriving.
-        """
+        """The folders a duplicate copies: what a backup carries, and remade pictures if asked."""
         data, cache = self._settings.data_dir, self._settings.cache_dir
         mine = carried_in(data, cache)
         theirs = carried_in(root / DATA_FOLDER, root / CACHE_FOLDER)
@@ -904,8 +730,7 @@ class LibrariesService:
         }
 
     async def duplicate_plan(self) -> dict[str, Any]:
-        """What the Duplicate form says before anything is pressed: where the copy goes, how big it
-        is with and without the pictures, the room there is, and what would refuse it now."""
+        """What the Duplicate form says first: where, how big, the room there, what would refuse."""
         measured = await asyncio.to_thread(self._measure)
         return {
             "folder": str(self.folder),
@@ -916,12 +741,7 @@ class LibrariesService:
     async def ask_to_duplicate(
         self, name: str, *, pictures: bool, actor: Viewer, queue: JobQueue
     ) -> str:
-        """Queue a duplicate of the running library, having refused whatever can be refused now.
-
-        An empty or taken name, a backup, restore or switch running, a duplicate already waiting,
-        and a drive without room: each said here, while somebody is looking, rather than as a
-        failed task later. The job checks all of them again: time passes between the two.
-        """
+        """Queue a duplicate, having refused now whatever can be; the job checks again."""
         root = await self._free_root(name)
         refusal = self._backup.refusal_while_busy()
         if refusal is not None:
@@ -943,12 +763,7 @@ class LibrariesService:
         )
 
     async def run_duplicate(self, context: JobContext) -> None:
-        """The job: copy the running library into a new one in the libraries folder.
-
-        YOU STAY ON THIS LIBRARY. Nothing here switches; the copy is opened from the list whenever
-        somebody wants it. Refusals end the task for good, with the sentence as its error: trying a
-        taken name or a full drive twice more would say the same thing three times.
-        """
+        """The job: copy the running library into a new one; you stay on this one."""
         name = str(context.payload.get("name", ""))
         pictures = bool(context.payload.get("pictures", True))
         try:
@@ -980,8 +795,7 @@ class LibrariesService:
             await asyncio.to_thread(data_dir.mkdir, parents=True)
             await asyncio.to_thread(cache_dir.mkdir, parents=True)
             database = data_dir / DATABASE_FILENAME
-            # The backup's own consistent snapshot, then the two things a second copy of a library
-            # must not carry: this one's sign-ins, and this one's unfinished work.
+            # A consistent snapshot, without this library's sign-ins and unfinished work.
             await self._backup.snapshot_into(database)
             await asyncio.to_thread(
                 make_its_own_library, database, now=int(time.time()), note=DUPLICATED_NOTE
@@ -1004,16 +818,8 @@ class LibrariesService:
         await context.set_note(f"{root.name} is ready. Open it from the list whenever you want.")
         log.info("libraries.duplicated", pictures=pictures, files=len(files), size_bytes=done)
 
-    # --- which opens at start, deleting one, forgetting one ----------------------------------
-
     async def choose_opening(self, library: str | None) -> None:
-        """Say which library opens when Sift starts, or None for whichever was open last.
-
-        Written to the folder's mark, which the desktop app reads before it starts a backend. Any
-        library on the list may be chosen, the open one included; one that has gone by the next
-        start is passed over there for the one that was open last, so a missing drive never leaves
-        Sift with nothing to open.
-        """
+        """Say which library opens when Sift starts, or None for whichever was open last."""
         if library is None:
             chosen = None
         else:
@@ -1033,14 +839,7 @@ class LibrariesService:
     async def delete(
         self, library: str, typed: str, *, recycle: Callable[[Path], None] = to_recycle_bin
     ) -> None:
-        """Move a library in the libraries folder to the Recycle Bin, by its id and its typed name.
-
-        Refused while other work runs on the library as a whole, for the open library, for one kept
-        elsewhere (which is somebody's own folder, and is taken off the list instead), and for a
-        name typed wrong. What goes is the library's folder: its database, the faces confirmed in
-        it, the covers uploaded to it and every picture Sift made for it. The media files it
-        pointed at are somebody's own and are never touched, since none of them is in that folder.
-        """
+        """Move a library in the libraries folder to the Recycle Bin, by its id and typed name."""
         async with self._backup.exclusively(DELETING):
             known = await asyncio.to_thread(self._known)
             chosen = next((one for one in known if one.id == library), None)
@@ -1068,11 +867,7 @@ class LibrariesService:
         log.info("libraries.deleted")
 
     async def forget(self, library: str) -> None:
-        """Take a library kept elsewhere off the list, leaving its folder exactly as it is.
-
-        The only way off the list for a library outside the libraries folder: its folder is
-        somebody's own. The open library stays listed, since it is the one running.
-        """
+        """Take a library kept elsewhere off the list, leaving its folder exactly as it is."""
         known = await asyncio.to_thread(self._known)
         chosen = next((one for one in known if one.id == library), None)
         if chosen is None:
@@ -1096,8 +891,6 @@ class LibrariesService:
 
         await asyncio.to_thread(write)
         log.info("libraries.forgotten")
-
-    # --- the parts --------------------------------------------------------------------------
 
     def _require_supervisor(self) -> None:
         if not self._can_restart():
@@ -1134,11 +927,7 @@ class LibrariesService:
             _mark(folder, _read_registry(folder))
 
     def _remember_current(self) -> None:
-        """Put the running library on the folder's list when it is kept elsewhere. Blocking.
-
-        What makes the way BACK reachable from a browser: a library outside the folder is known
-        to this server only while it is running it, so it is written down before it stops.
-        """
+        """List the running library when kept elsewhere, so the way back is reachable. Blocking."""
         current = self._current()
         if current.in_folder:
             return
@@ -1165,14 +954,7 @@ class LibrariesService:
         log.info("libraries.switch_asked", in_folder=target.in_folder)
 
     async def record_origin(self) -> None:
-        """Write where this library came from as its first History line, where it was just
-        imported. Called once at start-up, after the schema is brought forward and before the
-        workers start, so nothing the library does comes before it.
-
-        The note goes once the line is written. A note that cannot be read is removed with a
-        warning rather than kept: it would refuse the same way at every start. Written before the
-        note goes, so a stop between the two says the line twice rather than never.
-        """
+        """Write an imported library's origin as its first History line, then drop the note."""
         note = self._settings.data_dir / ORIGIN_FILENAME
         if not await asyncio.to_thread(note.exists):
             return
@@ -1186,12 +968,7 @@ class LibrariesService:
         await asyncio.to_thread(note.unlink, True)
 
     async def forget_stale_note(self) -> None:
-        """Remove a switch note nothing acted on. Called once at start-up.
-
-        A note found here was left by a stop that was never followed by a switch: a desktop app
-        too old to read it, or one that was closed in the moment between. Left in place, the next
-        ordinary restart of this library would carry it off to the other one.
-        """
+        """Remove a switch note nothing acted on, which the next restart would otherwise follow."""
         note = self._settings.data_dir / HANDOFF_FILENAME
         if await asyncio.to_thread(note.exists):
             await asyncio.to_thread(note.unlink, True)

@@ -1,15 +1,4 @@
-/* Merging: the count that comes first, and the write that cannot be taken back.
- *
- * What is worth testing here is that they are two calls and stay two calls. Weighing is the whole
- * guard on an irreversible act (it writes nothing and its numbers are what somebody presses
- * against), so a weigh that reached the writing route, or a merge that answered from the weighing
- * one, would leave the screen showing a confirmation of something that had already happened.
- *
- * And that the two subjects reach two different addresses. One pair of functions serves people and
- * sites, so the thing that can silently go wrong is the word: a request that sends site ids to the
- * people route would be answered with four 404s, and a request that sent them under the wrong field
- * name would be a 422 nothing on screen can explain.
- */
+/* Merging: the count that comes first, and the write that cannot be taken back. */
 
 import { beforeEach, expect, it, vi } from 'vitest';
 
@@ -90,8 +79,7 @@ it('sends the survivor apart from the ones going, so the direction cannot be inf
 });
 
 it('sends sites to the sites route, under the word the server reads', async () => {
-	// The one thing a shared pair of functions can get wrong. Site ids under `people` is a 422, and
-	// site ids sent to `/people/merge` is a 404 about a site that is plainly there.
+	// The one thing a shared pair of functions can get wrong.
 	mocked.post.mockResolvedValue(weighed({ from_name: 'Goner', into_name: 'Keeper' }));
 
 	await weighSeveral('site', ['s-1'], 's-2');
@@ -117,7 +105,7 @@ it('shows what the server said when the server wrote a reason', async () => {
 
 it('carries the two-logins refusal through, because it is the one somebody can act on', async () => {
 	// Every other refusal is "one of these is not something I can show you", which has no
-	// instruction in it. This one does, and a flat sentence would throw the instruction away.
+	// instruction in it.
 	const refused = new ApiError(
 		409,
 		'That request was not valid',
@@ -128,8 +116,7 @@ it('carries the two-logins refusal through, because it is the one somebody can a
 });
 
 it('falls back to one flat sentence for anything else', async () => {
-	// A refusal that explains itself is the exception. Everything else (a dropped connection, a
-	// 404 that must not confirm the thing exists) gets the same line.
+	// A refusal that explains itself is the exception.
 	expect(problemFrom(new ApiError(404, 'not found'))).toBe("That didn't work.");
 	expect(problemFrom(new Error('socket hang up'))).toBe("That didn't work.");
 	expect(problemFrom('a string nobody threw on purpose')).toBe("That didn't work.");

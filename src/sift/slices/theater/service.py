@@ -1,15 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Saved walls: reading them back, writing them down, and refusing the ones that do not add up.
 
-The whole slice is this file and the two tables under it. Everything a wall actually DOES (what
-each cell plays, what it sounds like, when it moves on) happens in the browser against routes that
-already existed, because a cell is a filter run through the search engine and a video played through
-the player's own decision route. Nothing here streams, decides or resolves anything.
-
-Two rules run through it. **Every statement is scoped to the asking user in its own WHERE
-clause**, so there is no path that reads somebody else's row and then declines to return it. And
-**a wall that does not add up is refused rather than stored**: a layout has a fixed number of cells,
-and an arrangement carrying a different number is a wall that cannot be drawn.
+Every statement is scoped to the asking user in its own WHERE clause.
 """
 
 from __future__ import annotations
@@ -30,12 +22,7 @@ from sift.kernel.wiring import Part
 
 
 class NameTaken(Exception):
-    """This user already has a wall under that name.
-
-    Its own exception rather than a bare integrity error, because it is an answer somebody can act
-    on (pick another name) and a route that let the database error through would report a server
-    fault for an ordinary collision.
-    """
+    """This user already has a wall under that name."""
 
 
 class Unusable(ValueError):
@@ -43,43 +30,22 @@ class Unusable(ValueError):
 
 
 class TooMany(Exception):
-    """This user is holding as many walls as they may.
-
-    Its own exception for the same reason `NameTaken` is one: it is something somebody can act on
-    (delete one) rather than a server fault. Changing a wall they already have is never refused by
-    it, because that replaces a row instead of adding one.
-    """
+    """This user is holding as many walls as they may; editing one they have is never refused."""
 
 
-#: The layouts, and how many cells each one holds.
-#:
-#: A wall is BUILT now (one feed to begin with, and each feed able to put another beside, above or
-#: below it), so the layouts are a starting point rather than the whole vocabulary. They are still
-#: here because a wall saved before that is stored under one of these names and has no shape of its
-#: own, and because "two side by side" should stay one press.
-#:
-#: `custom` is what a built wall is stored under. It has no cell count: the shape says how many
-#: there are, which is the whole point of storing one.
+#: The layouts and how many cells each holds; a built wall is stored under `custom`.
 LAYOUT_CELLS: dict[str, int] = {
     "single": 1,
     "side_by_side": 2,
     "stacked": 2,
     "side_by_side_by_side": 3,
     "grid": 4,
-    # The focus half is ONE feed and the strip holds five, so a Center Stage wall is six cells.
-    # The name is what the wall opens as; growing the focus half to four is a shape change like any
-    # other, and a wall in a shape of its own is stored under `custom` with its shape beside it.
+    # One feed in focus and a strip of five.
     "center_stage": 6,
-    # The same strip over each of the three walls: one, two, three or four in focus and five
-    # waiting underneath. Four up is nine, which is the ceiling.
     "center_stage_two": 7,
     "center_stage_three": 8,
     "center_stage_grid": 9,
-    # Retired from the picker and still ACCEPTED here, which is the whole distinction this
-    # dictionary draws. These are names already written into people's saved walls; refusing them
-    # would turn shortening a menu into losing somebody's data, and a wall kept under one of them
-    # would stop opening and could never be saved again. What is OFFERED is the browser's layout
-    # list and the choices on `theater.layout`; what is ACCEPTED is this.
+    # Retired from the picker but still accepted: saved walls carry these names.
     "stacked_three": 3,
     "one_above_two": 3,
     "two_above_one": 3,
@@ -91,11 +57,7 @@ CUSTOM = "custom"
 #: The most cells a wall may hold. The client has the same number and a gate checks they agree.
 MOST_CELLS = 9
 
-#: How many previews a Center stage layout OPENS with. The client has the same number.
-#:
-#: Not a ceiling: the strip may hold whatever the focus half is not using, up to the wall's own
-#: `MOST_CELLS`. Capping it at five as well would stop a wall of three in focus at eight cells
-#: while a wall of four reached nine: the same nine, and one arrangement able to use them all.
+#: How many previews a Center stage layout opens with; the strip may hold more, up to `MOST_CELLS`.
 MOST_PREVIEWS = 5
 
 
@@ -125,12 +87,7 @@ class Shape:
 
 
 def _read_shape(stored: str | None) -> Shape | None:
-    """A stored shape, or None where there is none or it cannot be read.
-
-    None rather than a raise. A row that will not parse is a wall somebody saved and can still open:
-    it falls back to the layout it was also stored under, which is what every wall saved before
-    shapes existed does anyway.
-    """
+    """A stored shape, or None where there is none or it cannot be read (the layout then stands)."""
     if not stored:
         return None
     try:
@@ -178,24 +135,16 @@ def _write_shape(shape: Shape | None) -> str | None:
 #: Whether a cell walks its source or picks from it at random.
 ORDERINGS: tuple[str, ...] = ("in_order", "shuffle")
 
-#: What a cell does when a file ends.
-#:
-#: The player's own three names, deliberately, rather than a second vocabulary for the same three
-#: behaviours. A slice never imports another slice, so they are written out again here, and a gate
-#: reads the registered playback setting and refuses this tuple if the two ever drift apart.
+#: What a cell does when a file ends: the player's own three names, held equal by a gate.
 END_BEHAVIOURS: tuple[str, ...] = ("loop_one", "loop_all", "once")
 
 #: What a cell will draw. Either things that move, or those and photographs as well.
 MEDIA_KINDS: tuple[str, ...] = ("video_gif", "all")
 
-#: Every search mode a cell may be saved with, taken from the one place that decides them rather
-#: than written out again here. A cell's source can be a SMART search (ranked by meaning instead
-#: of matched by word), and that is a different set of files, not a different order over the same
-#: ones, so it has to survive being saved.
+#: Every search mode a cell may be saved with: a smart search is a different set of files.
 SORTS: frozenset[str] = SORT_KEYS
 
-#: The longest timer a cell will accept, in seconds. An hour, which is longer than any wall anybody
-#: is watching needs and short enough that a mistyped number is caught rather than stored.
+#: The longest timer a cell will accept, in seconds.
 MAX_TIMER_SECONDS = 3600
 
 #: How long a source query may be, matching the cap the search route puts on the same text.
@@ -204,12 +153,7 @@ MAX_SOURCE = 1000
 #: How long a wall's name may be.
 MAX_NAME = 80
 
-#: The most walls one user may keep.
-#:
-#: A wall is several cells' worth of deliberate setting up, so nobody arranging these by hand will
-#: meet this, and a user whose credentials have been taken cannot use the route to grow the
-#: database without bound. Refused at the cap rather than trimmed to it: these are somebody's own
-#: arrangements, and quietly dropping the oldest to make room would lose one they meant to keep.
+#: The most walls one user may keep; refused at the cap rather than dropping the oldest.
 MAX_ARRANGEMENTS = 100
 
 
@@ -223,17 +167,9 @@ class Cell:
     end_behaviour: str
     timer_seconds: int | None
     volume: int
-    #: How the source is searched, or None for the ordinary answer. See the schema's column.
+    #: How the source is searched, or None for the ordinary answer.
     sort: str | None = None
-    #: What shape the cell is held to, or `dynamic` for the shape of whatever it is playing.
-    #:
-    #: Stored and not judged, which is the difference between this and the four values above it.
-    #: Those decide what a cell DOES (which files it draws, in what order, what happens at the end)
-    #: and a word the service does not understand would make a cell behave in a way nothing here
-    #: intended. A shape decides how the browser DRAWS one, the server never draws anything, and the
-    #: client already falls back to Dynamic for a name it cannot draw. Judging it here would be a
-    #: second copy of a list that lives in the client, kept in step for no benefit, and it would make
-    #: adding a seventh shape a release of both halves.
+    #: The cell's shape, or `dynamic`; stored and not judged, since only the client draws it.
     aspect: str = "dynamic"
 
 
@@ -244,12 +180,9 @@ class Arrangement:
     id: str
     name: str
     layout: str
-    #: The grid and where each cell sits in it, exactly as the client sent it. None on a wall saved
-    #: before walls could be built: those are drawn from the name in `layout`.
+    #: The grid and where each cell sits; None on a wall saved before walls could be built.
     shape: Shape | None
-    #: How many of `cells` are PREVIEWS in the strip under the wall rather than feeds in it. The
-    #: shape's places come first and the strip is the rest, which is the order the client draws them
-    #: in. Zero on every wall saved before Center stage.
+    #: How many of `cells` are previews in the strip, after the shape's places.
     strip: int
     cells: tuple[Cell, ...]
 
@@ -273,9 +206,7 @@ SELECT id, name, layout, shape, strip FROM theater_arrangements
  ORDER BY id DESC
 """
 
-# Every cell of every wall this user has, in one read rather than one read per wall. The join is
-# what scopes it: a cell is reachable only through an arrangement, and the arrangement is filtered
-# by the asking user here.
+# The join scopes it: a cell is reachable only through an arrangement of the asking user.
 _LIST_CELLS = """
 SELECT c.arrangement_id, c.source, c.media_kind, c.ordering, c.end_behaviour,
        c.timer_seconds, c.volume, c.sort, c.aspect
@@ -285,10 +216,7 @@ SELECT c.arrangement_id, c.source, c.media_kind, c.ordering, c.end_behaviour,
  ORDER BY c.arrangement_id, c.position
 """
 
-# Scoped in the statement, exactly as the saved-search writes are: an id belonging to another
-# user names no row here, so there is no path that reads somebody else's row and then declines to
-# change it. `RETURNING id` tells "not yours, or not there" from "changed" without a second
-# statement that could disagree with this one about which rows exist.
+# Scoped in the statement; `RETURNING id` tells "not yours, or not there" from "changed".
 _UPDATE_ARRANGEMENT = """
 UPDATE theater_arrangements SET name = ?, layout = ?, shape = ?, strip = ?, updated_at = ?
  WHERE user_id = ? AND id = ?
@@ -299,21 +227,14 @@ _DELETE_ARRANGEMENT = "DELETE FROM theater_arrangements WHERE user_id = ? AND id
 
 _DELETE_CELLS = "DELETE FROM theater_cells WHERE arrangement_id = ?"
 
-# Whether this user already keeps a DIFFERENT wall under the wanted name.
-#
-# Asked rather than inferred from a failed write, because a slice does not import the database
-# driver and so cannot tell a unique-index violation from any other error, and because the two
-# outcomes need different answers: a name already used is a conflict somebody can act on, and an id
-# that is not theirs is a plain not-found. Read inside the same write transaction as the write
-# below, and there is one writer at a time, so nothing can slip between the two.
+# Asked rather than inferred from a failed write, since a slice cannot see the driver's errors.
 _NAME_IS_TAKEN = """
 SELECT 1 FROM theater_arrangements
  WHERE user_id = ? AND name = ? AND id <> ?
  LIMIT 1
 """
 
-#: How many walls this user already keeps. Read inside the same transaction as the insert, so two
-#: saves arriving together cannot both find room and both take it.
+#: Read inside the insert's transaction, so two saves cannot both take the last room.
 _ARRANGEMENT_COUNT = "SELECT COUNT(*) AS held FROM theater_arrangements WHERE user_id = ?"
 
 
@@ -326,17 +247,10 @@ def _clean_name(name: str) -> str:
 
 
 def _checked_shape(shape: Shape, strip: int, cells: tuple[Cell, ...]) -> None:
-    """A built wall that can actually be drawn, or a refusal saying what is wrong with it.
-
-    Every one of these is a wall that would arrive on somebody's screen wrong rather than absent:
-    a cell reaching past the edge of the grid draws over its neighbour, two cells on one square draw
-    one on top of the other, and a shape with a different number of places than cells leaves a
-    picture with no settings behind it or settings with no picture.
-    """
+    """A built wall that can be drawn, or a refusal saying what is wrong with it."""
     if shape.rows < 1 or shape.cols < 1:
         raise Unusable("a wall needs at least one row and one column")
-    # The shape's places, and then the strip. A wall in Center stage sends more cells than the grid
-    # has room for on purpose: the extra ones are the previews under it.
+    # Center stage sends more cells than the grid has room for: the extras are the strip.
     if len(shape.slots) + strip != len(cells):
         raise Unusable(
             f"the shape has {len(shape.slots)} places and a strip of {strip}, "
@@ -344,15 +258,17 @@ def _checked_shape(shape: Shape, strip: int, cells: tuple[Cell, ...]) -> None:
         )
     if not 1 <= len(shape.slots) <= MOST_CELLS:
         raise Unusable(f"a wall holds 1 to {MOST_CELLS} cells, not {len(shape.slots)}")
-    # AFTER the count above, not before it: a shape with more places than the wall holds leaves
-    # NEGATIVE room, and answering "room for -1 previews" describes the consequence of the fault
-    # rather than the fault. The narrower message first.
+    # After the count above, so too many places is not reported as negative room.
     room = MOST_CELLS - len(shape.slots)
     if not 0 <= strip <= room:
         raise Unusable(
             f"this shape leaves room for {room} previews, not {strip}: a wall holds {MOST_CELLS} "
             "cells in all, however they are divided between the places and the strip"
         )
+    _checked_slots(shape)
+
+
+def _checked_slots(shape: Shape) -> None:
     for index, slot in enumerate(shape.slots):
         where = f"cell {index + 1}"
         if slot.row_span < 1 or slot.col_span < 1:
@@ -370,24 +286,13 @@ def _checked_shape(shape: Shape, strip: int, cells: tuple[Cell, ...]) -> None:
 def _checked(
     layout: str, shape: Shape | None, strip: int, cells: tuple[Cell, ...]
 ) -> tuple[str, Shape | None, int, tuple[Cell, ...]]:
-    """The layout, its shape and its cells, or a refusal saying which part does not add up.
-
-    A wall is refused rather than stored, because every one of these is a wall that cannot be drawn:
-    a layout nothing knows how to lay out, the wrong number of cells for the one named, a shape that
-    overlaps itself, or a cell carrying a behaviour with no meaning. Storing it would move the
-    failure to whoever loads it.
-
-    A wall with a SHAPE is judged by the shape, and `layout` is then only the name it is filed
-    under. A wall without one is a layout and is judged by its cell count, which is what every wall
-    saved before walls could be built is.
-    """
+    """The wall as given, or a refusal naming the part that cannot be drawn."""
     if shape is not None:
         _checked_shape(shape, strip, cells)
         if layout != CUSTOM and layout not in LAYOUT_CELLS:
             raise Unusable(f"unknown layout {layout!r}")
     else:
-        # A wall with no shape is a layout, and a layout's cell count includes whatever strip it
-        # opens with. See `LAYOUT_CELLS`, where Center stage is six.
+        # A layout's cell count includes the strip it opens with (`LAYOUT_CELLS`).
         wanted = LAYOUT_CELLS.get(layout)
         if wanted is None:
             raise Unusable(f"unknown layout {layout!r}")
@@ -395,6 +300,11 @@ def _checked(
             raise Unusable(f"{layout} holds {wanted} cells, not {len(cells)}")
         if not 0 <= strip <= MOST_CELLS:
             raise Unusable(f"a wall holds {MOST_CELLS} cells, so a strip cannot hold {strip}")
+    _checked_cells(cells)
+    return layout, shape, strip, cells
+
+
+def _checked_cells(cells: tuple[Cell, ...]) -> None:
     for index, cell in enumerate(cells):
         where = f"cell {index + 1}"
         if cell.media_kind not in MEDIA_KINDS:
@@ -409,20 +319,10 @@ def _checked(
             raise Unusable(f"{where}: volume runs from 0 to 100")
         if cell.sort is not None and cell.sort not in SORTS:
             raise Unusable(f"{where}: unknown sort {cell.sort!r}")
-    return layout, shape, strip, cells
 
 
 class TheaterService:
-    """The saved walls of whoever is asking, and nobody else's.
-
-    **A cell's source is kept by id and read back under today's names.** A source is typed filter
-    text (`tags:harbour people:"Wren Halloway"`), and kept as typed it names things by NAME: rename
-    the tag and the wall goes on asking for `harbour`, which nothing is called any more, so the
-    cell draws nothing and its filter still reads the old name. So the text is handed to the one
-    filter engine on the way in (`kept`, every thing it names as its id) and on the way out
-    (`shown`, every id as what its thing is called now). The engine is the only thing that knows
-    which words in a filter are names; this slice never splits the text itself.
-    """
+    """The saved walls of whoever is asking; a cell's source is kept by id, shown by name."""
 
     def __init__(
         self,
@@ -439,15 +339,10 @@ class TheaterService:
         return int(self._clock())
 
     async def arrangements(self, viewer: Viewer) -> list[Arrangement]:
-        """This user's saved walls, newest first.
-
-        Filtered by `user_id` in both statements, so there is no path here that reads another
-        user's row and then declines to return it.
-        """
+        """This user's saved walls, newest first."""
         rows = await self._db.fetch_all(_LIST_ARRANGEMENTS, (viewer.id,))
         held = await self._db.fetch_all(_LIST_CELLS, (viewer.id,))
-        # Every cell's source in one reading, so a user with a hundred walls is one lookup per kind
-        # of thing named rather than one per cell.
+        # Every source in one reading: one lookup per kind of thing named, not per cell.
         sources = await self._filters.shown(viewer, [str(row["source"]) for row in held])
         cells: dict[str, list[Cell]] = {}
         for row, source in zip(held, sources, strict=True):
@@ -460,9 +355,7 @@ class TheaterService:
                     timer_seconds=row["timer_seconds"],
                     volume=row["volume"],
                     sort=row["sort"],
-                    # Null on every cell saved before shapes existed, which is exactly what they
-                    # were drawn as. The column's default says the same thing; both are here
-                    # because a migrated row carries the null and a fresh one carries the word.
+                    # Null on cells saved before shapes existed.
                     aspect=row["aspect"] or "dynamic",
                 )
             )
@@ -487,12 +380,7 @@ class TheaterService:
         strip: int,
         cells: tuple[Cell, ...],
     ) -> Arrangement:
-        """Keep a wall under a name, for this user.
-
-        A name already used is refused rather than replaced. A wall is several cells' worth of
-        setting up, and quietly overwriting one because the name matched is a loss somebody only
-        notices later, so saving over a wall is done deliberately, by updating the one they meant.
-        """
+        """Keep a wall under a name, for this user; a name already used is refused, not replaced."""
         cleaned = _clean_name(name)
         layout, shape, strip, cells = _checked(layout, shape, strip, cells)
         kept = await self._kept(viewer, cells)
@@ -504,8 +392,7 @@ class TheaterService:
             )
             if taken:
                 raise NameTaken(cleaned)
-            # Only this path adds a row. Updating a wall replaces one and is deliberately not
-            # capped: somebody at the limit must still be able to edit what they already have.
+            # Only adding is capped: somebody at the limit can still edit what they have.
             held = list(await connection.execute_fetchall(_ARRANGEMENT_COUNT, (viewer.id,)))
             if int(held[0]["held"]) >= MAX_ARRANGEMENTS:
                 raise TooMany(
@@ -532,14 +419,7 @@ class TheaterService:
         strip: int,
         cells: tuple[Cell, ...],
     ) -> Arrangement | None:
-        """Change a saved wall (its name, its layout, its cells), or None if it is not theirs.
-
-        One route rather than a rename and a separate re-save, because a wall is edited by being
-        used: somebody loads one, moves a cell to a different source, and expects to keep the
-        result. The cells are replaced wholesale rather than reconciled position by position, since
-        a layout change moves how many there are and a partial update would leave a wall carrying
-        cells from the shape it used to be.
-        """
+        """Change a saved wall, cells replaced wholesale, or None if it is not theirs."""
         cleaned = _clean_name(name)
         layout, shape, strip, cells = _checked(layout, shape, strip, cells)
         kept = await self._kept(viewer, cells)
@@ -570,18 +450,12 @@ class TheaterService:
         )
 
     async def delete(self, viewer: Viewer, arrangement_id: str) -> None:
-        """Drop one saved wall.
-
-        Scoped in the statement: an id belonging to somebody else names no row here, so a guessed id
-        deletes nothing and is answered the same way a real one is. The cells go with it: foreign
-        keys are on for every connection, and the reference cascades.
-        """
+        """Drop one saved wall; its cells go with it by the cascade."""
         async with telling(self._db, Audience.of_user(viewer.id), About.MINE) as connection:
             await connection.execute(_DELETE_ARRANGEMENT, (viewer.id, arrangement_id))
 
     async def _kept(self, viewer: Viewer, cells: tuple[Cell, ...]) -> tuple[Cell, ...]:
-        """The cells as they are stored: each source by id. Asked before the write transaction
-        opens, because resolving a name is a read and the one writer is not held for it."""
+        """The cells as stored, each source by id; resolved before the write opens."""
         sources = await self._filters.kept(viewer, [cell.source for cell in cells])
         return tuple(
             replace(cell, source=source) for cell, source in zip(cells, sources, strict=True)

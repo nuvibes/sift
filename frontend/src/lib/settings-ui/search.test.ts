@@ -15,13 +15,7 @@ import {
 import { resolveAddress, type SettingsSection } from './sections';
 import type { Searchable } from './search';
 
-/* Finding a setting by typing what you call it.
- *
- * What is worth pinning here is the ordering and the AND, because both are decisions somebody would
- * otherwise change on taste: a name match above a help match, and every word found somewhere rather
- * than any word found anywhere. The second is the difference between "vault pin" finding one thing
- * and finding everything about either.
- */
+/* Finding a setting by typing what you call it. */
 
 const REGISTRY: SettingSection[] = [
 	{
@@ -62,8 +56,7 @@ describe('the registry half of the index', () => {
 	});
 
 	it('turns a section NAME into the section id an address is built from', () => {
-		/* The reply names sections the way they are shown; a link needs the id. Getting this wrong
-		   builds `/settings/Appearance`, which is a 404 dressed as a working result. */
+		/* The reply names sections the way they are shown; a link needs the id. */
 		const [theme] = fromRegistry(REGISTRY);
 
 		expect(theme.section).toBe('appearance');
@@ -76,8 +69,8 @@ describe('the registry half of the index', () => {
 	});
 
 	it('carries the words on the CHOICES as things to search by', () => {
-		/* Somebody looking for "Ten" is looking for the setting that offers it, and no label says
-		   so. This is most of what makes a menu findable at all. */
+		/* Somebody looking for "Ten" is looking for the setting that offers it, and no label
+		   says so. */
 		const scale = fromRegistry(REGISTRY).find((one) => one.name === 'Rating scale');
 
 		expect(scale?.keywords).toBe('Five Ten');
@@ -98,9 +91,7 @@ describe('what matches', () => {
 	});
 
 	it('puts a name match above a help match', () => {
-		/* "dark" is in Theme's HELP and in nothing else's name. Adding a second entry whose NAME
-		   contains it has to jump the queue, or a search for a thing by its own name shows the
-		   thing that merely mentions it first. */
+		/* "dark" is in Theme's HELP and in nothing else's name. */
 		const withBoth = indexOf([
 			...REGISTRY,
 			{ name: 'Appearance', settings: [{ key: 'a.dark', value: 1, label: 'Dark mode' }] }
@@ -122,8 +113,7 @@ describe('what matches', () => {
 	});
 
 	it('reaches a control through a word that appears nowhere on it', () => {
-		/* The control is called Tunnels and says "WireGuard". Nobody types either: they type "vpn",
-		   which is what they came to do. A registry-only index cannot answer this at all. */
+		/* The control is called Tunnels and says "WireGuard". */
 		const names = matching(indexOf([]), 'vpn').map((one) => one.name);
 
 		expect(names).toContain('Tunnels');
@@ -131,12 +121,8 @@ describe('what matches', () => {
 });
 
 describe('where a row was found, which is what the list shows to explain itself', () => {
-	/*
-	 * The three tiers are the ORDER above and they are also the answer to "why is this row here".
-	 * Answering that twice is how the list and the order would come to disagree about which rows are
-	 * explained, and the list's answer would be the wrong one, so `matching` is written in terms of
-	 * this, and the results column reads it.
-	 */
+	/* The three tiers are the ORDER above and they are also the answer to "why is this row
+	 * here". */
 	const row = { name: 'Space for the log', section: 'privacy', help: 'How much Sift keeps.' };
 
 	it('says nothing was found when nothing was typed', () => {
@@ -164,15 +150,12 @@ describe('where a row was found, which is what the list shows to explain itself'
 	});
 
 	it('needs EVERY word in one tier, so a word each side is a help match', () => {
-		/* "log" is in the name and "much" is only in the sentence. The name alone does not answer
-		   what was typed, so the sentence is what put the row on the list and is what explains it. */
+		/* "log" is in the name and "much" is only in the sentence. */
 		expect(matchedIn(row, 'log much')).toBe('help');
 	});
 
 	it('agrees with the order `matching` puts things in', () => {
-		/* The two must never part company. A row `matching` placed in the help tier and this called a
-		   name match would be a row shown with an unnecessary sentence under it, and the other way
-		   round is a row shown with nothing. */
+		/* The two must never part company. */
 		const index = indexOf(REGISTRY);
 		for (const found of matching(index, 'dark')) {
 			expect(matchedIn(found, 'dark')).not.toBeNull();
@@ -183,8 +166,7 @@ describe('where a row was found, which is what the list shows to explain itself'
 describe('the declared half', () => {
 	it('names only addresses that land on a section that exists', () => {
 		/* A result opening `/settings/typo` is a dead end that looks like a working search, and
-		   nothing else would ever catch it: the entry compiles, matches, and goes nowhere. A retired
-		   id is allowed (every result opens through the resolver), but only one that LANDS. */
+		   nothing else would ever catch it: the entry compiles, matches, and goes nowhere. */
 		const ids = new Set(everySection().map((one) => one.id));
 
 		for (const entry of DECLARED) {
@@ -208,8 +190,8 @@ describe('the declared half', () => {
 });
 
 describe('gathered under the section each thing is on', () => {
-	/* Three sections, so "only what this caller draws" and "the order groups come out in" are both
-	   askable. Real shapes, invented ids: this is about the gathering, not about Sift's own list. */
+	/* Three sections, so "only what this caller draws" and "the order groups come out in" are
+	   both askable. */
 	const SECTIONS: SettingsSection[] = [
 		{ id: 'appearance', label: 'Appearance', icon: 'palette' },
 		{ id: 'sites', label: 'Sites', icon: 'public' },
@@ -238,8 +220,7 @@ describe('gathered under the section each thing is on', () => {
 
 	it('leads with a section whose own NAME matches, with nothing under it', () => {
 		/* A section is something Settings can be searched for, not only the settings ON it:
-		   otherwise typing its name finds whatever happens to mention it in a sentence. A group
-		   with no entries is the honest shape for it: the heading IS the result. */
+		   otherwise typing its name finds whatever happens to mention it in a sentence. */
 		const found = grouped(INDEX, SECTIONS, 'sites');
 
 		expect(found.map((one) => one.section.id)).toEqual(['sites']);
@@ -247,8 +228,8 @@ describe('gathered under the section each thing is on', () => {
 	});
 
 	it('keeps the order `matching` decided, so nothing is ranked twice', () => {
-		/* "vpn" is a keyword on two entries. Which group leads is decided by where its best match
-		   came in the flat list, and nothing here re-scores anything. */
+		/* "vpn" is a keyword on two entries. Which group leads is decided by where its best
+		   match came in the flat list, and nothing here re-scores anything. */
 		const found = grouped(INDEX, SECTIONS, 'vpn');
 
 		expect(found.map((one) => one.section.id)).toEqual(['sites', 'secret']);
@@ -256,8 +237,8 @@ describe('gathered under the section each thing is on', () => {
 
 	it('draws nothing for a section this caller did not offer', () => {
 		/* How a guest is kept from being shown a door that will not open: the shell passes the
-		   sections it is willing to draw, and this drops the rest rather than the caller filtering
-		   afterwards and having to remember to. */
+		   sections it is willing to draw, and this drops the rest rather than the caller
+		   filtering afterwards and having to remember to. */
 		const forAGuest = SECTIONS.filter((one) => one.id !== 'secret');
 		const found = grouped(INDEX, forAGuest, 'vpn');
 
@@ -266,9 +247,7 @@ describe('gathered under the section each thing is on', () => {
 
 	it('drops a result whose section answers to nothing at all', () => {
 		/* It can only happen if the server renames a section out from under the label-to-id join
-		   in `fromRegistry`. There is no heading to draw for it (no name and no icon), and
-		   the alternative is a result that opens the WRONG pane. A Python gate is what stops
-		   this being a silent loss; see `test_settings_sections_agree_across_the_wire.py`. */
+		   in `fromRegistry`. */
 		const found = grouped(INDEX, SECTIONS, 'vpn').flatMap((one) => one.entries);
 
 		expect(found.map((one) => one.name)).not.toContain('Orphaned');
@@ -317,14 +296,13 @@ describe('gathered under the section each thing is on', () => {
 	});
 
 	it('says nothing rather than a section when nothing matched', () => {
-		/* Null, so the pane keeps what it was showing. Emptying it because somebody mistyped a letter
-		   on the way to a word that matches is a screen that flickers while you type. */
+		/* Null, so the pane keeps what it was showing. Emptying it because somebody mistyped a
+		   letter on the way to a word that matches is a screen that flickers while you type. */
 		expect(firstMatch(grouped(INDEX, SECTIONS, 'zzzz'))).toBeNull();
 	});
 });
 
-/* The sections that moved keep being found by the words a person already uses for them. Real
-   declarations and the real list: a search for a thing that moved must land where it is now. */
+/* The sections that moved keep being found by the words a person already uses for them. */
 describe('the sections that moved', () => {
 	const REAL_REGISTRY: SettingSection[] = [
 		{
@@ -355,8 +333,8 @@ describe('the sections that moved', () => {
 
 describe('one place, one result', () => {
 	it('shows the tunnel for joining a swap once, on the row the Swap tunnels block draws', () => {
-		/* The registry files it under Privacy and it is drawn beside the tunnels, where Sites and
-		   Tunnels also declares the row: both halves answer, and the list must say it once. */
+		/* The registry files it under Privacy and it is drawn beside the tunnels, where Sites
+		   and Tunnels also declares the row: both halves answer, and the list must say it once. */
 		const registry: SettingSection[] = [
 			{
 				name: 'Privacy',

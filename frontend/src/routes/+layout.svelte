@@ -82,8 +82,8 @@
 		void capture.handlePaste(data);
 	}
 
-	// Ask the server who this is before drawing a shell that depends on the answer, so a guest never
-	// sees an admin's navigation for a frame.
+	// Ask the server who this is before drawing a shell that depends on the answer, so a guest
+	// never sees an admin's navigation for a frame.
 	const ready = $derived(session.viewer !== undefined);
 
 	// The screens somebody not inside the app may see, drawn without the shell, whose every control
@@ -105,12 +105,7 @@
 		session.load().catch(() => (unreachable = true));
 	});
 
-	/*
-	 * THE LAUNCH LOCK LANDS BEFORE THE SCREEN IS DRAWN. A screen asks for its list as it mounts, and
-	 * one that asked before "Hide whenever Sift starts" had shut Hidden would be answered with the
-	 * hidden files in it. So the framed shell waits for `lockOnLaunch`, once per page load; it
-	 * settles whatever the lock answered, so a server that will not answer cannot hold the window.
-	 */
+	/* THE LAUNCH LOCK LANDS BEFORE THE SCREEN IS DRAWN. */
 	let launched = $state(false);
 	let launching = false;
 
@@ -130,20 +125,15 @@
 			.finally(() => (launched = true));
 	});
 
-	/*
-	 * The look, from this browser's own memory, before anything is asked of anybody: `adopt` covers
-	 * what the page's boot script could not, and needs no server, so the connect screen is coloured.
-	 */
+	/* The look, from this browser's own memory, before anything is asked of anybody: `adopt`
+	 * covers what the page's boot script could not, and needs no server, so the connect screen
+	 * is coloured. */
 	$effect(() => {
 		untrack(() => theme.adopt());
 	});
 
-	/*
-	 * Everything held on behalf of whoever is signed in, read when that becomes known and again when
-	 * it changes. Keyed on the account, not the page, because the desktop window never reloads, so a
-	 * second account would otherwise keep the first one's preferences. Read the deciding value
-	 * OUTSIDE `untrack`, do the work inside.
-	 */
+	/* Everything held on behalf of whoever is signed in, read when that becomes known and again
+	 * when it changes. */
 	let readFor: string | null | undefined = undefined;
 
 	$effect(() => {
@@ -154,27 +144,25 @@
 		const locked = session.viewer?.locked === true;
 		untrack(() => {
 			if (onShellScreen || !known || locked || who === readFor) return;
-			/* Somebody else's answers, never on the first pass, where clearing the theme's mirror would
-			   bring back the flash of the default. */
+			/* Somebody else's answers, never on the first pass, where clearing the theme's
+			   mirror would bring back the flash of the default. */
 			if (readFor !== undefined) forgetAccountScopedPreferences();
 			readFor = who;
 			if (who === null) return;
 
-			/* Every preference this account is drawn by, loaded here rather than by each screen, which
-			   could forget; `account-scoped.ts` holds the one list. */
+			/* Every preference this account is drawn by, loaded here rather than by each screen,
+			   which could forget; `account-scoped.ts` holds the one list. */
 			loadAccountScopedPreferences();
 		});
 	});
 
-	/* Where we are, noted so the next screen knows whether stepping back lands on the wall. An effect,
-	 * not `afterNavigate`, which here stops SvelteKit intercepting links at all
-	 * (`navigation.svelte.ts`). */
+	/* Where we are, noted so the next screen knows whether stepping back lands on the wall. */
 	$effect(() => {
 		noteAddress(page.url);
 	});
 
-	/* The page in front, for Insights' visits and for every request; a file open over it pauses the
-	   count (`visits.ts`). */
+	/* The page in front, for Insights' visits and for every request; a file open over it pauses
+	   the count (`visits.ts`). */
 	$effect(() => {
 		noteWhere({
 			route: page.route.id,
@@ -186,10 +174,8 @@
 	});
 	onMount(watchVisits);
 
-	/*
-	 * Where each screen was scrolled to, kept per history entry: SvelteKit reads it off the root
-	 * layout, which is on every route; `PageFrame` says which box scrolls (`page-scroll.ts`).
-	 */
+	/* Where each screen was scrolled to, kept per history entry: SvelteKit reads it off the root
+	 * layout, which is on every route; `PageFrame` says which box scrolls (`page-scroll.ts`). */
 	export const snapshot = pageScroll;
 
 	/* Before anything animates; per machine, so it needs no request (`motion.svelte.ts`). */
@@ -212,10 +198,7 @@
 		};
 	});
 
-	/*
-	 * The box that fills the window, and the key that sends its bar away. Handed over, so the stage
-	 * can compare it with `document.fullscreenElement`, since something else may be fullscreen.
-	 */
+	/* The box that fills the window, and the key that sends its bar away. */
 	let stageBox = $state<HTMLElement | null>(null);
 
 	$effect(() => {
@@ -238,13 +221,10 @@
 		};
 	});
 
-	/*
-	 * The two shortcuts that have to work while somebody is not looking at the app: with Ctrl, so
-	 * typing cannot fire them. Ctrl+L shadows the browser's address bar, the lesser harm.
-	 */
+	/* The two shortcuts that have to work while somebody is not looking at the app: with Ctrl,
+	 * so typing cannot fire them. */
 	function onShortcut(event: KeyboardEvent) {
-		/* Ctrl+H hides: the vault shuts, nothing else changes. Ctrl+L locks Sift: the session shuts
-		 * and takes Hidden with it. Both are everybody's, since a guest has a Hidden too. */
+		/* Ctrl+H hides: the vault shuts, nothing else changes. */
 		if (matches(event, 'app.shutHidden')) {
 			event.preventDefault();
 			void lockNow();
@@ -285,16 +265,14 @@
 	});
 
 	/* Locked, acted on before anything renders: `me` answers a locked session, and drawing the
-	 * library until another request was refused would be a lock read around. The drawing condition
-	 * asks the same question, so no frame has both. */
+	 * library until another request was refused would be a lock read around. */
 	const shut = $derived(ready && session.isSignedIn && session.viewer?.locked === true);
 
 	$effect(() => {
 		if (shut && !onAuthScreen) void goto('/locked', { replaceState: true });
 	});
 
-	/* What the work queue is doing, for the busy indicator: it outlives any screen. An admin's only,
-	 * since the queue refuses anybody else. */
+	/* What the work queue is doing, for the busy indicator: it outlives any screen. */
 	$effect(() => {
 		// Keyed on who is signed in: a remembered refusal ends when somebody else signs in.
 		const account = session.viewer?.id;
@@ -313,8 +291,7 @@
 		void tellShellLogDetail();
 	});
 
-	/* Re-read whenever the connection says the queue moved, never on a timer. Waiting for cookies is
-	 * the download's job being parked, so the Downloads row's facts come too. */
+	/* Re-read whenever the connection says the queue moved, never on a timer. */
 	whenChanged(jobChanges, () => {
 		if (!session.adminUnlocked) return;
 		void imports.refresh();
@@ -331,19 +308,15 @@
 		if (session.adminUnlocked) void imports.readDownloads();
 	});
 
-	/* The one connection the whole application holds: no rows, only which kind of thing moved.
-	 * Everybody has one (a guest whose share is withdrawn most needs telling); the server drops
-	 * admin-only subjects. Keyed on who is signed in and held while it is locked. */
+	/* The one connection the whole application holds: no rows, only which kind of thing moved. */
 	$effect(() => {
 		if (!session.isSignedIn || session.viewer?.locked === true) return;
 		live.start();
 		return () => live.stop();
 	});
 
-	/*
-	 * The window's own caption buttons, in the colours this page is drawing itself in: reading the
-	 * theme's choices makes it re-run when they change. `markOverlaidWindow` first.
-	 */
+	/* The window's own caption buttons, in the colours this page is drawing itself in: reading
+	 * the theme's choices makes it re-run when they change. */
 	$effect(() => {
 		void theme.base;
 		void theme.accent;
@@ -351,18 +324,15 @@
 		void dressTitleBar();
 	});
 
-	/*
-	 * Whether this window is still running the client the server would serve: asked when the live
-	 * connection COMES UP, since a restart for an upgrade drops the socket. Never on a timer.
-	 */
+	/* Whether this window is still running the client the server would serve: asked when the
+	 * live connection COMES UP, since a restart for an upgrade drops the socket. */
 	$effect(() => {
 		if (!session.isSignedIn || !live.live) return;
 		void build.check();
 	});
 
-	/* Whether this session's saved keys are locked, asked at the same moment: a restart seals them
-	 * while the window believes otherwise (`session.recheck`). Not on the page's first connection,
-	 * which comes a moment after the page asked who this is. */
+	/* Whether this session's saved keys are locked, asked at the same moment: a restart seals
+	 * them while the window believes otherwise (`session.recheck`). */
 	let firstConnection = true;
 	$effect(() => {
 		if (!session.isSignedIn || !live.live) return;
@@ -385,12 +355,8 @@
 		void rail.hydrate(account);
 	});
 
-	/*
-	 * Screens that lay themselves out, from the top of the window to the bottom, decided by the
-	 * route. Each draws a `PageFrame` (directly or through `AssetGrid`/`EntityGrid`), which owns the
-	 * padding and the one scroll, so `main` adds neither. A `:global(main:has(...))` rule from a
-	 * screen would outlive its page. `src/lib/design/frame.test.ts` holds this list to the frames.
-	 */
+	/* Screens that lay themselves out, from the top of the window to the bottom, decided by the
+	 * route. */
 	const FULL_BLEED_ROUTES = new Set([
 		'/browse',
 		'/collections',
@@ -441,10 +407,9 @@
 	]);
 	const fullBleed = $derived(FULL_BLEED_ROUTES.has(page.route.id ?? ''));
 
-	/*
-	 * Whether the application's own frame (the rail and the top bar) is what is on screen: it picks
-	 * the framed branch and whether the window needs its own drag strip, which must never disagree.
-	 */
+	/* Whether the application's own frame (the rail and the top bar) is what is on screen: it
+	 * picks the framed branch and whether the window needs its own drag strip, which must never
+	 * disagree. */
 	const framed = $derived(
 		!onShellScreen &&
 			!unreachable &&
@@ -455,11 +420,9 @@
 			launched
 	);
 
-	/*
-	 * The desktop window's opening frame (`routes/opening`) goes once this page has drawn a screen of
-	 * its own, a frame after it is on the page; the sign-in form, a question or a message is ready to
-	 * use as drawn, and a framed screen once its first picture has loaded.
-	 */
+	/* The desktop window's opening frame (`routes/opening`) goes once this page has drawn a
+	 * screen of its own, a frame after it is on the page; the sign-in form, a question or a
+	 * message is ready to use as drawn, and a framed screen once its first picture has loaded. */
 	const drawnScreen = $derived(onShellScreen || unreachable || (ready && onAuthScreen) || framed);
 	let toldDrawn = false;
 	$effect(() => {
@@ -542,10 +505,8 @@
 			     survive fullscreen; the top bar, the way off this screen, does not. -->
 			<div class="screen-box" bind:this={stageBox}>
 				<!--
-					The controls that filter, order and describe whatever screen is on, drawn once as one
-					row (at the top while the window is filled too). No scroll region around
-					it: the panel it drops is absolutely positioned and an `overflow: hidden` ancestor
-					would clip it to nothing; a tall panel scrolls inside itself.
+					The controls that filter, order and describe whatever screen is on, drawn once as
+					one row (at the top while the window is filled too).
 				-->
 				<div class="screenbar" class:sent={stage.filling && stage.barHidden}>
 					<FilterBar />
@@ -582,8 +543,7 @@
 		<!--
 			Where an asset is drawn, and the only place it is: a tile pushes /asset/{id} without
 			running that route, so the grid underneath keeps its scroll; landed on cold, the same panel
-			goes up over an empty screen. Not keyed on the id, or Next would rebuild the element the
-			browser is drawing fullscreen and leave fullscreen.
+			goes up over an empty screen.
 		-->
 		{#if page.state.asset}
 			<AssetModal
@@ -614,10 +574,7 @@
 		     mount a dialog, so it is out here, driven by `vaultPrompt`. -->
 		<PinPrompt bind:open={vaultPrompt.asking} reason={vaultPrompt.reason} />
 	</div>
-	<!-- Once, out here, for the whole app: the toaster is a place on the screen. Carried into the
-	     filled box while a screen is filled (`drawnWhileFilled`), with `display: contents`. NOT the
-	     last node of this branch: a branch is removed by walking siblings to its last node before
-	     attachments are torn down, so a moved last node would let the walk run past the branch. -->
+	<!-- Once, out here, for the whole app: the toaster is a place on the screen. -->
 	<div class="toast-home" {@attach drawnWhileFilled}>
 		<Toaster />
 	</div>
@@ -635,8 +592,7 @@
 		align-content: center;
 		gap: var(--space-3);
 		min-height: 100dvh;
-		/* Under the window's title bar (zero in a browser, `--window-chrome`). Padding, as on
-		   `.shell`; the shorthand first, so it does not overwrite the clearing. */
+		/* Under the window's title bar (zero in a browser, `--window-chrome`). */
 		padding: var(--space-6);
 		padding-block-start: calc(var(--window-chrome) + var(--space-6));
 		text-align: center;
@@ -651,15 +607,12 @@
 		margin: 0;
 	}
 
-	/*
-	 * The rail, and a panel floating beside it: the window's ground is the rail's colour and the
-	 * content is a rounded card on it, the gap doing a border's job.
-	 */
+	/* The rail, and a panel floating beside it: the window's ground is the rail's colour and the
+	 * content is a rounded card on it, the gap doing a border's job. */
 	.shell {
 		display: grid;
 		/* Below the window's title bar. PADDING, NOT A MARGIN: a top margin on a child of `body`
-		   collapses through it and grows the document a scrollbar, cutting `WindowBar` short.
-		   Zero in a browser. */
+		   collapses through it and grows the document a scrollbar, cutting `WindowBar` short. */
 		padding-block-start: var(--window-chrome);
 		height: 100dvh;
 		/* Named, so a modal that stops being `position: fixed` is never handed a grid row. */
@@ -692,18 +645,14 @@
 		overflow: hidden;
 	}
 
-	/* An entity page on its blurred cover: the flat canvas here too, so the bar meets the backdrop
-	   with no step. */
+	/* An entity page on its blurred cover: the flat canvas here too, so the bar meets the
+	   backdrop with no step. */
 	.content:has(:global(.frame.on-a-picture)) {
 		background: var(--sift-bg);
 	}
 
-	/*
-	 * The bar and the screen, which is what fills the window: `auto` rows take no height when
-	 * empty, and `minmax(0, 1fr)` keeps the screen from pushing the card taller. `screen-box`, not
-	 * `stage`, which is the media frame's class: one class on two elements answers
-	 * `querySelector` with the wrong one.
-	 */
+	/* The bar and the screen, which is what fills the window: `auto` rows take no height when
+	 * empty, and `minmax(0, 1fr)` keeps the screen from pushing the card taller. */
 	.screen-box {
 		grid-area: stage;
 		position: relative;
@@ -716,10 +665,8 @@
 		min-block-size: 0;
 	}
 
-	/*
-	 * The bar and whatever panel it has dropped open, as one column, reversed while the window is
-	 * filled so the panel comes out of the bar's top; neither knows which way up it is.
-	 */
+	/* The bar and whatever panel it has dropped open, as one column, reversed while the window
+	 * is filled so the panel comes out of the bar's top; neither knows which way up it is. */
 	.screenbar {
 		grid-area: screenbar;
 		display: flex;
@@ -727,10 +674,8 @@
 		min-inline-size: 0;
 	}
 
-	/*
-	 * The shell's own scroll, for the screens that do NOT lay themselves out: one `1fr` row so the
-	 * region has a definite height. `main.full-bleed` turns this into their flex column.
-	 */
+	/* The shell's own scroll, for the screens that do NOT lay themselves out: one `1fr` row so
+	 * the region has a definite height. */
 	main {
 		grid-area: main;
 		display: grid;
@@ -748,8 +693,8 @@
 		padding-inline-end: var(--drawer-beside, 0px);
 	}
 
-	/* Filling the window: fullscreen paints black behind the element, so Sift's ground is painted.
-	   The bar keeps its row, so the screen shortens under it rather than hiding behind it. */
+	/* Filling the window: fullscreen paints black behind the element, so Sift's ground is
+	   painted. */
 	.screen-box:fullscreen {
 		background: var(--background);
 	}
@@ -759,10 +704,8 @@
 		padding: 0;
 	}
 
-	/*
-	 * The bar, at the top of a filled window, IN FLOW, sliding down: the feeds shrink rather than
-	 * all being covered. Tall panels stop at half the window, so the wall never disappears.
-	 */
+	/* The bar, at the top of a filled window, IN FLOW, sliding down: the feeds shrink rather
+	 * than all being covered. */
 	.screen-box:fullscreen .screenbar {
 		z-index: 20;
 		/* One fraction row, which eases against `.sent`'s, under the ceiling. */
@@ -778,7 +721,7 @@
 	}
 
 	/* Gone quiet: slid back up and out of the tab order, its row given to the wall; `visibility`
-	   holds until the slide is done. `0fr` alone would floor the row at its content. */
+	   holds until the slide is done. */
 	.screen-box:fullscreen .screenbar.sent {
 		grid-template-rows: minmax(0, 0fr);
 		translate: 0 -100%;
@@ -807,8 +750,7 @@
 		overflow: hidden;
 	}
 
-	/* Below the medium breakpoint: one column and a bar at the bottom. A media query, so the first
-	   paint is right; each piece decides for itself whether it shows. */
+	/* Below the medium breakpoint: one column and a bar at the bottom. */
 	@media (max-width: 767px) {
 		/* The tabs are the shell's child, so the card is the row above them. */
 		.shell {

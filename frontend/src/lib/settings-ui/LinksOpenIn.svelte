@@ -1,14 +1,7 @@
 <script lang="ts">
-	/*
-	 * Which browser a link out of Sift opens in.
-	 *
-	 * On General: it is what happens on this device when you press a link (not how Sift looks,
-	 * and not a connection), which is exactly what General is for. An address naming its older
-	 * place still lands on it: see `KEY_MOVED_TO` in `sections.ts`.
-	 *
-	 * Only the desktop client can answer, and in a browser the whole block is absent: a browser
-	 * already IS the answer to this question.
-	 */
+	/* Which browser a link out of Sift opens in. On General: it is what happens on this device
+	 * when you press a link (not how Sift looks, and not a connection), which is exactly what
+	 * General is for. */
 	import { onMount } from 'svelte';
 	import { Select } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';

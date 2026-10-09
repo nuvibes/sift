@@ -11,27 +11,10 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * A box that completes from the library's own vocabulary.
-	 *
-	 * A site's other names, the network it belongs to, a person's other names and a tag's other
-	 * names often name something Sift already knows, and typed into a plain box they would produce
-	 * a second spelling of it. So the box offers what is there while it is being typed.
-	 *
-	 * It asks the search suggester, because a second list of people, sites or tags would be a
-	 * second answer to "what is in this library". That one is scoped to whoever is asking and is
-	 * the same one the chip editor uses. Which vocabulary to ask is declared by the field, in the
-	 * registry, so a new field arrives with its completion.
-	 *
-	 * It never refuses what was typed: the list is a suggestion, not a set of valid answers. A
-	 * network Sift has never heard of is a perfectly good thing to type.
-	 *
-	 * Built on the library's Combobox, which supplies the arrow keys through the list, Home and
-	 * End, typeahead and the active-descendant announcement. "What is typed wins" is kept: the
-	 * input is the source of truth, `inputValue` is fed from the caller's value, and the library's
-	 * own value means only "somebody picked one". Enter with nothing highlighted submits what was
-	 * typed.
-	 */
+	/* A box completing from the library's own vocabulary (the search suggester, as the field declares),
+	 * never refusing what was typed: on the library's Combobox, the input is the source of truth,
+	 * and
+	 * Enter with nothing highlighted submits what was typed. */
 	import { onMount } from 'svelte';
 	import { Combobox } from 'bits-ui';
 	import { suggestionsFor } from '$lib/search/search.svelte';
@@ -73,13 +56,10 @@
 	let offered = $state<string[]>([]);
 	let open = $state(false);
 	let box = $state<HTMLInputElement | null>(null);
-	/* Whether the arrow keys have been used since the list opened. The library highlights the first
-	   row on its own, so without this Enter would take a completion nobody reached for, and the
-	   whole point of the box is that what is typed wins until somebody moves to a row. */
+	/* Whether the arrows were used since opening, so Enter never takes an unreached first row. */
 	let navigated = $state(false);
 
-	/* One request per pause, not per keystroke, and the generation counter is what keeps a slow
-	   answer for "nor" from landing under "northl". The same shape the search box uses. */
+	/* One request per pause, a generation counter dropping stale answers. */
 	let generation = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const DEBOUNCE_MS = 120;
@@ -96,8 +76,7 @@
 			try {
 				const found = await suggestionsFor(suggests, wanted);
 				if (mine !== generation) return;
-				// Anything that is exactly what is already typed adds nothing to a list of
-				// completions: the box already says it.
+				// Exactly what is typed adds nothing.
 				const never = new Set(leaveOut.map((one) => one.trim().toLowerCase()));
 				offered = found
 					.map((one) => one.value)
@@ -106,8 +85,7 @@
 					.slice(0, 8);
 				open = offered.length > 0;
 			} catch {
-				// A completion that cannot be fetched is a box with no completions, never an error:
-				// everything here can be typed by hand and the list only ever saves keystrokes.
+				// No completions, never an error: everything can be typed by hand.
 				if (mine === generation) {
 					dismiss();
 				}
@@ -115,23 +93,14 @@
 		}, DEBOUNCE_MS);
 	}
 
-	/*
-	 * Every way the list goes away, in one place: Escape, a press outside, a row taken, a word too
-	 * short to ask about. The rows go, and so does the memory that the arrows were used, because
-	 * `navigated` means "since the list opened". Enter reads the highlight out of the open list and
-	 * a closed list has none, so this keeps the flag's meaning true rather than guarding Enter by
-	 * itself.
-	 */
+	/* Every way the list goes, in one place, clearing `navigated` with it. */
 	function dismiss() {
 		open = false;
 		offered = [];
 		navigated = false;
 	}
 
-	/* The row the arrows reached, read the way a screen reader reads it: the box names the highlighted
-	   row in `aria-activedescendant`, and the row carries its own value. Deliberately not a
-	   `[data-highlighted]` query over the document: every menu in the app draws one of those, and
-	   this box must only ever take a row out of its OWN list. */
+	/* The row the arrows reached, by `aria-activedescendant`, only from this box's own list. */
 	function highlighted(): string | null {
 		const named = box?.getAttribute('aria-activedescendant');
 		if (!named) return null;
@@ -220,8 +189,7 @@
 	{#if offered.length > 0}
 		<Combobox.Portal>
 			<Combobox.Content class="ui-combobox-content" sideOffset={4}>
-				<!-- The shared scroller, not `overflow-y: auto` on the list: a painted bar takes ten
-				     pixels of layout where a floating one takes none. -->
+				<!-- The shared scroller, whose bar floats. -->
 				<Scroller>
 					<Combobox.Viewport>
 						{#each offered as one, at (`${at}:${one}`)}
@@ -235,12 +203,7 @@
 </Combobox.Root>
 
 <style>
-	/*
-	 * The library's combobox, dressed here because this is the one file that draws it. The three
-	 * classes are handed to bits-ui (the box, the layer it opens onto, and one row) and the layer
-	 * is portalled, so the rules are global; `check_anchored_globals` allows that for a class the
-	 * file itself writes.
-	 */
+	/* The library's combobox dressed here; global, as classes this file writes. */
 	:global(.ui-combobox-input) {
 		padding: var(--space-1) var(--space-2);
 		border: 1px solid var(--sift-line-strong);
@@ -262,15 +225,7 @@
 		box-shadow: var(--focus-ring);
 	}
 
-	/*
-	 * The open list, in a layer of its own, with the same surface and shadow as the select's menu:
-	 * a completion list and a sort list are two menus and must not be two designs.
-	 *
-	 * The library renders this box with `display: flex; flex-direction: column` as an inline style,
-	 * which beats any class rule, so the bound the scroller needs comes from `Scroller`, which
-	 * sizes its viewport by flex. `overflow: hidden` says what this box does: it clips, and the
-	 * scroller inside scrolls.
-	 */
+	/* The open list on the menu surface; it clips, the scroller inside scrolls. */
 	:global(.ui-combobox-content) {
 		z-index: var(--z-menu);
 		min-inline-size: var(--bits-combobox-anchor-width);
@@ -282,18 +237,13 @@
 		);
 		padding: var(--space-1);
 		border: 1px solid var(--sift-line);
-		/*
-		 * The menu corner, not the field's: the rows inside take `--menu-row-radius`, cut from
-		 * `--radius-lg` minus this inset so the two corners are concentric. On `--radius-md` the
-		 * rows would be rounder than the box holding them.
-		 */
+		/* The menu corner, so the rows' corners are concentric. */
 		border-radius: var(--radius-lg);
 		background: var(--sift-surface-3);
 		box-shadow: var(--elev-2);
 	}
 
-	/* Inset and cornered like every other row that opens over the page: a menu row, a row of the
-	   chooser's list, a rating. See `--menu-row-padding` above. */
+	/* Inset and cornered like every row opening over the page. */
 	:global(.ui-combobox-item) {
 		display: flex;
 		align-items: center;
@@ -306,8 +256,7 @@
 		transition: background var(--dur-instant) var(--ease);
 	}
 
-	/* The keyboard's position and the pointer's, drawn the same: one highlight, whichever put it
-	   there, or arrowing down and hovering give two different answers to "which one is next". */
+	/* One highlight for keyboard and pointer. */
 	:global(.ui-combobox-item[data-highlighted]) {
 		background: var(--menu-row-highlight);
 		color: var(--sift-ink);

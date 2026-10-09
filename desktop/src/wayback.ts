@@ -38,8 +38,7 @@ export function whatItMeans(code: number | null): string {
 	return '';
 }
 
-/** Why the library can't be opened where this copy was told, or null. A library this copy never
- *  opened is new, not missing: its database comes with its first start. */
+/** Why the library can't be opened where this copy was told, or null. */
 export async function libraryMissing(settings: DesktopSettings): Promise<string | null> {
 	if (settings.mode !== 'standalone' || settings.dataDir === null) return null;
 	const where = locations(settings);

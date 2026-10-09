@@ -1,26 +1,4 @@
-/* The libraries this copy has opened, and what has to be true before it opens another.
- *
- * ## Why the shell keeps this list rather than the application
- *
- * It is a list of other libraries. A list kept inside one of them could only be read while that one
- * was open, which is precisely the moment it is least useful, because switching away is the thing
- * it exists for. The shell is also the only thing that can act on it: starting a backend on a
- * different folder means stopping the one that is running, and only the process that started it can.
- *
- * ## Why a folder is asked about before anything is stopped
- *
- * Opening a Sift library MIGRATES it. The schema is brought up to whatever the running build
- * declares, in one direction, and an older Sift cannot read it afterwards. That is correct and it is
- * how every Sift start has always worked, but it must not happen to somebody who only meant to
- * look. So the target is read first, by a process that changes nothing, and an upgrade is offered
- * as a decision with a backup attached rather than performed as a side effect of a click.
- *
- * The reading is done by the BACKEND, not here, and that is not an arbitrary split. The answer is a
- * comparison against the schema registry, and the registry only exists once every slice has been
- * imported, which is a thing the Python side does and this one cannot. A second opinion written in
- * TypeScript would be a copy of the migration runner's own rule, kept in step by hand, and the day
- * it drifted it would send somebody into an upgrade the backend was about to refuse.
- */
+/* The libraries this copy has opened, and what has to be true before it opens another. */
 
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
@@ -31,13 +9,7 @@ import { log } from './log';
 import { bundlePaths, type DataLocations } from './paths';
 import type { KnownLibrary } from './settings';
 
-/* The questions the backend answers without starting. Written out here and pinned by a test
- * against the Python that implements them (`libraries.test.ts`), for the same reason the preload's
- * channel names are: they are two copies of one string across a language boundary, and nothing
- * else would notice a change. See `INSPECT_LIBRARY` in sift/main.py.
- *
- * The first two take a library's data FOLDER or a database FILE; the third copies a database file
- * into a new library's data folder. */
+/* The questions the backend answers without starting. */
 export const INSPECT_FLAG = '--inspect-library';
 export const BACK_UP_FLAG = '--back-up-library';
 export const ADOPT_FLAG = '--adopt-library';
@@ -46,23 +18,18 @@ export const ADOPT_FLAG = '--adopt-library';
 export const DATABASE_FILENAME = 'sift.sqlite3';
 
 /* The note a backend leaves in its own data folder, naming the library to start on, before it
- * stops asking to be started again. `HANDOFF_FILENAME` in sift/slices/backup/libraries.py, pinned
- * by a test in `libraries.test.ts` for the reason the flags above are. */
+ * stops asking to be started again. */
 export const SWITCH_NOTE = 'library-switch.json';
 
-/* The libraries folder's own mark, the folder's name beside a first library, and the key in the mark
- * naming the library chosen to open when Sift starts. `LIBRARIES_MARK` and `LIBRARIES_FOLDER` in
- * sift/kernel/config.py and `OPENS_AT_START` in sift/slices/backup/libraries.py, pinned by a test
- * in `libraries.test.ts` for the reason the flags above are. */
+/* The libraries folder's own mark, the folder's name beside a first library, and the key in the
+ * mark naming the library chosen to open when Sift starts. */
 export const LIBRARIES_MARK = 'sift-libraries.json';
 export const LIBRARIES_FOLDER = 'libraries';
 export const OPENS_AT_START = 'opens_at_start';
 
-/**
- * The folder libraries are made in, found from a library's data folder the way the backend finds it
- * (`libraries_folder` in sift/kernel/config.py): the folder two above a member's data folder when it
- * carries the mark, and `libraries` beside the data folder otherwise.
- */
+/** The folder libraries are made in, found from a library's data folder the way the backend finds
+ * it (`libraries_folder` in sift/kernel/config.py): the folder two above a member's data folder
+ * when it carries the mark, and `libraries` beside the data folder otherwise. */
 export function librariesFolderOf(dataDir: string): string {
 	const above = path.dirname(path.dirname(dataDir));
 	if (fs.existsSync(path.join(above, LIBRARIES_MARK))) return above;
@@ -73,13 +40,7 @@ export function holdsLibrary(dataDir: string): boolean {
 	return fs.existsSync(path.join(dataDir, DATABASE_FILENAME));
 }
 
-/**
- * The library chosen on the page to open when Sift starts, or null for "whichever opened last".
- *
- * Null as well when the chosen one has gone (a drive that is not connected, a library deleted since)
- * or the mark cannot be read: a start is never refused for a choice it cannot honour, it opens the
- * library that was open last, as it did before anybody chose.
- */
+/** The library chosen on the page to open when Sift starts, or null for "whichever opened last". */
 export function openingAtStart(dataDir: string): DataLocations | null {
 	let written: unknown;
 	try {
@@ -113,15 +74,7 @@ export interface LibraryReport {
 	detail: string;
 }
 
-/**
- * Ask the backend what is in a folder, without opening it.
- *
- * `unknown` when the question could not be put at all: no interpreter, a timeout, output that is
- * not the JSON it promised. It is a THIRD outcome rather than being folded into `unreadable`,
- * because the two mean opposite things to the caller: `unreadable` is a folder that is not a
- * library, and `unknown` is Sift failing to look. Offering to upgrade on the strength of a failed
- * look is exactly the mistake this whole path exists to avoid.
- */
+/** Ask the backend what is in a folder, without opening it. */
 export async function inspectLibrary(
 	locations: DataLocations,
 	run: Runner = runBackend
@@ -129,12 +82,7 @@ export async function inspectLibrary(
 	return inspectPath(locations.dataDir, run);
 }
 
-/**
- * Ask the backend what is in one database FILE, without opening it or making anything from it.
- *
- * The same question and the same five verdicts as a folder, asked of a file somebody has just
- * chosen, so a file from a newer Sift is refused by the reading every other door uses.
- */
+/** Ask the backend what is in one database FILE, without opening it or making anything from it. */
 export async function inspectDatabase(
 	file: string,
 	run: Runner = runBackend
@@ -153,8 +101,7 @@ async function inspectPath(target: string, run: Runner): Promise<LibraryReport> 
 		verdict !== 'newer' &&
 		verdict !== 'unreadable'
 	) {
-		/* A backend one version ahead could answer a word this shell has never heard of. "I could
-		   not tell" is the honest reading of that, and it is the safe one. */
+		/* A backend one version ahead could answer a word this shell has never heard of. */
 		return { verdict: 'unknown', detail: '' };
 	}
 	return {
@@ -163,13 +110,7 @@ async function inspectPath(target: string, run: Runner): Promise<LibraryReport> 
 	};
 }
 
-/**
- * Take a snapshot of a library's database beside it, and answer where it went.
- *
- * Null when it could not be made, and the caller must treat that as a refusal to upgrade rather
- * than as a detail. A one-way migration with no way back is the one thing this feature must never
- * do quietly.
- */
+/** Take a snapshot of a library's database beside it, and answer where it went. */
 export async function backUpLibrary(
 	locations: DataLocations,
 	run: Runner = runBackend
@@ -179,14 +120,8 @@ export async function backUpLibrary(
 	return answer.copy;
 }
 
-/**
- * Copy a database file into a new library's data folder as its `sift.sqlite3`, and answer where the
- * copy went.
- *
- * Null when it could not be made, which the caller reads as "nothing has been opened". The backend
- * does the copying, for the reason it does the backup: a WAL database can hold its newest rows in a
- * side file that a byte copy made here would leave behind.
- */
+/** Copy a database file into a new library's data folder as its `sift.sqlite3`, and answer where
+ * the copy went. */
 export async function adoptDatabase(
 	file: string,
 	locations: DataLocations,
@@ -197,19 +132,7 @@ export async function adoptDatabase(
 	return answer.database;
 }
 
-/**
- * The library a backend asked to be started on, taken from the note it left, or null.
- *
- * WHY THE BACKEND ASKS AT ALL. A switch made from a browser is a request to the SERVER, which is on
- * whichever computer holds the library; only this process can start a backend on another folder,
- * so the server writes down which one and stops asking to be started again (exit 86). This reads
- * that note, when and only when the backend has stopped for that reason, and REMOVES it: a note
- * left behind would carry the next ordinary restart (the graphics card's) off to that library.
- *
- * What the server did before it wrote the note is the switch's checking: the library is on its own
- * list, it is not from a newer Sift, and an older one was agreed to and backed up. So what is
- * checked here is only that the note is one: two absolute folders, and nothing else.
- */
+/** The library a backend asked to be started on, taken from the note it left, or null. */
 export function takeSwitchNote(dataDir: string): DataLocations | null {
 	const note = path.join(dataDir, SWITCH_NOTE);
 	let text: string;
@@ -221,8 +144,8 @@ export function takeSwitchNote(dataDir: string): DataLocations | null {
 	try {
 		fs.rmSync(note, { force: true });
 	} catch {
-		/* Read, and it will not go. The backend removes a note nothing acted on when it next starts
-		   on this library, which is the one moment it could do harm. */
+		/* Read, and it will not go. The backend removes a note nothing acted on when it next
+		   starts on this library, which is the one moment it could do harm. */
 	}
 	let parsed: unknown;
 	try {
@@ -242,9 +165,8 @@ export function takeSwitchNote(dataDir: string): DataLocations | null {
 export type Runner = (args: string[]) => Promise<Record<string, unknown> | null>;
 
 /* The same interpreter and the same flags the backend itself is started with: `-I` so a stray
- * `pip install --user` on the machine cannot override what Sift shipped, `-u` so the answer is not
- * left sitting in a buffer. Reusing `INTERPRETER_ARGS` rather than repeating them is what keeps a
- * preflight from being run under a different Python from the one that will do the work. */
+ * `pip install --user` on the machine cannot override what Sift shipped, `-u` so the answer is
+ * not left sitting in a buffer. */
 async function runBackend(args: string[]): Promise<Record<string, unknown> | null> {
 	const { python } = bundlePaths();
 	return new Promise((resolve) => {
@@ -269,9 +191,9 @@ async function runBackend(args: string[]): Promise<Record<string, unknown> | nul
 							: null
 					);
 				} catch {
-					/* Anything the interpreter printed before the answer (a deprecation warning from
-					   a dependency, a line from a slice at import) would otherwise make a perfectly
-					   good answer unparseable. The answer is the LAST line, by contract. */
+					/* Anything the interpreter printed before the answer (a deprecation warning
+					   from a dependency, a line from a slice at import) would otherwise make a
+					   perfectly good answer unparseable. */
 					log.warning('library.ask_unreadable', { args: args[0] });
 					resolve(null);
 				}
@@ -289,18 +211,7 @@ function lastLine(text: string): string {
 	return lines[lines.length - 1] ?? '';
 }
 
-/**
- * The list with this library at the front, opened just now.
- *
- * A PURE FUNCTION over the list, so what it does is a thing a test can state: one entry per data
- * folder, newest first, and a name that is never silently changed by a later open. The caller
- * writes what comes back.
- *
- * Called when a backend has STARTED on the folder, never when one was chosen. A path that was
- * picked and then refused must not become an entry offering to go back to it, and "started" is
- * not a call site being borrowed for a second purpose: starting a backend on a folder is what
- * opening a library IS.
- */
+/** The list with this library at the front, opened just now. */
 export function remembered(
 	known: readonly KnownLibrary[],
 	locations: DataLocations,
@@ -326,13 +237,7 @@ export function find(known: readonly KnownLibrary[], dataDir: string): KnownLibr
 	return known.find((one) => sameFolder(one.dataDir, dataDir)) ?? null;
 }
 
-/**
- * Whether two paths name the same folder.
- *
- * Case-insensitively, because Windows is: `C:\Sift\data` and `c:\sift\DATA` are one folder, and a
- * comparison that said otherwise would put the same library in the list twice and then offer to
- * switch to the one already open. Trailing separators go for the same reason.
- */
+/** Whether two paths name the same folder. */
 export function sameFolder(a: string, b: string): boolean {
 	return normalise(a) === normalise(b);
 }
@@ -344,13 +249,7 @@ function normalise(folder: string): string {
 		.toLowerCase();
 }
 
-/**
- * What to call a library on screen.
- *
- * The folder HOLDING the data folder, because that is the one a person named: Sift puts `data` and
- * `cache` inside whatever was chosen, so every library in the list would otherwise be called
- * "data". The drive's own name where there is nothing above it.
- */
+/** What to call a library on screen. */
 export function nameFor(dataDir: string): string {
 	const holding = path.dirname(path.normalize(dataDir));
 	const named = path.basename(holding);
@@ -365,19 +264,7 @@ export function locationsUnder(root: string): DataLocations {
 	};
 }
 
-/**
- * What choosing one database file means, decided from its NAME and the list alone.
- *
- * - `library`: the file is a library's own `sift.sqlite3`, so the folder it sits in IS that
- *   library's data folder and the ordinary open runs on it.
- * - `adopt`: any other `.sqlite3`: a backup copy, a file somebody was given. It is not opened in
- *   place: a library folder is made BESIDE it, named after the file, the file is copied in as that
- *   library's database, and the copy is what opens. Opening in place would migrate the one file
- *   somebody pointed at, which for a backup copy is exactly the file they were keeping to go back to.
- * - `refused`: not a database file at all. The picker filters by extension, but a name can be typed.
- *
- * A PURE FUNCTION, so what each file becomes is a thing a test can state without a disk.
- */
+/** What choosing one database file means, decided from its NAME and the list alone. */
 export type DatabasePlan =
 	| { kind: 'library'; locations: DataLocations }
 	| {
@@ -415,15 +302,7 @@ export function planForDatabase(file: string, known: readonly KnownLibrary[]): D
 	};
 }
 
-/**
- * The cache folder for a data folder this copy has no record of.
- *
- * Sift lays a library out as `<root>\data` and `<root>\cache`, so a data folder CALLED `data` has
- * its cache beside it under the same root, which is where the library's own previews already are.
- * Anything else is a database somebody keeps in a folder of their own choosing, and the root above
- * it could be a whole drive: a cache named after the folder, beside it, never spills into a folder
- * that is somebody else's.
- */
+/** The cache folder for a data folder this copy has no record of. */
 function cacheBeside(dataDir: string): string {
 	const leaf = path.basename(dataDir);
 	const holding = path.dirname(dataDir);
@@ -431,13 +310,7 @@ function cacheBeside(dataDir: string): string {
 	return path.join(holding, `${leaf}-cache`);
 }
 
-/**
- * Take back the folders an adoption made, when the copy into them failed.
- *
- * ONLY EMPTY ONES. `rmdirSync` refuses a folder with anything in it, which is the whole of what
- * makes this safe to call: a folder that somehow holds something is somebody's, and is left. Inner
- * folders first, so the root is empty by the time it is asked.
- */
+/** Take back the folders an adoption made, when the copy into them failed. */
 export function unmakeEmpty(root: string, locations: DataLocations): void {
 	for (const folder of [locations.dataDir, locations.cacheDir, root]) {
 		try {

@@ -1,13 +1,4 @@
-/* Reading the machine's browsers out of the registry, and refusing to open anything else.
- *
- * The parsing is where this goes quietly wrong, and every case below is one that produces a WORKING
- * looking result rather than an error: a path truncated at the first space, a browser listed four
- * times because it is in two hives and two registry views, or a display name taken from the wrong
- * line. None of those throws; each one just makes the menu wrong.
- *
- * The last group is not about browsers at all. `openIn` is the one place in this application that
- * hands an address to another program, and the address came from a page.
- */
+/* Reading the machine's browsers out of the registry, and refusing to open anything else. */
 
 import { describe, expect, it } from 'vitest';
 
@@ -37,8 +28,8 @@ describe('the executable in a registry command', () => {
 
 describe('the default value of a key', () => {
 	it('keeps the spaces inside the value', () => {
-		/* Taking the LAST field would give `Files\Firefox\firefox.exe" ...`, which is why this reads
-		   everything after the type rather than splitting on whitespace. */
+		/* Taking the LAST field would give `Files\Firefox\firefox.exe" ...`, which is why this
+		   reads everything after the type rather than splitting on whitespace. */
 		const printed =
 			'HKEY_LOCAL_MACHINE\\Software\\Clients\\StartMenuInternet\\FIREFOX.EXE\r\n' +
 			'    (Default)    REG_SZ    Mozilla Firefox\r\n';
@@ -92,8 +83,8 @@ describe('the list of browsers', () => {
 		expect(found.map((one) => one.id)).toEqual(['C:\\gc\\chrome.exe', 'C:\\ff\\firefox.exe']);
 	});
 
-	/* Both hives and both registry views are asked, so one browser can be found up to four times.
-	   Keyed on the executable, it is one entry. */
+	/* Both hives and both registry views are asked, so one browser can be found up to four
+	   times. */
 	it('counts a browser found in several places once', async () => {
 		const found = await installed(
 			registry({ Chrome: { name: 'Google Chrome', command: '"C:\\gc\\chrome.exe"' } })
@@ -102,8 +93,7 @@ describe('the list of browsers', () => {
 		expect(found).toHaveLength(1);
 	});
 
-	/* Several browsers leave the display name unset and are known only by their key. A menu row
-	   with no words in it is worse than one saying `firefox.exe`. */
+	/* Several browsers leave the display name unset and are known only by their key. */
 	it('falls back to the key name when a browser sets no display name', async () => {
 		const found = await installed(
 			registry({ 'FIREFOX.EXE': { command: '"C:\\ff\\firefox.exe"' } })
@@ -131,9 +121,7 @@ describe('the list of browsers', () => {
 
 describe('what may be opened at all', () => {
 	/* `shell.openExternal` hands an address to Windows, which opens it with whatever is
-	   registered for its scheme. The address comes from a page, so without this refusal anything
-	   that got code onto that page could open a local file or any protocol handler installed on
-	   the machine. */
+	   registered for its scheme. */
 	it('accepts a web address', () => {
 		expect(isWebAddress('https://example.com/a?b=c')).toBe(true);
 		expect(isWebAddress('http://192.168.1.20:5171/')).toBe(true);
@@ -159,9 +147,8 @@ describe('what may be opened at all', () => {
 	});
 
 	it('says so rather than claiming success when the chosen browser is gone', () => {
-		/* `spawn` reports a missing executable asynchronously, long after the caller has been told
-		   the link opened. Somebody who uninstalled the browser they chose would click a link, be
-		   told nothing, and watch nothing happen. */
+		/* `spawn` reports a missing executable asynchronously, long after the caller has been
+		   told the link opened. */
 		expect(openIn('C:\\this\\was\\uninstalled.exe', 'https://example.com')).toBe(false);
 	});
 });

@@ -70,6 +70,38 @@ def people_in(name: str, *, known: Sequence[KnownName] = ()) -> list[str]:
     return [stripped] if stripped and reads_like_a_name(stripped) else []
 
 
+def _deepest_name(chain: Sequence[str], kinds: Sequence[Segment]) -> int | None:
+    """The deepest segment that reads like a name, stepping past at most one word that does not."""
+    name_at: int | None = None
+    skipped_one = False
+    for index in range(len(chain) - 1, -1, -1):
+        if kinds[index] is not Segment.WORD:
+            continue
+        if reads_like_a_name(chain[index]):
+            name_at = index
+            break
+        if skipped_one:
+            break
+        skipped_one = True
+    return name_at
+
+
+def _known_above(
+    chain: Sequence[str], kinds: Sequence[Segment], name_at: int, known: Sequence[KnownName]
+) -> int:
+    """Where a person the library already holds sits above the picked word, else the word."""
+    by_name = {one.folded for one in known}
+    if fold(strip_noise(chain[name_at])) not in by_name:
+        for index in range(name_at - 1, -1, -1):
+            if kinds[index] is not Segment.WORD:
+                continue
+            folded = fold(strip_noise(chain[index]))
+            if folded and folded in by_name:
+                name_at = index
+                break
+    return name_at
+
+
 def read_chain(
     chain: Sequence[str],
     *,
@@ -85,29 +117,11 @@ def read_chain(
     # The deepest word that could be somebody. Walking PAST one that could not is the whole
     # difference between reading `Northlight/Orla Fennimore/My Rise in the Ranks` and reading nothing:
     # a scene title is a word, it is not a name, and the person is the folder above it.
-    name_at: int | None = None
-    skipped_one = False
-    for index in range(len(chain) - 1, -1, -1):
-        if kinds[index] is not Segment.WORD:
-            continue
-        if reads_like_a_name(chain[index]):
-            name_at = index
-            break
-        if skipped_one:
-            break
-        skipped_one = True
+    name_at = _deepest_name(chain, kinds)
 
     # A person the library ALREADY holds, sitting above the word that was picked.
     if name_at is not None and known:
-        by_name = {one.folded for one in known}
-        if fold(strip_noise(chain[name_at])) not in by_name:
-            for index in range(name_at - 1, -1, -1):
-                if kinds[index] is not Segment.WORD:
-                    continue
-                folded = fold(strip_noise(chain[index]))
-                if folded and folded in by_name:
-                    name_at = index
-                    break
+        name_at = _known_above(chain, kinds, name_at, known)
 
     site_at: int | None = None
     for index in range(len(chain) - 1, -1, -1):

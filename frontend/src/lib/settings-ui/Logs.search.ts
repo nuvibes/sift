@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Logs tab of Tasks and Activity: its words, and what somebody can type to find it. Its
- * registered settings reach the index from the registry on their own; what is written here is the
- * reader under them (the one list of both logs, the level, the narrowing box, the copy and the
- * download), which nothing registers.
- *
- * ONE COPY MODULE PER PANE. `Logs.svelte` (the tab) and `ApplicationLog.svelte` (the reader it draws)
- * take every word they add from `COPY`, and the search entry is built from the same object. */
+/* The Logs tab of Tasks and Activity: its words, and what somebody can type to find it. */
 import type { operations } from '$lib/api/schema';
 import type { Searchable } from './search';
 
@@ -14,12 +8,7 @@ type ServerLevel = NonNullable<
 	NonNullable<operations['recent_api_logs_get']['parameters']['query']>['level']
 >;
 
-/*
- * The levels a record can carry, quietest first: the server's `LEVELS`, checked against it.
- *
- * `satisfies` refuses a level the server does not know, and `EVERY_LEVEL` below refuses a server
- * level missing here, so the screen cannot offer a different set from the one the route filters by.
- */
+/* The levels a record can carry, quietest first: the server's `LEVELS`, checked against it. */
 export const LOG_LEVELS = [
 	'debug',
 	'info',

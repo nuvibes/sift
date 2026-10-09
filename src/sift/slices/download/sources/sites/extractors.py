@@ -2,13 +2,7 @@
 #
 # Derived from cyberdrop-dl (GPL-3.0): the endpoints and page selectors below were followed from its
 # crawlers. See the package header and NOTICE.
-"""The per-site extractors. Each `extract_*` coroutine takes `(url, session, ctx)` and returns the
-direct media it found as `ExtractedFile`s.
-
-The session is the guarded one, so every request an extractor makes is vetted and pinned. An extractor
-that finds nothing returns an empty list, and `build_resolved_media` turns that into the ordinary
-"nothing to download".
-"""
+"""The per-site extractors: each `extract_*` takes `(url, session, ctx)`, returns files found."""
 
 from __future__ import annotations
 
@@ -43,10 +37,7 @@ _COOMER_ACCEPT = "text/css"
 
 _JPG5_DATA_SRC_RE = re.compile(r'data-src="([^"]+)"')
 
-#: The most a page read and an API answer may take, whole. A ceiling because a control read is a few
-#: kilobytes and a server trickling one byte at a time would otherwise hold a download for ever; the
-#: connection timeout setting is not this (it is how long a connection may say NOTHING), and it
-#: applies inside the ceiling (`_within`).
+#: The most a page read or API answer may take, whole; the timeout setting applies inside it.
 _PAGE_CEILING = 30.0
 _API_CEILING = 15.0
 #: Room inside a ceiling for the wait between requests, which is spent inside the request's own
@@ -56,14 +47,7 @@ _PACE_ROOM = PACE_MS_MAX / 1000
 
 
 def _within(session: aiohttp.ClientSession, ceiling: float) -> aiohttp.ClientTimeout:
-    """A read's time budget: its own ceiling, and the connection timeout setting inside it.
-
-    The setting reaches these reads through the session a download opens (`net.guarded_session`
-    with the download's policy), whose budget to connect and between reads IS the setting. Read
-    from the session rather than passed in, so the twenty reads below cannot disagree with it. A
-    session with no policy has no read budget, and the read keeps the ceiling alone. A setting
-    above the ceiling raises the ceiling, so a longer timeout is never cut short.
-    """
+    """A read's time budget: its own ceiling, with the session's connection timeout inside it."""
     stuck = session.timeout.sock_read
     if stuck is None:
         return aiohttp.ClientTimeout(total=ceiling)
@@ -92,10 +76,8 @@ _PMV_VIDEO_RE = re.compile(
 _PMV_FALLBACK_RE = re.compile(
     r'https?://[^\s"\'<>\[\]]+\.(?:mp4|m3u8|webm|mov)(?:\?[^\s"\'<>\[\]]*)?', re.IGNORECASE
 )
-# HQporner. A video page (`/hdporn/<id>-<slug>.html`) holds no media: it embeds a player page from a
-# separate host as an iframe in `#playerWrapper`, and the player page writes a `<video>` whose
-# `<source>` tags are the quality ladder, each labelled `360p`, `720p HD`, `1080p60`, `2160p60`...
-# The tags sit inside a JavaScript string, so their quotes arrive backslash-escaped.
+# HQporner: a video page embeds a player page whose `<source>` tags are the quality ladder,
+# inside a JavaScript string, so their quotes arrive escaped.
 _HQPORNER_VIDEO_PATH_RE = re.compile(r"^/hdporn/\d+[^/]*\.html$")
 # The same player address the page's "alternative player" buttons pass to the site's own AJAX; read
 # when the iframe itself is missing.
@@ -155,13 +137,7 @@ def _soup(html: str) -> BeautifulSoup:
 async def extract_pixeldrain(
     url: str, session: aiohttp.ClientSession, _ctx: ExtractContext
 ) -> list[ExtractedFile]:
-    """A Pixeldrain file (`/u/<id>`) is a direct API address, named from its info. A list
-    (`/l/<id>`) is read from the list API, one item per file, each carrying its own name.
-
-    The name is the file's own, not the ID the download address ends in: a file uploaded as
-    `holiday.mp4` would otherwise arrive as `<id>.mp4`. The ID is kept as well, as the `{id}`
-    naming word.
-    """
+    """A Pixeldrain file (`/u/<id>`) or list (`/l/<id>`), each named as uploaded, its ID kept."""
     segments = [segment for segment in urlsplit(url).path.split("/") if segment]
     if len(segments) < 2:
         return []
@@ -571,15 +547,7 @@ def _bunkr_album_files(soup: BeautifulSoup) -> list[dict[str, Any]]:
 async def _bunkr_album(
     url: str, session: aiohttp.ClientSession, report: Report = nowhere
 ) -> list[ExtractedFile]:
-    """Enumerate an album's files from `window.albumFiles` and resolve each via its file page (the
-    per-file signing is authoritative; a dead file drops out).
-
-    **It says how far through it is.** Listing the album is one quick request and signing each file
-    is another, so a large album is minutes of work before any media is asked for, and in silence
-    that is indistinguishable from a download that has hung. The listing lands in a fraction of a
-    second and each file takes most of one, so the progress report is a real count from the first
-    second rather than an estimate.
-    """
+    """An album's files from `window.albumFiles`, each signed by its file page, counted."""
     soup = await _bunkr_fetch_page(session, url, advanced=True)
     if soup is None:
         return []
@@ -754,13 +722,7 @@ def find_pmvhaven_video(html: str) -> str | None:
 
 
 def pmvhaven_title(html: str) -> str | None:
-    """The video's title from its page: the `<title>` less the site's own name, or None.
-
-    The file's name, because the address it is stored at is not one. PMVHaven keeps a video as
-    `<uploader>_-_<title>__<upload ms>_<random>.mp4`, so a file named after it and then given the
-    "Creator - Name" preset would read like `someone - someone_-_A_title__1781234567890_4kq2v.mp4`.
-    The page's title is the name the site shows for it, and `{name}` promises the site's own title.
-    """
+    """The video's title from its page, less the Site's name: its stored file name is not one."""
     soup = _soup(html)
     title = soup.title.get_text(strip=True) if soup.title is not None else ""
     return _PMVHAVEN_TITLE_SUFFIX_RE.sub("", title) or None
@@ -789,11 +751,7 @@ async def extract_pmvhaven(
 
 
 def hqporner_player(html: str, page_url: str) -> str | None:
-    """The player page a HQporner video page embeds, as an absolute address, or None.
-
-    The iframe in `#playerWrapper` first; the address the page's own "alternative player" script
-    passes along when the iframe is missing. Only an http(s) address is followed.
-    """
+    """The player page a HQporner video page embeds, as an absolute http(s) address, or None."""
     soup = _soup(html)
     frame = soup.select_one("#playerWrapper iframe[src]")
     src = _attr(frame, "src") if frame is not None else None
@@ -820,15 +778,7 @@ def hqporner_title(html: str) -> str | None:
 def hqporner_best_source(
     html: str, player_url: str, quality: str = QUALITY_COMPATIBLE
 ) -> str | None:
-    """The rung of a HQporner player's quality ladder Video quality asks for, as an absolute
-    address, or None (`common.pick_rung`).
-
-    The height is read from each source's label (`1080p60`), else from its file name
-    (`/1080.mp4`); a source with neither ranks below every one that says. A ladder runs
-    360/720/1080, and 2160 as well on a video the site marks 4K, and the adblock
-    branch of the same script names only the 360, so taking the first source, or the last, is
-    the wrong answer on some page.
-    """
+    """The rung of a HQporner player's ladder Video quality asks for, by label or file name."""
     rungs: list[tuple[int, str]] = []
     for src, label in _HQPORNER_SOURCE_RE.findall(html):
         address = urljoin(player_url, src)
@@ -844,19 +794,9 @@ def hqporner_best_source(
 async def extract_hqporner(
     url: str, session: aiohttp.ClientSession, ctx: ExtractContext
 ) -> list[ExtractedFile]:
-    """A HQporner video page: read its embedded player page, take the source Video quality asks
-    for, name it after the video.
+    """A HQporner video page, read through its embedded player page; no tool reads the Site.
 
-    Neither tool reads the site (yt-dlp answers "Unsupported URL"), so this is the whole of how Sift
-    fetches it.
-
-    The player page is asked with the video page as its Referer, and that is load-bearing: asked
-    without one, the player host answers **200** with a page reading "This domain has been blocked"
-    and no sources at all (any Referer is accepted). A 200 holding nothing is the one answer an
-    empty result cannot explain, so the header is not optional.
-
-    Only a video page is read. A listing, a search or a page of one person's videos is not asked
-    about at all, which the empty-result reader turns into "paste the link of one post or video".
+    The player page is asked with the video page as Referer, or it answers 200 and nothing.
     """
     if not _HQPORNER_VIDEO_PATH_RE.match(urlsplit(url).path):
         return []
@@ -894,13 +834,7 @@ def parse_sign_response(data: Any) -> tuple[str, str] | None:
 
 
 def turbovid_sign_origins(url: str) -> list[str]:
-    """Where a TurboVid file is signed, nearest first: the host the address was pasted from, then
-    the primary.
-
-    The primary is only one of the site's several domains, and one domain can answer **521** (the
-    origin behind the CDN down) to every request while another signs the same file at the same time.
-    The pasted host is the one known to be up, because the person just read the page there.
-    """
+    """Where a TurboVid file is signed: the pasted host, known to be up, then the primary."""
     own = source_origin(url).rstrip("/")
     return list(dict.fromkeys([own, _TURBOVID_PRIMARY]))
 

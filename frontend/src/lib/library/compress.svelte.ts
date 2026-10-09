@@ -1,13 +1,4 @@
-/* Asking the server what a compression would do, and then asking it to do it.
- *
- * Every judgement lives on the server: whether a target can be met, what the copy will be called,
- * which files in a selection cannot be acted on at all. None of it is worked out here, and that is
- * deliberate rather than lazy: the arithmetic needs a file's running time, frame rate and codecs,
- * the browser holds none of that for a selection of four hundred, and a second implementation of
- * the rules would be a second answer to disagree with the first.
- *
- * So this is a thin thing: the shapes, one call to ask, one call to start.
- */
+/* Asking the server what a compression would do, and then asking it to do it. */
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
@@ -46,13 +37,7 @@ export function sampleUrl(jobId: string): string {
 	return `/api/compress/samples/${encodeURIComponent(jobId)}`;
 }
 
-/**
- * Wait for a sample to exist, or give up.
- *
- * Polled rather than pushed, and against the sample's own address rather than the job's state:
- * what the screen needs is not "the job says done", it is "there are bytes to play", and those
- * are the same question only if nothing went wrong between them.
- */
+/** Wait for a sample to exist, or give up. */
 export async function waitForSample(jobId: string, attempts = 60): Promise<boolean> {
 	for (let tried = 0; tried < attempts; tried += 1) {
 		try {
@@ -75,19 +60,7 @@ export function megabytes(value: number): string {
 	return size >= 10 ? `${Math.round(size)} MB` : `${size.toFixed(1)} MB`;
 }
 
-/* --- where a copy came from -------------------------------------------------------------------
- *
- * Sift writes a row every time it makes a file out of another one, and this is that row read
- * back. `source_asset_id` is null when the original has since been deleted: the copy is still a
- * copy and still says so, there is simply nowhere for the link to go.
- *
- * Nothing in the client draws these: the fact is two rows of the History tab, assembled
- * server-side from the same table. They are kept because the ROUTES behind them are the editing
- * feature's own, with their own tests and their own scoping, and because they are the only place
- * the OPERATION is readable. History says "Made from x.mp4" where these say "Compressed from
- * x.mp4", the verb being the feature's vocabulary and not the kernel's. Retiring the pair is a
- * change to that feature, with its route rows and its authz line.
- */
+/* --- where a copy came from ------------------------------------------------------------------- */
 
 export type Made = 'crop' | 'resize' | 'rotate' | 'trim' | 'clip' | 'compress';
 
@@ -123,17 +96,14 @@ function madeInto(operation: string): string {
 	return verbs[operation] ?? 'Made into';
 }
 
-/** The verb for what was done, in the past tense somebody would say it in.
- *
- * A name this does not know reads as the plainest true thing rather than as the raw word, because
- * the raw word is a database value and a screen is not the place to find out there is a sixth one. */
+/** The verb for what was done, in the past tense somebody would say it in. */
 export function madeBy(operation: string): string {
 	const verbs: Record<string, string> = {
 		crop: 'Cropped from',
 		resize: 'Resized from',
 		rotate: 'Rotated from',
 		// Both, deliberately: a length asked for and a piece dragged out by its ends are the same
-		// thing to whoever made it. The two operations stay distinct in the record.
+		// thing to whoever made it.
 		trim: 'Trimmed from',
 		clip: 'Trimmed from',
 		compress: 'Compressed from',

@@ -1,9 +1,4 @@
-/* What the close button does, and what the notification-area icon offers.
- *
- * Both are tested HERE rather than through `main`, which starts an application when it is imported
- * and can be tested only behind a double of every module it composes. The two decisions worth being
- * sure of live outside it, and that is the whole reason `tray.ts` is a module at all.
- */
+/* What the close button does, and what the notification-area icon offers. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -23,9 +18,7 @@ describe('what closing the window does', () => {
 		expect(whatClosingDoes(false, false)).toBe('quit');
 	});
 
-	/* THE ONE THAT MAKES THE FEATURE CLOSEABLE AT ALL. A window told to hide on close hides on
-	 * every close, including the one the tray's own Quit makes, so without this, quitting
-	 * minimises Sift and nothing ever ends it. It is the first bug every close-to-tray has. */
+	/* THE ONE THAT MAKES THE FEATURE CLOSEABLE AT ALL. */
 	it('quits while the application is already on its way out, whatever the setting says', () => {
 		expect(whatClosingDoes(true, true)).toBe('quit');
 		expect(whatClosingDoes(false, true)).toBe('quit');

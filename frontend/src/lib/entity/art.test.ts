@@ -1,21 +1,10 @@
-/*
- * The addresses Sift builds for pictures, and the one property they all rest on.
- *
- * A picture address carries a token, and the token exists so a browser may keep the picture for a
- * week without asking. That promise is only safe while the address NAMES ITS CONTENTS: if the
- * picture behind an address can change while the address does not, a week-long `immutable` reply is
- * a week of showing the wrong thing, on the machine that changed it, with a reload not helping.
- */
+/* The addresses Sift builds for pictures, and the one property they all rest on. */
 import { describe, expect, it } from 'vitest';
 import { clipWasBuilt, coverUrl, hiddenMark, thumbUrl } from './art';
 
 describe('an entity cover address', () => {
 	it('names which file the cover is', () => {
-		/*
-		 * The token names the picture, not only the account's cache stamp: a cover can be a chosen
-		 * file, so choosing a different file must change the address even though the picture's id
-		 * does not.
-		 */
+		/* The token names the picture: choosing a different file must change the address. */
 		const before = coverUrl('/people/p1', 'stamp', { assetId: 'a1' });
 		const after = coverUrl('/people/p1', 'stamp', { assetId: 'a2' });
 
@@ -44,9 +33,8 @@ describe('an entity cover address', () => {
 	});
 
 	it('names the chosen moment, so a frame of a video has an address of its own', () => {
-		/* The server keeps a cover for a week only under an address naming which cover it is
-		   (`kernel/covers.py names_its_cover`): for a chosen moment that is the file AND the moment.
-		   A caller that dropped the moment would get the careful answer on every visit. */
+		/* The server keeps a cover only under an address naming which cover it is: the file AND
+		   the moment. */
 		expect(coverUrl('/people/p1', 'stamp', { assetId: 'a1', atMs: 5000 })).toEqual(
 			'/api/people/p1/cover?v=stamp.a1.5000'
 		);
@@ -56,14 +44,12 @@ describe('an entity cover address', () => {
 	});
 
 	it('keeps the wall and the id as separate segments', () => {
-		/* Not cosmetic. The gate that checks every route has something calling it compares the
-		   client's addresses with the server's segment by segment, and written as one
-		   interpolation this could never match a five-segment route. */
+		/* Not cosmetic. */
 		expect(coverUrl('/collections/c1', null)).toEqual('/api/collections/c1/cover');
 	});
 
-	/* A Site nobody has chosen a picture for is answered with the SHIPPED logo, and its address has
-	   to name that logo for the server to let the browser keep it (`covers.names_the_shipped`). */
+	/* A Site with no chosen picture is answered with the SHIPPED logo, which its address must
+	   name. */
 	it("names the shipped logo after the row's own token", () => {
 		expect(coverUrl('/sites/s1', 'stamp', { icon: '0.1.171-abc' })).toEqual(
 			'/api/sites/s1/cover?v=stamp.0.1.171-abc'
@@ -95,11 +81,7 @@ describe('whether a tile asks for its hover clip', () => {
 	});
 
 	it('does not ask for a file that has a still and no clip', () => {
-		/*
-		 * The whole reason the field exists: a moving file can have a still and no clip, and a
-		 * guard that looked only at the art token would pass it and 404 on every scroll-past: in
-		 * an ordinary library, most of the moving files.
-		 */
+		/* The whole reason the field exists: a moving file can have a still and no clip. */
 		expect(clipWasBuilt({ media_type: 'video', preview: false, concealed: false })).toBe(false);
 	});
 
@@ -119,9 +101,7 @@ describe('the still of a file', () => {
 	});
 
 	it('is the hidden mark for a concealed file, and never an address the server would refuse', () => {
-		/* Asked for, a hidden copy's still would be refused by the server on every visit, and the
-		   tile would draw the browser's torn-page glyph. The mark is a data address, so nothing is
-		   asked at all. */
+		/* Asked for, a hidden copy's still would be refused by the server on every visit. */
 		const still = thumbUrl({ id: 'f1', art: null, concealed: true });
 		expect(still).toBe(hiddenMark());
 		expect(still.startsWith('data:image/svg+xml,')).toBe(true);

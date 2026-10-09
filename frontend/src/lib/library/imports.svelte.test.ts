@@ -6,12 +6,7 @@ import type { components } from '$lib/api/schema';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
-/* What a screen is told, given what the queue answered with.
- *
- * The fetching is not the interesting part. What is worth pinning down is the reduction: which work
- * counts as a file arriving, when a grid is told to re-ask, and the one question whose obvious
- * answer is wrong.
- */
+/* What a screen is told, given what the queue answered with. */
 
 type Row = Pick<
 	components['schemas']['JobView'],
@@ -35,8 +30,7 @@ function push(...jobs: Row[]) {
 }
 
 beforeEach(() => {
-	// A module singleton, so each test starts it from nothing. Two pushes of an empty queue: the
-	// first clears what is in flight, the second settles the counter it may have moved doing so.
+	// A module singleton, so each test starts it from nothing.
 	push();
 	push();
 	imports.settled = 0;
@@ -57,8 +51,7 @@ describe('how busy Sift looks', () => {
 
 	it('does not count a scan, which is Sift reading a folder rather than a file arriving', () => {
 		/* A scan of a large library runs for minutes and produces nothing to draw until it finds
-		 * something. Counted, it would leave "importing files" on the screen for the whole of it
-		 * while the grid stayed exactly as it was. */
+		 * something. */
 		push(job('a', 'scan', 'running'), job('b', 'fts_reindex', 'queued'));
 
 		expect(imports.busy).toBe(0);
@@ -112,9 +105,8 @@ describe('downloads, counted apart for their own indicator', () => {
 		expect(imports.downloading).toBe(2);
 	});
 
-	/* The queue's page is the newest fifty jobs of every kind, so a download can scroll off it behind
-	   a few seconds of background work while it still waits. What turns the glyph is read off the
-	   download rows, and a page of jobs moves nothing. */
+	/* The queue's page is the newest fifty jobs of every kind, so a download can scroll off it
+	   behind a few seconds of background work while it still waits. */
 	it('is not moved by a page of the work queue', () => {
 		imports.glance({ ...NOTHING_TO_GLANCE_AT, downloading: 1 });
 		push(job('a', 'download', 'running'), job('b', 'download', 'queued'));
@@ -133,8 +125,7 @@ describe('background work, which is what turns the gear', () => {
 	it('counts face work too', () => {
 		/* The gear follows all in-flight work, not only ARRIVING work (`busy`): a library-wide
 		 * face pass of two hundred jobs must turn the one item that leads to the queue running
-		 * them.
-		 */
+		 * them. */
 		push(
 			job('a', 'face_scan', 'running'),
 			job('b', 'face_scan', 'queued'),
@@ -146,9 +137,7 @@ describe('background work, which is what turns the gear', () => {
 	});
 
 	it('counts any kind of work, so a new one needs nothing added here', () => {
-		// Derived from what is in flight rather than from a list of types. A list would have to be
-		// added to for every new kind of background work, nothing would fail when it was not, and
-		// the gear would quietly stop turning.
+		// Derived from what is in flight rather than from a list of types.
 		push(job('a', 'something_nobody_has_written_yet', 'running'));
 
 		expect(imports.working).toBe(1);
@@ -169,10 +158,7 @@ describe('background work, which is what turns the gear', () => {
 
 describe('how many Sites are asking for cookies', () => {
 	/* The rail's Downloads item wears this, in the warning colour, beside the spinner, and it is
-	   the same number the Downloads screen's Edit cookies row wears. The half counted here is read with
-	   the rest of the row's facts: a download whose Site needs cookies it cannot open is parked
-	   `blocked` by the kernel, the fact the screen draws as "Waiting for cookies". The other half,
-	   Sites whose saved cookies have run out, is a read of its own (see `readCookies`). */
+	   the same number the Downloads screen's Edit cookies row wears. */
 	it('counts a download stopped waiting for cookies', () => {
 		imports.glance({ ...NOTHING_TO_GLANCE_AT, waiting_for_cookies: 1 });
 		expect(imports.waitingForCookies).toBe(1);
@@ -232,8 +218,7 @@ describe('telling a screen to re-ask', () => {
 	});
 
 	it('stays quiet while work is only being taken on', () => {
-		/* A file being accepted is not a file that can be drawn. Re-asking here fetches the same page
-		 * again, once per file added, and finds nothing every time. */
+		/* A file being accepted is not a file that can be drawn. */
 		push(job('a', 'import', 'running'));
 		push(job('a', 'import', 'running'), job('b', 'import', 'queued'));
 
@@ -243,9 +228,7 @@ describe('telling a screen to re-ask', () => {
 	it('re-asks when a scan finishes, since a re-added folder links files with no arriving work', () => {
 		/* Adding a folder Sift already knows links its files back into view but enqueues no
 		 * probe, so without this the grid would never hear the catalog had changed and the files
-		 * would stay off it until a reload. A scan is not "arriving" work, so its finish is what
-		 * has to speak.
-		 */
+		 * would stay off it until a reload. */
 		imports.settled = 0;
 
 		push(job('s', 'scan', 'running'));
@@ -258,10 +241,9 @@ describe('telling a screen to re-ask', () => {
 
 describe('whether one file is done with', () => {
 	it('is false for a job nobody has seen yet, not true', () => {
-		/* The important one. This is asked the instant a file is accepted (before the queue's next
-		 * push carries it), and "not currently in flight" is indistinguishable from "already
-		 * finished" at that moment. Answering the obvious way clears every placeholder the frame
-		 * after it appears, for every file, every time. */
+		/* The important one. This is asked the instant a file is accepted (before the queue's
+		 * next push carries it), and "not currently in flight" is indistinguishable from
+		 * "already finished" at that moment. */
 		expect(imports.landed('never-seen')).toBe(false);
 	});
 
@@ -272,11 +254,8 @@ describe('whether one file is done with', () => {
 	});
 
 	it('is TRUE once the import is done, even though its thumbnail is not', () => {
-		/* The library row exists as soon as the import finishes, so the grid already draws a real
-		 * tile for the file, shimmering, because it has no picture yet. Holding the placeholder
-		 * until the thumbnail lands would put both on screen at the same time: one file, drawn
-		 * twice, in two different placeholder styles, under a header correctly saying one.
-		 */
+		/* The library row exists as soon as the import finishes, so the grid already draws a
+		 * real tile for the file, shimmering, because it has no picture yet. */
 		push(job('import-1', 'import', 'done'), job('thumb-1', 'thumbnail', 'running', 'import-1'));
 
 		expect(imports.landed('import-1')).toBe(true);
@@ -307,10 +286,7 @@ describe('whether one file is done with', () => {
 describe('what counts as Sift working', () => {
 	it('does not turn the gear for a job that is not due yet', async () => {
 		/* Whole-library work is held back until the batch that asked for it stops arriving, so a
-		 * thousand imported files rebuild the grouping once instead of a thousand times. That is
-		 * a minute of sitting in the queue doing nothing, and the indicator must not say Sift is
-		 * busy for all of it.
-		 */
+		 * thousand imported files rebuild the grouping once instead of a thousand times. */
 		const later = Math.floor(Date.now() / 1000) + 60;
 		const store = new Imports();
 

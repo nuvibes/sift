@@ -1,20 +1,4 @@
-/*
- * Nothing the registry imports imports the registry back.
- *
- * `panels.ts` imports every panel. A panel importing it back (for a pile's or a chain's address)
- * would survive an ordinary page, which reaches the registry first, but a hot reload of a panel
- * evaluates the PANEL first, and in the development build a component is a binding assigned when
- * its module runs (it is wrapped for the reload), so the registry would read a panel that did not
- * exist yet: "Cannot access 'FaceGroupsPanel' before initialization". The addresses live in
- * `addresses.ts`, which imports no component, so there is no order to get wrong.
- *
- * WHY A READING OF THE IMPORTS AND NOT AN IMPORT IN EACH ORDER. The unit build compiles a component
- * to a hoisted function declaration, which exists before its module runs, so importing the panel
- * first passes here with the cycle in place: a test importing each side first stays green with
- * the cycle put back. The graph is the fault, whichever build trips over it, so the graph
- * is what is read: every static import reachable from the registry, followed through `$lib` and
- * relative paths, and none of them may lead back.
- */
+/* Nothing the registry imports imports the registry back. */
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';

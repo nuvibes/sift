@@ -24,15 +24,14 @@ from sift.kernel.jobs.clock import TaskClock
 from sift.kernel.jobs.quiet_hours import next_clock_time
 from sift.kernel.jobs.schedules import when_key
 from sift.slices.backup.jobs import BACKUP_RUN, register_handlers, run_backup
+from sift.slices.backup.naming import SAVED_MARK, is_backup_filename
 from sift.slices.backup.service import (
     AT_KEY,
     DEFAULT_AT,
     EVERY_DAYS_KEY,
     FOLDER_KEY,
     KEEP_KEY,
-    SAVED_MARK,
     BackupService,
-    is_backup_filename,
 )
 from sift.slices.settings_hub import SettingsService
 from sift.testing.fixtures import Actors, FakeClock

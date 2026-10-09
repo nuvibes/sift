@@ -1,12 +1,5 @@
 <script lang="ts">
-	/* Backup.
-	 *
-	 * The paragraph at the top is not decoration and is not there to be tidied away. Somebody who
-	 * reads "backup" and believes their videos are safe, and then loses a drive, has been failed by
-	 * this screen. So what is and is not copied is the first thing said, in the plainest words the
-	 * screen has, and it is repeated at the moment of restoring, which is the other moment the
-	 * wrong belief costs something.
-	 */
+	/* Backup. The paragraph at the top is not decoration and is not there to be tidied away. */
 	import { onMount } from 'svelte';
 	import {
 		Button,
@@ -57,8 +50,8 @@
 		)
 	);
 
-	/* The Sift app on the computer running Sift shows the saved file in its folder; anywhere else
-	   reads the folder as text and is offered a copy. */
+	/* The Sift app on the computer running Sift shows the saved file in its folder; anywhere
+	   else reads the folder as text and is offered a copy. */
 	const showsFolder = bridge.canShowInFolder();
 
 	/* The rows' declarations; their values stay on the view, which saves all three on each change. */
@@ -77,9 +70,8 @@
 		void taskList.ensure();
 		void declarations.load();
 	});
-	/* The schedule, the folder and what the file holds are settings: moved in another window or by
-	   another admin, the pane follows. Nothing on it holds an unsent edit but the chosen file to
-	   restore from, which a re-read leaves alone. */
+	/* The schedule, the folder and what the file holds are settings: moved in another window or
+	   by another admin, the pane follows. */
 	whenChanged(settingChanges, () => {
 		void view.load();
 		void view.loadContents();
@@ -116,9 +108,7 @@
 		return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 	}
 
-	/* One sentence, read from the disk: what the next file holds beside the database. The count is
-	   `filesSaid`, grouped like every other count: a library's detected faces must not read
-	   "24000 files" beside "500 files" on the same line. */
+	/* One sentence, read from the disk: what the next file holds beside the database. */
 	const holds = $derived.by(() => {
 		const taken = view.parts.filter((one) => one.included);
 		if (taken.length === 0) return '';
@@ -205,8 +195,7 @@
 	{#if view.loading}
 		<Skeleton lines={3} />
 	{:else if !view.loaded}
-		<!-- Deliberately not "automatic backups are off". A request that failed says nothing about
-		     the schedule, and the reassuring reading of silence here is the wrong one. -->
+		<!-- Deliberately not "automatic backups are off". -->
 		<Problem message={COPY.notLoaded} />
 	{:else}
 		<!-- The cadence is not here: How often and Time of day are drawn on Tasks, beside every other
@@ -272,8 +261,7 @@
 		{/if}
 
 		{#if view.unmarked.length > 0}
-			<!-- The backups no rule takes: why the folder holds more than the number kept. Each is
-			     deleted only by its own press, behind a confirm that says where it goes. -->
+			<!-- The backups no rule takes: why the folder holds more than the number kept. -->
 			<SectionHeading id="backup.unmarked">{COPY.unmarked.name}</SectionHeading>
 			<p class="hint">{COPY.unmarked.says}</p>
 			<SettingGroup>
@@ -351,8 +339,8 @@
 		font: var(--text-body);
 	}
 
-	/* Where the press put its file, under the row that made it, with the one way this device has to
-	   reach it on the right, as every act on a settings pane sits. */
+	/* Where the press put its file, under the row that made it, with the one way this device has
+	   to reach it on the right, as every act on a settings pane sits. */
 	.saved {
 		display: flex;
 		align-items: center;

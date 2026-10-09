@@ -1,12 +1,4 @@
-/* The addresses the faces queues once lived at.
- *
- * They are in links, in bookmarks, in a tab somebody left open and in every note anybody wrote
- * down, so what they do is the thing worth holding: they move, permanently, keeping whatever
- * filtering the link carried, and one item of a moved queue moves with its id.
- *
- * The loads are called directly rather than through a browser. A redirect in SvelteKit is thrown,
- * so what is asserted is what comes out of the throw: the status and where it points.
- */
+/* The addresses the faces queues once lived at. */
 import { describe, expect, it } from 'vitest';
 
 import { load as queueLoad } from './+page';
@@ -55,8 +47,7 @@ describe('a queue that moved', () => {
 	});
 
 	it('keeps the narrowing the link was carrying', () => {
-		// A link into one filter is a link to a place, not to a screen. Dropping the query would
-		// land somebody on the list with their filter quietly gone.
+		// A link into one filter is a link to a place, not to a screen.
 		const went = whereItGoes(() =>
 			queueLoad({
 				params: { queue: 'identified' },
@@ -90,7 +81,7 @@ describe('one item of a queue that moved', () => {
 
 	it('sends a face group of the one list to the tab that opens a pile, not to the lead page', () => {
 		// The queue `to-check` goes to the group's first page; an item of it is one pile, and
-		// `/organize/faces/<id>` has no item screen. Older receipts link a group this way.
+		// `/organize/faces/<id>` has no item screen.
 		const went = whereItGoes(() =>
 			itemLoad({
 				params: { queue: 'to-check', id: 'pile-2' },

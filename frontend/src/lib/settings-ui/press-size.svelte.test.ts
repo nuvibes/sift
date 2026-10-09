@@ -1,8 +1,6 @@
-/*
- * One press height per pane, decided by what holds the press: a settings row's press and a press in
- * a pane's form are the small control, a press beside a field in the same control column takes the
- * field's height, and a form's answers and a dialog's presses are the default size.
- */
+/* One press height per pane, decided by what holds the press: a settings row's press and a press
+ * in a pane's form are the small control, a press beside a field in the same control column
+ * takes the field's height, and a form's answers and a dialog's presses are the default size. */
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, expect, it } from 'vitest';
 

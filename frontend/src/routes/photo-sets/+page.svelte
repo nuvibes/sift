@@ -1,20 +1,5 @@
 <script lang="ts">
-	/*
-	 * Photo Sets: the shoots. Every set of pictures that arrived together, as a wall of covers.
-	 *
-	 * It is its own destination and not a corner of Collections, because the two are different
-	 * things: a collection is a decision somebody made, a set is a fact about where files came
-	 * from. Sharing a screen would mean one wall answering two questions, and the card under the
-	 * cover saying "40 pictures" would mean something different depending on which kind it was.
-	 *
-	 * Different in what it MEANS, and identical in what it DOES. It is the same wall component, the
-	 * same card, the same declared verbs, the same selection gesture and the same sheets every
-	 * other wall uses (the registry's `WallVerbs`, `EntityWallFlows`), because a person who
-	 * has learned to right-click one of these walls has learned all of them.
-	 *
-	 * The count under each cover is the server's, scoped to whoever is reading. It is never worked
-	 * out here from the rows this session happens to be holding.
-	 */
+	/* Photo Sets: the shoots. Every set of pictures that arrived together, as a wall of covers. */
 	import { untrack } from 'svelte';
 	import { Selection, TileGesture, VerbMenuItems } from '$lib/components/common';
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
@@ -65,8 +50,7 @@
 		| 'shared'
 		| 'restricted'
 	> &
-		// The card's count row, and the cover's moment, window and token for its address. Optional
-		// here, because a row this page makes itself carries none of them.
+		// The card's count row, and the cover's moment, window and token for its address.
 		Partial<
 			Pick<
 				components['schemas']['PhotoSetSummary'],
@@ -84,24 +68,17 @@
 	const paging = new CardPaging(24, 'wall.photo-sets');
 
 	/* The order the wall is in, SENT rather than applied here: a comparison run over the rows in
-	   hand would order one page and call it the order of the wall. The same six-plus-two vocabulary
-	   every other wall offers, so `Newest first` means one thing across the application.
-
-	   Held in `./sort.svelte` and not here, because opening a set unmounts this screen. See that
-	   file for the fault that is. */
+	   hand would order one page and call it the order of the wall. */
 	const order = $derived(photoSetsSort.value);
 
-	/* What the bar has filtered this shelf to, out of the address: only this noun's facets, never
-	   the order or the page position. A derived STRING beside it, because a derived only propagates
-	   when its value changes and the effects below must not wake on every address change. */
+	/* What the bar has filtered this shelf to, out of the address: only this noun's facets,
+	   never the order or the page position. */
 	const narrowedBy = $derived(facetParams('photo_set', address.url.searchParams));
 	const narrowedKey = $derived(JSON.stringify(narrowedBy));
-	/* What is typed in the box, and what the list is asked with once the typing settles. Two
-	   values, like the tags wall: the box follows every keystroke, the request follows a pause,
-	   so a fast typist does not fire a request per letter. */
+	/* What is typed in the box, and what the list is asked with once the typing settles. */
 	let term = $state('');
 	/* The words the wall is searched by live in its address, so the chip on the bar, Back and a
-	   link all say the same thing as the box. See `WallWords`. */
+	   link all say the same thing as the box. */
 	const prefix = $derived(wordsIn(address.url));
 	const words = new WallWords();
 
@@ -125,8 +102,7 @@
 	);
 
 	function letGo(event: KeyboardEvent) {
-		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again. It touches no data
-		// and never reaches the server (see `TileGesture.undoKeys`).
+		// Ctrl+Z takes back the last thing PICKED, Ctrl+Shift+Z picks it again.
 		if (gesture.undoKeys(event)) {
 			event.preventDefault();
 			event.stopPropagation();
@@ -135,21 +111,14 @@
 		if (event.key === 'Escape' && gesture.escaped(event)) event.stopPropagation();
 	}
 
-	/* Anything that leaves the wall leaves the selection with it, or the bar counts rows that are
-	   not there and the next action runs over ids the server has forgotten. */
+	/* Anything that leaves the wall leaves the selection with it, or the bar counts rows that
+	   are not there and the next action runs over ids the server has forgotten. */
 	$effect(() => {
 		const here = items.map((one) => one.id);
 		untrack(() => selection.retain(here));
 	});
 
-	/*
-	 * What this wall offers the bar above it.
-	 *
-	 * `resizable` is what makes the slider work here: the control is enabled per screen, so a wall
-	 * that published nothing would have a slider that moved and changed no card. A set is not a
-	 * file, so the query language does not reach this screen, and the wall SAYS so rather than
-	 * leave a hole in the bar.
-	 */
+	/* What this wall offers the bar above it. */
 	const mine = Symbol('photo-sets-wall');
 
 	$effect(() => {
@@ -163,10 +132,9 @@
 			sort: order,
 			onSort: (next) => {
 				photoSetsSort.set(next);
-				/* A new order is a new list, so the page it was on means nothing in it, and neither
-				   does the anchor in the address, which names a row of the list that has just been
-				   replaced. Honoured on the next load it would open the new order somewhere in the
-				   middle of itself. */
+				/* A new order is a new list, so the page it was on means nothing in it, and
+				   neither does the anchor in the address, which names a row of the list that has
+				   just been replaced. */
 				paging.forget();
 				paging.offset = 0;
 				forgetAnchor(address.url, path);
@@ -178,13 +146,11 @@
 
 	const byId = (id: string) => items.find((one) => one.id === id);
 
-	/* The route this wall belongs to, captured once, so a page landing under a set somebody has just
-	   opened can be told from one landing on the wall itself. See `$lib/grid/anchor`. */
+	/* The route this wall belongs to, captured once, so a page landing under a set somebody has
+	   just opened can be told from one landing on the wall itself. */
 	const path = address.url.pathname;
 
-	/* True exactly once: the first settle, which is somebody arriving at a link. After that the
-	   anchor in the address is one WE wrote, for the question being asked at the time. So reading
-	   it again on a new question would start the new one at the old one's position. */
+	/* True exactly once: the first settle, which is somebody arriving at a link. */
 	let arriving = true;
 
 	/** Which offset was last asked for, so a settled screen does not ask for it a second time. */
@@ -199,10 +165,8 @@
 		loading = true;
 		failed = null;
 		try {
-			/* Through the paging, so a first visit trims the rows it holds or asks for the remainder
-			   instead of asking twice (see `CardPaging.fill`). The server resolves an anchor into an
-			   offset, because only the server holds the scoped, ordered list the row is a position
-			   in; `land` spends the anchor and moves the pager there without a second ask. */
+			/* Through the paging, so a first visit trims the rows it holds or asks for the
+			   remainder instead of asking twice (see `CardPaging.fill`). */
 			const page = await paging.fill(
 				JSON.stringify([order, narrowedBy, prefix]),
 				() => items,
@@ -230,10 +194,8 @@
 		}
 	}
 
-	/* Named so the effect re-runs when the page moves, when its SIZE changes (a taller window holds
-	   more rows), and when the order or the filtering does. `loading` is deliberately not read: it
-	   goes true then false on every fetch, so an effect watching it would trigger its own work: a
-	   request loop. */
+	/* Named so the effect re-runs when the page moves, when its SIZE changes (a taller window
+	   holds more rows), and when the order or the filtering does. */
 	$effect(() => {
 		const wanted = paging.offset;
 		const size = paging.size;
@@ -263,10 +225,7 @@
 	});
 
 	/* A different filter is a different list, so the page it was on means nothing in it, and the
-	   anchor in the address names a row of the list that has been replaced. Not on the first run,
-	   where there is no previous filtering to have moved away from and the address may legitimately
-	   carry a position. And the writes are untracked because this effect must not be woken by what
-	   it writes. */
+	   anchor in the address names a row of the list that has been replaced. */
 	let askedNarrowing = '';
 	$effect(() => {
 		const narrowing = listKey;
@@ -281,17 +240,10 @@
 	});
 
 	/* A share, a hide or an import changes which of these this account may see, and produces no
-	   event of its own to say so. Without this the wall would go on showing a set that has just been
-	   taken away until somebody reloaded. */
+	   event of its own to say so. */
 	reloadOnLibraryChange(load);
 
-	/*
-	 * Every verb this wall offers, for the bar AND for each card's menu, from the one registry.
-	 *
-	 * Declared once and drawn twice, and the handlers are the registry's, the same ones every wall
-	 * and every tab uses, so a menu over a selection of forty acts on the forty rather than on the
-	 * one set pressed. See the People wall for the rest.
-	 */
+	/* Every verb this wall offers, for the bar AND for each card's menu, from the one registry. */
 	const verbs = new WallVerbs({
 		kind: () => 'photo_set',
 		rows: () =>
@@ -352,16 +304,13 @@
 		}
 	}
 
-	/* Pictures dragged from the grid onto a set. The same gesture the Collections wall takes, and
-	   the same promise: the membership row is the only thing written. No file moves, no path
-	   changes, no byte is copied. */
+	/* Pictures dragged from the grid onto a set. The same gesture the Collections wall takes,
+	   and the same promise: the membership row is the only thing written. */
 	async function addDropped(assetIds: string[], setId: string) {
 		const set = byId(setId);
 		const named = set ? thing('photo_set', setId, set.name) : 'that Photo Set';
 		try {
-			// Through the store rather than at the endpoint. A screen with its own `api.post` at
-			// the same address is a second caller free to disagree with the first about what the
-			// reply means.
+			// Through the store rather than at the endpoint.
 			const done = await photoSets.add(setId, assetIds);
 			toasts.show(
 				done.changed === 0
@@ -416,10 +365,9 @@
 	{/snippet}
 
 	{#snippet controls()}
-		<!-- The Add and the search, in the one shape every entity wall wears (see `WallControls`).
-		     Add opens the blank record form at `/photo-sets/new` rather than making a set out of a
-		     name here; the box filters through the list route's `prefix`, sent from `load` once
-		     the typing settles. -->
+		<!--
+			The Add and the search, in the one shape every entity wall wears (see `WallControls`).
+		-->
 		<WallControls
 			noun="Photo Set"
 			plural="Photo Sets"
@@ -478,8 +426,7 @@
 				dropping={target.over}
 			>
 				{#snippet menu()}
-					<!-- The same declared verbs the bar draws, rendered as menu rows. Not written out
-					     again here, which is what stops the two from coming apart. -->
+					<!-- The same declared verbs the bar draws, rendered as menu rows. -->
 					<VerbMenuItems
 						ids={targetIds(set.id)}
 						subjectId={set.id}

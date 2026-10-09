@@ -1,49 +1,5 @@
 <script lang="ts">
-	/*
-	 * Several settings that are all the same question: asked once, with a way in to each.
-	 *
-	 * Not an inline `<details>` under the master control: opened on the stash-box rules that would
-	 * unfold FORTY-THREE menus into the middle of the pane, which is the problem this solves
-	 * happening one click later.
-	 *
-	 * ## The shape
-	 *
-	 * One control that sets all of them, and an Edit that replaces the pane with a page holding
-	 * every one, with a way back. That is the shape a game's graphics menu uses (one Quality
-	 * control, and a screen behind it where each of fourteen settings can disagree with it), and
-	 * it is used here for every group of this kind rather than sometimes, because a pattern learned
-	 * once costs nothing the second time.
-	 *
-	 * ## Why the master says "Custom" rather than lying
-	 *
-	 * A master control over children that disagree has no honest value to show. Picking one of them
-	 * would say every child is set to it, which is false; showing the most common one is the same
-	 * lie with arithmetic in front. So there is an extra option, it is only ever offered when it is
-	 * already true, and choosing it is impossible: `Custom` is not selectable, it is a reading.
-	 *
-	 * ## Why the children are still real rows
-	 *
-	 * Because they are still real settings. What is on the sub-page is whatever the caller puts
-	 * there (ordinary `SettingRow`s against the ordinary registry), so every gate that checks a
-	 * setting reaches a screen still finds them, and the pane has not grown a second way of saving
-	 * a value. This component owns the QUESTION, not the settings.
-	 *
-	 * ## The three masters, and why there is more than one
-	 *
-	 * The `Custom` reading above is what a master DERIVED from its children has to say when they
-	 * disagree. Not every group is shaped that way, and forcing them all into it would put a menu
-	 * where an honest switch belongs:
-	 *
-	 *   `options` + `shared`   a reading of the children. Says Custom when they differ.
-	 *   `switch`               the group has a setting OF ITS OWN (does this run at all), which
-	 *                          is a different question from what the children answer, so it has no
-	 *                          mixed state and a switch cannot lie about it.
-	 *   `fixed`                there is nothing to choose. Drawn as a word, so a group that cannot
-	 *                          be turned off says so instead of offering a control that would have
-	 *                          to be qualified.
-	 *
-	 * Exactly one of the three, and the component refuses more.
-	 */
+	/* Several settings that are all the same question: asked once, with a way in to each. */
 	import type { Snippet } from 'svelte';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import { Button, Select, Switch } from '$lib/components/common';
@@ -66,20 +22,11 @@
 		masterHelp?: string;
 		/** A menu master: the choices, and what every child holds. See the three masters above. */
 		options?: { value: string; label: string }[];
-		/**
-		 * What every child holds, or null where they differ.
-		 *
-		 * Worked out by the caller, which is the only place that knows which keys are in the group.
-		 */
+		/** What every child holds, or null where they differ. */
 		shared?: string | null;
 		/** Set every child in one go. */
 		onchoose?: (value: string) => void;
-		/**
-		 * A switch master: the group's own answer, and what to do when it is flipped.
-		 *
-		 * `null` while it is still being read, so the switch is not drawn off and then flicked on,
-		 * which reads as the setting having been changed by opening the screen.
-		 */
+		/** A switch master: the group's own answer, and what to do when it is flipped. */
 		on?: boolean | null;
 		onswitch?: (on: boolean) => void;
 		/** A fixed master: what to say where there is nothing to choose. */
@@ -88,24 +35,13 @@
 		pageTitle: string;
 		/** The row that opens it: "Set each field", "Set each one". */
 		editLabel: string;
-		/**
-		 * The settings on the sub-page, so a deep link to one of them can open the page first.
-		 *
-		 * Declared rather than inferred. Nothing can read a snippet to find out which rows it will
-		 * draw, and a link into a group that cannot be opened is a link that scrolls nowhere.
-		 */
+		/** The settings on the sub-page, so a deep link to one of them can open the page first. */
 		keys?: readonly string[];
 		/** The individual rows. Ordinary setting rows; this only decides where they are drawn. */
 		children: Snippet;
 		disabled?: boolean;
-		/**
-		 * Rows of the group's own, drawn under the Edit row: the act that goes with the question.
-		 *
-		 * The Importing groups are each a question about arriving files AND a way to go over the
-		 * files already here for the same thing: "Generate now", beside the switches that say what
-		 * a new file gets. Kept inside the group rather than as a group of its own beneath it, so
-		 * the heading, the switches and the button read as one thing about one stage.
-		 */
+		/** Rows of the group's own, drawn under the Edit row: the act that goes with the
+		 * question. */
 		actions?: Snippet;
 	}
 
@@ -128,10 +64,7 @@
 		actions
 	}: Props = $props();
 
-	/* Refused loudly rather than resolved by precedence. A group drawn with two masters has two
-	   answers to one question and the reader is shown whichever the markup happened to reach
-	   first, which is exactly the kind of thing that is only noticed once somebody's setting
-	   stops saving. */
+	/* Refused loudly rather than resolved by precedence. */
 	const masters = $derived(
 		[options !== undefined, on !== undefined, fixed !== undefined].filter(Boolean).length
 	);
@@ -147,16 +80,11 @@
 		drilldown.open(pageTitle, children, EDIT);
 	}
 
-	/* Claimed in an effect, not once at setup, and that is not tidiness.
-	 *
-	 * `keys` is usually derived from settings the caller has not loaded yet (the stash-box rules
-	 * arrive from a request), so reading it once at construction claims an EMPTY list and a deep
-	 * link to one of those rows finds nothing for ever. The effect re-runs when the list changes,
-	 * and its teardown releases the previous claim, which also covers the component going away. */
+	/* Claimed in an effect, not once at setup, and that is not tidiness. */
 	$effect(() => drilldown.own(keys, openPage));
 
-	/* `Custom` is appended only while it is the true reading, so it cannot be chosen from a state
-	   where it would mean nothing. */
+	/* `Custom` is appended only while it is the true reading, so it cannot be chosen from a
+	   state where it would mean nothing. */
 	const shownOptions = $derived(
 		shared === null ? [...(options ?? []), { value: MIXED, label: 'Custom' }] : (options ?? [])
 	);

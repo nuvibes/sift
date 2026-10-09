@@ -1,7 +1,5 @@
-/*
- * A person's page asks for ITS files: the wall names the person by id, so another person spelled the same
- * way never adds its files to this page's count.
- */
+/* A person's page asks for ITS files: the wall names the person by id, so another person spelled
+ * the same way never adds its files to this page's count. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

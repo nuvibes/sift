@@ -46,13 +46,7 @@ log = get_logger(__name__)
 
 
 class _PhotoSetMaker:
-    """Making a Photo Set for a feature that must not know how one is made.
-
-    `PhotoSetSeam`, filled in here, which is the only place the feature that PROPOSES a grouping and
-    the feature that OWNS Photo Sets are named together. What it reaches for is the derivation a
-    folder of pictures already goes through (the same guards, the same cover, the same order), so
-    there is one way of creating a set and not two.
-    """
+    """Making a Photo Set for a feature that must not know how, through the folder derivation."""
 
     def __init__(self, app: FastAPI) -> None:
         self._app = app
@@ -84,25 +78,12 @@ class _PhotoSetMaker:
 
 
 def _photo_set_maker(app: FastAPI) -> _PhotoSetMaker:
-    """The seam's implementation, read off the application rather than captured.
-
-    Read late for the reason the gallery grouper reads its service late: the service is provided
-    while the application is being assembled, and capturing it here would bind whatever happened to
-    exist at the moment this was built.
-    """
+    """The seam's implementation, read off the application late rather than captured."""
     return _PhotoSetMaker(app)
 
 
 def _post_sets(app: FastAPI, store: Storage) -> suggestions.PostSets:
-    """Making and unmaking the set a post of pictures deserves, for the filename pass.
-
-    `set_from_post` is the same body a shoot goes through (`MIN_PICTURES` at least, every arrival a
-    still, the first as the cover), with its own `origin` word so the set says on its own page that
-    it was made from the files' own names.
-
-    `delete` is what the Undo on the set's own decision reaches. It removes the grouping and
-    nothing else: the pictures keep every filing, tag and person they had.
-    """
+    """Making and unmaking the set a post of pictures deserves, for the filename pass."""
 
     async def derive(asset_ids: Sequence[str], name: str) -> suggestions.MadeSet | None:
         made = await photo_sets.set_from_post(
@@ -111,9 +92,7 @@ def _post_sets(app: FastAPI, store: Storage) -> suggestions.PostSets:
             content=store.content,
             service=wiring.part_of_app(app, photo_sets.SERVICE),
         )
-        # The set's own name, carried across the seam, because the receipt the pass writes
-        # snapshots what the set was CALLED. Neither slice imports the other's types, so the
-        # crossing is two strings: see `suggestions.MadeSet`.
+        # The set's name crosses as a string, so the receipt snapshots what it was called.
         return None if made is None else suggestions.MadeSet(id=made.id, name=made.name)
 
     async def forget(photo_set_id: str, by: Viewer) -> None:
@@ -126,16 +105,7 @@ def _post_sets(app: FastAPI, store: Storage) -> suggestions.PostSets:
 
 
 def _picture_fields(store: Storage, settings: Settings) -> suggestions.PictureFields:
-    """Opening one file and reading two of its fields, for the filename pass.
-
-    A closure for the reason `_post_sets` above is one: resolving which copy of a file is readable
-    and where it is on disk is the content store's question, and the slice that reads filenames must
-    not learn it. What crosses the seam is an asset id and two strings.
-
-    A file that cannot be opened (a share that is offline, a copy that has gone) answers with
-    both fields empty, which is already the ordinary answer: most pictures in any library carry
-    none of these. See `suggestions.metadata` for why it is exactly two fields and no more.
-    """
+    """Opening one file to read two of its fields, for the filename pass; empty if unreadable."""
 
     async def read(asset_id: str) -> suggestions.PictureMetadata:
         try:
@@ -148,9 +118,7 @@ def _picture_fields(store: Storage, settings: Settings) -> suggestions.PictureFi
 
 
 def _swap_folders(store: Storage) -> suggestions.SwapFolders:
-    """The folders a swap made, for the folder pass. A closure for the reason `_post_sets` is one:
-    the swap's record is that slice's rows, and the folder reader may not import it. What crosses
-    the seam is two sets of folder ids."""
+    """The folders a swap made, for the folder pass, as two sets of folder ids."""
 
     async def made() -> suggestions.Arrivals:
         found = await folders_made(store.database)
@@ -169,11 +137,7 @@ def _build_faces(
     queue: JobQueue,
 ) -> tuple[faces.FaceService, faces.FaceEvidence]:
     reindexer = wiring.part_of_app(app, wiring.REINDEXER)
-    # Recognizing faces. Off until somebody turns it on: constructing this loads no model and
-    # reads no file; the first thing every one of its jobs does is ask whether the feature is on.
-    # It is handed the access repository rather than a database handle because a face crop is a
-    # fragment of the file it came from, so serving one has to ask the same question the file does,
-    # of the same rule.
+    # Recognizing faces, off until turned on; handed the access repository so crops obey file rules.
     face_store = faces.Store(store.database, data_dir=settings.data_dir)
     face_service = faces.FaceService(
         store=face_store,
@@ -186,9 +150,7 @@ def _build_faces(
         recorder=workbench_store,
     )
     provide(app, faces.SERVICE, face_service)
-    # A stash-box's pictures of somebody linked to one, through that feature's own door, for the
-    # starter references the face feature files from them. The stash-box service is built with
-    # the downloads, earlier, so the door exists here; published for the Faces pane's count.
+    # A stash-box's pictures of somebody, for the face feature's starter references.
     box_pictures = stash_boxes.StarterPictures(wiring.part_of_app(app, stash_boxes.SERVICE))
     provide(app, wiring.BOX_PICTURES, box_pictures)
     faces.register_handlers(
@@ -199,20 +161,9 @@ def _build_faces(
         left_out=LeftOutStore(store.database),
     )
     faces.register_agreeing(face_service)
-    # Creating a person with a name a pack already knew hands them the faces it was holding. Wired
-    # here because the slice that creates a person must not know recognition exists, and wrapped,
-    # because with the feature switched off the service refuses rather than answering, and "nobody
-    # was waiting" is the right answer to give somebody who has simply not turned it on.
+    # A person created under a name a pack knew gets its faces; "nobody waiting" while off.
     provide(app, wiring.RECOGNITION, faces.Recognition(face_service, queue=queue))
-    # And the same slice again, wearing the face a FOLDER READER asks it questions in: counts of
-    # what its groups say about a folder, and the one write that names a whole group. A seam for
-    # the reason the one above is one: the feature that reads folder names for people must not
-    # know recognition exists, and on an install with it switched off every answer is empty and a
-    # folder is judged on its name alone.
-    #
-    # Handed the service and the queue as well, because a folder answer that names a group has to
-    # teach from it afterwards (references, remembered decisions, a re-match) through the same
-    # path a naming press takes, and the store for the proposals the folder reader hands across.
+    # Recognition as the folder reader's seam: counts per folder, and the one write naming a group.
     face_evidence = faces.FaceEvidence(
         store.database, preferences=hub, store=face_store, teacher=face_service, queue=queue
     )
@@ -229,35 +180,21 @@ def _build_suggestions(
     queue: JobQueue,
     face_evidence: faces.FaceEvidence,
 ) -> suggestions.SuggestionService:
-    # Reading the folder tree somebody already organised, and asking one short question per folder.
-    # It is handed the resolver rather than a database handle because every row it puts on a screen
-    # has to be resolved against the user reading it: suggestions are generated from the whole
-    # library, and the library contains concealed things.
+    # Reading the folder tree, given the resolver: the library holds concealed things.
     folder_suggestions = suggestions.SuggestionService(
         store=suggestions.Store(store.database),
         access=store.access,
         faces=face_evidence,
-        # Read per pass, not per boot: the half of this pass that reads FILENAMES has a switch on
-        # the Importing screen, and a scan started a minute after somebody moved it honours it.
+        # Read per pass, so a switch moved a minute ago is honoured.
         preferences=hub,
         recorder=workbench_store,
         # A folder answer that files pictures under somebody is an input to the shoots pass.
         after_filing=partial(queue.settle_into, [shoots.SHOOTS_LOOK]),
-        # And the Photo Set a post of enough pictures deserves (`kernel.photo_sets.MIN_PICTURES`).
-        # Bound here for the reason the download grouper is: the filename reader knows which files
-        # were posted together and the photo-set slice knows what a set is, and neither may import
-        # the other. It carries NO switch of its own. The pass that makes these has one on the
-        # Importing screen and this is that pass; the switch on the Downloads screen governs what a
-        # FETCH does and reusing it here would be one control silently turning off something nobody
-        # asked it about.
+        # The Photo Set a post deserves; no switch of its own, as the pass already has one.
         sets=_post_sets(app, store),
-        # And the two fields of a picture, for the one question a filename cannot answer on its own:
-        # what the Site's own username number in it is CALLED. Bound here for the reason the sets
-        # are (the pass must not learn how a file is opened), and it carries its own switch on
-        # the Importing screen, because it is the only half of this pass that opens a file at all.
+        # The fields naming a Site's username number; this half opens files, so has its own switch.
         pictures=_picture_fields(store, settings),
-        # And the folders a swap made, which are containers of what arrived and never one
-        # person's, whatever their faces say. Read from the swap's own record of where it put them.
+        # The folders a swap made, which are containers and never one person's.
         swap_folders=_swap_folders(store),
     )
     provide(app, suggestions.SERVICE, folder_suggestions)
@@ -274,31 +211,20 @@ def _register_piles(
     folder_suggestions: suggestions.SuggestionService,
 ) -> None:
     reindexer = wiring.part_of_app(app, wiring.REINDEXER)
-    # Each area says what it has waiting. The workbench knows nothing about folders or faces, so a
-    # panel added in a later version is one line here and no edit anywhere in the shell.
+    # Each area says what it has waiting, so a new panel is one line here.
     board.register(suggestions.FolderQueue(folder_suggestions))
     board.register(suggestions.FiledQueue(folder_suggestions))
-    # And what a file's OWN NAME said about where it came from: a report rather than a question,
-    # standing alone rather than as a tab of the folders page: those files were filed under a site
-    # with nobody named, which is not an alternative reading of a folder claim about a person.
+    # What a file's own name said about where it came from: a report on its own page.
     board.register(suggestions.FiledFromFilenamesQueue(folder_suggestions))
-    # Pairs that look alike, which is a judgement and not housekeeping: the reclaim view next to
-    # it is identical bytes and asks nothing. Handed the preferences because how close two files
-    # have to be is a setting, and the card must count at the same setting the screen behind
-    # it reads at.
+    # Pairs that look alike, counted at the same closeness setting the screen reads.
     board.register(dedup.DedupQueue(wiring.part_of_app(app, dedup.SERVICE), store.access, hub))
-    # And the same file in two places at the same time. Not a judgement (identical bytes are identical),
-    # but still nobody else's decision: a second copy on a second disk may be exactly what somebody
-    # wanted.
+    # The same file in two places: not a judgement, but still nobody else's decision.
     board.register(dedup.ReclaimQueue(wiring.part_of_app(app, dedup.SERVICE), store.access))
-    # And a reverser with no card: an attribution carried onto the copies of a file is offered on
-    # the group somebody is already looking at, so there is no pile to survey, only the other half
-    # of a workbench queue, which is being able to take one back, per file.
+    # A reverser with no card, for an attribution carried onto a file's copies.
     board.register_reverser(
         dedup.CarriedAttributions(wiring.part_of_app(app, dedup.SERVICE), store.access)
     )
-    # What the gate on the way in would not take, in the two piles it falls into. Handed the
-    # preferences because the card says how long a quarantined file is kept, and that is a dial.
+    # What the gate on the way in would not take, in its two piles.
     board.register(library_roots.QuarantineQueue(settings, hub))
     board.register(library_roots.SkippedQueue(wiring.part_of_app(app, library_roots.SERVICE)))
     board.register(
@@ -311,20 +237,13 @@ def _register_piles(
 def _register_face_piles(
     board: Workbench, face_service: faces.FaceService, queue: JobQueue
 ) -> None:
-    # The faces: one page with five tabs, registered in the order the row draws them. The people
-    # Sift is proposing lead, because one press there settles the most and teaches Sift the most;
-    # the names a pass filed that the face disagrees with come next, because each of those is an
-    # answer already in the library and wrong; then the groups nobody has named, then the groups put
-    # aside, then the record of who Sift knows. Registration order IS tab order (see
-    # `Workbench.register`), so this list is the row on screen.
+    # The faces page; registration order is tab order (see `Workbench.register`).
     board.register(faces.SuggestionsQueue(face_service))
     board.register(faces.DisagreementsQueue(face_service))
     board.register(faces.ToNameQueue(face_service))
     board.register(faces.SetAsideQueue(face_service))
     board.register(faces.PeopleKnownQueue(face_service))
-    # And the two names those four wrote their receipts under, which outlive the cards. A decision
-    # is on disk for as long as the library is, so retiring a pile must not retire the only thing
-    # that knows how to take its decisions back: see `Workbench.register_reverser`.
+    # The names those four wrote receipts under, kept reversible after the cards go.
     board.register_reverser(faces.IgnoredRecords(face_service))
     board.register_reverser(faces.IdentifiedRecords(face_service, queue=queue))
     board.register_reverser(faces.AskedOnlyRecords())
@@ -336,10 +255,7 @@ def _register_face_piles(
 
 
 def _register_stash_piles(app: FastAPI, store: Storage, board: Workbench) -> None:
-    # Files the stash-boxes recognised, and the two jobs that find them. Registered here beside the
-    # other queues rather than where the service is built, because the sweep is scoped to whoever
-    # asked for it, and the only thing that can turn a stored user id back into a viewer is the
-    # face service's lookup, which is the one place that rule is written down.
+    # Files the stash-boxes recognised, beside the face service that turns a user id into a viewer.
     stash_service = wiring.part_of_app(app, stash_boxes.SERVICE)
     board.register(
         stash_boxes.TaggerQueue(
@@ -352,19 +268,11 @@ def _register_stash_piles(app: FastAPI, store: Storage, board: Workbench) -> Non
     )
     board.register(stash_boxes.LinkedQueue(stash_service, store.access))
     board.register(stash_boxes.UndecidedQueue(stash_service, store.access))
-    # The studios a box made Sites of that may be one person's own store: asked on a tab of the
-    # same page, and every move of one (the catalog's own and a person's) taken back there.
+    # Studios a box made Sites of that may be one person's own store.
     board.register(
         stash_boxes.StudioQueue(stash_boxes.CreatorStudios(store.database), store.access)
     )
-    # Where two answers about one field disagree. Built here rather than beside the service, because
-    # it needs the writers and the per-field rules as well as the boxes: three things from three
-    # places, which is exactly what a composition root is for.
-    #
-    # NOT a queue on the board, deliberately. A disagreement is a property of ONE RECORD (this
-    # person's birthday, this site's address), so a queue of unrelated fields asks somebody to
-    # answer them away from the only thing that settles them. It is drawn on the record instead, and
-    # in full under Settings > Stash-boxes.
+    # Where two answers about one field disagree: drawn on the record, not queued on the board.
     reconciler = stash_boxes.Reconciler(
         stash_service,
         wiring.part_of_app(app, wiring.ENRICHER),
@@ -372,20 +280,14 @@ def _register_stash_piles(app: FastAPI, store: Storage, board: Workbench) -> Non
         store.access,
     )
     provide(app, stash_boxes.RECONCILER, reconciler)
-    # And the same object under the shape the RELATED slice depends on. Two names for one thing,
-    # deliberately: the stash-box routes use the whole reconciler, and the tab strip needs one verb
-    # from it, so the strip depends on `DisagreementSeam` and cannot reach anything else here. A
-    # slice may not import another, and this is the boundary that keeps that true.
+    # The same object under `DisagreementSeam`, the one verb the tab strip may reach.
     provide(app, wiring.DISAGREEMENTS, reconciler)
-    # No card, but the receipts written while there WAS one are still on disk and are still
-    # reversible. See `ReconcileReceipts` and `kernel.workbench.Reverser`.
+    # No card, but receipts from when there was one stay reversible.
     board.register_reverser(stash_boxes.ReconcileReceipts(reconciler))
 
 
 def _subject_covers(app: FastAPI) -> SubjectCovers:
-    # A fetched picture as a subject's COVER: the column every wall draws a person, a site or a
-    # tag through. Each slice hands in its own two cover verbs here, because the kernel may not
-    # import a slice and the enrichment may not import three; see `SubjectCovers`.
+    # A fetched picture as a subject's cover, through each slice's own two cover verbs.
     subject_covers = SubjectCovers(wiring.part_of_app(app, wiring.COVER_PICTURES))
     people_service = wiring.part_of_app(app, people.SERVICE)
     tag_service = wiring.part_of_app(app, tags_ratings.SERVICE)
@@ -393,10 +295,7 @@ def _subject_covers(app: FastAPI) -> SubjectCovers:
         Subject.PERSON,
         CoverHandle(
             chosen=partial(people_service.chosen_cover, "person"),
-            # WHO did it and WHICH box the picture came from are the caller's to say, and both go
-            # onto the event: a run nobody watched is Sift's act, a Keep picture press is the
-            # user's, and the line names the box either way ("Cover set to FansDB's picture").
-            # See `SubjectCovers.fill` / `keep` and `EntityEnricher._kept_picture`.
+            # Who did it and which box it came from both go onto the event.
             point_at=lambda local_id, upload_id, actor, box: people_service.set_person_cover(
                 local_id, None, None, upload_id, actor=actor, box=box
             ),
@@ -428,9 +327,7 @@ def _build_stash_entities(
     app: FastAPI, settings: Settings, store: Storage, face_service: faces.FaceService
 ) -> None:
     stash_service = wiring.part_of_app(app, stash_boxes.SERVICE)
-    # Enriching the PEOPLE, SITES and TAGS rather than the files. Built here beside the reconciler
-    # because it uses the same three things (the boxes, the planner and the rules), and this is
-    # the only place any of them are named together.
+    # The enrichers of people, Sites and Tags, beside the reconciler that uses the same three things.
     subject_covers = _subject_covers(app)
     entity_enricher = stash_boxes.EntityEnricher(
         stash_service,
@@ -443,25 +340,20 @@ def _build_stash_entities(
         recognition=wiring.part_of_app(app, wiring.RECOGNITION),
     )
     provide(app, stash_boxes.ENTITIES, entity_enricher)
-    # Also not a queue on the board. Auto-enrich and Enrich are already verbs on the People, Sites
-    # and Tags walls, over a selection and one at a time, and the walls say the pile exists with a
-    # "Never asked" filtering of their own.
+    # Also not a queue: the walls already offer Enrich and a "Never asked" filter.
     stash_boxes.register_handlers(
         service=stash_service,
         deps=stash_boxes.ScanDeps(
             access=store.access,
             settings=wiring.part_of_app(app, wiring.SETTINGS_HUB),
             enricher=wiring.part_of_app(app, wiring.ENRICHER),
-            # The seam is reached from the wiring rather than held as a local, like the two
-            # above it: this function does not build it, and what it wants is the one the rest of
-            # the application already uses.
+            # Reached from the wiring: the one the rest of the application already uses.
             naming=wiring.part_of_app(app, wiring.NAMING),
             viewer_for=face_service.viewer_for,
         ),
         entities=entity_enricher,
     )
-    # Bringing a Stash library in: the same writers a stash-box answer is applied through (filing
-    # under the import's own word), the same lookups, and the one door a Photo Set is made by.
+    # Bringing a Stash library in, through the same writers, lookups and Photo Set door.
     migration = stash_migration.StashMigration(
         store.database,
         settings,
@@ -484,11 +376,7 @@ def _build_semantic(
     store: Storage,
     hub: settings_hub.SettingsService,
 ) -> semantic.SemanticService:
-    # Searching by what a picture looks like. The store is made here and nothing is read, written
-    # or created by making it. The vector table itself is not built until something genuinely
-    # needs it, because the add-on it depends on is one some machines cannot load and Sift has to
-    # boot on those. Whether it loaded was settled when the database was opened; this only reports
-    # it, so an operator can see the feature is absent and why without going looking.
+    # Searching by appearance: making the store reads and creates nothing, and absence is reported.
     vectors = semantic.VectorStore(store.database)
     provide(app, semantic.STORE, vectors)
     if not vectors.available:
@@ -499,9 +387,7 @@ def _build_semantic(
         records=described,
         content=store.content,
         repository=store.access,
-        # The cheap tier of "what looks like this": the fingerprints every file already carries,
-        # read through the one interface the content layer offers for them. Handed in rather than
-        # reached for, which is what keeps this feature unable to read those tables any other way.
+        # The cheap tier of "what looks like this", via the content layer's fingerprint interface.
         similar=semantic.SimilarFinder(DuplicateReads(store.database), store.database),
         preferences=hub,
         settings=settings,
@@ -511,12 +397,9 @@ def _build_semantic(
     # The HEIF photographs described from one tile of the grid, for a start to ask about.
     tiles = semantic.WholePicture(content=store.content, records=described)
     provide(app, semantic.WHOLE_PICTURE, tiles)
-    # A file described on arrival is an input to the shoots pass, which the scan's own settle
-    # has already run by then: the describe asks for it again.
+    # A file described on arrival asks for the shoots pass again.
     semantic.register_handlers(service=meaning, tiles=tiles, settles_into=(shoots.SHOOTS_LOOK,))
-    # Asking a model what some words mean, for a search box that must not know how. The search
-    # slice depends on the shape and never on this slice; it is handed the implementation here,
-    # which is the only place the two are named together.
+    # Asking a model what words mean, for a search box that must not know how.
     provide(app, wiring.SEMANTIC_SEARCH, semantic.SemanticSearch(meaning))
     return meaning
 
@@ -530,11 +413,7 @@ def _build_watermarks(
     workbench_store: workbench.Store,
     board: Workbench,
 ) -> watermarks.WatermarkService:
-    # Reading the site's own mark off the picture. Nothing is loaded or fetched by making this:
-    # like the two passes above it, it does nothing at all until somebody switches it on. The board
-    # is handed in as the RECORDER so a filing and the receipt that lets somebody take it back are
-    # one transaction, and a reverser is registered without a card: there is no pile here to
-    # survey.
+    # Reading a site's mark off the picture, off until switched on; receipts in one transaction.
     marks = watermarks.WatermarkService(
         store=watermarks.Store(store.database),
         content=store.content,
@@ -557,12 +436,7 @@ def _build_shoots(
     workbench_store: workbench.Store,
     board: Workbench,
 ) -> None:
-    # Proposing Photo Sets out of a creator's loose pictures: a run of stills that the meaning
-    # index puts in one sitting and that nothing has grouped. Built here because it is the only
-    # place that has all four of the things it needs in scope: the index (through the seam the
-    # search box already depends on), the feature that owns Photo Sets (through a seam of its own,
-    # so neither slice imports the other), the preferences, and the board as the RECORDER, so a
-    # set and the receipt that lets somebody take it back are one transaction.
+    # Proposing Photo Sets from a creator's loose pictures; set and receipt in one transaction.
     proposer = shoots.ShootService(
         database=store.database,
         store=shoots.Store(store.database),
@@ -571,12 +445,9 @@ def _build_shoots(
         photo_sets=_photo_set_maker(app),
         preferences=hub,
         recorder=workbench_store,
-        # How few pictures are not a shoot, read from the feature that owns the rule. The two
-        # slices may not import each other, so this is the one place that can hand the Photo Sets'
-        # floor to the pass that proposes them; a second copy of the number would drift.
+        # The Photo Sets' floor, handed across so no second copy of the number can drift.
         least=photo_sets.MIN_PICTURES,
-        # The longest name a Photo Set may carry, crossed the same way `least` is: the limit is
-        # the photo-set slice's and the shoots slice may not import it.
+        # The longest Photo Set name, crossed the same way.
         longest=photo_sets.MAX_PHOTO_SET_NAME,
     )
     provide(app, shoots.SERVICE, proposer)
@@ -594,20 +465,10 @@ def build_understanding(
     workbench_store: workbench.Store,
     queue: JobQueue,
 ) -> Understanding:
-    """Everything that reads a library and forms an opinion about it, and the board it reports to.
-
-    The board is built BEFORE anything registers into it, and handed to the areas that make
-    decisions so a decision writes its own receipt inside its own transaction rather than
-    afterwards, where it can be forgotten.
-
-    The record itself arrives from the caller rather than being made here, because duplicate review
-    also writes receipts and is built earlier: it needs the deleter, which belongs with the file
-    actions.
-    """
+    """Everything that reads a library and forms an opinion, and the board, built first."""
     face_service, face_evidence = _build_faces(
         app, settings, hardware, store, hub, workbench_store, queue
     )
-    # The workbench: where every judgement a rule cannot settle waits for somebody.
     board = Workbench()
     provide(app, wiring.WORKBENCH, board)
     provide(

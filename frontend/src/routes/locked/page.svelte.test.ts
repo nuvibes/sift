@@ -1,7 +1,4 @@
-/* The lock screen follows the server about the PIN.
- *
- * A PIN is taken only from the local network. The server says so with a 403 and a sentence, and
- * the screen shows the sentence and moves to the password, which always works. */
+/* The lock screen follows the server about the PIN. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';

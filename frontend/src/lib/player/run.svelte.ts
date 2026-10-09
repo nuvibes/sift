@@ -1,58 +1,43 @@
-/* Whether a run plays in order or shuffled, held for this sitting only. Shuffle is one fixed
- * order of the list the file was opened from, walked by Next and Back (`Walk`), so Back returns
- * to the file just watched and nothing comes round twice until everything has played. */
+/*
+ * Order or Shuffle for this sitting: Shuffle is one fixed order of the list (`Walk`), so Back
+ * returns to the file just watched.
+ */
 
 import { mintSeed } from '$lib/grid/sort-state.svelte';
 import { shuffled } from '$lib/player/shuffle';
 import type { LoopMode } from './loop-modes';
 
-/** One file in the list a run walks, and whether it plays on its own (a video or GIF, not a still). */
 export interface Step {
 	id: string;
 	runs: boolean;
 }
 
-/**
- * Where a walk reads the list it shuffles. Handed in by `asset-view`, which is what holds the list.
- *
- * `more` is null when what is held IS the whole list (a short wall, a face pile, a list that
- * cannot be read any further), and then the walk shuffles what it holds, here, with the shared
- * shuffle. Otherwise the list is longer than what the client holds, and reading all of it to
- * shuffle it would be a page load per file; the server shuffles it instead.
- */
+/** `more` is null when what is held IS the whole list; otherwise the server shuffles it. */
 export interface WalkSource {
 	held: readonly Step[];
 	more: {
-		/** How many there are in the whole list. */
 		total: number;
 		/**
-		 * A block of the SAME list in the server's seeded shuffle: the permutation Browse's own
-		 * Random order walks, so every block of one seed is a page of one arrangement and nothing is
-		 * drawn twice. Null where the list's server has no shuffle to offer (the wall of Loops).
+		 * A block of the server's seeded shuffle (Browse's Random); null where it has none (Loops).
 		 */
 		shuffled: ((offset: number, limit: number, seed: number) => Promise<Step[]>) | null;
-		/** A block in the list's own order, for a list the server cannot shuffle. */
 		inOrder: (offset: number, limit: number) => Promise<Step[]>;
 	} | null;
 }
 
-/** How many to ask for at a time: a page of the wall, near enough, so crossing one costs one request. */
+/** About a page of the wall, so crossing one costs one request. */
 const BLOCK = 60;
 
 /**
- * One shuffled pass over one list, and where in it the run stands.
- *
- * `cursor` is a position in `order`, which never holds the start file: -1 IS the start file. A
- * position is added to `seen` when the run lands on it, which is what makes Back mean "the file I
- * just watched" rather than "the position before this one": a run that plays through steps OVER
- * stills, and Back must not land on a photograph nobody was shown.
+ * One shuffled pass and where the run stands; Back means the file last landed on, never a skipped
+ * still.
  */
 export class Walk {
-	/** Where the walk stands: -1 on the start file, otherwise a position in the order. */
+	/** -1 on the start file, otherwise a position in the order. */
 	cursor = $state(-1);
 	/**
-	 * A file on screen that is NOT in this walk: one reached by Randomize or "Similar to this".
-	 * Next carries on from where the walk stands; Back comes back to it.
+	 * A file reached by Randomize or "Similar to this": Next carries on the walk, Back returns
+	 * here.
 	 */
 	detour = $state<string | null>(null);
 
@@ -61,16 +46,13 @@ export class Walk {
 
 	#source: WalkSource;
 	#order: Step[] = [];
-	/** Every id in the walk, the start file's included, which is what keeps a file from coming twice. */
 	#ids = new Set<string>();
-	/** How far through the server's arrangement has been read. */
 	#read = 0;
-	/** Whether the whole order is known. */
 	#complete: boolean;
 	#seen = new Set<number>([-1]);
-	/** Files deleted while the walk was open. Stepped over, never removed, so no position moves. */
+	/** Stepped over, never removed, so no position moves. */
 	#gone = new Set<string>();
-	/** One step at a time: two presses racing would both read the same cursor and land on one file. */
+	/** One step at a time, or two presses land on one file. */
 	#queue: Promise<unknown> = Promise.resolve();
 
 	constructor(start: Step, source: WalkSource, seed: number = mintSeed()) {
@@ -86,31 +68,24 @@ export class Walk {
 		}
 	}
 
-	/** The file the walk stands on. */
 	get current(): string {
 		return this.#idAt(this.cursor);
 	}
 
-	/** Whether this file is part of the walk, or the detour it is on. */
 	holds(id: string): boolean {
 		return this.#ids.has(id) || this.detour === id;
 	}
 
-	/** Whether there is anything else to step on to, without asking the server. */
 	get goesOn(): boolean {
 		return !this.#complete || this.#order.some((step) => !this.#gone.has(step.id));
 	}
 
-	/** Whether Back has somewhere to go from the file shown. */
 	canStepBack(id: string): boolean {
 		if (this.detour !== null && this.detour === id) return this.#usable(this.cursor);
 		return this.#before(this.#positionOf(id) ?? this.cursor) !== null;
 	}
 
-	/**
-	 * Back: the file watched before this one in the walk, or, from a detour, the file the detour
-	 * was taken from. Null at the start of the walk.
-	 */
+	/** From a detour, the file it was taken from; null at the start. */
 	previous(id: string): string | null {
 		if (this.detour !== null && this.detour === id) {
 			this.detour = null;
@@ -124,15 +99,8 @@ export class Walk {
 	}
 
 	/**
-	 * Next: the next file in the order, reading more of it from the server when the walk reaches
-	 * the end of what it holds. At the true end a new pass begins over the SAME order, from the
-	 * start file: a shuffled playlist on repeat, which is what "play through" means in order too.
-	 * `wraps: false` is Stop at the end under Shuffle: at the true end there is nowhere to go, and
-	 * the answer is null.
-	 *
-	 * `pictures` says whether a still is somewhere to land. A person pressing Next means the next
-	 * one whatever it is; a run moving on by itself steps over a photograph unless the account asked
-	 * for photographs to be held. Null only when nothing in the whole list qualifies.
+	 * The next file, reading more when needed; at the true end a new pass of the SAME order, or
+	 * null under `wraps: false`. `pictures` says whether a still is somewhere to land.
 	 */
 	next(
 		id: string,
@@ -143,7 +111,6 @@ export class Walk {
 		return step;
 	}
 
-	/** What `next` would answer, moving neither the cursor, the seen set nor the detour. */
 	peek(
 		id: string,
 		{ pictures, wraps = true }: { pictures: boolean; wraps?: boolean }
@@ -157,13 +124,11 @@ export class Walk {
 		return step;
 	}
 
-	/** Whether a file in this walk plays on its own, or null when the walk does not hold it. */
 	runsOf(id: string): boolean | null {
 		if (id === this.start.id) return this.start.runs;
 		return this.#order.find((step) => step.id === id)?.runs ?? null;
 	}
 
-	/** A file was deleted. It is stepped over from now on; Back never lands on it. */
 	forget(id: string): void {
 		this.#gone.add(id);
 		if (this.detour === id) this.detour = null;
@@ -180,8 +145,7 @@ export class Walk {
 		return this.current;
 	}
 
-	/* Where a step from `from` lands, reading more as needed; at the end a new pass from the start
-	   file, never onto the file just finished while anything else qualifies. Moves nothing. */
+	/* Never onto the file just finished while anything else qualifies. Moves nothing. */
 	async #after(
 		from: number,
 		pictures: boolean,
@@ -206,7 +170,6 @@ export class Walk {
 		return !this.#gone.has(step.id) && (pictures || step.runs);
 	}
 
-	/* The nearest position before `from` that was actually landed on, and still exists. */
 	#before(from: number): number | null {
 		for (let at = from - 1; at >= -1; at -= 1) {
 			if (this.#seen.has(at) && this.#usable(at)) return at;
@@ -228,8 +191,7 @@ export class Walk {
 		return at < 0 ? null : at;
 	}
 
-	/* Put the walk where the file on screen is, when they disagree: the corner player handed a
-	   file that is in the walk but not where it last stood. A detour stays a detour. */
+	/* The corner player handed a file that is in the walk but not where it stood. */
 	#standOn(id: string): void {
 		if (this.detour === id) return;
 		const at = this.#positionOf(id);
@@ -246,7 +208,6 @@ export class Walk {
 		}
 	}
 
-	/* More of the order. False once there is no more to read. */
 	async #readMore(): Promise<boolean> {
 		const more = this.#source.more;
 		if (this.#complete || more === null) return false;
@@ -255,7 +216,7 @@ export class Walk {
 		try {
 			block = await more.shuffled(this.#read, BLOCK, this.seed);
 		} catch {
-			// A run is not worth an error message. It goes on with what it has.
+			// A run goes on with what it has.
 			block = [];
 		}
 		this.#read += block.length;
@@ -265,11 +226,8 @@ export class Walk {
 	}
 
 	/*
-	 * A list the server cannot shuffle, read whole and shuffled here.
-	 *
-	 * Only the wall of Loops is this today, and it is bounded by how many stretches somebody has
-	 * marked by hand. Shuffling it a block at a time would not be a shuffle (the first block would
-	 * always be the newest marks), so it is read once, at the first step past what is held.
+	 * Only the wall of Loops, read whole and shuffled here: a block at a time would not be a
+	 * shuffle.
 	 */
 	async #readWhole(
 		total: number,
@@ -295,23 +253,13 @@ export class Walk {
 }
 
 class Run {
-	/** Whether the run walks the list in one shuffled order rather than in the list's own. */
 	shuffle = $state(false);
 
-	/**
-	 * The shuffled order being walked, once a step has been taken with Shuffle on. `$state.raw`:
-	 * the walk is replaced, never edited from outside, and its own fields carry what moves.
-	 */
+	/** `$state.raw`: replaced, never edited from outside. */
 	walk = $state.raw<Walk | null>(null);
 
 	/**
-	 * Whether a file that finishes by itself moves the run on, under the repeat answer `mode`.
-	 *
-	 * Play through always does. Stop at the end does under Shuffle, where the end it stops at is
-	 * the end of the SHUFFLED LIST rather than of the file: the run
-	 * walks the shuffled order once and stops where it runs out (`Walk.next`'s `wraps`, false
-	 * under Stop at the end). Without Shuffle it stops at the file's end. Repeat this plays the
-	 * same file again and is the player's own.
+	 * Stop at the end under Shuffle stops at the end of the SHUFFLED LIST (`Walk.next`'s `wraps`).
 	 */
 	movesOnAfter(mode: LoopMode): boolean {
 		return mode === 'loop_all' || (mode === 'once' && this.shuffle);
@@ -319,23 +267,16 @@ class Run {
 
 	toggle(): void {
 		this.shuffle = !this.shuffle;
-		// Either way the old order is finished with. Turning Shuffle on starts a fresh one from the
-		// file on screen at the first step; turning it off goes back to the list's own order.
 		this.walk = null;
 	}
 
-	/**
-	 * Counts each time the list behind the panel moved under the file on screen, so whatever
-	 * draws Next and Back from it asks again. The list itself is not reactive; this is its pulse.
-	 */
+	/** The pulse of a list that is not itself reactive, so Next and Back are asked again. */
 	relisted = $state(0);
 
-	/** The list behind the panel changed. See `relisted`. */
 	moved(): void {
 		this.relisted += 1;
 	}
 
-	/** A new list was opened: whatever order was being walked was an order of a different list. */
 	reset(): void {
 		this.walk = null;
 	}

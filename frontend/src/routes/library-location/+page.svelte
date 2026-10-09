@@ -1,27 +1,6 @@
 <script lang="ts">
-	/*
-	 * The second question, and the last one before there is a backend: where does Sift keep its own
-	 * two folders?
-	 *
-	 * ## Offered, not imposed
-	 *
-	 * The default is right for almost everybody, and the people for whom it is wrong (a small
-	 * system drive, a library that belongs on a second disk) are exactly the people who will never
-	 * find a setting they were not shown. So the folder is named on screen and there is a way to
-	 * choose another beside it.
-	 *
-	 * ## The one sentence that matters most is about the OTHER files
-	 *
-	 * Somebody being asked where Sift will "keep your library" reasonably fears their videos are
-	 * about to be moved. They are not, ever. That sentence is the difference between finishing setup
-	 * and cancelling it, so it is a caution in its own right rather than a clause in a paragraph.
-	 *
-	 * ## Choosing another folder is still the machine's own dialog
-	 *
-	 * That part does not become a Sift screen and should not: a page cannot open it, drive it, read
-	 * it or pre-fill it, which is what makes the folder that comes back one somebody physically
-	 * pointed at. It is the same dialog a library root is granted through later.
-	 */
+	/* The second question, and the last one before there is a backend: where does Sift keep its
+	 * own two folders? */
 	import { onMount } from 'svelte';
 
 	import { BackButton, Button, DoorCard, Note, Problem } from '$lib/components/common';
@@ -34,20 +13,12 @@
 	 * waiting on from the moment it is made. */
 	let pressed = $state<'keep' | 'pick' | 'back' | null>(null);
 	/* The step the shell says it has reached, once it says one: the folder being checked, then
-	 * Sift starting there. Nothing until then, which is the picker still open or a shell that sends
-	 * no steps (an older one), and the press's own sentence stands in. */
+	 * Sift starting there. */
 	let step = $state<SetupStep | null>(null);
 	const busy = $derived(pressed !== null);
 	let problem = $state<string | null>(null);
 
-	/*
-	 * What the page says while a press is being answered.
-	 *
-	 * Taking a folder checks it, starts Sift there and opens the library, and the first start sets
-	 * up the database, which is the slow part. The shell says each step as it starts, so the page
-	 * says the one it is on. Opening the library is the window leaving this screen, which says
-	 * itself.
-	 */
+	/* What the page says while a press is being answered. */
 	const waiting = $derived(
 		pressed === null || pressed === 'back'
 			? null
@@ -103,14 +74,13 @@
 	<DoorCard heading="Sift data">
 		<Problem message={problem} />
 
-		<!-- The same quiet aside the mode cards put after a name, saying the same thing about this
-		     folder: it is the one offered, and it is not the only one allowed. A library an earlier
-		     installation left is offered first, and says so: the choice then is to carry on with
-		     it or to start another somewhere else. -->
+		<!--
+			The same quiet aside the mode cards put after a name, saying the same thing about this
+			folder: it is the one offered, and it is not the only one allowed.
+		-->
 		<p class="offered">{suggested?.existing ? '(Your existing library)' : '(Default)'}</p>
 
-		<!-- The path itself, in the machine face the rest of the app uses for a path. It is the whole
-		     substance of the question, so it is the thing the eye lands on rather than a clause. -->
+		<!-- The path itself, in the machine face the rest of the app uses for a path. -->
 		<p class="where data">{suggested?.path ?? 'Checking for a library from before\u2026'}</p>
 
 		{#if suggested?.existing}
@@ -167,9 +137,7 @@
 {/if}
 
 <style>
-	/* The path, on the recessed ground so it reads as a value rather than as more prose. It wraps
-	   rather than ellipsising: a folder chosen on a second disk can be long, and the part that says
-	   WHICH disk is the beginning. */
+	/* The path, on the recessed ground so it reads as a value rather than as more prose. */
 	.where {
 		margin: 0;
 		padding: var(--space-2) var(--space-3);
@@ -179,9 +147,8 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* The aside above the path, in the two tokens the mode cards' own "(most common)" is drawn from.
-	   What is shared is that PAIRING, not a component. This is one word above a path, and wrapping
-	   a span in a component to say it would be more machinery than the thing it says. */
+	/* The aside above the path, in the two tokens the mode cards' own "(most common)" is drawn
+	   from. */
 	.offered {
 		margin: 0;
 		font: var(--text-label);

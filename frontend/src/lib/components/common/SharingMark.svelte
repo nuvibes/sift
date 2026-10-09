@@ -12,22 +12,9 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: an icon with a label. There is no behaviour in it and bits-ui has no primitive for one. */
-	/*
-	 * The badge that says something has been said about this.
-	 *
-	 * The same two glyphs the grid draws on a tile, for the walls that list things rather than
-	 * files: a collection, a person, a tag, a site. One component so the two cannot drift: the
-	 * moment a person's card and a file's tile use different marks for the same fact, the marks stop
-	 * being readable at a glance, which is the only thing they are for.
-	 *
-	 * Nothing at all when nothing has been said, which is most of a library. Restricted wins when
-	 * both are somehow set, exactly as it does in the resolver.
-	 *
-	 * It is a BUTTON wherever it is given somewhere to go, because its own tooltip ends by saying so:
-	 * every mark reads "(click to see sharing menu)", and a mark that says so over a plain span is
-	 * a promise nothing keeps. A mark with no `onclick`
-	 * is still drawn, as text, so the one place that has nothing to open does not promise anything.
-	 */
+	/* The badge saying something has been said about this, the same glyphs as a file's tile; a button
+	 * only where there is somewhere to open, as its tooltip promises. Restricted wins over shared.
+	 * */
 	import Icon from '$lib/components/Icon.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { HIDDEN_REST, HIDDEN_VERB, HIDDEN_WORDS, markFor } from '$lib/library/sharing-marks';
@@ -35,43 +22,25 @@
 	interface Props {
 		shared?: boolean;
 		restricted?: boolean;
-		/** Where it was decided, for the things that have something above them: a folder, and a Site
-		 *  under a network. Left out (not false) for a thing that inherits nothing (a tag, a
-		 *  person, a collection), whose mark is then always the solid "decided here" one. */
+		/** Where it was decided; left out for a thing that inherits nothing. */
 		shared_here?: boolean;
 		restricted_here?: boolean;
-		/** True only where the thing being marked is a FILE, which always says where: a file handed
-		 *  no `shared_here` was decided above it. */
+		/** Only on a file, which always says where. */
 		file?: boolean;
-		/**
-		 * In the vault, and being listed anyway, which only happens with the vault open.
-		 *
-		 * Its own glyph beside the sharing one, never folded into it: sharing is about WHO, and this
-		 * is about nobody. Without it, hiding something while the vault is open would change
-		 * nothing you could see: the row stays, correctly, and would look untouched.
-		 */
+		/** In the vault and listed anyway: its own glyph, as hiding is about nobody. */
 		hidden?: boolean;
 		/** Open the sharing panel on whatever this mark is about. Absent draws it as plain text. */
 		onopen?: () => void;
-		/*
-		 * Open the Hidden panel, from the crossed-out eye.
-		 *
-		 * Its own callback, because the two glyphs answer two questions: a share is about who may;
-		 * hiding is about what you want on your own screen, and no share overrides it. One glyph
-		 * each, one panel each. Absent leaves the eye as plain text, as `onopen` does for the
-		 * sharing mark, so a surface with nowhere to open a panel draws neither as a button.
-		 */
+		/** Open the Hidden panel from the crossed-out eye; absent, plain text. */
 		onhidden?: () => void;
-		/** Kept out of swaps by its own "Don't enrich" (`local`) or "Don't swap": the menus' own
-		 *  "Don't swap" glyph in the danger ink, beside the others. A folder's reaches every file in it. */
+		/** Kept out of swaps: the "Don't swap" glyph in danger ink. */
 		refused?: 'local' | 'swap';
 	}
 
 	let {
 		shared = false,
 		restricted = false,
-		// Undefined rather than false, and that is the whole of what tells a thing that inherits
-		// nothing apart from one whose share came from above. See `markFor`.
+		// Undefined, not false: that tells an inheritless thing apart (`markFor`).
 		shared_here = undefined,
 		restricted_here = undefined,
 		file = false,
@@ -83,13 +52,7 @@
 
 	const mark = $derived(markFor({ shared, restricted, shared_here, restricted_here }, { file }));
 
-	/*
-	 * The press stops here.
-	 *
-	 * Every wall this sits on has something of its own listening: a card is a link, a chip selects
-	 * the tag, a folder row selects the folder. Without this, opening the panel also navigates or
-	 * changes what is selected underneath it, and the panel comes up over a screen that moved.
-	 */
+	/* The press stops here, so the wall under it does not move. */
 	function press(event: MouseEvent) {
 		event.preventDefault();
 		event.stopPropagation();
@@ -177,11 +140,9 @@
 {/if}
 
 <style>
-	/* The same colours the words wear in the sharing panel, so one state has one colour wherever it
-	   is drawn: a card, a chip, a folder row, a tile. */
+	/* The sharing panel's colours. */
 
-	/* Two facts, side by side, never stacked: a thing can be shared AND hidden, and one glyph on top
-	   of another says neither. */
+	/* Side by side, never stacked. */
 	.marks {
 		display: inline-flex;
 		align-items: center;
@@ -189,8 +150,7 @@
 		flex: none;
 	}
 
-	/* Hidden is not an alarm: it is the ordinary state of everything behind the PIN, so it keeps
-	   the plain ink rather than borrowing one of the three sharing colours. */
+	/* Hidden in the plain ink, not an alarm. */
 	.mark.vaulted {
 		color: var(--sift-ink-2);
 	}
@@ -202,9 +162,7 @@
 		color: var(--sift-ok);
 	}
 
-	/* A button, but not drawn as one: it is a fact in a row of facts, and a bordered box around it
-	   would read as a control that does something to the thing rather than as a badge that explains
-	   it. The pointer and the focus ring are what say it can be pressed. */
+	/* A button not drawn as one: a fact in a row of facts. */
 	button.mark {
 		padding: 0;
 		border: 0;
@@ -218,8 +176,7 @@
 		box-shadow: var(--focus-ring);
 	}
 
-	/* A 16px badge, and a finger's reach around it on a phone: the ring `Pressable` draws, for the
-	   reason given there (the badge keeps its size in the row of facts). */
+	/* A finger's reach on a phone through Pressable's ring. */
 	@media (max-width: 767px) {
 		button.mark {
 			position: relative;

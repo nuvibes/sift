@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Music pane's words, and what somebody can type to find what it adds.
- *
- * The switch and the route are registered settings and reach the search by themselves; the
- * lookup's own words are in `music-lookup.svelte.ts`. What this adds is the sentence that says what
- * the section is for, and the blocks holding the two task rows: the lookup's and the fingerprints'. */
+/* The Music pane's words, and what somebody can type to find what it adds. */
 import type { Searchable } from './search';
 
 export const COPY = {
-	/* The lookup task's row, drawn while the lookup is on. Its title and sentence are the server's;
-	   these are the row's name here and the facts the pane adds under it. */
+	/* The lookup task's row, drawn while the lookup is on. */
 	lookup: {
 		name: 'When songs are looked up on AcoustID',
 		label: 'When songs are looked up',
@@ -20,12 +15,7 @@ export const COPY = {
 		/* Its presses are on Tasks, like every task's: this says where. */
 		runIn: 'Run it in'
 	},
-	/*
-	 * Asking AcoustID again about the files it did not know. Only those last asked more than the
-	 * server's number of days ago (`ask_again_after_days`), because AcoustID learns new songs over
-	 * weeks and a sooner ask sends the same fingerprint for the same answer. A file's own menu asks
-	 * about that one file at any time, because a person chose it.
-	 */
+	/* Asking AcoustID again about the files it did not know. */
 	again: {
 		name: 'Ask AcoustID again',
 		label: 'Ask AcoustID again',

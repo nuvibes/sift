@@ -21,7 +21,7 @@ import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel import db as db_module
 from sift.kernel.db import Database
 from sift.kernel.jobs import ledger as ledger_module
-from sift.kernel.jobs import pacing
+from sift.kernel.jobs import ledger_store, pacing
 from sift.kernel.jobs.families import LONG_PASSES, Family
 from sift.kernel.jobs.ledger import CURRENT_FAMILY, Ledger, priced, report_text
 
@@ -232,7 +232,7 @@ async def test_the_table_is_left_alone_when_a_database_already_has_it(temp_db: D
     again: adding a column twice is an error, so each step decides for itself."""
     await temp_db.initialize_schema()
     async with temp_db.write() as connection:
-        await ledger_module.initialize(connection, on_disk=ledger_module.VERSION)
+        await ledger_store.initialize(connection, on_disk=ledger_store.VERSION)
 
     columns = await temp_db.fetch_all("SELECT name FROM pragma_table_info('work_runs')")
     assert [row["name"] for row in columns].count("products") == 1
@@ -862,8 +862,8 @@ async def test_a_library_from_before_kept_prices_prices_from_its_runs_at_the_ste
         " profile) VALUES ('other-run', 'other', 1, 2, 2, 1, 'abc123')"
     )
     async with temp_db.write() as connection:
-        await ledger_module.initialize(connection, on_disk=7)
-        await ledger_module.initialize(connection, on_disk=8)
+        await ledger_store.initialize(connection, on_disk=7)
+        await ledger_store.initialize(connection, on_disk=8)
 
     rows = await temp_db.fetch_all("SELECT family, profile, kind, items FROM work_prices")
     assert sorted(tuple(row) for row in rows) == [
@@ -974,7 +974,7 @@ async def test_a_kind_keeps_its_price_however_many_runs_of_other_kinds_follow(
     assert older is not None
     older.started_at -= 1000
     await ledger.settle({}, settings={})
-    for _ in range(ledger_module.KIND_OVER_RUNS + 1):
+    for _ in range(ledger_store.KIND_OVER_RUNS + 1):
         ledger.finished("thumbnail", duration_ms=1_000, ok=True, media_type="video", units=1)
         await ledger.settle({}, settings={})
 
@@ -984,7 +984,7 @@ async def test_a_kind_keeps_its_price_however_many_runs_of_other_kinds_follow(
     )
 
     assert prices.paces["gif"].items == 20
-    assert prices.paces["video"].items == ledger_module.KIND_OVER_RUNS
+    assert prices.paces["video"].items == ledger_store.KIND_OVER_RUNS
     assert found is not None and found.quick_seconds == 10
 
 
@@ -1048,7 +1048,7 @@ async def test_a_done_scan_that_left_a_folder_unread_says_so_in_its_report(
 async def test_a_ledger_from_before_the_endings_gets_the_column_and_keeps_its_runs(
     temp_db: Database,
 ) -> None:
-    before = ledger_module._CREATE_TABLE.split("  made_for     TEXT,")[0] + "  made_for     TEXT\n)"
+    before = ledger_store._CREATE_TABLE.split("  made_for     TEXT,")[0] + "  made_for     TEXT\n)"
     assert "ended_with" not in before
     async with temp_db.write() as connection:
         await connection.execute("DROP TABLE IF EXISTS work_runs")
@@ -1057,7 +1057,7 @@ async def test_a_ledger_from_before_the_endings_gets_the_column_and_keeps_its_ru
             "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at, jobs_failed)"
             " VALUES ('R1', 'scan', 1, 2, 2, 1)"
         )
-        await ledger_module.initialize(connection, on_disk=5)
+        await ledger_store.initialize(connection, on_disk=5)
 
     record = await Ledger(temp_db).get("R1")
     assert record is not None and record.jobs_failed == 1 and record.ended_with == {}
@@ -1133,7 +1133,7 @@ async def test_a_run_mostly_stepped_back_is_kept_with_its_seconds_and_not_priced
 
     (kept,) = await ledger.recent()
     assert kept.settings["jobs together"] == 8
-    assert 79 <= int(kept.settings[ledger_module.STEPPED_BACK]) <= 81  # type: ignore[call-overload]
+    assert 79 <= int(kept.settings[ledger_store.STEPPED_BACK]) <= 81  # type: ignore[call-overload]
     assert await ledger.pace(Family.GENERATE, []) is None
     assert (await ledger.kind_prices(Family.GENERATE, at_once=1)).paces == {}
 
@@ -1323,7 +1323,7 @@ async def test_the_next_start_forgets_what_interrupted_runs_said(temp_db: Databa
 async def test_a_ledger_from_before_the_time_left_gets_its_column_and_table(
     temp_db: Database,
 ) -> None:
-    before = ledger_module._CREATE_TABLE.split("  ended_with   TEXT,")[0] + "  ended_with   TEXT\n)"
+    before = ledger_store._CREATE_TABLE.split("  ended_with   TEXT,")[0] + "  ended_with   TEXT\n)"
     assert "time_left" not in before
     async with temp_db.write() as connection:
         await connection.execute("DROP TABLE IF EXISTS work_runs")
@@ -1333,8 +1333,8 @@ async def test_a_ledger_from_before_the_time_left_gets_its_column_and_table(
             "INSERT INTO work_runs (id, family, started_at, updated_at, finished_at)"
             " VALUES ('R1', 'scan', 1, 2, 2)"
         )
-        await ledger_module.initialize(connection, on_disk=6)
-        await ledger_module.initialize(connection, on_disk=6)
+        await ledger_store.initialize(connection, on_disk=6)
+        await ledger_store.initialize(connection, on_disk=6)
 
     record = await Ledger(temp_db).get("R1")
     assert record is not None and record.time_left is None

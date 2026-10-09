@@ -1,12 +1,5 @@
-/*
- * The PIN control, and the two claims it makes that a password box could not: how many digits are
- * wanted is visible, because the cells say it, and the digits themselves are not, because a vault
- * is opened in front of whoever else is in the room.
- *
- * The paste is the primitive's own. What is tested is the one part this file wrote: the transformer
- * that drops everything that is not a digit, since a PIN from a password manager or a message comes
- * with spaces or hyphens.
- */
+/* The PIN control: the cells say how many digits, and no digit is drawn. What this file wrote
+ * is tested: the transformer that drops what is not a digit from a paste. */
 
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -37,19 +30,14 @@ function cells(): HTMLElement[] {
 }
 
 it('draws one cell per digit a PIN has', () => {
-	/* Six, because a PIN is six digits. A shorter one kept from before that rule still opens Hidden
-	 * and leaves the last cells empty; fewer cells would make a six-digit PIN untypable. */
+	/* Six cells; an older, shorter PIN leaves the last empty. */
 	draw();
 
 	expect(cells()).toHaveLength(PIN_DIGITS);
 });
 
 it('masks the digits and says how many have been typed', () => {
-	/* Both halves, and they are the whole of the trade. The PIN is the one thing keeping the vault
-	 * shut and it is typed where somebody else can see the screen, so no digit is ever drawn:
-	 * the value must not reach the page as text at all, which is what the second assertion holds.
-	 * What the cells still say is how far along the typing is, which is what a single dotted box
-	 * takes away and is why there are cells at all. */
+	/* No digit reaches the page as text, while the cells say how far the typing is. */
 	draw({ value: '4172' });
 
 	expect(host.querySelector('.pin-box')?.textContent?.trim()).toBe('');
@@ -57,10 +45,7 @@ it('masks the digits and says how many have been typed', () => {
 });
 
 it('marks a refused PIN on the CELLS, which is the element the rule is on', () => {
-	/* Both halves matter and the second is why this test exists. `aria-invalid` is announced, and
-	 * the primitive puts it on the hidden input it renders INSIDE the root, so a border rule
-	 * written against the root would match nothing and never be drawn, and no other check would
-	 * notice. The class is on the element the cells are actually under. */
+	/* The class sits where the cells are: the primitive puts aria-invalid on its hidden input. */
 	draw({ value: '9999', invalid: true });
 
 	expect(host.querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
@@ -70,11 +55,7 @@ it('marks a refused PIN on the CELLS, which is the element the rule is on', () =
 });
 
 it('takes the hyphens and spaces out of a pasted PIN', () => {
-	/* A PIN read off a screen or out of a message arrives spaced. A control that refused the whole
-	 * paste would read as the paste not working, which is worse than one that cleans it up.
-	 *
-	 * The clipboard is stood in for rather than built: jsdom has no `DataTransfer`, and what the
-	 * primitive reads off the event is one method. */
+	/* A spaced paste is cleaned; the clipboard is stood in for, as jsdom has no DataTransfer. */
 	draw();
 	const input = host.querySelector('input') as HTMLInputElement;
 	const paste = new Event('paste', { bubbles: true, cancelable: true });

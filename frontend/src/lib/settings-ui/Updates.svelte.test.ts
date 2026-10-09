@@ -31,8 +31,7 @@ vi.mock('$lib/jobs/tasks.svelte', () => ({
 }));
 
 /* What the Updates section actually puts in front of somebody: the versions, the notes drawn as
- * text rather than markup, and the one button that installs, offered only where it can.
- */
+ * text rather than markup, and the one button that installs, offered only where it can. */
 
 let host: HTMLElement;
 
@@ -92,23 +91,22 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
-/* WHEN Sift checks is the update check task's When, upkeep that runs on its own in the background,
-   so no pane draws a row for it; WHETHER it checks is the one switch further down. */
+/* WHEN Sift checks is the update check task's When, upkeep that runs on its own in the
+   background, so no pane draws a row for it; WHETHER it checks is the one switch further down. */
 it("draws no row for the update check's When, which runs on its own in the background", () => {
 	show(NOTHING_KNOWN);
 	expect(host.querySelector('[id="tasks.update-check.when"]')).toBeNull();
 	expect(host.querySelector('#updates\\.when')).toBeNull();
 });
 
-/* THE FOOT. The licence is not decoration: Sift is AGPL-3.0, which asks a network
-   service to offer its source to the people who use it, so the terms stay one press away for
-   everybody, a guest included. */
+/* THE FOOT. The licence is not decoration: Sift is AGPL-3.0, which asks a network service to
+   offer its source to the people who use it, so the terms stay one press away for everybody, a
+   guest included. */
 describe('the foot', () => {
 	it('names the licence, the source and the notices, after everything else', () => {
 		show(NOTHING_KNOWN);
 
-		// The address is on each block, which is what a search result rings. No About block: the
-		// version is the pane's first line.
+		// The address is on each block, which is what a search result rings.
 		const version = host.querySelector('#updates\\.version');
 		const license = host.querySelector('#updates\\.license')?.closest('section');
 		expect(version, 'the block the Version search result rings').not.toBeNull();
@@ -145,9 +143,8 @@ describe('the foot', () => {
 		expect(text()).toContain(COPY.license.name);
 	});
 
-	/* On a client there are two copies of Sift in play, the library's and the one in front of you,
-	   and they update separately. Somebody checking whether this computer is up to date has to
-	   read both, agreeing or not; on one computer there is one. */
+	/* On a client there are two copies of Sift in play, the library's and the one in front of
+	   you, and they update separately. */
 	it('names the library and this device separately on a client, and one version otherwise', async () => {
 		viewer.isAdmin = false;
 		const two = Promise.resolve('1.3.0');
@@ -177,8 +174,7 @@ describe('the foot', () => {
 });
 
 /* The download tools' versions and the yt-dlp check live here: "is what Sift runs up to date" is
-   this pane's question. Drawn whatever the update state is, with the
-   address a search result and a moved link ring. */
+   this pane's question. */
 it('draws the download tools and their check under the update', () => {
 	show(NOTHING_KNOWN);
 	expect(text()).toContain('Download tools');
@@ -198,8 +194,7 @@ describe('when an update is available', () => {
 		expect(text()).toContain('Faster thumbnails.');
 	});
 
-	/* A safe subset of Markdown, drawn as text nodes: a heading, bold, a list. And an HTML tag in
-	   the notes is shown as the characters it is, never made into an element. */
+	/* A safe subset of Markdown, drawn as text nodes: a heading, bold, a list. */
 	it('draws the notes as a small Markdown subset, with no markup of their own', () => {
 		show(AVAILABLE);
 		const notes = host.querySelector('.notes-body');
@@ -223,8 +218,8 @@ describe('when an update is available', () => {
 		expect(host.querySelector('.notes-body')?.textContent).toContain('elsewhere');
 	});
 
-	/* Anywhere but the desktop app on the device running this library, the button would install on
-	   the wrong machine or on none, so the screen says where to go instead. */
+	/* Anywhere but the desktop app on the device running this library, the button would install
+	   on the wrong machine or on none, so the screen says where to go instead. */
 	it('says where to install it when this window cannot', () => {
 		show(AVAILABLE);
 
@@ -318,8 +313,8 @@ describe('when an update is available', () => {
 
 describe('when nothing is known', () => {
 	it('says only when it last checked, once there is a last check to show', () => {
-		/* "Sift hasn't been able to check" over "Last checked 2 hours ago" would say two things about
-		   one check. */
+		/* "Sift hasn't been able to check" over "Last checked 2 hours ago" would say two things
+		   about one check. */
 		show({ ...NOTHING_KNOWN, last_checked: Math.floor(Date.now() / 1000) - 7200 });
 
 		expect(text()).toContain('Last checked');
@@ -351,25 +346,13 @@ describe('when the running version is the newest', () => {
 	});
 });
 
-/* TWO COMPUTERS, AND WHICH NUMBER BELONGS TO WHICH.
- *
- * In client mode this whole screen is served by the machine holding the library, so every version
- * on it is that machine's, while the install button acts on the one in front of you. A copy two
- * releases behind must not read as "the newest version" because the number it was compared
- * against was never its own.
- */
+/* TWO COMPUTERS, AND WHICH NUMBER BELONGS TO WHICH. */
 describe('when the application and the library are different computers', () => {
 	afterEach(() => {
 		delete window.sift;
 	});
 
-	/* THESE WAIT ON THE ANSWER RATHER THAN ON THE SCREEN, and the difference is not pedantry.
-	 *
-	 * The ones asserting an ABSENCE expect a sentence that is also on the screen before the version
-	 * has arrived at all. Written as `waitFor(...)` on the text, the first poll would pass on the
-	 * not-yet-answered screen and the assertion run against it, so breaking the rule they exist
-	 * for would leave them green. Awaiting the same promise the component awaits, then flushing, is what
-	 * makes them about the settled screen. */
+	/* THESE WAIT ON THE ANSWER RATHER THAN ON THE SCREEN, and the difference is not pedantry. */
 	async function settled(answer: Promise<string | null>): Promise<void> {
 		await answer;
 		// The component's own `.then` is queued behind this one; let it run, then apply its effect.
@@ -377,8 +360,7 @@ describe('when the application and the library are different computers', () => {
 		flushSync();
 	}
 
-	/* An ANSWER means there are two computers: the shell gives one only in client mode. So these
-	 * are tests of what the screen does with an answer, not of a comparison it makes. */
+	/* An ANSWER means there are two computers: the shell gives one only in client mode. */
 	it('names both, and says which is which', async () => {
 		const answer = Promise.resolve('1.3.0');
 		window.sift = { shellVersion: () => answer };
@@ -400,9 +382,7 @@ describe('when the application and the library are different computers', () => {
 		expect(text()).toContain('only this device');
 	});
 
-	/* BOTH NUMBERS EVEN WHEN THEY AGREE, the case a comparison would get wrong. Somebody checking
-	 * whether their client is up to date has to be able to read both numbers; a screen that speaks
-	 * up only when they disagree answers that question by silence. */
+	/* BOTH NUMBERS EVEN WHEN THEY AGREE, the case a comparison would get wrong. */
 	it('names both even when the two agree', async () => {
 		const answer = Promise.resolve('1.4.0');
 		window.sift = { shellVersion: () => answer };
@@ -475,9 +455,7 @@ describe('when the application and the library are different computers', () => {
 		expect(text()).not.toContain('is available');
 	});
 
-	/* The known negative. On the machine holding the library the backend travels inside the
-	 * application, so there is no second version: the shell answers nothing there, and a screen
-	 * saying it twice would invite somebody to look for a difference that cannot exist. */
+	/* The known negative. */
 	it('says it once where there is only one computer', async () => {
 		const answer = Promise.resolve(null);
 		window.sift = { shellVersion: () => answer };
@@ -488,8 +466,7 @@ describe('when the application and the library are different computers', () => {
 		expect(text()).not.toContain('another device');
 	});
 
-	/* A browser has no copy of its own to be out of date. Claiming one there would be a sentence
-	 * about a second computer to somebody who has one computer. */
+	/* A browser has no copy of its own to be out of date. */
 	it('says nothing about a second computer in a browser', async () => {
 		const answer = Promise.resolve(null);
 		show(NOTHING_KNOWN);
@@ -500,12 +477,7 @@ describe('when the application and the library are different computers', () => {
 	});
 });
 
-/*
- * ONE PLAIN SWITCH over the one request Sift makes on its own. It is the update check's retired
- * on/off key, which the server answers from the check's When and writes into it; the row carries
- * that key's address, so an old link to the switch lands on it. And a Check now beside it, so off
- * still leaves a way to ask.
- */
+/* ONE PLAIN SWITCH over the one request Sift makes on its own. */
 describe('the update switch', () => {
 	function withWhen(when: string) {
 		const put = vi.spyOn(api, 'put').mockResolvedValue(undefined as never);
@@ -562,8 +534,8 @@ describe('the update switch', () => {
 	});
 
 	it('waits on Check now until Last checked moves, not until the answer is read again', async () => {
-		// The bell rings as the run is queued too, and that re-read hands back the old time in a new
-		// object. Ending the wait there would leave Last checked where it was until a reload.
+		// The bell rings as the run is queued too, and that re-read hands back the old time in a
+		// new object.
 		withWhen('press');
 		await settled();
 		const now = [...host.querySelectorAll<HTMLButtonElement>('button')].find((one) =>

@@ -31,7 +31,7 @@ from sift.slices.library_roots.walking import (
 
 if TYPE_CHECKING:
     from sift.slices.library_roots.moved_folders import FolderPlan
-    from sift.slices.library_roots.walking import Walked, _Rows
+    from sift.slices.library_roots.walking import FolderMoves, Walk, Walked, _Rows
 
 log = get_logger(__name__)
 
@@ -122,15 +122,7 @@ async def plan_scan(
             folder = _nearest(_parent_of(recorded_at), recorded)
             reading.append(PlannedRead(item.rel_path, recorded_at, folder))
 
-    missing = 0
-    going: list[str] = []
-    if walk.looked:
-        async for location in _missing(
-            rows, root_id=root.id, root_abs=root_abs, under=ROOT_REL_PATH, seen=seen, moves=moves
-        ):
-            missing += 1
-            if len(going) < first:
-                going.append(location.asset_id)
+    missing, going = await _going(rows, root, root_abs, walk, seen, moves, first)
     return ScanPlan(
         folders=folders,
         new=new,
@@ -141,6 +133,27 @@ async def plan_scan(
         reading=tuple(reading),
         going=tuple(going),
     )
+
+
+async def _going(
+    rows: _Rows,
+    root: Root,
+    root_abs: Path,
+    walk: Walk,
+    seen: set[str],
+    moves: FolderMoves,
+    first: int,
+) -> tuple[int, list[str]]:
+    missing = 0
+    going: list[str] = []
+    if walk.looked:
+        async for location in _missing(
+            rows, root_id=root.id, root_abs=root_abs, under=ROOT_REL_PATH, seen=seen, moves=moves
+        ):
+            missing += 1
+            if len(going) < first:
+                going.append(location.asset_id)
+    return missing, going
 
 
 @dataclass(frozen=True, slots=True)

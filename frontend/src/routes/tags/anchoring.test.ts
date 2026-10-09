@@ -1,28 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * The Tags wall keeps the page it was left on.
- *
- * The position is the half that is written into the address; a wall that writes nothing there loses
- * its place on the way back from a row. The test beside the Photo Sets wall carries the whole of
- * the reasoning; this is the same four properties, one wall over.
- *
- * The stand-in for `replaceState` does BOTH halves the router does (it records, and it moves the
- * browser's address), because a mock that only records cannot show what the fault costs: a wall
- * that decided it had nothing to write by comparing against the address it ARRIVED at.
- *
- * The first test is the known positive. Every assertion under it is also satisfied by a wall that
- * asks the server for nothing at all.
- */
+/* The Tags wall keeps the page it was left on. The position is the half that is written into the
+ * address; a wall that writes nothing there loses its place on the way back from a row. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Wall from './+page.svelte';
 import { tagsSort } from './sort.svelte';
 import { TAGS_PER_PAGE, tags } from '$lib/entity/tags.svelte';
 import { LAST_PAGE, MEASURED, SHORT, arrival, wallHarness } from '$lib/design/testing-walls';
 
-/*
- * The fewest cards that show it, the arithmetic the round trip rests on (8 to a page, a list of 17,
- * Last landing on row 16) and why the arrival carries `near`: all in `$lib/design/testing-walls`, once.
- */
+/* The fewest cards that show it, the arithmetic the round trip rests on (8 to a page, a list of
+ * 17, Last landing on row 16) and why the arrival carries `near`: all in
+ * `$lib/design/testing-walls`, once. */
 const NAMED = LAST_PAGE;
 const ARRIVAL = arrival('/tags', 'tag', NAMED);
 
@@ -36,8 +23,7 @@ vi.mock('$lib/api/client', () => ({
 			const query = options?.query ?? {};
 			if (path !== '/tags') return { items: [], total: 0, limit: 50, offset: 0 };
 			server.asks.push(query);
-			// The server resolves a row into its position in the scoped, ordered list. Here the row
-			// is named after its position, so the stand-in can answer the same question.
+			// The server resolves a row into its position in the scoped, ordered list.
 			const named = String(query.from ?? '');
 			const offset = named ? Number(named.replace('tag', '')) : Number(query.offset ?? 0);
 			const limit = Number(query.limit ?? 24);
@@ -127,16 +113,7 @@ describe('the Tags wall and the row in its address', () => {
 	});
 });
 
-/*
- * ONE FIRST PAGE. The first card's measurement trims the rows it holds (see `CardPaging.fill`),
- * and the next visit asks at the measured size straight away, because the wall is named, so the
- * first page is asked for once. `measuredWall` stands in for the browser laying the cards out, which
- * jsdom never does.
- *
- * A DOZEN ROWS (`SHORT`), for the reason `$lib/design/testing-walls` gives: what the first two tests
- * below count is requests, and a first page of 60 cards ran past the five-second limit on a slow
- * runner.
- */
+/* ONE FIRST PAGE. */
 describe('the Tags wall asks for its first page once', () => {
 	it('trims the page it holds when the first card is measured, and asks nothing more', async () => {
 		server.whole = SHORT;
@@ -162,12 +139,7 @@ describe('the Tags wall asks for its first page once', () => {
 	});
 });
 
-/*
- * THE CARD'S COVER ADDRESS CARRIES THE ROW'S MOMENT AND TOKEN. The listing row names the moment a
- * video cover was taken at (`cover_at_ms`) and a token that changes whenever the picture does
- * (`art`); a card handed neither asks for an address that never moves when the cover does. Every
- * row of this stand-in server carries both, so the first card's picture must name both.
- */
+/* THE CARD'S COVER ADDRESS CARRIES THE ROW'S MOMENT AND TOKEN. */
 describe('the Tags wall hands each card its cover moment', () => {
 	it("puts the row's moment and token on the cover's address", async () => {
 		const host = await wall('/tags');
@@ -176,14 +148,8 @@ describe('the Tags wall hands each card its cover moment', () => {
 	});
 });
 
-/*
- * A COLD LINK KEEPS ITS PLACE. A fresh load of `?from=` must not re-ask for offset 0 after the
- * first card measures and before the wall has moved to the offset the anchor resolved to. The rows
- * and the landing are one synchronous turn (`fillHeld`, `CardPaging.land`).
- *
- * The link names row 16 of 17 (`LAST_PAGE` of `WHOLE`): the only row the first request answers, at
- * the unmeasured size, and the first row of the last page once the first card measures 8 to a page.
- */
+/* A COLD LINK KEEPS ITS PLACE. A fresh load of `?from=` must not re-ask for offset 0 after the
+ * first card measures and before the wall has moved to the offset the anchor resolved to. */
 describe('the Tags wall opened cold at a row', () => {
 	it('keeps the place the link names when the first card measures, and asks once', async () => {
 		await measuredWall(`/tags?from=tag${NAMED}`);

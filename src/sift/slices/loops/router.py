@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Endpoints for loops.
-
-**Making one is not admin-only, and that is deliberate.** Every other write to shared vocabulary is,
-because a tag or a person changes what everybody's searches return. A loop does not: it points at
-one file, it is visible only to users who can already see that file, and marking a moment is
-much closer to a rating than to renaming a tag. Naming it after somebody else's file changes nothing
-about that file.
-
-**Every read is scoped by the join, not by a rule.** A loop of a file this viewer may not see is not
-a row (see `_VISIBLE_LOOPS`), so there is nothing here that has to remember to check.
-
-**Denied and missing are the same answer**, as everywhere else.
-"""
+"""Endpoints for loops: making one is not admin-only, every read is scoped by the join."""
 
 from __future__ import annotations
 
@@ -63,15 +51,7 @@ def _missing() -> HTTPException:
 
 
 async def _marks(access: Repository, viewer: Viewer, loops: list[LoopView]) -> dict[str, GrantMark]:
-    """Which of the FILES behind these rows have been shared or restricted.
-
-    One call for the page rather than one per row, which is the same arrangement the media grid
-    makes, and through `visible_marks`, which is the only way to ask: the "an admin and nobody
-    else" rule is written there once rather than on every screen that draws a badge.
-
-    Keyed by ASSET id, because that is what a grant names. Two marks of one video therefore share
-    one answer, exactly as they share its heart.
-    """
+    """Which of the files behind these rows are shared or restricted, by asset id, in one call."""
     if not loops:
         return {}
     return await access.visible_marks(
@@ -80,13 +60,7 @@ async def _marks(access: Repository, viewer: Viewer, loops: list[LoopView]) -> d
 
 
 async def _one(access: Repository, viewer: Viewer, loop: LoopView) -> LoopSummary:
-    """One loop, answered with the SAME fields the wall sends.
-
-    Its own helper rather than `_view(loop)` at three call sites, because the default there is
-    "no marks", and a route quietly answering a thinner version of a published shape is a fault
-    nothing would notice. One read for one row; a guest costs nothing at all, since
-    `visible_marks` tells them nothing by design.
-    """
+    """One loop, answered with the same fields the wall sends."""
     return _view(loop, (await _marks(access, viewer, [loop])).get(loop.asset_id))
 
 
@@ -101,8 +75,7 @@ def _view(loop: LoopView, mark: GrantMark | None = None) -> LoopSummary:
         media_type=loop.media_type,
         width=loop.width,
         height=loop.height,
-        # The MARK's length. See the model: this is the field a tile draws its badge from, and what
-        # that badge is describing is the row, not the video the row points into.
+        # The mark's length, which the tile's badge describes, not the video's.
         duration_ms=loop.length_ms,
         favorite=loop.favorite,
         rating=loop.rating,
@@ -135,16 +108,7 @@ async def _require_loop(access: Repository, viewer: Viewer, loop_id: str) -> Loo
 
 
 async def _require_mine(access: Repository, viewer: Viewer, loop_id: str) -> LoopView:
-    """The same read, and then: is this yours to change?
-
-    Making a mark is not admin-only, and moving or removing somebody else's must not follow from
-    that. A loop is visible to every user who can see the video it points at, so without this a
-    guest could rename or delete a mark an admin made: reachable from the API whether or not any
-    screen offers it.
-
-    Refused as MISSING rather than as forbidden, like everything else here: "not yours" and "no such
-    loop" are the same answer from outside, or the refusal itself would say the mark exists.
-    """
+    """The same read, refused as missing unless the loop is this user's or they are an admin."""
     loop = await _require_loop(access, viewer, loop_id)
     if not viewer.is_admin and loop.created_by != viewer.id:
         raise _missing()
@@ -160,25 +124,7 @@ async def _narrowing(
     site: str | None,
     collection: str | None,
 ) -> AssetFilter:
-    """Which FILES this wall's marks may be cut from: the related filter and the viewer's filter.
-
-    **The viewer's filter is the query language, read off the raw address by the one engine**:
-    the same reading `/assets` makes, so a saved filter, a chip and a ticked column narrow this wall
-    by its files' facets exactly as they filter the library. A mark is a piece of a file, so "the
-    loops whose file is tagged beach and rated four or more" is the whole of what a file filter
-    can mean here; the marks themselves have no facets.
-
-    It cannot mistake one of this route's own parameters for a filter: `person`, `tag`, `site`,
-    `collection`, `asset_id`, `sort`, `from`, `limit` and `offset` are none of them a word the
-    language answers to (the query-parameter gate holds that from the parser's side).
-
-    The TAG is deliberately absent. It is handed to the listing on its own and answered per mark
-    by the statement; in the filter it would lose the marks tagged in their own right. See
-    `loops_query` for why it is not a widening of the filter.
-
-    Grants nothing, like every filter: it is one conjunct over the set this viewer may already
-    see, so a filter naming files nobody shared filters to none of their marks.
-    """
+    """Which files this wall's marks may be cut from: the related filter and the viewer's filter."""
     asked = await engine.constrain(viewer, request.query_params)
     related = related_filter(person=person, site=site, collection=collection)
     return asked if related is NO_FILTER else asked.also(related.where)
@@ -202,34 +148,8 @@ async def list_loops(
     collection: Annotated[str | None, Query()] = None,
     called: Annotated[str | None, Query(max_length=MAX_LOOP_NAME)] = None,
 ) -> LoopList:
-    """One page of the loops this viewer may see.
-
-    `asset_id` narrows to one file, which is what the player asks for when it draws the marks on a
-    timeline. `person`, `tag`, `site` and `collection` narrow to the loops cut from the files
-    that thing reaches, which is what makes this a related list as well as a wall.
-
-    `collection` is there for a collection's Loops tab; the kernel's `_LEAF` understands the word.
-    See `TABS_FOR` in the related slice for why the tab exists at all.
-
-    `from` names a mark to start the page at, instead of an offset. This wall is drawn by the media
-    grid, which pages by whole rows, so how many marks a page holds depends on the size of the
-    screen and a page NUMBER is not a durable thing to put in an address. It is resolved against
-    this same question, because a position only means anything in the list it was taken from.
-
-    A `from` that resolves to nothing serves the page it was on (`near`), or the TOP,
-    rather than refusing: a mark that has since
-    been moved, deleted or concealed is a stale link and not an error. It is also why a caller
-    cannot learn anything by trying ids: a mark being kept back and one that never existed give
-    the same answer, and both are the first page.
-
-    **And by the query language**, which is what puts the bar's filters on this wall: every file
-    filter the library takes narrows the marks to those cut from matching files. See `_narrowing`.
-
-    `called` is the wall's search box: the marks whose own name, or whose file's name, holds the
-    words, in any case. A mark with no name of its own is drawn under its file's name, so the box
-    has to find it by that. Not `name`, which the query language already reads as a FILE's title
-    off this same address and which would narrow the named marks away with the rest.
-    """
+    """One page of the loops this viewer may see; `asset_id`, `person`, `tag`, `site`, `collection`
+    narrow it, `from` starts the page at a mark, `called` searches mark and file names."""
     if sort not in ENTITY_SORT_KEYS:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"unknown sort {sort!r}")
     narrowing = await _narrowing(
@@ -254,8 +174,7 @@ async def list_loops(
         sort=sort,
         asset_id=asset_id,
         asset_filter=narrowing,
-        # The tag, on its own and never in the filter: the statement answers it per mark, both the
-        # marks carrying it and the marks of videos carrying it. See `loops_query`.
+        # The tag stays out of the filter: the statement answers it per mark (see `loops_query`).
         tag=tag,
         called=typed,
     )
@@ -275,13 +194,7 @@ async def create_loop(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> LoopSummary:
-    """Save the stretch somebody marked in the player.
-
-    The file is resolved through the access layer first (`open_asset`, so a concealed one is a 404
-    rather than a placeholder), which is what stops a loop being written against a file this user
-    may not be shown. Its duration comes from that same read, so the service can refuse an end past
-    the end of the file without a second query.
-    """
+    """Save the stretch somebody marked in the player; a concealed file is a 404."""
     asset = await access.open_asset(viewer, body.asset_id)
     if asset is None:
         raise _missing()
@@ -318,22 +231,7 @@ async def loop_thumb(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> Response:
-    """The mark's own picture: a frame of its video, at the moment the mark begins.
-
-    **The moment comes from the row, never from the caller.** A still is filed under `(asset_id,
-    kind, params)`, so a moment named in a query string would let anybody ask for an unbounded
-    number of distinct pictures of one file and fill the cache with them. Asked this way, the set of
-    stills a library can be made to hold is bounded by the number of marks somebody actually saved.
-
-    There is no permission rule here and there does not need to be one. `_require_loop` resolves the
-    mark through the join to the visible set, so a mark of a video this user may not see is a 404
-    before a picture is looked for, and the picture itself is then served by the same scoped read
-    the video's own still goes through, which checks the video again.
-
-    A 404 covers "not allowed", "no such mark" and "not built yet" alike, exactly as the asset
-    still's does. The last of those is ordinary rather than exceptional: the client falls back to
-    the video's own picture until the sweep has been round.
-    """
+    """The mark's own picture, at the moment the mark begins; the moment comes from the row only."""
     loop = await _require_loop(access, viewer, loop_id)
     try:
         served = await access.serve_derivative(
@@ -372,27 +270,8 @@ async def forget_loops(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> BulkWriteDone:
-    """Forget a selection of marks, in ONE request. No file is touched and no byte moves.
-
-    **This is the only way to forget a mark.** There is no per-row DELETE route: the wall forgets
-    in bulk, and a route nothing calls is one the reachability gate refuses. The shared Delete verb
-    is hidden on the Loops wall deliberately, because it removes the FILE; and a screen's extra menu
-    row is drawn per tile. Between them a selection of thirty marks had nothing at all to press,
-    which is what this route is for.
-
-    Answered as `BulkWriteDone`, the shape every other bulk write in Sift answers, so the screen
-    says what it says everywhere else: what went, what did not, and why. A mark that is not this
-    user's to remove is SKIPPED and counted rather than refusing the whole call: one row
-    somebody else made should not stop the twenty-nine they did.
-
-    "Not yours" and "no such loop" are one answer here, as they are on the single route: telling
-    them apart would say the mark exists.
-
-    !! `forget` is a literal segment where `{loop_id}` would match, and FastAPI resolves in
-    DECLARATION order, so this is only safe because no `POST /loops/{loop_id}` exists. If one is
-    ever added it must be declared after this, or a mark whose id was `forget` is the least of it:
-    every forget request would be read as a write to one loop.
-    """
+    """Forget a selection of marks in one request; marks not yours are skipped and counted.
+    Must stay declared before any `POST /loops/{loop_id}`, or that route would take `forget`."""
     wanted = list(dict.fromkeys(body.loop_ids))
     mine: list[str] = []
     for loop_id in wanted:
@@ -406,8 +285,7 @@ async def forget_loops(
         skipped=skipped,
         reason=OUT_OF_REACH if skipped else None,
         reason_many=OUT_OF_REACH_MANY if skipped else None,
-        # Never the vault: a mark reaches a user only through the file it points at, so one in
-        # a locked vault is not a row this user was shown in the first place.
+        # Never the vault: a locked mark was never shown to this user.
         vault_locked=False,
     )
 
@@ -431,12 +309,7 @@ async def set_loop_tag(
     access: Annotated[Repository, Depends(wiring.access)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> list[TagOnLoop]:
-    """Tag the moment.
-
-    An admin's, like every other tag write in the application. Making a mark is not (it is closer
-    to a rating), but a TAG is shared vocabulary: it changes what everybody's searches return, and
-    it does that whoever put the mark there.
-    """
+    """Tag the moment; admin-only, as a tag is shared vocabulary."""
     await _require_loop(access, viewer, loop_id)
     await service.set_tag(loop_id, body.tag_id, on=body.add)
     return [TagOnLoop(id=row["id"], name=row["name"]) for row in await service.tags_on(loop_id)]

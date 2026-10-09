@@ -1,17 +1,4 @@
-/*
- * A screen that is a panel is ONLY ever a panel.
- *
- * An asset and settings each have a real address. Answering it two ways (a panel over the screen
- * you were on when reached from inside the app, and a full page of its own when opened directly or
- * refreshed) is one address rendering two different screens, and refreshing while watching
- * something would replace the player with a different one.
- *
- * The behaviour is covered in a browser (`e2e/modal-only.spec.ts`). This is the other half: the
- * shape that makes it possible. A route can only draw a page form if it renders the content itself,
- * so no route may import what a panel draws, and the two routes at panel addresses must do the one
- * thing they are for. Static, because the day somebody adds a third panel and gives it a page, no
- * behavioural test exists yet to catch it.
- */
+/* A screen that is a panel is ONLY ever a panel. */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -22,12 +9,7 @@ import { describe, expect, it } from 'vitest';
 const SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ROUTES = join(SOURCE, 'routes');
 
-/**
- * What a panel draws, which therefore belongs to the panel and to nothing else.
- *
- * Named by component rather than by address: the failure is a route rendering this content, and
- * that is true whichever address somebody hangs it on.
- */
+/** What a panel draws, which therefore belongs to the panel and to nothing else. */
 const PANEL_CONTENT = ['AssetView', 'SettingsShell', 'SettingsPane'];
 
 /** The routes that exist only to put a panel up, and the function each has to call to do it. */
@@ -75,20 +57,7 @@ describe('screens that are panels', () => {
 	});
 });
 
-/*
- * ...AND NOTHING LINKS TO ONE WITH A BARE ANCHOR.
- *
- * The other way to get the page form is to link to it. `/asset/{id}` is a real address and always a
- * panel, but WHAT IS BEHIND IT is decided by how it was reached: a tile pushes the address and the
- * screen stays mounted underneath, while an anchor runs the route, which exists for somebody
- * arriving cold, so it marks the panel as having nothing behind it. The screen underneath is torn
- * down and rebuilt, and closing afterwards goes to the library instead of back: from the
- * downloads queue, or from the source link in a clip's file facts, where it would blank the whole
- * wall behind the panel.
- *
- * Static, and it has to be: the difference is invisible in the markup, both forms render, both
- * navigate, and the only tell is what is left underneath afterwards.
- */
+/* ...AND NOTHING LINKS TO ONE WITH A BARE ANCHOR. */
 
 function svelteFilesUnder(directory: string): string[] {
 	const found: string[] = [];
@@ -101,19 +70,7 @@ function svelteFilesUnder(directory: string): string[] {
 	return found;
 }
 
-/**
- * Every anchor's own start tag, so the check is PER LINK rather than per file.
- *
- * !! ASKED OF THE FILE, THIS GATE WOULD SURVIVE ITS OWN MUTATION TEST. One component draws two
- * asset links; a bare anchor in place of the second leaves the first one's `AssetLink` still in the
- * file, the substring still matches, and the gate would pass on markup carrying exactly the fault
- * it exists to refuse. A file-level answer to a per-element question is
- * not a weaker gate, it is a gate that stops working the moment a screen has two of anything.
- *
- * Brace depth rather than the first `>`: `onclick={(event) => openAssetInstead(...)}` has an arrow
- * in it, and the address may be a template string with `${...}` in it. Both live inside braces, so
- * counting depth finds the real end of the start tag where a search for `>` finds the arrow.
- */
+/** Every anchor's own start tag, so the check is PER LINK rather than per file. */
 function anchorTags(source: string): string[] {
 	const tags: string[] = [];
 	for (let at = source.indexOf('<a'); at !== -1; at = source.indexOf('<a', at + 2)) {
@@ -133,20 +90,12 @@ function anchorTags(source: string): string[] {
 	return tags;
 }
 
-/** Whether one anchor's start tag points at an asset. The plural spelling too: `/assets/{id}`
- *  names no route in this application at all, and a link written that way is still a link. */
+/** Whether one anchor's start tag points at an asset. */
 function linksToAnAsset(tag: string): boolean {
 	return /href=[{"`][^]*?\/assets?\//.test(tag);
 }
 
-/**
- * The rule an asset link has to apply, on the anchor itself.
- *
- * `AssetLink` is the component every link that can use one uses; this is for the handful that keep
- * their own markup because the screen around them styles it: a caller's class does not reach
- * inside a component's scoped stylesheet, so moving those into one would have silently unstyled
- * four screens.
- */
+/** The rule an asset link has to apply, on the anchor itself. */
 const OPENS_IT_PROPERLY = 'openAssetInstead';
 
 const MARKUP = svelteFilesUnder(SOURCE).filter(

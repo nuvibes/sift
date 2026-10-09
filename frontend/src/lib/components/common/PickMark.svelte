@@ -10,22 +10,10 @@
 		states: ['filter', 'swap', 'refused']
 	} satisfies DesignEntry;
 
-	/**
-	 * What a pick on a wall is for. The look is one; only the mark in the middle says which.
-	 *
-	 * `refused` is the same shape in the danger colour: in swap mode, a card or a tile that will
-	 * NOT go (Kept local, or "Don't swap", on it or on something it is filed under). One state of
-	 * this thing rather than a second overlay, so a refused card and a picked one are the same
-	 * mark read two ways, and a thing is never both: what will not go cannot be picked.
-	 */
+	/** What a pick is for; `refused` (will not swap) is the same mark in the danger colour. */
 	export type PickPurpose = 'filter' | 'swap' | 'refused';
 
-	/**
-	 * The mark for each purpose, and both are FILLED shapes: a mark that is only an outline reads
-	 * lighter than one that is solid at the same size, so a swap pick would look fainter than a
-	 * filter pick. The swap's arrows have no filled form of their own, so theirs is the arrows
-	 * inside a filled disc.
-	 */
+	/** Each purpose's mark, all filled so no pick looks fainter. */
 	export const PICK_MARKS: Readonly<Record<PickPurpose, IconName>> = {
 		filter: 'filter_alt',
 		swap: 'swap_horizontal_circle',
@@ -36,17 +24,9 @@
 
 <script lang="ts">
 	/*
-	 * WHY NOT BITS-UI: a wash and a glyph over a picture. There is no behaviour in it and bits-ui has no primitive for one.
-	 *
-	 * A thing picked on a wall: the accent wash over its picture and the filled mark in the middle.
-	 *
-	 * One component for a media tile and an entity card, so a pick looks the same whatever it was
-	 * picked on and whatever it is for. It fills the nearest positioned box it is placed in, the
-	 * picture, and takes no presses: pressing the thing again is what takes the pick off.
-	 *
-	 * Two things are the host's to say, as custom properties on an ancestor, because only the host
-	 * knows them: `--pick-radius` (its picture's corner, where nothing clips it) and `--pick-layer`
-	 * (the layer above the picture and under its own corner controls).
+	 * WHY NOT BITS-UI: a wash and a glyph over a picture. There is no behaviour in it and bits-ui
+	 * has no primitive for one. A picked thing on a wall: the accent wash and its mark, filling the
+	 * nearest positioned box. The host sets `--pick-radius` and `--pick-layer`.
 	 */
 	import Icon from '$lib/components/Icon.svelte';
 
@@ -62,8 +42,7 @@
 </span>
 
 <style>
-	/* A wash strong enough to find a picked thing at a glance on a wall of photographs, and still
-	   light enough that the picture under it is recognizable. */
+	/* Strong enough to find, light enough to see through. */
 	.pick {
 		position: absolute;
 		inset: 0;
@@ -75,8 +54,7 @@
 		pointer-events: none;
 	}
 
-	/* The accent, with the scrim's shadow that keeps it legible over a pale picture. No ground of
-	   its own: the wash already tints the whole picture. */
+	/* The accent with the scrim's shadow, no ground. */
 	.mark {
 		display: grid;
 		place-items: center;

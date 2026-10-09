@@ -2,17 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setCsrfToken } from '$lib/api/client';
 import { Refused, aboutQuarantined, explain, type Quarantined } from './refused.svelte';
 
-/* What Sift would not take, as the Maintenance screen sees it.
- *
- * Two things are worth testing here and neither is the fetching. The first is that the two piles
- * stay apart: a file Sift MOVED is in a folder of its own and can be deleted from this screen, and
- * a file Sift LEFT ALONE is untouched in somebody's library and cannot, so a store that merged
- * them would make one button mean two things.
- *
- * The second is what the screen says about a file it knows nothing about. A refusal recorded before
- * notes existed has neither a reason nor an origin, and composing the two unknowns would produce
- * a sentence that says the same thing twice and reads like a fault.
- */
+/* What Sift would not take, as the Maintenance screen sees it. */
 
 const fetchMock = vi.fn();
 
@@ -176,8 +166,7 @@ describe('acting on one', () => {
 	});
 
 	it('escapes a name before putting it in the address', async () => {
-		/* The name is whatever is on disk and it goes into a URL. A space or a `#` left raw would
-		   address a different file, or none. */
+		/* The name is whatever is on disk and it goes into a URL. */
 		answers({ ok: true, body: {} }, { ok: true, body: QUARANTINE }, { ok: true, body: SAVES });
 		const view = new Refused();
 
@@ -255,14 +244,14 @@ describe('saying why in words rather than in the name of a rule', () => {
 	});
 
 	it('makes a reason it has never seen readable rather than printing the rule name', () => {
-		/* A reason added to the gate and not to the list is the ordinary way this goes stale, and the
-		   screen showing `some_new_rule` is worse than it showing "some new rule". */
+		/* A reason added to the gate and not to the list is the ordinary way this goes stale,
+		   and the screen showing `some_new_rule` is worse than it showing "some new rule". */
 		expect(explain('some_new_rule', null)).toBe('Some new rule');
 	});
 
 	it('says a file with no note is unexplained once, not twice', () => {
-		/* Composing the unknowns would produce "Sift did not record why, from somewhere Sift did not
-		   record", which says the same thing twice and reads like a fault. */
+		/* Composing the unknowns would produce "Sift did not record why, from somewhere Sift did
+		   not record", which says the same thing twice and reads like a fault. */
 		const line = aboutQuarantined({ ...MOVED, explained: false }, 'last Tuesday');
 
 		expect(line).toBe("Sift didn't record why this was quarantined — last Tuesday");

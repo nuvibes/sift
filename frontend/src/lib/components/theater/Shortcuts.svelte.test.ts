@@ -1,11 +1,6 @@
 /*
- * THE KEYS PANEL LISTS EVERY KEY THAT WORKS IN THEATER, generated from the declarations.
- *
- * A key named by hand is a key list that misses others, such as Escape, read by the Theater screen
- * itself, and the three lock keys. Two halves are held here. The panel is exactly the declared keys
- * of two areas (Theater's, and "Anywhere", which the shell handles on every screen). And every key
- * the screen READS is among them, found in the screen's own source: a key the screen starts reading
- * from some other area fails here instead of silently going unlisted.
+ * THE KEYS PANEL lists exactly Theater's and "Anywhere"'s keys, and every key the screen reads is
+ * among them.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -26,7 +21,6 @@ afterEach(() => {
 	host?.remove();
 });
 
-/** What the panel draws, one row per key: the keys as shown and the sentence beside them. */
 function listed(): string[] {
 	host = document.createElement('div');
 	document.body.append(host);
@@ -48,14 +42,12 @@ it('lists exactly the keys declared for Theater and for anywhere', () => {
 it('lists every key the Theater screen reads', () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const screen = readFileSync(join(here, '../../../routes/theater/+page.svelte'), 'utf8');
-	// A key is read two ways: matched or looked up by name, and as a row of the surface's own table
-	// of actions (the same table the phone's remote reads).
 	const read = [
 		...screen.matchAll(
 			/(?:matches\(event, |shortcut\()'([a-zA-Z.]+)'|'(theater\.[a-zA-Z]+)':\s*\(/g
 		)
 	].map((one) => one[1] ?? one[2]);
-	// Known positives, so a pattern that stopped matching cannot pass on nothing found.
+	// Known positives, so a pattern that stopped matching cannot pass.
 	expect(read).toContain('theater.fill');
 	expect(read).toContain('app.dismiss');
 
@@ -64,19 +56,11 @@ it('lists every key the Theater screen reads', () => {
 	expect(missing, 'the screen reads keys its own key panel never lists').toEqual([]);
 });
 
-/*
- * THE PANEL STAYS UNDER THE BAR.
- *
- * A box wearing a class the app's stylesheet gives to its dialogs (fixed, centred on the window, as
- * tall as the window) would lift the panel out of the bar and run it off the bottom of the screen
- * with nothing to scroll it. No class on the panel's own box may be one the app's stylesheet
- * dresses globally.
- */
+/* THE PANEL STAYS UNDER THE BAR: no class on its box may be one the app dresses globally. */
 it('wears no class the app stylesheet dresses globally', () => {
 	const here = dirname(fileURLToPath(import.meta.url));
 	const css = readFileSync(join(here, '../../../app.css'), 'utf8');
 	const global = new Set([...css.matchAll(/^\.([a-z][a-z0-9-]*)/gm)].map((one) => one[1]));
-	// A known positive, so a pattern that stopped matching cannot pass on an empty set.
 	expect(global).toContain('sheet');
 
 	listed();

@@ -1,17 +1,5 @@
-/* A task's When has two doors: the list on Tasks, and the pane that owns the thing the task does.
- *
- * Tasks draws every row by itself, from the list the server sends. The owning panes do not: each
- * writes its `<TaskWhen>` by hand, in the block about the thing the task works on, and a pane that
- * leaves it out simply has no When: nothing on the screen says a row is missing. So the four
- * owners of the timed clean-ups are held here: each draws its task's row inside the block a search
- * result names, and each declares that block in its copy module so the search can find it there.
- *
- * ## Why the source and not the rendered pane
- *
- * Maintenance and Privacy draw their blocks behind loads and an admin check, so a rendered test
- * sees only what today's mocks let through. What is asserted is what the pane DECLARES, which is
- * the same reason Activity's pointer test gives. Updates also has a rendered test of its own.
- */
+/* A task's When has two doors: the list on Tasks, and the pane that owns the thing the task
+ * does. */
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 
@@ -26,9 +14,6 @@ interface Owner {
 const OWNERS: Owner[] = [
 	// Backup is not here: the backup task's row lives on Tasks and nowhere else, and the pane's own
 	// line points at it, since two copies of one control are how two screens come to disagree.
-	// Privacy and Updates are not here: the search-history clean-up and the update check run in the
-	// background, and a task nobody needs to set is drawn on no pane.
-	// Music: the fingerprint task's row is on the section that owns the feature.
 	{ pane: 'Music', task: 'music', block: 'music.fingerprints', section: 'music' },
 	// And the lookup task's row, beside the switch that says whether anything may be sent.
 	{ pane: 'Music', task: 'music-lookup', block: 'music.acoustid-when', section: 'music' }
@@ -60,9 +45,8 @@ describe.each(OWNERS)('$pane', ({ pane, task, block, section }) => {
 	});
 });
 
-/* Upkeep nobody times (the two prunes and the update check) runs on its default When and shows in
- * Activity; the server leaves it out of the task list, and no pane may draw a row for it. Read from
- * the source for the reason above: a row for a task the list leaves out draws as an empty label. */
+/* Upkeep nobody times (the two prunes and the update check) runs on its default When and shows
+ * in Activity; the server leaves it out of the task list, and no pane may draw a row for it. */
 const UNSHOWN = ['quarantine-prune', 'search-records-prune', 'update-check'];
 
 it('draws no row for upkeep nobody times, on any pane', () => {
@@ -75,10 +59,8 @@ it('draws no row for upkeep nobody times, on any pane', () => {
 	expect(drawn).toEqual([]);
 });
 
-/* Presses live on Tasks. Every other pane that draws a task's row draws it without the press, so a
- * task is started from one place and the owning pane keeps the choice and the facts. Read from the
- * source, every `<TaskWhen>` a pane writes, because a press drawn on a pane nobody opened in a test
- * is a press all the same. Import tasks (`Importing`) is part of Tasks, mounted by it. */
+/* Presses live on Tasks. Every other pane that draws a task's row draws it without the press, so
+ * a task is started from one place and the owning pane keeps the choice and the facts. */
 const ON_TASKS = ['ScheduledTasks.svelte', 'Importing.svelte'];
 
 it('draws a press on no pane but Tasks', () => {

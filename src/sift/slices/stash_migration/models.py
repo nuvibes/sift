@@ -9,16 +9,13 @@ from pydantic import ConfigDict, Field
 
 from sift.kernel.wire import Wire
 
-#: The longest path a person can type. Longer is not a path anybody typed.
 MAX_PATH = 1024
 
-#: The longest name a library may be given here: the libraries feature's own limit checks it.
 MAX_NAME = 64
 
 
 class ReadStash(Wire):
-    """Stash's database file, or the folder Stash keeps it in, by where it is on the device Sift
-    runs on. A folder is what a browser can pick; the database is found in it by name."""
+    """Stash's database file, or its folder on this device, where it is found by name."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -26,8 +23,7 @@ class ReadStash(Wire):
 
 
 class StashUnattached(Wire):
-    """How many People, Sites and Tags a Stash library made here that Stash attached to nothing
-    are still here, by kind: the rows each wall lists under `created=stash_unattached`."""
+    """How many People, Sites and Tags from Stash attached to nothing are still here, by kind."""
 
     people: int = 0
     sites: int = 0
@@ -42,24 +38,15 @@ class StashRan(Wire):
 
 
 class StashRead(Wire):
-    """What a Stash database holds, counted, and which folder here each of its folders is.
-
-    `summary` is every count the screen shows before a run (`reader.Summary`). `mapping` is Stash's
-    folder beside the folder in this library it matched, for each one that matched.
-    """
+    """What a Stash database holds, counted, and which folder here each of its folders matched."""
 
     summary: dict[str, Any]
     mapping: dict[str, str]
-    #: The Stash database this read came from, so a screen opened later names what it shows.
     source: str | None = None
-    #: The run over this read, once one has finished. None before any has.
     ran: StashRan | None = None
-    #: How many scenes and pictures wait for their files now. Falls as they arrive.
     waiting: int = 0
-    #: Stash's blobs folder, offered or chosen, where Stash keeps pictures as files rather than in
-    #: its database; None where every picture is in the database (nothing to choose).
+    #: Where Stash keeps pictures as files; None when all are in the database.
     blobs: str | None = None
-    #: The rows Stash attached to nothing, still here. Falls as they are deleted.
     unattached: StashUnattached = Field(default_factory=StashUnattached)
 
 
@@ -70,8 +57,7 @@ class StashRunStarted(Wire):
 
 
 class BringStash(Wire):
-    """How to bring the last read in: whether with the pictures Stash kept on performers, studios
-    and tags, and from which folder where Stash keeps them as files."""
+    """Bring the last read in, with or without Stash's pictures and from which folder."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -80,22 +66,20 @@ class BringStash(Wire):
 
 
 class NewStashLibrary(BringStash):
-    """A library to make for the last read, by name. The folder it goes in is the server's."""
+    """A library to create for the last read, by name."""
 
     name: str = Field(min_length=1, max_length=MAX_NAME)
 
 
 class StashSwitch(Wire):
-    """The new library is made and the switch to it is arranged: the screen waits for Sift to
-    come back on it, as it does for any library it opens."""
+    """The new library is created and the switch to it arranged."""
 
     switching: bool
     library: str
 
 
 class StashWaitingMarker(Wire):
-    """A marker that waits with its video: its title (its first tag where it has none), where it
-    starts and where it ends, in milliseconds; no end for a moment."""
+    """A marker waiting with its video: title, start and end in milliseconds."""
 
     title: str
     start_ms: int
@@ -103,11 +87,7 @@ class StashWaitingMarker(Wire):
 
 
 class StashWaitingRow(Wire):
-    """One scene or picture that waits for its file, and what waits on it.
-
-    `paths` are where Stash had its files, as Stash spelt them. `kind` is `scene` or `image`, in
-    Stash's words; the screen calls them files and pictures.
-    """
+    """One scene or picture waiting for its file, with Stash's own paths and kind."""
 
     id: str
     kind: str

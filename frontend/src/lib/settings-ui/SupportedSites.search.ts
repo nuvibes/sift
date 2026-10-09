@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* What a pasted link will do, per Site: the words, and what somebody can type to find them. Drawn
- * on Sites, beside the cookies and the tunnels of the same Sites. "What can Sift fetch" sounds
- * like a downloading question, but the two panes split on a rule: Downloads is what is set once
- * about downloading, and a table of what each Site supports, needs and refuses is a fact about
- * the Sites. The key follows the table: a search result that lands on a pane not drawing the
- * thing it named is worse than no result, because it teaches somebody the wrong place to look.
- *
- * ONE COPY MODULE PER PANE. `SupportedSites.svelte` draws every word it adds from `COPY`, and the
- * search entry is built from the same object. The cookies badges are `NEED_BADGE`'s, shared with
- * the cookies sheet, and each Site's own sentences are the server's.
- */
+/* What a pasted link will do, per Site: the words, and what somebody can type to find them. */
 import type { Searchable } from './search';
 
 export const COPY = {

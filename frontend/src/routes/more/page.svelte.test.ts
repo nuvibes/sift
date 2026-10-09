@@ -1,10 +1,4 @@
-/*
- * More, the phone's list of Settings and the account.
- *
- * What would be silent if it broke: a section of Settings missing from the list (the phone has no
- * other way to it), a row that follows its link instead of opening the section over this list
- * (Back would then have nothing to return to), and a guest offered an admin's section.
- */
+/* More, the phone's list of Settings and the account. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

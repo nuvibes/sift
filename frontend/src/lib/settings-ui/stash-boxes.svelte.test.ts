@@ -1,10 +1,4 @@
-/* The stash-box store: what it sends, and what it refuses to keep hold of.
- *
- * The interesting half is not the requests: it is the key. A key is typed in once and sealed on
- * the server, and nothing in this store may hold one afterwards: not in a field, not in a cached
- * response, not in anything a screenshot or a saved page could carry away. That is asserted here
- * rather than trusted, because the failure is silent and permanent.
- */
+/* The stash-box store: what it sends, and what it refuses to keep hold of. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { api } from '$lib/api/client';
@@ -36,7 +30,6 @@ it('holds whether a box has a key and never the key itself', async () => {
 
 	expect(boxes.items[0].has_key).toBe(true);
 	// Every field of everything the store holds, checked against a key that was never sent to it.
-	// The server has no shape that carries one outward; this is the client half of the same rule.
 	expect(JSON.stringify(boxes.items)).not.toContain('api_key');
 });
 
@@ -62,8 +55,7 @@ it('sends only the field being changed, so mentioning one does not blank the oth
 });
 
 it('reports a failure as a sentence rather than throwing at the screen', async () => {
-	// This pane is where somebody comes to find out why nothing works. A thrown error here leaves a
-	// blank section and no explanation, which reads as Sift being broken rather than as a refusal.
+	// This pane is where somebody comes to find out why nothing works.
 	vi.spyOn(api, 'get').mockRejectedValue(new Error('nope'));
 	const boxes = new StashBoxes();
 
@@ -75,9 +67,7 @@ it('reports a failure as a sentence rather than throwing at the screen', async (
 
 it('hands what was typed over as a parameter rather than pasting it into the address', async () => {
 	// A name with an ampersand in it is ordinary, and pasted into an address it ends the parameter
-	// and the rest of the name becomes something else. Escaping is the client's job and is proved
-	// there; what matters here is that this call gives it the chance: a term built into the path
-	// is already past the one place that escapes anything.
+	// and the rest of the name becomes something else.
 	const get = vi.spyOn(api, 'get').mockResolvedValue({ answers: [] });
 	const boxes = new StashBoxes();
 

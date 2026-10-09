@@ -215,36 +215,48 @@ def _shell_masked(lines: list[str]) -> list[str]:
             if line.strip() == heredoc:
                 heredoc = None
             continue
-        chars = list(line)
-        i = 0
-        while i < len(line):
-            c = line[i]
-            if quote == "'":
-                quote = "" if c == "'" else quote
-            elif quote == '"':
-                if c == "\\":
-                    i += 1
-                elif c == '"':
-                    quote = ""
-            elif c == "\\":
-                i += 1
-            elif c in "'\"":
-                quote = c
-            elif c == "#" and (i == 0 or line[i - 1].isspace()):
-                break
-            elif (
-                line.startswith("--", i)
-                and (i == 0 or line[i - 1].isspace())
-                and (i + 2 == len(line) or line[i + 2].isspace())
-            ):
-                chars[i] = chars[i + 1] = "x"
-                i += 1
-            elif line.startswith("<<", i) and not line.startswith("<<<", i):
-                found = _HEREDOC.match(line, i)
-                heredoc = found.group(1) if found else heredoc
-            i += 1
-        out.append("".join(chars))
+        masked, quote, heredoc = _shell_masked_line(line, quote, heredoc)
+        out.append(masked)
     return out
+
+
+def _shell_masked_line(line: str, quote: str, heredoc: str | None) -> tuple[str, str, str | None]:
+    """One line masked, with the quote and heredoc it leaves open."""
+    chars = list(line)
+    i = 0
+    while i < len(line):
+        c = line[i]
+        if quote:
+            i, quote = _in_quotes(c, i, quote)
+        elif c == "\\":
+            i += 1
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or line[i - 1].isspace()):
+            break
+        elif (
+            line.startswith("--", i)
+            and (i == 0 or line[i - 1].isspace())
+            and (i + 2 == len(line) or line[i + 2].isspace())
+        ):
+            chars[i] = chars[i + 1] = "x"
+            i += 1
+        elif line.startswith("<<", i) and not line.startswith("<<<", i):
+            found = _HEREDOC.match(line, i)
+            heredoc = found.group(1) if found else heredoc
+        i += 1
+    return "".join(chars), quote, heredoc
+
+
+def _in_quotes(c: str, i: int, quote: str) -> tuple[int, str]:
+    """One character inside a quote: where the scan goes on, and the quote still open."""
+    if quote == "'":
+        return i, "" if c == "'" else quote
+    if c == "\\":
+        return i + 1, quote
+    if c == '"':
+        return i, ""
+    return i, quote
 
 
 def _yaml_masked(lines: list[str]) -> list[str]:
@@ -351,14 +363,7 @@ def file_dashes(path: str, text: str) -> list[tuple[int, str]]:
     lines = list(original)
     if not any(refused(line) for line in lines):
         return []
-    if path.endswith(".py"):
-        lines = _python_sql_masked(text, lines)
-    elif path.endswith(".sh"):
-        lines = _shell_masked(lines)
-    elif path.endswith((".yml", ".yaml")):
-        lines = _yaml_masked(lines)
-    elif path.endswith(".md"):
-        lines = _markdown_masked(lines)
+    lines = _masked(path, text, lines)
     found: list[tuple[int, str]] = []
     for number, line in enumerate(lines, 1):
         if _BANNER.match(line):
@@ -368,6 +373,19 @@ def file_dashes(path: str, text: str) -> list[tuple[int, str]]:
         if refused(line):
             found.append((number, original[number - 1]))
     return found
+
+
+def _masked(path: str, text: str, lines: list[str]) -> list[str]:
+    """The lines with what each kind of file says in code rather than in words masked out."""
+    if path.endswith(".py"):
+        lines = _python_sql_masked(text, lines)
+    elif path.endswith(".sh"):
+        lines = _shell_masked(lines)
+    elif path.endswith((".yml", ".yaml")):
+        lines = _yaml_masked(lines)
+    elif path.endswith(".md"):
+        lines = _markdown_masked(lines)
+    return lines
 
 
 def listed(root: Path) -> list[str]:

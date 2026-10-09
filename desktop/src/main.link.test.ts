@@ -1,7 +1,6 @@
-/* What `main.ts` answers when the backend asks for an act only this shell can do, for an admin on
- * another computer (`shelllink.ts`): refused in words before anything stops, or answered first and
- * done after. The scene and its doubles are `test/main-scene.ts`, as for `main.test.ts`.
- */
+/* What `main.ts` answers when the backend asks for an act only this shell can do, for an admin
+ * on another computer (`shelllink.ts`): refused in words before anything stops, or answered
+ * first and done after. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

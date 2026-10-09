@@ -12,28 +12,10 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: there is no back button in it. This is either a link or a button depending on
-	   whether there is somewhere named to go, which is a decision about this app's navigation rather
-	   than a widget, and both halves are the site's own elements underneath. */
+	whether there is somewhere named to go; both are the site's own elements. */
 
-	/*
-	 * One step back, drawn the same way everywhere it appears.
-	 *
-	 * `to` decides what it is. Given a destination it is a link, which can be middle-clicked,
-	 * opened in a new tab and read as a link; given none it is a button that goes back, for where
-	 * "back" is the only answer (a modal's inner view, a wizard step). A `history.back()` from a
-	 * page opened directly would leave the app entirely, which is why a destination is preferred.
-	 *
-	 * A plain left-click on that link steps back when the previous screen is the place it names.
-	 * `/people` is a bare address, and a wall writes which rows it shows into the address it is
-	 * left at, so following the fixed href would lose the position; the browser's own step brings
-	 * back the page and its scroll. Where the browser cannot say where that screen sits, it goes to
-	 * the remembered address. The rule is `returnTo` in `navigation.svelte.ts`, shared with
-	 * `Breadcrumbs`. A middle-click, a modifier or arriving here directly still follows the href,
-	 * so it never walks somebody out of the app.
-	 *
-	 * The label is always written out: an arrow alone is ambiguous between the previous screen, the
-	 * parent and out of the thing you are inside.
-	 */
+	/* One step back: a link given `to`, else a button through history. A plain click on the link
+	 * steps back where that is the place it names (`returnTo`); the label is always written out. */
 	interface Props {
 		/** Where back IS. Absent makes this a button that returns through history instead. */
 		to?: string;
@@ -75,12 +57,7 @@
 {/if}
 
 <style>
-	/*
-	 * One rule for both elements, which is the point of writing it here.
-	 *
-	 * A link and a button must match: a button carries the browser's own font and background
-	 * unless told otherwise, and a copy per call site is a copy that forgets to tell it.
-	 */
+	/* One rule for both elements, so link and button match. */
 	.back {
 		display: inline-flex;
 		align-items: center;
@@ -113,8 +90,7 @@
 		transition: none;
 	}
 
-	/* A finger's height on a phone, where the way back is the press used most. The words keep
-	   their size; the press grows around them. */
+	/* A finger's height on a phone. */
 	@media (max-width: 767px) {
 		.back {
 			min-block-size: var(--touch-target);

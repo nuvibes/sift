@@ -35,13 +35,7 @@ def _named_before(old: Standing | None, person_id: str) -> bool:
 
 
 def _with_depth(configured: Configured, depth: Depth) -> Configured:
-    """The same settings, looked at as hard as this one file was asked for.
-
-    Only the depth changes. The sampling stays as the setting stated it and the density follows,
-    so asking for a deep look at a file on an install already set to deep is the same thing twice
-    rather than three times as much again, and asking for a fast look on that install gets the
-    install's ordinary pass back.
-    """
+    """The same settings at the depth asked for this one file; the density follows."""
     return replace(configured, depth=depth)
 
 
@@ -61,8 +55,7 @@ def _pass_record(
         settings_density=configured.density,
         # Cleared once the plan has run out, so a finished file carries no half-finished position.
         reached_ms=None if outcome.coverage >= 1.0 else outcome.reached_ms,
-        # Why a file with nobody in it has nobody in it, for its History: nobody there, or
-        # people too far away, told apart by reason.
+        # Why a file has nobody in it: nobody there, or people too far away.
         refused_small=outcome.refused_small,
         refused_closer=outcome.refused_closer,
         refused_largest=outcome.refused_largest,
@@ -109,8 +102,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         resume_from = await self._resume_point(asset_id, configured, again=again)
         outcome, recognizer = await self._read_faces(asset_id, configured, source, resume_from)
 
-        # Moments to look at, not cut short, nothing back: the file cannot be looked at, a verdict
-        # rather than "no faces", and what an earlier pass found stays.
+        # Moments to read, not cut short, nothing back: a verdict, and the earlier faces stay.
         if (
             outcome.frames_attempted > 0
             and outcome.frames_examined == 0
@@ -139,8 +131,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             asset_id, configured, track_ids, before, carried
         )
         status = await self._settle(asset_id)
-        # AFTER THE SETTLE, and ONLY WHAT IS NEW: a face found again with the name it carried is
-        # still reached by the receipt that named it (`face_successors`).
+        # After the settle, only what is new: a face found again stays reached by its receipt.
         new = {
             person_id: [
                 (track_id, asset_id, sure)
@@ -161,8 +152,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         """Run the pipeline over one file, from `resume_from` when a pass carries on."""
         asset = source.asset
         detector, recognizer = await self._models(configured)
-        # A file the previous model described is measured again FIRST: everything a rescan puts
-        # back is found by comparing descriptions, which must be this model's.
+        # A file the previous model described is measured again first, so descriptions compare.
         previous = await self._store.scan_of(asset_id)
         if previous is not None and previous.recognizer != recognizer.revision:
             await self._remeasure_file(asset_id, recognizer)
@@ -174,7 +164,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             density=configured.density,
             budget_seconds=configured.budget_seconds,
         )
-        # Named for the log a lost device leaves (`runner.IN_FLIGHT`), and only while it reads.
+        # Named for the log a lost device leaves (`runner.IN_FLIGHT`).
         reading = IN_FLIGHT.set(f"file {asset_id}")
         try:
             outcome = await pipeline.run(
@@ -198,11 +188,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         *,
         resume_from: int | None,
     ) -> tuple[list[str], Sequence[Standing], dict[str, Standing]]:
-        """Store what a pass found: `(track ids, the faces before, the faces carried across)`.
-
-        A whole pass replaces the file's faces and pairs each found again with the one it was
-        (`_carry_across`); a pass carrying on keeps every appearance and carries nothing.
-        """
+        """Store what a pass found: `(track ids, the faces before, the faces carried across)`."""
         carried: dict[str, Standing] = {}
         before: Sequence[Standing] = ()
         if resume_from is None:
@@ -226,18 +212,15 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     ) -> tuple[dict[str, list[tuple[str, float]]], list[tuple[str, str, str]]]:
         """Put back what was decided about a file's faces, then attribute the rest, in the order
         each step needs. Grows `carried`; answers what was attached and the box questions asked."""
-        # Before attribution: a face somebody answered for is not a question, and a guess must not
-        # overwrite a decision.
+        # Before attribution: a decision is not overwritten by a guess.
         decided = await self._set_aside_again(asset_id, track_ids)
         decided |= await self._name_again(asset_id, track_ids)
-        # A "no" does not take the face out of matching: refused as one person, it may be
-        # another, so `_attribute` reads the refusal and passes that person over.
+        # A "no" leaves the face in matching; `_attribute` passes that person over.
         await self._reject_again(asset_id, track_ids)
         matched = await self._attribute(
             [one for one in track_ids if one not in decided], configured, asset_id=asset_id
         )
-        # A confirmation the description could not pair is put back by the person where that is
-        # unambiguous (`_confirm_by_name`), first, so the face it takes is nobody else's to pair.
+        # A confirmation unpaired by description is put back by person where unambiguous.
         carried |= await self._confirm_by_name(
             asset_id, before, carried, decided, track_ids, matched
         )
@@ -245,11 +228,9 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         carried |= await self._carry_by_name(asset_id, before, carried, track_ids)
         # A face whose name somebody took back is asked about again, never named (`unmatch`).
         await self._still_asked(carried, matched)
-        # After attribution: a hand-made pile holds faces nobody has named, so a face just
-        # recognized has left it.
+        # After attribution: a hand-made pile holds only unnamed faces.
         await self._group_again(asset_id, [one for one in track_ids if one not in decided])
-        # The one face of a file a stash-box put somebody on, with nobody to compare it with: the
-        # box's question (`service_box`), after the arithmetic and before the settle counts it.
+        # The box's question for a lone face (`service_box`), before the settle counts it.
         boxed = await self._ask_for_the_boxes(
             await self._store.box_questions(
                 configured.recognizer, most=BOX_QUESTIONS_PAGE, asset_ids=[asset_id]
@@ -260,14 +241,8 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     async def _carry_across(
         self, asset_id: str, before: Sequence[Standing], track_ids: Sequence[str]
     ) -> dict[str, Standing]:
-        """Pair the appearances a rescan just found with the ones it replaced. New id to old.
-
-        By description within the file, through the rule every remembered decision is put back by
-        (`_already_decided`), and written down (`Store.write_successors`) so an Undo naming the old
-        face reaches the new one. The old standing comes back too: what the scan reads to keep a
-        taken-back name a question (`_still_asked`) and to leave a name it already carried
-        unrecorded.
-        """
+        """Pair the appearances a rescan just found with the ones it replaced, by description
+        (`_already_decided`), written down for an Undo. New id to old."""
         if not before or not track_ids:
             return {}
         pairs = await self._already_decided(track_ids, [(one, one.vector) for one in before])
@@ -283,20 +258,8 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         track_ids: Sequence[str],
         matched: dict[str, list[tuple[str, float]]],
     ) -> dict[str, Standing]:
-        """Put back a confirmation the description could not pair, ONLY where nothing else fits.
-
-        `_name_again` pairs a person's confirmation with the face found again by description, at
-        `tuning.ALREADY_DECIDED`. A pass over a video at another depth describes the same face too
-        differently, the confirmation is not put back, and the name returns as Sift's own guess,
-        with a fresh "Sift recognized X here" for a face somebody had confirmed.
-
-        A confirmation is somebody's decision, so it moves by the person only when there is exactly
-        one place for it: ONE confirmed face of that person in this file that found no pair, and
-        ONE face found again that no pair claimed and that the arithmetic put on that same person.
-        Two of either and nothing is moved: which face was confirmed is then a guess, and a guess
-        is what a confirmation exists to replace. Then it is done as `_name_again` does it: named as
-        theirs, the file's pictures of them handed to the new face, and no receipt for the match.
-        """
+        """Put back a confirmation the description could not pair, only where exactly one
+        confirmed face of that person went unpaired and exactly one new face carries her."""
         paired = {old.track_id for old in carried.values()}
         lost: dict[str, list[Standing]] = {}
         for old in before:
@@ -347,22 +310,10 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         carried: Mapping[str, Standing],
         track_ids: Sequence[str],
     ) -> dict[str, Standing]:
-        """Pair what the description could not, by the name Sift had put on the face. New id to old.
+        """Pair what the description could not, by the name that Sift had put on the face. New id to old.
 
-        `_carry_across` pairs by description at `tuning.ALREADY_DECIDED`, which is strict because it
-        also puts back what PEOPLE decided. A pass over a video looks at its own moments (another
-        depth, another budget, a pass cut short), so the clearest picture of the same face differs
-        from the last pass's and the pair is missed, and a rescan would write "Sift recognized X
-        here" again for the same person in the same file. A name an Undo took back is lost the same
-        way: the face found again meets no `UNDONE` question and the arithmetic names it. Both are
-        reproduced in `tests/test_service_review.py`.
-
-        So a face that was Sift's own name for somebody, or a question an Undo left about somebody
-        (`AskedBy.UNDONE`), and found no pair, is the face in this file that the arithmetic now puts
-        that same person on (a name first, then a question), one old face to one new. Sift's own
-        words and the Undo's alone are carried this way. A confirmation, a No and a discarded pile
-        are still put back by description alone, because pairing those wrongly would move a
-        decision somebody made onto a face they never saw.
+        Sift's own names and Undo questions alone move this way, one old face to one new; people's
+        decisions are put back by description alone.
         """
         paired = {old.track_id for old in carried.values()}
         waiting = [
@@ -400,13 +351,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     async def _still_asked(
         self, carried: Mapping[str, Standing], matched: dict[str, list[tuple[str, float]]]
     ) -> None:
-        """Keep a face somebody took a name back from a question, across the rescan that found it.
-
-        `unmatch` marks such a face `AskedBy.UNDONE` and a re-match never names it; but a rescan
-        replaces the appearance, and the scan's own arithmetic would then meet a face with nothing
-        on it and name it again. Each one the arithmetic just named, or asked about, as the same person
-        goes back to being asked as `UNDONE`, and leaves `matched`, so no receipt says it was named.
-        """
+        """Keep a face whose name was taken back a question (`AskedBy.UNDONE`) after a rescan."""
         held = {
             new: old.person_id
             for new, old in carried.items()
@@ -438,19 +383,8 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     ) -> list[tuple[str, Any]]:
         """Pair freshly found appearances with decisions already made about the same faces.
 
-        The one place the rule lives, because it is one rule serving three decisions: a face is the
-        same face as one somebody already answered for when their descriptions agree closely, within
-        the one file. Written per decision it would be the same loop three times and the same
-        threshold three times, which is how two of them would end up tuned differently by accident.
-
-        `remembered` is (whatever the decision carries, the description it was made on). The payload
-        is opaque here (a pile for a face set aside, a person for a face named) because matching
-        does not care which decision it is putting back, and a version that did would be a switch
-        added to every future one.
-
-        First match wins and each appearance is claimed once. Two remembered decisions about faces
-        that close together are the same face twice; applying both would put one appearance in two
-        places.
+        One rule for every decision: descriptions agreeing closely within one file; first match
+        wins, each appearance claimed once. `remembered` pairs a payload with its description.
         """
         out: list[tuple[str, Any]] = []
         for track_id in track_ids:
@@ -465,14 +399,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         return out
 
     async def _name_again(self, asset_id: str, track_ids: Sequence[str]) -> set[str]:
-        """Put back the names a person gave this file, as theirs rather than as Sift's.
-
-        The reference photo a confirmation files already brings the NAME back on its own, so nothing
-        is lost, but it comes back as something Sift worked out, and anything landing between the
-        two confidence thresholds comes back as a question the person had already answered. That
-        is the whole of what this restores: the authorship, and with it the state that says no
-        further decision is wanted.
-        """
+        """Put back the names a person gave this file, as theirs rather than as Sift's."""
         remembered = await self._store.confirmations_for(asset_id)
         if not remembered or not track_ids:
             return set()
@@ -482,11 +409,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             await self._store.attribute(
                 track_id, person_id, confidence=1.0, attribution=Attribution.CONFIRMED
             )
-            # And the pictures that confirmation filed follow the name (v24). The scan that just ran
-            # deleted this file's appearances and cut fresh crops, so the references those
-            # confirmations filed name an appearance that is gone; the only reader is a mark on a
-            # screen, so nothing else would report it. The file has not moved, so the file is what
-            # hands them over.
+            # And the pictures that confirmation filed follow the name to the new appearance (v24).
             claimed = await self._store.claim_references_in(person_id, asset_id, track_id)
             if claimed:
                 log.info("faces.reference.reclaimed", asset_id=asset_id, pictures=claimed)
@@ -498,18 +421,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     async def _reject_again(self, asset_id: str, track_ids: Sequence[str]) -> int:
         """Put back every "no" said about a face in this file. Returns how many went back.
 
-        The fifth decision of the shape `_name_again` restores, by the same rule and the same
-        threshold (`_already_decided`). A rescan deletes every appearance a file had, and a refusal
-        is keyed by the appearance, so without this every "not her" on a file would be wiped the
-        next time it was looked at and the question would come straight back.
-
-        **Asked once per person, which is the one way refusals differ from the other four.**
-        `_already_decided` gives each appearance to ONE remembered decision, which is right for a
-        name or a pile: a face is in one place. Refusals add up: one face can be "not her" and
-        "not him" both, and two remembered faces of the same person in a file (once before a
-        rescan, once after) can each have been refused as somebody different. Asked across every
-        refusal together, the first match would win and the others would be lost. Asked per person,
-        the rule is unchanged and every refusal of that person finds its face.
+        Asked per person, since one face can be refused as several people.
         """
         remembered = await self._store.rejections_for(asset_id)
         if not remembered or not track_ids:
@@ -522,25 +434,14 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         restored = 0
         for person_id, kept in by_person.items():
             for track_id, created_at in await self._already_decided(track_ids, kept):
-                # Counted by what the store wrote, which here is every one: the appearances a pass
-                # hands this were made by that pass, so none carries a refusal yet.
+                # Every one: a pass's new appearances carry no refusal yet.
                 restored += await self._store.reject_again(track_id, person_id, created_at)
         if restored:
             log.info("faces.scan.refused_again", asset_id=asset_id, faces=restored)
         return restored
 
     async def _set_aside_again(self, asset_id: str, track_ids: Sequence[str]) -> set[str]:
-        """Put back the decisions a rescan just deleted. Returns the tracks it set aside.
-
-        A rescan deletes every track a file has. Recorded only as the pile it sat in, a face set
-        aside would come back among the open piles while the pile survived as a row claiming faces
-        it no longer held, and "what you ignored stays ignored" would be true about regrouping and
-        not about rescanning.
-
-        Recognized by description rather than by anything about the row, at the same distance a
-        removal uses, and within the one file. It is the same question in both cases: is this the
-        same particular thing I already answered for.
-        """
+        """Put back the set-asides a rescan just deleted, by description. Returns those tracks."""
         remembered = await self._store.ignored_for(asset_id)
         if not remembered or not track_ids:
             return set()
@@ -560,16 +461,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         return claimed
 
     async def _group_again(self, asset_id: str, track_ids: Sequence[str]) -> set[str]:
-        """Put back the grouping somebody did by hand, which a rescan just deleted.
-
-        The fourth thing of this shape. A rescan deletes every track a file had, so a pile built by
-        merging two groups or splitting one is left holding nothing while the faces it held come
-        back among whatever the clustering makes of them: a decision undone quietly, at a moment
-        nobody is watching.
-
-        Faces that have since been recognized are left where they are. A hand-made pile is a claim
-        about strangers, and somebody who now has a name is no longer one of them.
-        """
+        """Put back the grouping somebody did by hand, which a rescan deleted; named faces stay."""
         remembered = await self._store.grouped_for(asset_id)
         if not remembered or not track_ids:
             return set()
@@ -599,23 +491,10 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     async def _resume_point(
         self, asset_id: str, configured: Configured, *, again: bool = False
     ) -> int | None:
-        """Where a pass over this file should carry on from, or None to start it afresh.
+        """Where a pass over this file should carry on from, or None to start afresh.
 
-        Only ever a pass under the **same tuning**. A different quality bar or density means the
-        moments would not be the same moments and the faces already stored were measured against a
-        different rule, so there is nothing there to carry on from, so that file is scanned again
-        from the beginning, which is what changing a setting is supposed to mean.
-
-        **A press carries on only from a pass the time limit cut short.** Coverage below one and a
-        stored position do not mean that: moments that will not decode leave both behind on a pass
-        that read everything it could, and carrying on from there would read one frame and keep the
-        old appearances: the press would not look again. Pressed on a finished pass (or on a row
-        older than the record of why it stopped,
-        where looking again is what the press means) it starts over; pressed on a pass the limit
-        stopped, it reads on, which is the only way a file longer than the limit is ever read
-        through by pressing. A pass nobody pressed (a sweep, an arriving file) carries on from
-        any stored position, as before: a pass that could not decode its tail gets one more try
-        at it, and that try settles the file (`Outcome.coverage`).
+        Only under the same tuning. A press carries on only from a pass the time limit cut short;
+        a pass nobody pressed carries on from any stored position.
         """
         previous = await self._store.scan_of(asset_id)
         if previous is None or previous.settings_digest != configured.digest:
@@ -627,16 +506,8 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         return previous.reached_ms
 
     async def _rejoin(self, asset_id: str, appearances: Sequence[Appearance]) -> list[str | None]:
-        """For each appearance a resumed pass found, the stored one it is a continuation of.
-
-        Somebody on screen either side of the point the last pass stopped is one appearance, not
-        two, and the only thing that survives the gap is the description: position does not, and
-        the two halves were read in different passes so nothing links them in time.
-
-        Matched at the same likeness two runs within a single pass are joined at, because it is
-        the same question: is this the same face carrying on. None means nobody stored looks like
-        it, so it becomes an appearance of its own.
-        """
+        """For each appearance a resumed pass found, the stored one it continues, by description,
+        or None."""
         if not appearances:
             return []
         stored = await self._store.appearance_vectors(asset_id)
@@ -657,9 +528,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             if match is None:
                 joins.append(None)
             else:
-                # One stored appearance takes at most one continuation. Without this, two people
-                # who are alike enough to clear the bar both fold into whichever track scored
-                # highest, and the file loses one of them.
+                # One continuation per stored appearance, or two alike people fold into one.
                 taken.add(match[1])
                 joins.append(match[1])
         return joins
@@ -667,20 +536,9 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
     async def _without_removed(
         self, asset_id: str, appearances: Sequence[Appearance], recognizer: str
     ) -> list[Appearance]:
-        """Drop anything this file already had removed from it, without asking again.
+        """Drop anything this file already had removed, matched by likeness, not position.
 
-        A removal has to survive the scan that follows it or it is not a removal at all: a face
-        lives in a row a rescan replaces wholesale, so the same hand, logo or unusable crop would
-        come back every time and be answered every time.
-
-        Matched by likeness rather than by position, because position does not survive. A scan at a
-        different depth samples different moments, so the same thing in the same file is found at a
-        different timestamp in a slightly different box, and the description is the only part of
-        it that stays put.
-
-        An appearance every one of whose faces was removed goes entirely. One that keeps some of
-        them keeps those: an appearance is a face continuing across frames, and a few bad frames of
-        a real person are not the same thing as a detection that was never a face.
+        An appearance goes only when all its faces were removed.
         """
         removed = await self._store.removals_for(asset_id, recognizer)
         if not removed:
@@ -704,16 +562,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
         return kept
 
     async def remove_faces(self, track_ids: Sequence[str]) -> int:
-        """Take these faces away for good, and stop them coming back.
-
-        For a detection that was never a face (a hand, a logo, a pattern in a curtain) and for
-        a real face whose crop is worthless. Both are the same answer as far as Sift is concerned:
-        there is nothing here worth recognizing, and it should stop being asked about.
-
-        There is no undo. What is kept is the description, so the next scan of that file recognizes
-        the thing rather than raising it again, and what its quality measured, so where the bar sits
-        can be argued from evidence rather than from memory.
-        """
+        """Take these faces away for good, keeping their description so they do not come back."""
         await self._require_enabled()
         assets = await self._store.assets_of(track_ids)
         removed = await self._store.remove_faces(track_ids)

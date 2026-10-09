@@ -9,15 +9,7 @@ import { OneRead } from './one-read';
 
 export type JobState = components['schemas']['JobState'];
 
-/* The states a job is over in, taken from the type the server generates.
- *
- * Written down once, here: a copy that watched for `succeeded` (not a state Sift has; the queue
- * says `done`) would never recognise a finished download, and its bar would sit at whatever
- * fraction it last read, forever.
- *
- * Typed as JobState rather than as strings, so a name that is not one fails to compile instead of
- * failing to match.
- */
+/* The states a job is over in, taken from the type the server generates. */
 const FINISHED_STATES: readonly JobState[] = ['done', 'failed', 'canceled'];
 
 /** Whether a job is over, however it ended. */
@@ -25,29 +17,9 @@ export function isFinished(state: string): boolean {
 	return (FINISHED_STATES as readonly string[]).includes(state);
 }
 
-/* Where the dashboard's numbers come from.
- *
- * The default view (everything, newest first) is a page of FAMILIES (`?fold=true`): one row
- * per download or scan, its steps counted and folded under it. Choosing a state asks for the
- * families whose row shows it (`?fold=true&state=failed`), so a tab lists exactly the families
- * its number counts and the numbers add up to All. Choosing a kind asks for that kind's tasks,
- * flat.
- *
- * NOT THE PAGE THE BUSY INDICATOR READS, because they ask different questions: the indicator
- * counts rows (downloads under way, work running) and needs every step; this screen draws
- * families and must not have them. So while Activity is open a change in the queue costs two
- * reads rather than one. Sharing one read would mean the indicator counting a folded page, where
- * a download's seven running steps are one row, or this screen drawing a handful of downloads per
- * fifty rows.
- *
- * Filtering the fifty rows already in hand is not the same thing and would put a number above the
- * table that disagrees with it: the tallies describe the whole queue, so "Failed 61" over a list
- * of the three failures that happened to be in the last fifty rows is a screen that lies quietly.
- *
- * Neither case is on a timer. The connection this application holds says when the queue has moved
- * and the screen asks then, so a library with nothing happening costs nothing at all, rather
- * than a page built on the server every second for as long as a tab stays open.
- */
+/* Where the dashboard's numbers come from. The default view (everything, newest first) is a page
+ * of FAMILIES (`?fold=true`): one row per download or scan, its steps counted and folded under
+ * it. */
 
 const NOT_ALLOWED = "You aren't signed in as an admin.";
 
@@ -57,20 +29,16 @@ const STEPS_PAGE = 50;
 /** The most one read may ask for (the server's ceiling). */
 const MOST_PER_READ = 200;
 
-/**
- * How many rows a page of the list holds. Fixed, so a page is the same rows on every screen and
- * the pager under the list can name its pages by number.
- */
+/** How many rows a page of the list holds. Fixed, so a page is the same rows on every screen and
+ * the pager under the list can name its pages by number. */
 export const QUEUE_PAGE = 20;
 
 /** What a pause or a cancel names: a pass by its key, a sub-task by its job type, or neither. */
 export type Which = components['schemas']['WhichWork'];
 
-/**
- * The Type choice's one entry for every kind this version of Sift has no handler for (the page's
- * `older`): rows an older release left in the table, asked for as `?older=true` and never by their
- * stored ids. Not a job type id: those are lower-case words joined by underscores.
- */
+/** The Type choice's one entry for every kind this version of Sift has no handler for (the page's
+ * `older`): rows an older release left in the table, asked for as `?older=true` and never by
+ * their stored ids. */
 export const OLDER_KINDS = ':older';
 
 export class Queue {
@@ -81,14 +49,12 @@ export class Queue {
 	offset = $state(0);
 
 	#page = $state<JobsPage | null>(null);
-	/* Which filter the held page answers (the state and the kind, as one key). A new filter keeps
-	   the old page until its own lands, so the tallies and the task rows above the list stay put
-	   while only the list waits. */
+	/* Which filter the held page answers (the state and the kind, as one key). */
 	#answers = $state<string | null>(null);
 	#problem = $state<string | null>(null);
 	#live = $state(false);
-	/* An admin-only address refused us: asking again would be asking on behalf of somebody who is
-	   never getting in. */
+	/* An admin-only address refused us: asking again would be asking on behalf of somebody who
+	   is never getting in. */
 	#refused = false;
 
 	/* The bell rings for every job that moves: one read at a time (see `OneRead`). */
@@ -104,8 +70,7 @@ export class Queue {
 		return this.#page;
 	}
 
-	/** What the list draws: families while everything is showing, matching steps for a state. Null
-	 *  until a page for the filter chosen now has landed. */
+	/** What the list draws: families while everything is showing, matching steps for a state. */
 	get listed(): JobsPage | null {
 		return this.#answers === this.#asking() ? this.#page : null;
 	}
@@ -120,19 +85,13 @@ export class Queue {
 		return this.#live;
 	}
 
-	/**
-	 * What went wrong, in a sentence, or null. Kept rather than thrown: the screen is a live view of
-	 * something that may simply be unreachable for a moment, and an exception would take the last
-	 * good page off the screen along with it.
-	 */
+	/** What went wrong, in a sentence, or null. */
 	get problem(): string | null {
 		return this.#problem;
 	}
 
 	/** Whether every kind is showing, which is the view that folds, with or without a state: a
-	 *  state's tab lists the families whose row shows it. A kind narrows to the tasks of that
-	 *  kind, flat: a step of an import is a task of its own kind, and a folded page counts only
-	 *  the families that START with that kind, so it would list none of them. */
+	 * state's tab lists the families whose row shows it. */
 	get folded(): boolean {
 		return this.kind === null;
 	}
@@ -186,13 +145,7 @@ export class Queue {
 		await this.#readSteps(id, shown + STEPS_PAGE);
 	}
 
-	/*
-	 * READ AN OPENED FAMILY'S FIRST `wanted` STEPS, a page at a time from the start.
-	 *
-	 * From the start every time rather than appending the next page to what is held: the steps move
-	 * while the row is open (a step finishes, the next starts), and a page appended to a list read a
-	 * minute ago would be a list of two different moments.
-	 */
+	/* READ AN OPENED FAMILY'S FIRST `wanted` STEPS, a page at a time from the start. */
 	async #readSteps(id: string, wanted: number): Promise<void> {
 		const jobs: StepsPage['jobs'] = [];
 		let total = 0;
@@ -233,42 +186,21 @@ export class Queue {
 		return retried;
 	}
 
-	/* Everything that failed, thrown away. Answers how many went.
-	 *
-	 * The other half of the pair. Running them again is the right answer to a failure whose cause
-	 * has been dealt with; it is no answer at all to one that cannot succeed: a card that was
-	 * not installed at the time, a drive that has gone. Those accumulate: a failed job is the one
-	 * ending nothing clears out on its own.
-	 */
+	/* Everything that failed, thrown away. Answers how many went. */
 	async clearFailed(): Promise<number> {
 		const { cleared } = await api.post<components['schemas']['Cleared']>('/jobs/clear-failed');
 		await this.refresh();
 		return cleared;
 	}
 
-	/* Everything that was stopped, started again. Answers how many there were.
-	 *
-	 * The other half of `cancelAll`: stopping an import that got away is one press, and putting
-	 * it back is one press too. Without it the only route to the same work would be scanning the
-	 * folders again, which re-walks every file to rediscover the ones it already knew about:
-	 * minutes of walking to recover work still sitting in the table with its payload intact.
-	 *
-	 * Failures are left where they are. Stopped and failed wear the same "unfinished" label and
-	 * are not the same thing: one is a decision being taken back, the other is work that broke
-	 * and will likely break again. `retryFailed` is the button for the second.
-	 */
+	/* Everything that was stopped, started again. Answers how many there were. */
 	async retryCanceled(): Promise<number> {
 		const { retried } = await api.post<components['schemas']['Retried']>('/jobs/retry-canceled');
 		await this.refresh();
 		return retried;
 	}
 
-	/* Everything that was stopped, thrown away. Answers how many rows went.
-	 *
-	 * The pile `clearFailed` does not touch, and the one that actually piles up: a stop is one press
-	 * that cancels the whole queue, so a library-sized import leaves a library-sized heap behind.
-	 * They are only swept a week after they were stopped, which is the right pace for housekeeping
-	 * and no answer to somebody looking at a screen made of them today. */
+	/* Everything that was stopped, thrown away. Answers how many rows went. */
 	async clearCanceled(): Promise<number> {
 		const { cleared } = await api.post<components['schemas']['Cleared']>('/jobs/clear-canceled');
 		await this.refresh();
@@ -308,15 +240,7 @@ export class Queue {
 		};
 	}
 
-	/* Everything that has not finished, called off. Answers how many were stopped.
-	 *
-	 * The queue that got away is not something a row at a time can answer: a folder that held far
-	 * more than anybody meant to point at leaves tens of thousands of jobs, and the alternative
-	 * without this is closing the application.
-	 *
-	 * It stops running work as well as waiting work, which is what makes it mean anything: the
-	 * rows in the queue were put there by a scan that is still walking, so calling off only what is
-	 * waiting would leave the producer running and the queue would refill behind the press. */
+	/* Everything that has not finished, called off. */
 	async cancelAll(): Promise<number> {
 		const { stopped } = await api.post<components['schemas']['Stopped']>('/jobs/cancel-all');
 		await this.refresh();
@@ -324,7 +248,7 @@ export class Queue {
 	}
 
 	/* A pass, one of its sub-tasks, or with neither the whole queue: what a pause, a resume or a
-	   cancel acts on. A pause holds what starts next; what runs finishes the step in its hand. */
+	   cancel acts on. */
 	async pause(which: Which, paused: boolean): Promise<void> {
 		await api.post(paused ? '/jobs/pause' : '/jobs/resume', { body: which });
 		await this.refresh();
@@ -344,13 +268,7 @@ export class Queue {
 		return this.#page?.paused ?? false;
 	}
 
-	/**
-	 * Ask now rather than waiting to be told.
-	 *
-	 * Called when the screen opens, whenever the connection says the queue moved, and straight after
-	 * retry and cancel so the row changes under the click instead of up to a second later. A second
-	 * is a long time to wonder whether a button did anything.
-	 */
+	/** Ask now rather than waiting to be told. */
 	refresh(): Promise<void> {
 		return this.#reads.ask();
 	}

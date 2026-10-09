@@ -5,9 +5,7 @@ import { Tunnels as TunnelsState, type Tunnel } from './tunnels-state.svelte';
 import { COPY } from './Sites.search';
 
 /* The address beside a tunnel in Settings is the SERVER it connects to, and it says so: the same
- * words the Downloads table and a download's details put on the same number. Beside the name alone
- * it would read as the address a site sees, which a provider may send out of a different machine.
- */
+ * words the Downloads table and a download's details put on the same number. */
 
 let host: HTMLElement;
 let showing: Record<string, unknown> | null = null;
@@ -73,10 +71,8 @@ describe("a tunnel's address in Settings", () => {
 	});
 });
 
-/* Whether a tunnel can host a swap is the server's answer from the last try (`can_host`), and each
- * row says it in one of three ways. Null is "nobody has tried", which is not the same as "cannot":
- * reading it as false would tell somebody a tunnel they never tried is the wrong kind.
- */
+/* Whether a tunnel can host a swap is the server's answer from the last try (`can_host`), and
+ * each row says it in one of three ways. */
 describe('whether a tunnel can host a swap', () => {
 	it('says each of the three answers on its own row', () => {
 		show([

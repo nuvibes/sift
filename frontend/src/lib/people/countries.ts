@@ -1,16 +1,5 @@
-/*
- * Every country, by its two-letter code.
- *
- * A nationality is STORED as its code and READ as a name: `US` is what every source of one
- * sends, and `US` on a record is a code somebody has to know. This is the one place that turns one
- * into the other, so the record that displays it and the form that offers it cannot come to
- * disagree about what `CI` is called.
- *
- * Written out rather than taken from `Intl.DisplayNames`. That API is not in every runtime the
- * tests run in, it returns the code back unchanged when it has no name for one, and it would make
- * a person's record read differently depending on the browser's language, which is a surprising
- * thing for a field somebody typed to do.
- */
+/* Every country, by its two-letter code. A nationality is STORED as its code and READ as a name:
+ * `US` is what every source of one sends, and `US` on a record is a code somebody has to know. */
 
 /** The code every country is held under, in the language the app is written in. */
 export const COUNTRIES: Readonly<Record<string, string>> = Object.freeze({
@@ -270,12 +259,7 @@ export const COUNTRY_CODES: readonly string[] = Object.freeze(
 	Object.keys(COUNTRIES).sort((a, b) => COUNTRIES[a].localeCompare(COUNTRIES[b]))
 );
 
-/**
- * A country's name, or the code itself when nothing here claims it.
- *
- * The code back rather than a blank or a dash: a record holding `XX` should say `XX` and let
- * somebody see that it is wrong, not quietly render as though the field were empty.
- */
+/** A country's name, or the code itself when nothing here claims it. */
 export function countryName(code: unknown): string {
 	const held = String(code ?? '')
 		.trim()

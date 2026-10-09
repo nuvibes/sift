@@ -17,13 +17,8 @@ import pytest
 from sift.kernel.access import sentences as say
 from sift.kernel.config import Settings
 from sift.kernel.db import Database
-from sift.slices.backup.service import (
-    FOLDER_KEY,
-    SAVED_MARK,
-    BackupService,
-    NotThere,
-    filename_for,
-)
+from sift.slices.backup.naming import SAVED_MARK, filename_for
+from sift.slices.backup.service import FOLDER_KEY, BackupService, NotThere
 from sift.slices.settings_hub import SettingsService
 from sift.testing.fixtures import Actors, FakeClock
 

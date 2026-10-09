@@ -17,27 +17,11 @@
 
 	interface Props {
 		label: string;
-		/**
-		 * What a person needs to know to fill this in. It sits under the control, always visible.
-		 * Help behind a tooltip is help you have to already suspect exists before you can read it.
-		 */
+		/** What a person needs to fill this in, always visible under the control. */
 		help?: string;
-		/**
-		 * What to do about it, not what went wrong. "Pick a folder Sift can write to" tells someone
-		 * their next move; "Invalid path" tells them the computer is unhappy and leaves them there.
-		 *
-		 * Set this on blur or on submit. Validating every keystroke means shouting at someone for
-		 * a half-typed word they were still typing.
-		 */
+		/** What to do about it, set on blur or submit, never per keystroke. */
 		error?: string;
-		/**
-		 * Take the label off the screen without taking it out of the accessible tree.
-		 *
-		 * For a control whose purpose is already obvious from where it is: a search box in a
-		 * toolbar, beside a Find button. `display: none` is NOT the way to do that: it removes the
-		 * label from the accessible tree too, and the control is then a box a screen reader can only
-		 * call "edit text". The rule below moves it out of view and leaves it readable.
-		 */
+		/** Take the label off the screen but not out of the accessible tree. */
 		hideLabel?: boolean;
 		/** The input, select, textarea or switch. It is handed the wiring it has to carry. */
 		control: Snippet<[{ id: string; describedBy: string | undefined; invalid: boolean }]>;
@@ -50,8 +34,7 @@
 	const helpId = `${id}-help`;
 	const errorId = `${id}-error`;
 
-	// A screen reader reads what the control points at. Both, when both are there: the error says
-	// what to do now and the help still says what the field is for.
+	// Both the error and the help, when both are there.
 	const describedBy = $derived(
 		[help ? helpId : null, error ? errorId : null].filter(Boolean).join(' ') || undefined
 	);
@@ -81,20 +64,7 @@
 		gap: var(--space-2);
 	}
 
-	/*
-	 * A switch sits at the right-hand end of its label, always.
-	 *
-	 * Every other control here fills the column (a text box, a select and a text area belong under
-	 * the words naming them). A switch is 36 pixels of control against a sentence, and stacked it
-	 * reads as a stray toggle under a heading.
-	 *
-	 * Done here with `:has` rather than as a prop each pane passes, so it is laid out from what the
-	 * field contains and nothing has to be remembered by a pane added later.
-	 *
-	 * The `:global` around the inner selector is load-bearing: the switch is rendered by the
-	 * primitive inside the caller's snippet, so it carries no scoping class of this component's,
-	 * and an unscoped `.switch` would silently match nothing.
-	 */
+	/* A switch sits at its label's right end, by :has, so no pane must remember it. */
 	.field:has(.control :global(.switch)) {
 		display: grid;
 		grid-template-columns: 1fr auto;
@@ -103,8 +73,7 @@
 		row-gap: var(--space-1);
 	}
 
-	/* The label keeps the first column, the switch takes the second, and the help runs full width
-	   underneath both: it is a sentence and it needs the room. */
+	/* The help runs full width under both. */
 	.field:has(.control :global(.switch)) .label {
 		grid-column: 1;
 	}
@@ -125,9 +94,7 @@
 		color: var(--sift-ink-2);
 	}
 
-	/* Off the screen, still in the accessible tree. Clipped to nothing rather than hidden, because
-	   `display: none` and `visibility: hidden` both take it out of the tree and leave the control
-	   unnamed. */
+	/* Clipped, not hidden, so the control keeps its name. */
 	.bare .label {
 		position: absolute;
 		width: 1px;
@@ -153,23 +120,8 @@
 		color: var(--sift-bad-text);
 	}
 
-	/* WIDTH, and only width.
-	 *
-	 * What a text box LOOKS like (its height, its border, its ground, its face) is in the app's
-	 * stylesheet, on the elements themselves, so a control gets it whether or not it is in one of
-	 * these. Scoped to this component's own control box, an `<input>` written anywhere else would
-	 * come out white on a dark screen.
-	 *
-	 * What is left is the one thing that really is this component's business: a control inside a
-	 * field fills the field's column. Everywhere else the same control is its intrinsic width, and
-	 * that is right: a box in a toolbar should not be as wide as the toolbar.
-	 *
-	 * `:global` because the control is passed in as a snippet rather than rendered here, so it
-	 * carries no scoping class of this file's and a plain selector would match nothing at all.
-	 *
-	 * The app's own select is the exception: it is as wide as its widest answer and the chevron,
-	 * in a field as everywhere, so a short list never draws a box that is mostly empty. Its own
-	 * `auto` would fill a block column, so the field names the content width. */
+	/* Width only: a control in a field fills the column (the look is app.css's); the app's select
+	   is as wide as its widest answer. Global, as the control is the caller's snippet. */
 	.control :global(input:not([type='checkbox'], [type='radio'])),
 	.control :global(select),
 	.control :global(textarea) {

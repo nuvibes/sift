@@ -1,44 +1,22 @@
-/*
- * The gesture that turns clicks on tiles into a selection, shared by everything made of tiles.
- *
- * One copy, because the fiddly part is easy to get wrong: a long press ends in a click, which would
- * open the tile it just picked (`#held`). The rules:
- *
- *   - Nothing selected: a plain click opens. Ctrl, Cmd or Shift picks instead, and a long press
- *     picks, which is the whole of touch support.
- *   - Hold, then KEEP THE BUTTON DOWN AND MOVE: everything crossed is picked as one run.
- *   - A run PAINTS in the direction its first tile sets (picked unpicks, unpicked picks), and
- *     coming back undoes the overshoot. See `Selection.beginRun`.
- *   - Something selected: a plain click adds and removes; clearing is the way out.
- *   - Something selected and the PRESS MOVES: another run, no hold. Alt keeps the drag.
- *   - Shift means a run from the anchor; anything else toggles one.
- */
+/* Clicks on tiles as a selection, for everything made of tiles. With nothing picked a click opens;
+ * a modifier or a long press picks, and holding then moving picks a run. With something picked a
+ * click toggles and a moving press is a run (Alt keeps the drag). A long press's click never
+ * opens the tile it picked. */
 
 import { matches } from '$lib/shell/shortcuts';
 
 import type { Selection } from './selection.svelte';
 
-/**
- * How long a press has to last to mean "select" rather than "open": past an ordinary click, short
- * of wondering. Also `--press-hold` in `app.css`, which times the cue; `design/interaction.test.ts`
- * refuses a mismatch.
- */
+/** A press this long selects; it matches `--press-hold` (design/interaction.test.ts). */
 export const PRESS_HOLD_MS = 300;
 
-/**
- * How far the pointer may drift and still be holding still, in pixels: a resting hand moves, and a
- * drag or a scroll covers this in its first few pixels.
- */
+/** How far a still hand may drift, in pixels. */
 export const SLOP = 8;
 
 /** Set on the pressed element while a hold is being counted, so the stylesheet can show it. */
 const HOLDING = 'data-holding';
 
-/**
- * The attribute a surface puts on each of its rows so a sweep can tell what it is over: the pointer
- * is elsewhere by then, so the id is read off the DOM under it. A wall without it still gets the
- * hold; its sweep simply picks nothing.
- */
+/** Each row's id attribute, read off the DOM under a sweep. */
 export const TILE_ID = 'data-tile-id';
 
 export class TileGesture {
@@ -48,21 +26,13 @@ export class TileGesture {
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	/* Whether the press that is finishing was the one that started a selection. See the header. */
 	#held = false;
-	/** Where the press began, so a drift past the slop can be told from a hand that is not still. */
 	#from: { x: number; y: number } | null = null;
-	/** What was pressed, so the cue comes off whatever it went on. */
 	#pressed: HTMLElement | null = null;
-	/**
-	 * Whether the hold has fired and the pointer is still down: the sweep. Not `#held`, which the
-	 * next click clears; this is cleared by letting go.
-	 */
+	/** The hold fired and the pointer is still down; cleared by letting go. */
 	#sweeping = false;
 	/** The last row the sweep picked to, so crossing the same one twice is not four extendTo calls. */
 	#sweptTo: string | null = null;
-	/**
-	 * The tile a BULK sweep (no hold, something already picked) was pressed on, until the pointer
-	 * moves off it, so a press that never moves stays a plain click. Null once the run begins.
-	 */
+	/** The tile a bulk sweep was pressed on, until the pointer leaves it. */
 	#runFrom: string | null = null;
 
 	constructor(selection: Selection, order: () => string[]) {
@@ -78,12 +48,7 @@ export class TileGesture {
 		this.pressEnd();
 
 		/*
-		 * Already picking: the press is the sweep, with no hold to sit through and no drag.
-		 *
-		 * Otherwise the browser would drag the tile and a hold would call `only`, dropping the
-		 * rest of the selection. Alt keeps the drag, the one way to drop a whole selection
-		 * somewhere. `#sweeping` starts at the press, since `#refuseDrag` must listen before the
-		 * browser decides a drag has begun.
+		 * Already picking: the press is the sweep, with no hold and no drag (Alt keeps the drag).
 		 */
 		if (this.#selection.count > 0 && !event.altKey) {
 			this.#runFrom = id;
@@ -93,12 +58,10 @@ export class TileGesture {
 		}
 
 		this.#from = { x: event.clientX, y: event.clientY };
-		/* Held, since by the time the press ends the pointer may be somewhere else. */
 		this.#pressed = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
 		this.#pressed?.setAttribute(HOLDING, '');
 
-		/* A pointer that WANDERS is a drag and a page that SCROLLS is somebody scrolling; both end
-		 * the press, heard on the window, and are removed in `pressEnd`. */
+		/* A wandering pointer or a scroll ends the press. */
 		window.addEventListener('pointermove', this.#moved);
 		window.addEventListener('scroll', this.#scrolled, { passive: true, capture: true });
 
@@ -106,22 +69,18 @@ export class TileGesture {
 			// Select first: the click on the way up still has to be caught by `#held`.
 			this.#selection.only(id);
 			this.#held = true;
-			/* From here a wandering pointer is the sweep. `pressEnd` removes the press's listeners
-			   by reference, so it runs before the sweep's own are added. */
+			/* The press's listeners go before the sweep's are added. */
 			this.pressEnd();
 			this.#sweptTo = id;
 			this.#startSweeping();
 		}, PRESS_HOLD_MS);
 	}
 
-	/* Arming the sweep, from the hold or a press while something is picked: written once, so both
-	   paths refuse the browser's drag alike. */
 	#startSweeping(): void {
 		this.#sweeping = true;
 		window.addEventListener('pointermove', this.#swept);
 		window.addEventListener('pointerup', this.#stopSweeping);
 		window.addEventListener('pointercancel', this.#stopSweeping);
-		/* And the drag this is about to look like. See `#refuseDrag`. */
 		window.addEventListener('dragstart', this.#refuseDrag, true);
 	}
 
@@ -147,11 +106,7 @@ export class TileGesture {
 	#scrolled = () => this.pressEnd();
 
 	/*
-	 * The sweep: everything the pointer crosses, as one run from where the press began.
-	 *
-	 * `extendTo`, as a shift-click, so overshooting and coming back unpicks the overshoot.
-	 * `elementFromPoint`, since the tiles are absolutely placed and a move's target is unreliable.
-	 * The same row twice does nothing.
+	 * The sweep: every tile crossed, as a shift-click run (`elementFromPoint`: tiles are absolute).
 	 */
 	#swept = (event: PointerEvent) => {
 		if (!this.#sweeping) return;
@@ -160,11 +115,7 @@ export class TileGesture {
 		const id = row?.getAttribute(TILE_ID);
 		if (!id || id === this.#sweptTo) return;
 		this.#sweptTo = id;
-		/*
-		 * A bulk sweep begins its run at the first tile crossed, from the pressed tile, whose state
-		 * sets the run's direction before anything touches it. `#held` goes on, so the click this
-		 * press produces does not toggle the starting tile back out.
-		 */
+		/* A bulk sweep's run starts at the pressed tile, whose state sets its direction. */
 		if (this.#runFrom !== null) {
 			this.#selection.beginRun(this.#runFrom);
 			this.#runFrom = null;
@@ -173,13 +124,7 @@ export class TileGesture {
 		this.#selection.extendTo(id, this.#order());
 	};
 
-	/*
-	 * A sweep is not a drag, and the browser cannot tell. This is what stops it trying.
-	 *
-	 * A native drag pre-empts `pointermove`, and every `<a href>` and `<img>` is draggable. On the
-	 * window, in the capture phase, only while sweeping, so a wall's own drag payload is never
-	 * built. A reactive `draggable={false}` would be read a frame late.
-	 */
+	/* A sweep is not a drag: refused on the window in the capture phase while sweeping. */
 	#refuseDrag = (event: Event) => {
 		event.preventDefault();
 		event.stopPropagation();
@@ -197,8 +142,7 @@ export class TileGesture {
 		window.removeEventListener('dragstart', this.#refuseDrag, true);
 	};
 
-	/** Whether a sweep is running, so a surface can hold off on anything that fights it: true from
-	 *  the PRESS while something is picked, since that press cannot be a drag. */
+	/** Whether a sweep is running, from the press when something is picked. */
 	get sweeping(): boolean {
 		return this.#sweeping;
 	}
@@ -209,11 +153,7 @@ export class TileGesture {
 	}
 
 	/**
-	 * Escape, from anywhere on the screen: let go of everything.
-	 *
-	 * Only while something is picked, since Escape belongs to dialogs, menus and boxes too, and not
-	 * when something nearer already answered it (`defaultPrevented`: a portalled menu has already
-	 * closed by the time the window hears the key). Returns whether it did anything.
+	 * Escape anywhere lets go of everything, while something is picked and nothing nearer answered.
 	 */
 	escaped(event?: KeyboardEvent): boolean {
 		if (this.#selection.count === 0) return false;
@@ -222,11 +162,7 @@ export class TileGesture {
 		return true;
 	}
 
-	/**
-	 * `Ctrl+Z` and `Ctrl+Shift+Z`, from anywhere on the screen: on the SELECTION, never the data, so
-	 * nothing reaches the server. Not while somebody is typing, where the box's own undo is wanted.
-	 * Returns whether it did anything.
-	 */
+	/** Ctrl+Z and Ctrl+Shift+Z on the selection, never the data; not while typing. */
 	undoKeys(event: KeyboardEvent): boolean {
 		// Asked of the registry, so the keys are the ones the shortcut list shows.
 		if (matches(event, 'select.redo')) return this.#selection.redo();
@@ -239,21 +175,14 @@ export class TileGesture {
 		return false;
 	}
 
-	/**
-	 * A click that might open something: apply the picking rules, and answer whether it was about
-	 * picking rather than about opening. Asked BEFORE the click is applied, or letting go of the
-	 * last picked tile would open it. Returns true when the caller should do nothing further.
-	 */
+	/** Apply the picking rules before a click opens anything; true when the caller should stop. */
 	handled(id: string, event: MouseEvent): boolean {
 		const picking = this.selecting(event);
 		this.clicked(id, event);
 		return picking;
 	}
 
-	/**
-	 * A click on a tile, caught before the tile sees it: call it from a capture-phase handler, or
-	 * every click of a selection would also open the asset.
-	 */
+	/** A click on a tile, from a capture-phase handler. */
 	clicked(id: string, event: MouseEvent): void {
 		if (this.#held) {
 			// The press that started the selection: its click must not also open the tile.

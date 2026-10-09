@@ -21,14 +21,7 @@ async def build_backup(
     pool: WorkerPool,
     queue: JobQueue,
 ) -> None:
-    """Snapshots of the database, which is the only thing here that cannot be rebuilt.
-
-    It is handed the pool because a restore replaces the file the workers are writing to, so they
-    are stopped for the moment the swap takes and started again after. It takes the pool as an
-    argument rather than reading it back, which is what makes "after the workers" a signature: the
-    queue refuses a job type nothing can execute, and a schedule with no handler behind it is a job
-    that fails every night.
-    """
+    """Snapshots of the database, given the pool so a restore can stop the workers for the swap."""
     service = backup.BackupService(
         store.database, settings, hub.get_app, hub.apply, workers=pool, library=store.library
     )
@@ -39,22 +32,13 @@ async def build_backup(
         " it back.",
         service.folders_in_use,
     )
-    # Both doors refuse the same folder: the general settings route asks the same question the
-    # schedule route does.
     hub.check_with(backup.FOLDER_KEY, service.folder_refusal)
     backup.register_handlers(service=service, queue=queue)
-    # Its next run, and the two clean-ups' and the update check's, is placed by the one scheduler in
-    # `build_tasks`, once every timed task's handler is registered.
+    # Its next run is placed by the one scheduler in `build_tasks`.
 
 
 async def build_libraries(app: FastAPI, settings: Settings, store: Storage) -> None:
-    """Making libraries and switching between them. After backup, whose unpacking an import uses.
-
-    A switch note left by the last run is removed here, once: it names a library to start on, and
-    one still here means nothing acted on it. Left, the next ordinary restart would carry it off.
-    A library just imported writes where it came from as its first History line, here, before
-    the workers start.
-    """
+    """Making libraries and switching between them, after backup, whose unpacking an import uses."""
     service = backup.LibrariesService(
         store.database, settings, wiring.part_of_app(app, backup.SERVICE)
     )

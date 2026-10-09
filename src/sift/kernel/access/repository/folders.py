@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Folders a viewer may see, and the counts shown beside them.
-
-A folder is WHERE a file is, and it is read with the same place rules the stored verdict is built
-from (`sift.kernel.access.visibility`): nearest grant wins on the way down, a restrict is never
-undone by inheritance, and a folder the walk from its root never reached is missing rather than
-open. The rules are spliced from that module rather than written again here.
-
-`_COUNT_FILES_UNDER` is here rather than with the file query because it answers a question about a
-folder. It carries the concealment rule for the reason the count exists at all: told a folder holds
-twelve files while nine are shown, the person asking has learned exactly how much is being kept from
-them.
-"""
+"""Folders a viewer may see, and the counts beside them, spliced from the verdict's place rules."""
 
 from __future__ import annotations
 
@@ -22,9 +11,8 @@ from sift.kernel.access.visibility import (
 )
 from sift.kernel.sql_splice import splice
 
-# The physical half of the resolver again, on folders rather than assets. Folders carry no item
-# grant and belong to no tag, so the logical and item steps do not apply to them; everything else
-# is the same rule, and the truth table proves it stays the same rule.
+# The physical half of the resolver, on folders: no item grant and no tag, so those steps do not
+# apply.
 _VISIBLE_FOLDERS = splice(
     """
 SELECT f.*,
@@ -60,24 +48,9 @@ SELECT f.*,
     PLACE_SHARED=PLACE_SHARED,
 )
 
-# The count is read off the stored verdict rather than worked out here. Every copy under the
-# folder whose file this viewer may see, and (unless the vault is open) is not concealed for
-# them, which already accounts for a second copy of the same file sitting somewhere vaulted.
-#
-# The bytes and the newest arrival go with the count and are read in the SAME pass, deliberately:
-# two statements would be two readings of the same folder, and a folder vaulted between them would
-# report a count from one world and a size from another.
-#
-# It sums over COPIES, like the count does, and that is what "size on disk" means: a file with a
-# second copy under this folder really is occupying the bytes twice. `COALESCE` because SUM over no
-# rows is NULL, and an empty folder is 0 bytes rather than an unknown number of them. `newest` is
-# deliberately NOT coalesced: an empty folder has no newest file, and any date invented for one
-# would sort it somewhere among the folders that do.
-#
-# The walk starts at the folder and goes down: every folder under it off the ancestry, every copy
-# in each off the folder index, then one probe of the verdict per copy. CROSS JOIN fixes that
-# order. Left to the planner, it starts from the user's verdict rows instead (every file
-# the user may see, probed against the folder), so a folder of four files would cost the library.
+# Read off the stored verdict, with the bytes and the newest arrival in the same pass so they
+# describe one world. Summed over copies; `newest` stays NULL for an empty folder. CROSS JOIN starts
+# the walk at the folder, not at the user's every row.
 _COUNT_FILES_UNDER = """
 SELECT COUNT(*) AS files, COALESCE(SUM(a.size_bytes), 0) AS bytes,
        MAX(a.added_at) AS newest
@@ -90,10 +63,7 @@ SELECT COUNT(*) AS files, COALESCE(SUM(a.size_bytes), 0) AS bytes,
    AND (:reveal = 1 OR v.concealed = 0)
 """
 
-# How much of a folder this viewer may see: the copies present under it, every folder above the
-# copy's own included, less what their vault holds back unless it is open. Kept per user and
-# folder by the triggers that keep the verdict, so a folder of a hundred thousand files costs one
-# row: the same reading of a stored count the grid's total makes of `viewer_stats`.
+# Kept per user and folder by the verdict's triggers, so any folder costs one row.
 _FOLDER_FILES = "permitted - CASE WHEN :reveal = 1 THEN 0 ELSE concealed END"
 
 _FOLDER_FILE_COUNT = splice(
@@ -116,9 +86,7 @@ SELECT object_id AS folder_id, {{FILES}} AS files
     FILES=_FOLDER_FILES,
 )
 
-# A picture for each of several folders: the newest file under it the user may see. Sorting a
-# subtree is dearer than counting it, so this is asked for the folders on a screen and the count
-# above for every folder in a list.
+# The newest file under each folder the user may see; asked only for the folders on a screen.
 _FOLDER_COVERS = """
 SELECT w.value AS folder_id,
        (SELECT l.asset_id
@@ -131,7 +99,6 @@ SELECT w.value AS folder_id,
   FROM json_each(:folder_ids) w
 """
 
-# Every folder under this one, itself not counted: the ancestry rows naming it, less its own.
 _COUNT_FOLDERS_UNDER = """
 SELECT COUNT(*) - 1 AS folders
   FROM folder_ancestry an

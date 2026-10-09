@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* An artist: who a song credits, renamed on every song in one go.
- *
- * An artist has no page and no wall of its own: it is a field of a song, reached as a press under a
- * song's name and as the Artists column of the Music wall. What it has is one verb, Rename, which
- * reaches every song crediting it (`PUT /artists/{id}`): a name another artist already has folds
- * the two into one. Typing a different name into one song's form is a different act, and the right
- * one there: it credits that song with a new artist and leaves every other song alone.
- *
- * The verb is declared once, as data (`artistVerbs`), so the right-click on an artist's press, the
- * right-click on its chip on the bar and the menu door on the Music wall draw the same row. The
- * sheet is one per screen (`ArtistRenameDialog`) and reads the one holder below.
- */
+/* An artist: who a song credits, renamed on every song in one go. */
 import { api, ApiError, type ApiPath } from '$lib/api/client';
 import type { Verb } from '$lib/components/common/verbs';
 import { rememberFacetNames } from '$lib/components/shell/facet-labels';
@@ -72,10 +61,7 @@ class ArtistRename {
 
 export const artistRename = new ArtistRename();
 
-/**
- * Every verb an artist has, for the menus that draw it. Rename is an admin's, as the route is: a
- * name is shared vocabulary. A viewer who may rename nothing gets no verbs, and so no menu.
- */
+/** Every verb an artist has, for the menus that draw it. */
 export function artistVerbs(artist: ArtistRef, isAdmin: boolean): Verb[] {
 	if (!isAdmin) return [];
 	return [

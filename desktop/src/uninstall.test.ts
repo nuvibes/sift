@@ -1,10 +1,4 @@
-/* What the uninstaller is told, and what it is never told.
- *
- * The consequence of getting this wrong is not a broken build: it is an uninstaller that deletes a
- * folder somebody did not mean, or one that claims to have removed everything and did not. Both
- * failures are silent at the moment they happen and only discovered afterwards, which is why these
- * assert the exact arguments rather than that something was run.
- */
+/* What the uninstaller is told, and what it is never told. */
 
 import { describe, expect, it } from 'vitest';
 
@@ -78,8 +72,7 @@ describe('recordForUninstaller', () => {
 	});
 
 	/* The page promises every library in the libraries folder, so the uninstaller has to be told
-	 * where that folder is, found the same way from the first library and from any member. A member
-	 * standing in for the folder would be deleted alone, and its siblings would stay. */
+	 * where that folder is, found the same way from the first library and from any member. */
 	it('records the libraries folder, found the same from the first library and from a member', () => {
 		const first = record({
 			dataDir: 'C:\\Users\\someone\\Sift\\data',
@@ -95,8 +88,7 @@ describe('recordForUninstaller', () => {
 	});
 
 	/* On a drive's root the folder above the libraries folder is the whole drive, and the
-	 * uninstaller deletes the first library and the models from there. So it is never recorded, and
-	 * a value an earlier start wrote is taken away. */
+	 * uninstaller deletes the first library and the models from there. */
 	it('records no libraries folder where the folder above it is a drive root', () => {
 		const calls = record({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' });
 

@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Maintenance pane's words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Maintenance.svelte` draws every word it adds from `COPY`, and the
- * search entries are built from the same objects, so a button cannot be called one thing on the
- * screen and another in a search result. None of the pane's controls is a preference (each is a
- * task you press), so nothing here reaches the index on its own.
- *
- * Nothing on this pane scans, so "Rescan the library" is not declared here: scanning is
- * Importing's, and its entry is there.
- */
+/* The Maintenance pane's words, and what somebody can type to find them. */
 import { counted, filesSaid } from '$lib/entity/entity-counts';
 import type { Searchable } from './search';
 

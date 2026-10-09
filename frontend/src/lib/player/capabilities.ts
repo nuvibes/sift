@@ -1,41 +1,15 @@
 import type { components } from '$lib/api/schema';
 /*
- * Asking the browser what it can actually play.
- *
- * This is the highest-value thing in the player, and it is worth being clear about why. The naive
- * design transcodes anything that is not H.264, on the theory that browsers only reliably play
- * H.264. AV1 decode is effectively universal in Chrome, Edge and Firefox, and HEVC plays in Chrome
- * 107+ wherever the machine has a hardware decoder, so the naive design spends enormous amounts
- * of CPU converting files the browser would have played untouched, and loses quality doing it.
- *
- * The catch is that there is no single answer to encode toward. HEVC is universal on Safari and
- * absent from most Firefox builds; AV1 is universal on Chrome and limited to recent Apple silicon.
- * An iPhone 15 Pro and an iPhone 14 disagree. So the browser is asked, per device, and the server
- * decides from what it reported.
- *
- * The most important single answer is AV1: it is simultaneously the most expensive codec for the
- * server to convert and the one browsers support most widely. Every AV1 file this moves off the
- * transcode path costs nothing, loses nothing and starts instantly.
+ * Asking the browser what it can actually play, so the server transcodes only what it cannot: AV1
+ * and HEVC play widely, and differ per device. The most valuable answer is AV1.
  */
 
-/** What this browser told us it can handle, in the server's vocabulary. */
-/* `Required`, and that is the difference between the two directions. The server accepts a report
-   with a list left out (a browser that answered nothing about video still has an answer), while
-   this function always produces all three, empty where there is nothing to say. */
+/** `Required`: this always reports all three lists, where the server accepts a list left out. */
 export type Capabilities = Required<components['schemas']['Capabilities']>;
 
 /*
- * The strings the browser is asked about, and what each one means in the vocabulary the server
- * stores.
- *
- * The translation happens here rather than on the server deliberately. These strings are long,
- * full of exceptions, and are the browser's own language; keeping them next to the browser means
- * the server compares plain codec names that match the columns it reads. A translation layer on
- * the server would be a second vocabulary to keep in step with this one.
- *
- * Several candidates per codec because the profile string matters: `hvc1` and `hev1` are the same
- * codec in different packagings and browsers disagree about which they admit to, and a browser
- * that says no to one and yes to the other can play the file either way.
+ * The browser's codec strings, translated here into the server's names; several per codec, as
+ * browsers admit to different packagings.
  */
 const VIDEO_PROBES: Array<[string, string[]]> = [
 	['h264', ['video/mp4; codecs="avc1.640028"', 'video/mp4; codecs="avc1.42E01E"']],
@@ -52,12 +26,7 @@ const VIDEO_PROBES: Array<[string, string[]]> = [
 	['vp8', ['video/webm; codecs="vp8"']]
 ];
 
-/*
- * The same codecs at TEN bits a sample. A browser answers these as separate questions (HEVC
- * Main 10, AV1 high bit depth, VP9 profile 2), and a decoder that takes only the eight-bit
- * profile would be handed a 10-bit file as if it could play it: a black stage and no sentence. H.264
- * High 10 is asked about for completeness; no browser Sift targets answers yes to it.
- */
+/* TEN-bit profiles, asked separately, or an 8-bit-only decoder would get a 10-bit file. */
 const TEN_BIT_PROBES: Array<[string, string[]]> = [
 	['h264', ['video/mp4; codecs="avc1.6E0028"']],
 	['hevc', ['video/mp4; codecs="hvc1.2.4.L120.B0"', 'video/mp4; codecs="hev1.2.4.L120.B0"']],
@@ -73,21 +42,8 @@ const AUDIO_PROBES: Array<[string, string[]]> = [
 ];
 
 /*
- * Containers.
- *
- * A box is probed with real codec strings, not a bare `video/mp4`. The bare form is the wrong
- * question: `isTypeSupported` wants codecs and answers no without them, and `canPlayType` answers
- * "maybe" for a naked MIME, so a plain H.264 mp4, the commonest file there is, would read as
- * unplayable and be sent to transcode, worst of all on an iPhone where there is no MediaSource to
- * fall back on. A box is playable when the browser can play something in it, so each one is asked
- * with the codecs that actually ship in it and counts as supported if any single probe is a yes.
- *
- * `mov` rides with `mp4` because a QuickTime file is an ISO base-media file with a different
- * extension, and every browser that reads one reads the other.
- *
- * Matroska is deliberately absent and cannot be added by probing: no browser demuxes `.mkv`
- * natively, which is exactly why the remux tier exists. A browser that claims otherwise is
- * answering a question about a codec, not a container.
+ * Containers, probed with real codec strings: a bare type answers no or "maybe", and a plain H.264
+ * mp4 would be transcoded. Matroska cannot be probed: no browser demuxes it, hence remux.
  */
 const MP4_CODECS = [
 	'video/mp4; codecs="avc1.42E01E"',
@@ -108,14 +64,8 @@ const CONTAINER_PROBES: Array<[string, string[]]> = [
 ];
 
 /**
- * Ask this browser one question.
- *
- * `MediaSource.isTypeSupported` is the stricter and more honest of the two available answers: it
- * says whether the type can be played through Media Source Extensions, which is how a segmented
- * stream is fed to the player. `canPlayType` is the fallback, and its answers are famously
- * hedged: it returns `"probably"`, `"maybe"` or `""`, and `"maybe"` means the browser has not
- * really checked. Only `"probably"` is treated as a yes here: a `"maybe"` that turns out to be a
- * no is a black screen, where a `"maybe"` treated as a no is one unnecessary conversion.
+ * `isTypeSupported` first; from `canPlayType` only "probably" is a yes, since a wrong "maybe" is a
+ * black screen.
  */
 function supports(type: string, probe: HTMLVideoElement): boolean {
 	const mediaSource = globalThis.MediaSource;
@@ -123,8 +73,7 @@ function supports(type: string, probe: HTMLVideoElement): boolean {
 		try {
 			if (mediaSource.isTypeSupported(type)) return true;
 		} catch {
-			// A malformed type string throws in some browsers rather than returning false. Fall
-			// through to the other question rather than taking the whole detection down.
+			// A malformed type throws in some browsers.
 		}
 	}
 	try {
@@ -144,19 +93,12 @@ function detect(probes: Array<[string, string[]]>, probe: HTMLVideoElement): str
 	return found;
 }
 
-/**
- * Everything this browser can play.
- *
- * Computed once and remembered: the answer cannot change while the page is open, and each probe
- * is a real call into the media stack.
- */
+/** Computed once: it cannot change while the page is open. */
 let cached: Capabilities | null = null;
 
 export function capabilities(): Capabilities {
 	if (cached) return cached;
 
-	// A detached element, never added to the document. `canPlayType` needs an element to be called
-	// on and needs nothing else: no source, no layout, no attachment.
 	const probe = document.createElement('video');
 
 	cached = {
@@ -169,11 +111,7 @@ export function capabilities(): Capabilities {
 }
 
 /**
- * What this browser reported, less one video codec: what to send when the browser said it
- * could play a codec and then could not. `canPlayType` is a guess the browser makes from a
- * string, and a decoder that answers "probably" to HEVC can still refuse a particular file.
- * The ask is made again without that codec, so the server chooses the path the browser can
- * take rather than the one it claimed it could.
+ * Less one codec the browser claimed and then failed on, so the server picks a path it can take.
  */
 export function capabilitiesWithout(codec: string | null | undefined): Capabilities {
 	const all = capabilities();
@@ -186,18 +124,11 @@ export function capabilitiesWithout(codec: string | null | undefined): Capabilit
 	};
 }
 
-/** Forget the cached answer. For tests, which need to probe a different pretend browser. */
 export function forget(): void {
 	cached = null;
 }
 
-/**
- * Whether this browser plays HLS by itself.
- *
- * Safari does, natively, which matters: on iOS there is no other option, because Media Source
- * Extensions are unavailable on iPhone. Where this is true the playlist goes straight into the
- * video element's `src` and no JavaScript player is involved at all.
- */
+/** Safari does, and on an iPhone it is the only way. */
 export function playsHlsNatively(): boolean {
 	const probe = document.createElement('video');
 	try {

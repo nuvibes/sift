@@ -1,11 +1,6 @@
 <script lang="ts">
-	/*
-	 * A tag that does not exist yet.
-	 *
-	 * A tag is the one kind whose whole record is on its own row, so the create and the record are
-	 * two writes to one table rather than writes to several. But the order is the same as every
-	 * other new screen's, and so is what happens when the second one is refused. See `/people/new`.
-	 */
+	/* A tag that does not exist yet. A tag is the one kind whose whole record is on its own row,
+	 * so the create and the record are two writes to one table rather than writes to several. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import NewEntity from '$lib/components/entity/NewEntity.svelte';
@@ -30,9 +25,7 @@
 				parent: String(draft.parent ?? '').trim()
 			});
 			// The picture LAST, because it goes on a row and the row was made by the line above:
-			// there is nothing to put a cover on until the create has answered. Inside this try with
-			// the rest of the record, so a picture the server refuses says what every other unfinished
-			// part of the record says and leaves the thing made.
+			// there is nothing to put a cover on until the create has answered.
 			if (cover) await tags.uploadCover(made.id, cover);
 			toasts.show([thing('tag', made.id, name), ' was added'], { tone: 'success' });
 		} catch {

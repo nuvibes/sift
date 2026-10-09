@@ -1,20 +1,8 @@
 <script lang="ts">
 	import { counted } from '$lib/entity/entity-counts';
 	/*
-	 * Where to move files to, asked before anything on the disk is touched.
-	 *
-	 * Moving changes a disk rather than a row, so it is asked the way a delete is: a sheet that
-	 * names the count, states the consequence in a sentence, and cannot be answered by a stray
-	 * keystroke.
-	 *
-	 * It asks once for the whole selection, even across several folders: twelve files in five
-	 * folders is one intention, and five questions would be five chances to scatter them again. One
-	 * question, not two: a move leaves every byte where it can be found, so a second question would
-	 * be ceremony.
-	 *
-	 * Asked every time. "It moves the file on your disk" is the one thing somebody can be wrong
-	 * about, so it is said in the sentence under the question on every move, with no way to turn
-	 * the asking off: a question that can be turned off is not a protection.
+	 * Where to move files, asked before the disk is touched: once for the whole selection, every
+	 * time, with the count and a sentence saying it moves the file on your disk.
 	 */
 	import { ConfirmDialog, Field, Select } from '$lib/components/common';
 	import { disambiguate } from '$lib/library/folder-names';
@@ -26,8 +14,7 @@
 
 	interface Props {
 		open?: boolean;
-		/** How many files this is about. Named in every sentence: "move these?" with no number is
-		 * how somebody moves thirty files meaning to move one. */
+		/** Named in every sentence. */
 		count: number;
 		folders: readonly MoveTarget[];
 		onconfirm: (folderId: string) => void;
@@ -35,8 +22,7 @@
 
 	let { open = $bindable(false), count, folders, onconfirm }: Props = $props();
 
-	/* Nothing is chosen when it opens, and the button is refused until something is. A destination
-	   filled in for somebody is a destination they did not pick, and this writes to a disk. */
+	/* Nothing chosen on open: a destination filled in for somebody is not one they picked. */
 	let chosen = $state('');
 
 	$effect(() => {
@@ -45,12 +31,7 @@
 
 	const things = $derived(count === 1 ? 'this file' : `these ${counted(count)} files`);
 
-	/*
-	 * The destinations, named and then told apart. In a library where nine folders are called
-	 * Images, full paths would be nine long near-identical strings, so `disambiguate` keeps the
-	 * name as the label and adds only the part of the path that tells this one apart, drawn quietly
-	 * by `Select`.
-	 */
+	/* Same-named folders are told apart by `disambiguate`. */
 	const options = $derived(
 		disambiguate(
 			folders.map((folder) => ({

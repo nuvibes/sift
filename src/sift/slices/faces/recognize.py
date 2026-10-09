@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Turning one aligned face into the numbers that get compared.
-
-The output is a few hundred numbers whose only meaning is their angle to another face's, scaled
-to unit length so comparing is one dot product from -1 to 1. Each family wants its pixels arranged
-its own way (centred or raw), and the wrong arrangement quietly matches nothing, so it is part of
-the model's description. Half precision is not used: a half-precision model would be a different
-published file with its own digest (the weight store refuses an unpublished one) and would have to
-be chosen per device, so it is a decision about what Sift publishes.
-"""
+"""Turning one aligned face into unit-length numbers compared by one dot product; each family
+wants its pixels arranged its own way, and the wrong way quietly matches nothing."""
 
 from __future__ import annotations
 
@@ -21,11 +14,7 @@ from sift.slices.faces.runner import Loaded, RunnerLike
 #: How each family wants its pixels: whether to centre them around zero, and by how much.
 _CENTRED = {"accurate": True, "permissive": False}
 
-#: The two ends of the ramp turning a family's raw output length into a 0-to-1 quality term, per
-#: family because a length means nothing across models. Only `accurate` is calibrated; a family
-#: with no entry gets no term rather than a guess. The floor sits below every ordinary face and the
-#: ceiling where an ordinary face already is, so this cannot demote a good face. It ranks and never
-#: refuses: the length is known only after the description is paid for. See `recognisability`.
+#: The ramp turning a family's raw output length into a 0-to-1 term; it ranks, never refuses.
 _STRENGTH_RAMP = {"accurate": (14.0, 21.0)}
 
 
@@ -49,22 +38,11 @@ class Recognizer:
         return self._loaded.weight.dimension
 
     def embed(self, chip: np.ndarray) -> Description:
-        """The numbers describing one aligned face, and how firmly the model answered.
-
-        The length is kept: unit scaling makes faces comparable, and the length says more about
-        whether this is a usable face than the measurements taken before it (`_STRENGTH_RAMP`).
-        """
+        """The numbers describing one aligned face, and how firmly the model answered."""
         return self.embed_many([chip])[0]
 
     def embed_many(self, chips: Sequence[np.ndarray]) -> list[Description]:
-        """Every aligned face of one file, described in ONE run of the model.
-
-        The model reads a batch dimension, so a file's faces go as one blob and come back in order,
-        with the same numbers as one at a time (within the card's own noise) and several times
-        faster, with one ask down the model's pipe instead of many. A family exported at batch one
-        raises rather than describing the first face many times; the recognizer's batch dimension
-        is free, the detector's fixed at one.
-        """
+        """Every aligned face of one file, described in one batched run of the model."""
         if not chips:
             return []
         pixels = np.stack([np.asarray(chip, dtype=np.float32) for chip in chips])
@@ -84,21 +62,12 @@ class Recognizer:
         ]
 
     def recognisability(self, strength: float) -> float:
-        """One raw length as a 0-to-1 term for the quality score.
-
-        It separates a picture that is not really a face from one that is, and does that well. It
-        is NOT an occlusion measure (a face in dark glasses passes unremarked), and occlusion is
-        measured nowhere in Sift. An uncalibrated family returns 1.0, no term at all.
-        """
+        """One raw length as a 0-to-1 term for the quality score; 1.0 for an uncalibrated family."""
         return recognisability(strength, _STRENGTH_RAMP.get(self._loaded.weight.family))
 
 
 def recognisability(strength: float, ramp: tuple[float, float] | None) -> float:
-    """The ramp itself, as arithmetic on two numbers.
-
-    Apart from the class so a stand-in recognizer applies the SAME rule, or a test would pass about
-    the stand-in.
-    """
+    """The ramp itself, apart from the class so a stand-in recognizer applies the same rule."""
     if ramp is None or strength <= 0:
         return 1.0
     floor, ceiling = ramp
@@ -106,8 +75,7 @@ def recognisability(strength: float, ramp: tuple[float, float] | None) -> float:
 
 
 def normalise(vector: np.ndarray) -> np.ndarray:
-    """Scale to unit length. A vector of all zeros is handed back unchanged rather than divided by
-    nothing: it describes no face and will match nothing, which is the honest outcome."""
+    """Scale to unit length; all zeros is handed back unchanged, matching nothing."""
     length = float(np.linalg.norm(vector))
     return vector / length if length > 0 else vector
 
@@ -120,8 +88,7 @@ def similarity(first: Vector, second: Vector) -> float:
 
 
 def pack(vector: Vector) -> bytes:
-    """A vector as bytes for storage: little-endian four-byte floats, every supported machine's
-    native order, written down so a reader knows it is fixed."""
+    """A vector as bytes for storage: little-endian four-byte floats."""
     return np.asarray(vector, dtype="<f4").tobytes()
 
 

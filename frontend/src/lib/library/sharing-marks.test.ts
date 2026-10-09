@@ -1,9 +1,4 @@
-/* What a badge says, which is the one piece of judgement in the marks.
- *
- * The colour and the glyph are a summary of two independent facts, and every wrong summary is a
- * wrong answer somebody acts on: red where a guest can in fact see something, green where one
- * cannot. So each combination is pinned here rather than left to whichever component draws it.
- */
+/* What a badge says, which is the one piece of judgement in the marks. */
 
 import { describe, expect, it } from 'vitest';
 import { CLICK_THROUGH, markFor } from './sharing-marks';
@@ -44,8 +39,7 @@ describe('the mark for one thing', () => {
 
 	it('draws a label under a shared network hollow, and the network solid', () => {
 		/* A Site under a network is shared by the network's grant, and its own row holds no
-		   switch. The where-facts are read for anything that carries them, not only for a file.
-		   A folder under a shared root is the same. */
+		   switch. */
 		const label = markFor({ shared: true, shared_here: false, restricted_here: false });
 		expect(label?.filled).toBe(false);
 		expect(label?.words).toContain('set on something it is in');
@@ -76,18 +70,15 @@ describe('the mark for one thing', () => {
 	});
 
 	it('is neither when it is both, because that is two accounts and two answers', () => {
-		/* Red would read as "nobody" and the plain ink as "everybody". Amber is its own answer,
-		 * and the badge must not pick one of the other two.
-		 */
+		/* Red would read as "nobody" and the plain ink as "everybody". */
 		const mark = markFor({ shared: true, restricted: true, shared_here: true });
 		expect(mark?.kind).toBe('both');
 		expect(mark?.words).toBe('Shared with some guests and restricted from others, set here');
 	});
 
 	it('is hollow when the switch on the file is the one that lost', () => {
-		/* A file shared on its own inside a restricted folder: the restrict above is absolute, so the
-		 * answer is Restricted and the file's own share decides nothing. The mark sends somebody to
-		 * the switch that decides it (the folder) rather than to the share beside them. */
+		/* A file shared on its own inside a restricted folder: the restrict above is absolute,
+		 * so the answer is Restricted and the file's own share decides nothing. */
 		const mark = markFor(
 			{ shared: false, restricted: true, shared_here: true, restricted_here: false },
 			{ file: true }
@@ -110,10 +101,7 @@ describe('the mark for one thing', () => {
 
 	it('every tooltip says the mark can be pressed, because every mark is a button', () => {
 		/* A glyph nobody can name is decoration, and one that turns out to be pressable only if
-		 * you try it is worse. Naming the KIND of thing the decision came from would be vague
-		 * about the one thing somebody wants (which folder) and silent about what to do. The
-		 * panel names the folder; this says how to reach it.
-		 */
+		 * you try it is worse. */
 		for (const facts of [
 			{ shared: true },
 			{ restricted: true },
@@ -131,9 +119,7 @@ describe('the mark for one thing', () => {
 
 	it('names the mark in the words a person uses, and leaves the press to the button', () => {
 		/* The accessible name is read out on every mark a screen reader passes, so it is the
-		 * answer and where it is set, and nothing about how the rule is built. The button adds
-		 * "Open sharing"; a mark drawn as text has nothing to press, so the name never says
-		 * click. */
+		 * answer and where it is set, and nothing about how the rule is built. */
 		for (const facts of [
 			{ shared: true },
 			{ restricted: true },

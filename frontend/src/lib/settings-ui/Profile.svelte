@@ -1,30 +1,6 @@
 <script lang="ts">
-	/*
-	 * You, and the things you can do about being you: change your name, change the password, set
-	 * the PIN, and sign out.
-	 *
-	 * ## Why this is a Settings section rather than a rail destination
-	 *
-	 * Every OTHER thing that is yours rather than the library's lives under Settings > You, beside
-	 * Appearance and Privacy. A dropdown on the top bar is a fine home for "sign out" and a cramped
-	 * one for anything more; a row in the rail would say this is a place to go instead of a
-	 * preference to change, and somebody looking for "change my password" looks in Settings.
-	 *
-	 * So it is the first section of that group, above Appearance: who you are comes before how the
-	 * app looks to you.
-	 *
-	 * Sign out lives here rather than only in the panic-adjacent places, because it is the one
-	 * account action somebody looks for by name, and "my account" is where they look.
-	 *
-	 * ## The PIN is a credential
-	 *
-	 * Privacy's argument for holding the PIN form is sound and is written out in that file: nothing
-	 * else on that pane works without a PIN, so somebody reading it top to bottom should meet the
-	 * PIN first. What outweighs it is that a PIN is a thing you SET about yourself, like a
-	 * password, and somebody who wants to change one wants both in the same place. It sits after
-	 * the password for the same reason the password sits after the name: the coarser credential
-	 * first, then the one that stands inside it.
-	 */
+	/* You, and the things you can do about being you: change your name, change the password, set
+	 * the PIN, and sign out. */
 	import { onMount } from 'svelte';
 	import {
 		Button,
@@ -50,8 +26,7 @@
 	let newPassword = $state('');
 	let confirmation = $state('');
 	let busy = $state(false);
-	/* One error, shown against the field it belongs to. The old password being wrong and the new one
-	 * failing the policy are different problems and land in different places. */
+	/* One error, shown against the field it belongs to. */
 	let oldError = $state<string | undefined>(undefined);
 	let newError = $state<string | undefined>(undefined);
 
@@ -74,22 +49,17 @@
 	);
 	const passwordReady = $derived(oldPassword !== '' && newPassword !== '' && confirmation !== '');
 
-	/* The PIN form. Its own password box rather than the one above it: the server asks for the
-	   current password so that an unlocked screen left unattended cannot be turned to planting a
-	   PIN and taking the vault over, and sharing a field with the password form would mean typing
-	   into one form and submitting another. */
+	/* The PIN form. */
 	let pinPassword = $state('');
 	let newPin = $state('');
 	let pinError = $state<string | null>(null);
 	let savingPin = $state(false);
 
-	/* Whether a PIN is set at all, which is the only thing this form reads. Asked for here because
-	   this pane is where the form is; the vault holds one answer for the whole app, so a second
-	   reader costs a request and nothing else. */
+	/* Whether a PIN is set at all, which is the only thing this form reads. */
 	onMount(() => void vault.load());
 
-	/* Through the vault's one PIN write, the same one Hidden's first-press dialog uses, so the two
-	   forms cannot come to disagree about what a PIN is or what a refusal means. */
+	/* Through the vault's one PIN write, the same one Hidden's first-press dialog uses, so the
+	   two forms cannot come to disagree about what a PIN is or what a refusal means. */
 	async function savePin(event: SubmitEvent) {
 		event.preventDefault();
 		if (savingPin || newPin.length !== PIN_DIGITS) return;
@@ -123,14 +93,7 @@
 			await session.load();
 			toasts.show('Name changed', { tone: 'success' });
 		} catch (error) {
-			/* The server's own words, not a sentence written here.
-			 *
-			 * The refusal differs by who is asking, and only the server knows: an admin is told
-			 * plainly that a name is taken, because they can read the account list on the screen
-			 * they are standing on, and a guest is told only that the name cannot be used,
-			 * because "that one exists" is an answer they could ask about any name they liked. A
-			 * canned line here would override both.
-			 */
+			/* The server's own words, not a sentence written here. */
 			if (error instanceof ApiError && (error.status === 409 || error.status === 429))
 				nameError = error.detail ?? "That name can't be used.";
 			else nameError = "That couldn't be saved.";
@@ -183,13 +146,7 @@
 	</SettingGroup>
 {/if}
 
-<!--
-	Renaming yourself, here rather than only under Settings.
-
-	The account list is an admin's, so without this a guest has no way to change their own name,
-	and a name is the one thing about an account that is theirs to decide. An admin may still
-	rename anybody from the account list; this is the half everybody has.
--->
+<!-- Renaming yourself, here rather than only under Settings. -->
 <SettingGroup id="profile.name" heading={USERNAME.name} help={USERNAME.lede}>
 	<FormCard onsubmit={renameSelf}>
 		<FieldRow label="Username" error={nameError}>
@@ -218,14 +175,7 @@
 	</FormCard>
 </SettingGroup>
 
-<!--
-	Two sentences, and which one you get depends on what is true for you.
-
-	Saved Site cookies are an admin's: a guest cannot download and has none, so telling them
-	theirs are kept names a thing they do not have. The same goes for "everywhere else": it is
-	worth saying to somebody who might be signed in on a phone as well, and to everybody else it
-	raises a question about sessions they never had.
--->
+<!-- Two sentences, and which one you get depends on what is true for you. -->
 <SettingGroup
 	id="profile.password"
 	heading={PASSWORD.name}
@@ -267,9 +217,8 @@
 </SettingGroup>
 
 <!--
-	Your PIN, after your password. The head of this file says why it is here and why the
-	argument for Privacy is a real one to lose. What Privacy keeps is everything about what
-	Hidden HIDES and when it shuts, which is about the feature rather than about you.
+	Your PIN, after your password. The head of this file says why it is here and why the argument for
+	Privacy is a real one to lose.
 -->
 <SettingGroup id="profile.pin" heading={PIN.name} help={vault.pinSet ? PIN.ledeSet : PIN.ledeUnset}>
 	<FormCard onsubmit={savePin}>
@@ -321,9 +270,7 @@
 
 <style>
 	/* The sentence UNDER a form rather than the one above it: smaller and quieter, because it is
-	   something to read afterwards rather than the thing that introduces the control. The same
-	   pairing Privacy uses, and kept separate from `.lede` for the reason that file records: a
-	   lede is the larger settings sentence and merging the two rules restyles every one of them. */
+	   something to read afterwards rather than the thing that introduces the control. */
 	.note {
 		margin: 0;
 		font: var(--text-body-sm);

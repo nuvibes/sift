@@ -4,18 +4,11 @@ import GraphicsCard from './GraphicsCard.svelte';
 import GraphicsCardRemove from './GraphicsCardRemove.svelte';
 import { GraphicsCardState } from './graphics-card-state.svelte';
 
-/* The panel has five states and the whole point of it is that they read differently.
- *
- * The one worth the most is the split between "installed" and "works". A runtime lists every device
- * it was compiled for whether or not the hardware behind it can be reached, so a panel that treated
- * the two as one question would tell somebody their card was in use while every job ran on the
- * processor. That is the exact silence this feature exists to remove, and it is what a screen would
- * quietly reintroduce.
- */
+/* The panel has five states and the whole point of it is that they read differently. */
 
-/* `vi.hoisted`, because a `vi.mock` factory is lifted to the top of the file and an ordinary const
-   is not: without it the factory runs before these exist and every import in the module graph fails
-   with "cannot access before initialization". */
+/* `vi.hoisted`, because a `vi.mock` factory is lifted to the top of the file and an ordinary
+   const is not: without it the factory runs before these exist and every import in the module
+   graph fails with "cannot access before initialization". */
 const get = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
 const del = vi.hoisted(() => vi.fn());
@@ -111,10 +104,7 @@ describe('the graphics card panel', () => {
 	});
 
 	it('offers nothing when the machine already has a runtime that drives the card', async () => {
-		/* The answer to "what if I already have these files". Somebody running from source may have
-		   installed the graphics-card runtime themselves, at a version they chose. Downloading over
-		   the top of that spends a gigabyte replacing something that works, and putting a folder in
-		   front of theirs on the import path takes the version decision away from them. */
+		/* The answer to "what if I already have these files". */
 		get.mockResolvedValue(machine({ already_capable: true }));
 
 		const said = await draw();
@@ -139,8 +129,8 @@ describe('the graphics card panel', () => {
 		   update, and somebody deciding whether to spend a gigabyte is entitled to know it. */
 		get.mockResolvedValue(machine());
 
-		// `\s+` rather than a space: the sentence wraps in the markup, so the rendered text carries a
-		// newline and an indent in the middle of it.
+		// `\s+` rather than a space: the sentence wraps in the markup, so the rendered text carries
+		// a newline and an indent in the middle of it.
 		expect(await draw()).toMatch(/installing an update doesn't\s+delete it/i);
 	});
 

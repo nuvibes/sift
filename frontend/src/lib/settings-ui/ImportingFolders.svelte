@@ -1,29 +1,5 @@
 <script lang="ts">
-	/*
-	 * One folder answering differently from the rest of the library.
-	 *
-	 * ## Why three answers and not a switch
-	 *
-	 * "Follow the library" is a real third answer and it is the one nearly every folder is in. A
-	 * switch has nowhere to put it: a folder stored as `false` and a folder that simply follows a
-	 * library set to `false` look identical today and stop looking identical the moment somebody
-	 * changes the library's answer: one moves with it and the other does not. So the control has
-	 * three options and an absent override is shown as what it is.
-	 *
-	 * ## Why the list of what can be answered comes from the server
-	 *
-	 * It is the same map that gates the jobs, minus the two consent switches. See
-	 * `ImportPolicy.overridable`. Written out here as well, it would be a second list to keep true,
-	 * and the failure would be a control that saves a value nothing ever reads.
-	 *
-	 * ## And so does what each one is called
-	 *
-	 * Several of those keys are retired into the task Whens (a folder's answer is still stored
-	 * under the old key, which is what the gates read), and a retired key has no registered row,
-	 * so a label read off the rows the pane has loaded would show it as a raw key. The list carries
-	 * each key's name (`labels`), and a retired key is called by the task it became; the key itself
-	 * is only the last resort for a list from an older server.
-	 */
+	/* One folder answering differently from the rest of the library. */
 	import { onMount } from 'svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
 	import { Fold, Note, Select } from '$lib/components/common';
@@ -62,9 +38,7 @@
 			labels = answered.labels ?? {};
 			helps = answered.helps ?? {};
 		} catch {
-			// Left empty. The library's own switches above are unaffected by this failing, and a
-			// folder list that could not be read is better absent than drawn as "every folder follows
-			// the library", which would be a statement, and might be false.
+			// Left empty.
 		}
 	}
 
@@ -110,8 +84,8 @@
 		drilldown.open(folder.name, page, COPY.edit);
 	}
 
-	/* The folder being edited, read out of the list rather than copied into a field of its own, so
-	   an answer saved on the sub-page is the same object the row behind it reads. */
+	/* The folder being edited, read out of the list rather than copied into a field of its own,
+	   so an answer saved on the sub-page is the same object the row behind it reads. */
 	const editing = $derived(folders.find((one) => one.root_id === open) ?? null);
 </script>
 

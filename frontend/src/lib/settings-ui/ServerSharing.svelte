@@ -1,16 +1,5 @@
 <script lang="ts">
-	/*
-	 * The sharing switch of the computer running Sift, seen from another computer.
-	 *
-	 * The same switch the Network sharing section draws on that computer, asked through the server,
-	 * which asks the Sift app there. Changing it restarts Sift there to listen on the other address,
-	 * so the page waits for a new run of the server, as a restart does.
-	 *
-	 * TURNING IT OFF CUTS THIS WINDOW OFF. A window on another computer reaches Sift over the network
-	 * it is about to stop answering, so the question says so before anything happens, and afterwards
-	 * the screen says where sharing is turned back on. A browser on that computer itself still
-	 * reaches it, so the wait for a new run goes on regardless and reloads if one answers.
-	 */
+	/* The sharing switch of the computer running Sift, seen from another computer. */
 	import { ConfirmDialog, Note, Problem, Switch } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import type { components } from '$lib/api/schema';
@@ -81,8 +70,7 @@
 			return;
 		}
 		working = on ? 'restarting' : 'cut-off';
-		/* Off: nothing on another computer comes back, and the sentence already says so. A browser
-		   on that computer itself does, and is reloaded like any other. */
+		/* Off: nothing on another computer comes back, and the sentence already says so. */
 		if (!(await followSwitch(before, { arrive })) && on) problem = COPY.server.slow;
 	}
 </script>

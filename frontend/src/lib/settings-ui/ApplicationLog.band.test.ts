@@ -1,12 +1,4 @@
-/*
- * The Log's pinned day never stands over a line, and its filter stands in the controls column.
- *
- * Read from the compiled stylesheet: the unit environment lays nothing out and knows no scroll
- * snapping, so what is held is the arrangement a real window depends on. A line's time and level
- * never wrap (the line itself does, and is held whole in `LogLine.svelte.test.ts`), each line snaps
- * its top to the edge of the band, and the band is a height of its own that the snapping leaves
- * room for.
- */
+/* The Log's pinned day never stands over a line, and its filter stands in the controls column. */
 import { describe, expect, it } from 'vitest';
 import { compile } from 'svelte/compiler';
 
@@ -50,8 +42,8 @@ describe('the pinned day', () => {
 	});
 
 	it('sizes the time column in the line s own figures to the widest time', () => {
-		/* "12:58:54.332 AM" measures 103px in the data face, where one figure is 8px: 13 figures.
-		   Fourteen leaves one to spare, and a length in `ch` follows the face if it changes. */
+		/* "12:58:54.332 AM" measures 103px in the data face, where one figure is 8px: 13
+		   figures. */
 		const line = rule('.line');
 		expect(line).toMatch(/--log-time: 14ch/);
 		expect(line).toMatch(/grid-template-columns: var\(--log-time\) /);

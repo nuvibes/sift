@@ -1,12 +1,5 @@
 <script lang="ts">
-	/*
-	 * A song that does not exist yet.
-	 *
-	 * Its record is a name and a paragraph of details, the second written by a route of its own, so
-	 * this is the same two-step every other new screen runs and fails the same way. See
-	 * `/photo-sets/new`. A name a song already carries answers that song rather than a second one,
-	 * so this lands on it either way.
-	 */
+	/* A song that does not exist yet. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import { api } from '$lib/api/client';

@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Smart Search pane's own words, and its search entries built from the same objects, so a row
- * on the pane and the result a search finds cannot say two different things. The switch, the models
- * and the device are registered settings and find themselves; the page they sit on and deleting the
- * index are not. */
+/* The Smart Search pane's own words, and its search entries built from the same objects, so a
+ * row on the pane and the result a search finds cannot say two different things. */
 import type { Searchable } from './search';
 import { counted } from '$lib/entity/entity-counts';
 import type { SemanticStatus } from '$lib/search/semantic.svelte';
@@ -13,10 +11,8 @@ export const DELETE_INDEX = {
 	help: 'Delete every description Sift has made. Turning Smart Search off keeps them.'
 };
 
-/**
- * The words the pane writes itself: the status line, the page one level in, and what the download
- * and a stopped run say. The registered rows carry their own words.
- */
+/** The words the pane writes itself: the status line, the page one level in, and what the
+ * download and a stopped run say. */
 export const COPY = {
 	status: {
 		off: 'Turned off.',
@@ -58,10 +54,8 @@ export const COPY = {
 	}
 } as const;
 
-/**
- * Where Smart Search stands, in one line under its switch, shared with the Recognition switches on
- * Importing. `counts` is a run being followed now, fresher than the status.
- */
+/** Where Smart Search stands, in one line under its switch, shared with the Recognition switches
+ * on Importing. */
 export function semanticStatusLine(
 	status: SemanticStatus | null,
 	enabled: boolean,

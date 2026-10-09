@@ -1,23 +1,6 @@
 <script lang="ts">
-	/*
-	 * One item of a queue, opened up.
-	 *
-	 * The same arrangement as the queue above it: the address says which queue, the panel registry
-	 * says what draws it, and this file knows neither. A queue that grows a detail screen later
-	 * declares it there and appears here without this changing.
-	 *
-	 * ## The frame, and which half of this file wears it
-	 *
-	 * Each detail screen draws its own `PageFrame`, with its own trail, heading and pager: the
-	 * pile, the person's proposals and the duplicate chain all do. So this file must not draw one
-	 * around them: two frames is two scrolling regions and the page's inset counted twice.
-	 *
-	 * The other branch needs one of its own. This route IS in the layout's `FULL_BLEED_ROUTES`, so
-	 * the shell hands it the whole box with no padding and no scroll of its own, and a bare `Empty`
-	 * for a queue name this build has no drawing for would land hard against the top of the screen
-	 * with no trail and no way back but the words. So it is a page, like the queue screen's own
-	 * version of the same message.
-	 */
+	/* One item of a queue, opened up. The same arrangement as the queue above it: the address
+	 * says which queue, the panel registry says what draws it, and this file knows neither. */
 	import { page } from '$app/state';
 	import { Empty } from '$lib/components/common';
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';

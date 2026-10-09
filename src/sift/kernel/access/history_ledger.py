@@ -27,9 +27,7 @@ from sift.kernel.access.sentences import SIFT, Line, Piece, Said
 from sift.kernel.access.viewer import Viewer
 from sift.kernel.db import Database, Row, point_read
 
-# The ledger's own word for one thing an event named, apart from the record editor's `Subject`.
-# At module level, unlike `LEDGER_QUEUE` inside `ledger_events`: the vocabulary imports nothing
-# from Sift.
+# At module level, unlike `LEDGER_QUEUE` in `ledger_events`: the vocabulary imports nothing.
 from sift.kernel.vocabulary import Subject as LedgerSubject
 from sift.kernel.when import day_number
 
@@ -38,11 +36,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from sift.kernel.vocabulary import SubjectKind
 
 
-#: WHO MADE EACH SHARE, as the ledger wrote it: every `shared` event about this thing, oldest first.
-#:
-#: `acl_grants` records who a grant is FOR and never who made it, so a share line drawn from it
-#: alone would put the GUEST in the "by" position. The sharing feature writes the maker beside every
-#: grant in the ledger; a grant older than that has no maker anywhere and says so.
+#: Who made each share: `acl_grants` records only who a grant is for, never its maker.
 _SHARES_MADE = """
 SELECT d.object_id AS user_id, d.actor_kind AS actor_kind, d.actor_id AS actor_id,
        d.user_id AS by_user, d.decided_at AS at
@@ -52,27 +46,17 @@ SELECT d.object_id AS user_id, d.actor_kind AS actor_kind, d.actor_id AS actor_i
  ORDER BY d.decided_at ASC, d.id ASC
 """
 
-#: How far a grant's own moment may sit AFTER the event that recorded it: the two are written in one
-#: transaction from two reads of the clock. The same tolerance the workbench's run-matching step
-#: allows for the same reason.
+#: A grant and its event are written in one transaction from two reads of the clock.
 _SHARE_CLOCK_SLACK = 2
 
 
 async def share_makers(
     database: Database, viewer: Viewer, kind: str, subject_id: str, grants: Sequence[Row]
 ) -> list[tuple[Actor, str | None]]:
-    """Who made each of these grants, in their order: the actor and the name a history gives it.
-
-    The maker of a grant is the LATEST `shared` event for that user on this thing at or before the
-    grant's moment: a revoke and a share again make a new grant row, and pressing Share on one
-    that stands records an event and makes no row. A grant with no such event predates the record
-    and is SOMEBODY, with no name: the recipient is never the answer. `kind` is the ledger's word
-    for the thing (`asset`, not the grants table's `item`).
-    """
+    """Who made each of these grants, in their order: the actor and the name a history gives it."""
     unknown: tuple[Actor, str | None] = (Actor.SOMEBODY, None)
     if not grants:
         return []
-    # A process that never registered the workbench has no record, and every grant is unknown.
     recorded = len(list(await database.fetch_all(_LEDGER_TABLES))) == 2
     made = list(await database.fetch_all(_SHARES_MADE, (kind, subject_id))) if recorded else []
     who = _Who(
@@ -104,37 +88,19 @@ async def share_makers(
     return answers
 
 
-# --- THE LEDGER'S OWN EVENTS --------------------------------------------------------------------
-#
-# The sources in `history_sources` read what is TRUE NOW and go silent when a row is removed; the
-# ledger keeps the acts. ONE LINE PER ACT: an event is drawn only where no other source draws it,
-# checked by the LINK ROW itself. While the row stands the link table draws it and the event is
-# dropped; once it is gone both the making and the taking back are drawn (`_links_that_stand`).
+# --- The ledger's own events: one line per act, drawn only where no other source draws it.
 
 
-#: THE VERBS A LINK TABLE ALREADY DRAWS. An event carrying one of these is dropped while the row it
-#: describes is still there.
-#:
-#: `shared` is one of them and that is the same rule rather than an extra: a grant IS a link row,
-#: `_GRANTS` draws it while it stands, and a revoked grant is the case the ledger was written for:
-#: the row deletes itself and takes its own history line with it.
+#: The verbs a link table already draws; an event with one is dropped while its row stands.
 LINK_VERBS = frozenset({"linked", "filed", "named", "shared"})
 
-#: THE PAGES THAT COUNT THEIR LINKS ("named on 12 files" a day), the only ones a link reached from
-#: the object side belongs to something else on. A shelf draws its additions from the record
-#: (`history_entity._SHELF_ADDITIONS`), so dropping them would show only the files taken out.
+#: The pages that count their links, where an object-side link belongs to the counted source.
 COUNTED_ON_ITS_PAGE = frozenset({"person", "tag", "site"})
 
-#: THE ACTS WHOSE LINE NAMES WHAT THE EVENT WAS ABOUT rather than what it was done with.
-#:
-#: Each verb here costs a thread one more seek; a delete earns it, because the name of the file it
-#: ended exists nowhere else once the file has gone.
+#: Acts whose line names what the event was about; a delete's file name exists nowhere else.
 _SAID_FROM_SUBJECTS = frozenset({"deleted"})
 
-#: WHICH OF A FILE'S LINKS ARE STILL THERE, as the kind of thing each was made to and its id.
-#:
-#: One statement over the three tables that draw themselves in a file's thread. A site is two hops:
-#: an asset has a username, and a username belongs to a site.
+#: Which of a file's links are still there; a site is two hops, through the username.
 _STILL_LINKED = point_read(
     "history.still_linked",
     """
@@ -149,11 +115,7 @@ SELECT 'site' AS kind, ac.site_id AS id
 """,
 )
 
-#: WHO THIS THING IS STILL SHARED WITH, by the word `acl_grants` files its kind under.
-#:
-#: Apart from the statement above rather than a fourth arm of it, because it answers for a person, a
-#: tag, a site, a shelf and a Photo Set as well as for a file, and `_GRANTS` next door is drawn on
-#: every one of those pages. One statement, one object type bound, the same rule everywhere.
+#: Apart from the statement above because it serves every kind of page, not only a file.
 _STILL_GRANTED = point_read(
     "history.still_granted",
     "SELECT subject_user_id AS id FROM acl_grants WHERE object_type = :type AND object_id = :subject",
@@ -211,13 +173,9 @@ _EVENT_KINDS: Mapping[str, str] = {
     "update_started": "update_started",
     "library_opened": "library_opened",
     "restarted": "restarted",
-    # Sift's own task over the User's figures, drawn as the finished task it is.
     "recounted": "ran",
 }
 
-#: WHAT A LINK MADE TO ONE KIND OF THING IS, in the kinds a history already had. A link to a person
-#: is a naming and wears the naming's mark, which is the mark that act has worn since before the
-#: ledger existed. A kind with no word of its own is an addition, which is what every link is.
 _LINKED_KINDS: Mapping[str, str] = {
     "person": "named",
     "tag": "tagged",
@@ -225,17 +183,13 @@ _LINKED_KINDS: Mapping[str, str] = {
 }
 
 
-#: WHETHER THE RECORD IS EVEN HERE. Both tables, because a link with no event behind it is nothing.
-#:
-#: Asked by the source itself rather than handed in: a guard a caller has to remember to pass is
-#: missing on the day another history is written.
+#: Asked by the source itself: a guard a caller must remember is missing on the next history.
 _LEDGER_TABLES = (
     "SELECT name FROM sqlite_master WHERE type = 'table'"
     " AND name IN ('workbench_decisions', 'workbench_decision_subjects')"
 )
 
 
-#: The copy rows that name this file, from either end: it IS the copy, or it is the original.
 _STILL_A_COPY = "SELECT asset_id AS id FROM produced_files WHERE asset_id = :subject"
 _STILL_COPIED = "SELECT asset_id AS id FROM produced_files WHERE source_asset_id = :subject"
 
@@ -250,29 +204,13 @@ async def _has_table(database: Database, name: str) -> bool:
 async def _links_that_stand(
     database: Database, *, kind: str, subject_id: str, grants_as: str | None
 ) -> set[tuple[str, str]]:
-    """Every link this thing still has, as (what kind of thing it was made to, its id).
-
-    The one existence check the whole dedupe rule rests on. It is asked once per thread rather than
-    once per event: a file with forty events has one read of its links, not forty.
-
-    Unguarded on the tables, unlike every feature-owned read in `history_sources`: these four belong
-    to the catalog and to the access layer, which every install has: they are the same tables the
-    naming, tagging, filing and sharing sources read without asking either.
-
-    A file asks about its people, its tags and its sites; everything else asks only about its
-    shares. That is not a shortcut: those three tables are keyed by an ASSET, and no other kind of
-    thing has a link table that a history draws from a timestamp. A shelf's and a Photo Set's event
-    is always drawn: their membership rows draw only the additions the record never said
-    (`history_entity._SHELF_ADDITIONS`), so the two cannot say one addition twice.
-    """
+    """Every link this thing still has, as (what kind of thing it was made to, its id)."""
     standing: set[tuple[str, str]] = set()
     if kind == "asset":
         for row in await database.fetch_all(_STILL_LINKED, {"subject": subject_id}):
             standing.add((str(row["kind"]), str(row["id"])))
-        # A COPY WHOSE ROW STILL STANDS, as ('produced', the copy's id): the copy line and the made-
-        # into line are drawn from `produced_files` while it stands, so its `produced` event is the
-        # same act a second time. Guarded: the editing feature's
-        # table is not registered in every process.
+        # A copy whose row stands is drawn from `produced_files`; guarded, as that table is a
+        # feature's.
         if await _has_table(database, "produced_files"):
             for statement in (_STILL_A_COPY, _STILL_COPIED):
                 for row in await database.fetch_all(statement, {"subject": subject_id}):
@@ -281,7 +219,6 @@ async def _links_that_stand(
         for row in await database.fetch_all(
             _STILL_GRANTED, {"type": grants_as, "subject": subject_id}
         ):
-            # `login`: a grant is held by a user's sign-in, the word the sharing writer uses.
             standing.add(("login", str(row["id"])))
     return standing
 
@@ -296,47 +233,7 @@ def _drawn_elsewhere(
     box_said: bool = False,
     from_object: bool = False,
 ) -> bool:
-    """Whether some other source already says this, in which case the event is not drawn.
-
-    Seven rules, and each of them names the source that owns the act:
-
-    - **A receipt belongs to the decisions source.** An event written under a queue is a judgement
-      somebody took, drawn with the Undo the workbench can honour, and drawing it here as well
-      would put the same decision on the thread twice, the second time with no way to take it back.
-      EXCEPT on the page of the FILE it was done with (`from_object`, `about` None): a file's
-      decisions source reads its receipts by their subjects, so the file a song was shared from
-      is named by no other reader. It is drawn here without an Undo, which stays on each file that
-      received the name, and only while it stands.
-    - **An arrival belongs to the arrival line.** Every one of the three readers opens with one,
-      read off the row's own `created_at`, and it is the same act.
-    - **A link that still stands belongs to its link table**, which draws it with the moment the
-      row carries. See `LINK_VERBS`.
-    - **A concealment is the user's own.** Hiding is per-user and invisible to everybody else
-      by design, so an event about somebody else's Hidden is not drawn on a page they can see:
-      that would be the one fact the vault exists to withhold, told by the history pane.
-    - **A share is an admin's to read.** Who else signs in to this install is not something a
-      file a guest may see should disclose, which is the rule `history_of_asset` states about the
-      grants source; an event saying the same thing has to keep it.
-    - **A LINK REACHED FROM THE OBJECT SIDE belongs to the entity's counted source.** `about` is the
-      entity whose page is being drawn, and it is None for a file. The ledger's entity read matches
-      an event either way round, which is what puts "X was merged into them" on the keeper's page,
-      but an entity thread COUNTS its links rather than listing them ("named on 12 files", one row
-      per day) precisely because a person is on thousands of files. Drawn from both sides, one
-      re-match could put hundreds of lines on one page and push the rest of the
-      thread off the end of the cap. So the link verbs stay the counted source's, and the acts that
-      have no counted source (a merge, a cover, an edit) are what the object side is for.
-    - **An enrichment belongs to the stash-box's own line**, where the thread draws one
-      (`box_said`). The person and site writers record `enriched` with no box and no fields (they
-      are handed neither), so on its own it would read "Enriched from something", one line below
-      "FansDB filled in 10 details" for the same press. The box's line is read off the run, which
-      knows the box, whether somebody pressed it and every field that landed; see `box_filled_in`.
-      Only where that line IS drawn: a thread whose box link has been forgotten keeps the event,
-      because then it is the only thing left that says an enrichment happened. ONLY THE NAMELESS
-      EVENT: the run's own writer records `enriched` with the box as its object and what landed as
-      its payload, one per press, and that event IS the box's line (see `enriched_by_box`). Those
-      are never absorbed; it is the link table's latest-run line that gives way to them
-      (`runs_not_drawn`).
-    """
+    """Whether some other source already says this, in which case the event is not drawn."""
     if about is not None and box_said and event.verb == "enriched" and event.object is None:
         return True
     if (
@@ -351,16 +248,10 @@ def _drawn_elsewhere(
         return not (about is None and from_object and event.reversed_at is None)
     if event.verb == "added":
         return True
-    # A DOWNLOAD BELONGS TO THE DOWNLOADS SOURCE ON THE FILE'S OWN PAGE, and only there.
-    #
-    # `about` is None for a file only. The downloads row says it there, naming the username too, and
-    # lives as long as the file does. The event is kept for the SITE's page, where nothing else
-    # says it, and a failed download has no other source anywhere.
+    # A download is said by the downloads source on the file's own page; kept for the Site's page.
     if event.verb == "downloaded" and about is None:
         return True
-    # A PRESS BELONGS TO THE PASS LINES ON THE FILE'S OWN PAGE (`history_sources.press_lines`),
-    # and a look for faces to the face line, which says what each look found (`face_run_events`):
-    # both are said there from their own reads, so a page capped at the newest acts loses neither.
+    # A press and a look for faces are said by the file's own pass and face lines.
     if event.verb in ("pressed", "face_run") and about is None:
         return True
     if (
@@ -371,10 +262,7 @@ def _drawn_elsewhere(
         return True
     if event.verb in ("hidden", "revealed") and event.user_id != viewer.id:
         return True
-    # A SAVE IS THE USER'S OWN, and an admin's to read, exactly as the save log it mirrors is
-    # (`GET /save-log` is admin-only). What another user took home is not something a file a
-    # guest may see should disclose.
-    # A WALL SENT between one person's own devices is theirs for the same reason.
+    # A save and a wall sent are the user's own and an admin's to read, as the save log is.
     if event.verb in ("saved", "wall_sent") and event.user_id != viewer.id and not viewer.is_admin:
         return True
     return event.verb in ("shared", "unshared") and not viewer.is_admin
@@ -397,14 +285,7 @@ def _receipts_given_together(
     is_given: Callable[[LedgerEvent], bool],
     gap: int,
 ) -> list[LedgerEvent]:
-    """Receipts this page GAVE (it is their object), one line per act rather than one per file.
-
-    A song shared from one file to its group writes a receipt per file that took the name, within
-    moments of each other. Read from the file it came from they are one act, said once with every
-    file it reached: the newest receipt carries the subjects of the ones folded into it. The key is
-    the verb, the queue, who did it and what the payload says was given, and the run breaks at a
-    gap longer than the feed's own fold. `events` is newest first, as the ledger reads it.
-    """
+    """Receipts this page gave (it is their object), one line per act rather than one per file."""
     folded: list[LedgerEvent] = []
     for one in events:
         last = folded[-1] if folded else None
@@ -431,21 +312,7 @@ def _said_about(
     *,
     from_object: bool = False,
 ) -> Said:
-    """The line for one event, with what it was written down about read out of its payload.
-
-    The payload is the writer's own shape and is read for the few words a line says: what a thing
-    used to be called, which fields a save moved, how many things a delete could not name, where a
-    delete took the file, what a merge brought and a song's name. Anything else in it stays where it
-    is. A payload this reader cannot make sense of is not an error: the
-    sentence says less and the line still draws, which is what every other unknown here does.
-
-    `about_kind` is WHOSE page this is, and it is the vantage said exactly rather than in threes: a
-    delete reads differently on a person's page and on a tag's, and both of those are the entity
-    vantage. None is the file's own page, which is where a delete lists what the file was on.
-
-    `from_object` is whether this page is the event's OBJECT rather than one of its subjects
-    (see `sentences.event_said`'s `from_object`, which turns the line round).
-    """
+    """The line for one event, with what it was written down about read out of its payload."""
     actor, name = _ledger_actor(event, who)
     return say.event_said(
         event.verb or "",
@@ -475,8 +342,7 @@ def _ledger_task(event: LedgerEvent) -> str | None:
 
 @dataclass(frozen=True, slots=True)
 class Lent:
-    """What a ledger event dropped for a link that still stands knew and the link row may not: who
-    did it, as a history names them, and when. See `ledger_events`'s `lent`."""
+    """Who did a dropped ledger event, and when, for the link row that still stands."""
 
     actor: Actor
     name: str | None
@@ -484,12 +350,10 @@ class Lent:
 
 
 def _ledger_actor(event: LedgerEvent, who: _Who) -> tuple[Actor, str | None]:
-    """Who took an act, in the words a history says it in. A box is named in words, not looked up."""
+    """Who took an act, in the words a history says it in."""
     return _actor_of_act(event.actor_kind, event.actor_id, event.user_id, who)
 
 
-#: A link's kind back to the ledger's word for the same thing (`sentences.LINKED_KINDS` turned
-#: round), so a line's names can be probed in `subjects_present`, which is keyed by the ledger's.
 _LEDGER_KIND_OF_LINK: Mapping[str, str] = {link: kind for kind, link in _LINKED_KINDS_OF.items()}
 
 
@@ -498,9 +362,7 @@ def _resolved(
     present: Mapping[tuple[str, str], str],
     unshown: frozenset[tuple[str, str]] = frozenset(),
 ) -> Line:
-    """A line's things as ways to them, and as plain words where there is nowhere to go: a thing
-    since deleted, or one this viewer may not be shown (`unshown`). Each thing by its own probe;
-    a folder's address is its id, since `in:` takes one."""
+    """A line's things as ways to them, or plain words where there is nowhere to go."""
     out: list[Piece] = []
     for one in line:
         if one.rest:
@@ -538,23 +400,10 @@ async def ledger_events(
     name_now: str | None = None,
     lent: dict[tuple[str, str], Lent] | None = None,
 ) -> list[Event]:
-    """Everything the ledger recorded about one thing, said in this history's own voice.
-
-    One source shared by every history: what differs between threads is a word and a vantage, and
-    the rule that decides WHICH events are drawn is the same. Read through `history_events`, where
-    the vault's answer is applied to the record, never with a statement of its own.
-
-    `grants_as` is the word `acl_grants` files this kind of thing under, given only where the page
-    already draws its grants; None means a share is drawn from the event or from nowhere. `here` is
-    the page drawing it (`sentences.HERE`). `box_said` is whether the thread already draws a
-    stash-box's line (`_drawn_elsewhere`). `name_now` is what the thing is called today, on the two
-    pages a merge folds into (`_taken_as`). `lent`, where given, is filled with who did each act
-    dropped for a link that still stands, and when (`Lent`).
-    """
+    """Everything the ledger recorded about one thing, said in this history's own voice."""
     from sift.kernel.access.history_events import events_of_asset, events_of_entity
     from sift.kernel.vocabulary import LEDGER_QUEUE
 
-    # A process without the workbench slice has neither table, and naming one is a hard error.
     if len(list(await database.fetch_all(_LEDGER_TABLES))) != 2:
         return []
     found = (
@@ -607,7 +456,7 @@ async def ledger_events(
 
 
 def _on_object_of(kind: str, subject_id: str) -> Callable[[LedgerEvent], bool]:
-    """Whether an event was done WITH this page's thing, so its line is read from the object's side."""
+    """Whether an event was done WITH this page's thing, so its line reads from the object side."""
 
     def on_object(one: LedgerEvent) -> bool:
         return one.object is not None and (one.object.kind, one.object.id) == (kind, subject_id)
@@ -622,19 +471,13 @@ async def _with_subjects(
     subject_id: str,
     on_object: Callable[[LedgerEvent], bool],
 ) -> list[LedgerEvent]:
-    """The events whose line names what they named, with those subjects read in.
-
-    A delete names the file it ended on the page of everything that file was on, and the event is
-    the only place that name still exists; an event read from its object's side names its subject.
-    Bounded by the page, so it is one seek for the thread.
-    """
+    """The events whose line names what they named, with those subjects read in."""
     from sift.kernel.access.history_events import FEED_FOLD_GAP, subjects_of
     from sift.kernel.vocabulary import LEDGER_QUEUE
 
     asked = [one.id for one in drawn if one.verb in _SAID_FROM_SUBJECTS or on_object(one)]
     if asked:
         named = await subjects_of(database, asked)
-        # The page itself is left out of an object-side line's subjects: it is `{here}` there.
         drawn = [
             replace(
                 one,
@@ -662,7 +505,7 @@ def _copies_not_standing(
     subject_id: str,
     on_object: Callable[[LedgerEvent], bool],
 ) -> list[LedgerEvent]:
-    """Without a copy whose row still stands: the row draws it (see `_links_that_stand`)."""
+    """Without a copy whose row still stands: the row draws it."""
     drawn = [
         one
         for one in drawn
@@ -687,7 +530,6 @@ async def _present_of(
         if one.object is not None:
             wanted.setdefault(one.object.kind, []).append(one.object.id)
         if on_object(one):
-            # The subject is what an object-side line names and links, so it is probed as well.
             for thing in one.subjects:
                 wanted.setdefault(thing.kind, []).append(thing.id)
     present = await subjects_present(database, wanted) if wanted else {}
@@ -705,8 +547,6 @@ async def _ledger_who(
     """The users who took the drawn acts, and what the dropped acts lend their link rows."""
     from sift.kernel.vocabulary import LEDGER_QUEUE
 
-    # The acts dropped because their link still stands, newest first: what they lend the link rows,
-    # each beside the thing it was done with.
     standing_acts = (
         [
             (one.object, one)
@@ -751,16 +591,9 @@ async def _said_oldest_first(
     viewer: Viewer | None = None,
     unshown: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[Event]:
-    """Each drawn event as a line, OLDEST FIRST.
-
-    The ledger's reads answer newest first, and the caller's sort is stable and by time alone, so
-    reversed here two events written in the same second keep their order: a hide and the showing
-    again that followed it never read the other way round.
-    """
+    """Each drawn event as a line, oldest first, so same-second events keep their order."""
     first, taken = await _firsts_and_merged(database, drawn, kind, subject_id, name_now, on_object)
     events: list[Event] = []
-    # A DAY OF DOWNLOADS IS ONE LINE on every page but the file's own (`_downloads_by_day`), by day
-    # AND by who asked, so a day with your pastes and Sift's own downloads is two lines.
     fetched: dict[tuple[int, str, str | None], list[tuple[LedgerEvent, Actor, str | None]]] = {}
     for one in reversed(drawn):
         if one.verb == "downloaded" and kind != "asset":
@@ -770,8 +603,8 @@ async def _said_oldest_first(
             )
             continue
         if one.verb == "enriched" and one.object is not None and one.object.kind == "box":
-            # ONE PRESS, ONE LINE, drawn by the one helper every box line goes through, so an
-            # event and a link table's line cannot come to say one press two ways.
+            # One helper draws every box line, so an event and a link table cannot say one press two
+            # ways.
             pressed_first = first.get(one.object.id)
             events.append(
                 enriched_by_box(
@@ -794,8 +627,6 @@ async def _said_oldest_first(
                 actor_name=actor_name,
                 kind=_event_kind(one),
                 pieces=line if one.id not in taken else say.as_then(line, taken[one.id], here),
-                # A line that counted what it stands for lists it under itself: "Edited 5
-                # details" opens to the five, the way a box's "filled in 10 details" does.
                 detail=_folded_detail(said.folded) + details_of(said.groups),
                 via=_ledger_via(one),
             )
@@ -815,13 +646,11 @@ async def _firsts_and_merged(
     """Each box's first press about this thing, and whose act each was where it was merged in."""
     from sift.kernel.access.history_events import first_presses
 
-    # Each box's first press about this thing, so a re-ask reads as one (see `first_presses`).
     first = (
         await first_presses(database, kind, subject_id)
         if any(one.verb == "enriched" for one in drawn)
         else {}
     )
-    # WHOSE ACT IT WAS, where it was somebody merged into this page. See `_taken_as`.
     taken = (
         await _taken_as(
             database,
@@ -846,23 +675,7 @@ async def _taken_as(
     name_now: str | None,
     on_object: Callable[[LedgerEvent], bool],
 ) -> dict[str, str]:
-    """Which lines were acts on somebody MERGED INTO this page, and the name each was taken under.
-
-    A merge re-points every event about the one going at the survivor and keeps the name it was
-    written with (`kernel/access/merged.py`), so on the survivor's page "Cover set to a group of
-    faces" would draw as the survivor's own act. The line says whose it was then
-    (`sentences.as_then`).
-
-    ONLY A NAME SOMEBODY MERGED IN, never any name that differs from today's. A rename is the same
-    person under a new word, and every line older than it would have gained "as <old name>":
-    the whole thread, on every renamed person, saying a thing the rename line already says once.
-    What needs saying is the other identity, and the page already holds the list of those:
-    its own `merged` lines name everyone folded in. Read only where there is at least one, so a
-    page nobody was merged into pays nothing.
-
-    !! A NAME THE ONE GOING HAD BEFORE A RENAME OF THEIR OWN is not in that list and is not said.
-    Unverified how often that happens; the merged line itself still says the merge happened.
-    """
+    """Which lines were acts on somebody merged into this page, and the name each was taken as."""
     from sift.kernel.access.history_events import subjects_of
 
     merged_in = {
@@ -897,8 +710,6 @@ async def _taken_as(
     return taken
 
 
-#: The lines that never say "as <name>": a merge's own line names who went, and a rename's names
-#: both of its words already.
 _NOT_TAKEN_AS = frozenset({"merged", "renamed"})
 
 
@@ -908,24 +719,7 @@ def _downloads_by_day(
     present: Mapping[tuple[str, str], str],
     who: _Who,
 ) -> list[Event]:
-    """One line per day of downloads, counting them and opening to the files. Each day oldest first.
-
-    Not one line per download: on a Site that is "A file was downloaded from it" nine times in a
-    row, saying nothing the first did not and taking nine of the thread's places under the cap. A
-    day is the unit because it is the unit every other counted line on these threads uses
-    (filings, taggings, usernames), so one screen does not fold by two clocks; it is the machine's
-    local day (`kernel/when.py`), the one those lines count in SQL.
-
-    THE FILES ARE THE EVENTS' OWN SUBJECTS, and that is why this needs no read of its own: an event
-    read from its object's side has its subjects filled in by `ledger_events` (the file is what a
-    download is ABOUT, the Site what it was done WITH), and every one of those events has already
-    passed the vault's answer in `history_events`: a download of a file this viewer may not see
-    is not here to be counted. A file that has since been deleted is listed struck through, the
-    rule every name on these threads keeps (`Link.gone`), because the download still happened.
-
-    `since` is the first download of the day and `at` the last, so the row says the span rather
-    than a moment that was only the end of it.
-    """
+    """One line per day of downloads, counting them and opening to the files; oldest first."""
     events: list[Event] = []
     for runs in days.values():
         first, actor, actor_name = runs[0]
@@ -966,7 +760,7 @@ def details_of(groups: Sequence[say.Group]) -> tuple[Detail, ...]:
 
 
 def _folded_detail(folded: tuple[str, tuple[str, ...]] | None) -> tuple[Detail, ...]:
-    """A counted line's members as the one group its "Show each" opens to. See `Said.folded`."""
+    """A counted line's members as the one group its "Show each" opens to."""
     if folded is None:
         return ()
     words, members = folded
@@ -980,19 +774,14 @@ def _folded_detail(folded: tuple[str, tuple[str, ...]] | None) -> tuple[Detail, 
 
 
 def _event_kind(event: LedgerEvent) -> str:
-    """Which mark one event wears. A link says what it was made TO; see `_LINKED_KINDS`."""
+    """Which mark one event wears. A link says what it was made TO."""
     if event.verb == "linked":
         return _LINKED_KINDS.get("" if event.object is None else event.object.kind, "added")
     return _EVENT_KINDS.get(event.verb or "", "decided")
 
 
 def _ledger_via(event: LedgerEvent) -> str | None:
-    """Which pass did it, in the `enriched:` filter's own words, or None where it was not a pass.
-
-    The actor's id is the pass word for Sift (one of `MADE_VIAS`), and only six of those are
-    words this filter draws a mark for. A pass outside the six is Sift with no mark rather than a
-    mark drawn from a word nothing else on the screen uses.
-    """
+    """Which pass did it, in the `enriched:` filter's own words, or None where it was not a pass."""
     if event.actor_kind not in (None, "sift"):
         return None
     return event.actor_id if event.actor_id in VIAS else None

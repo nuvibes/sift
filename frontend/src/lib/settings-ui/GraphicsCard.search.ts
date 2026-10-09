@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The GPU block on Performance: its words, and what somebody can type to find it. Not a
- * preference: it downloads support and tests it.
- *
- * ONE COPY MODULE PER PANE. `GraphicsCard.svelte` draws every word it adds from `COPY`, and the
- * search entry is built from the same object. "GPU" and "CPU" are the only words for the two,
- * never "graphics card", "card" or "processor". */
+/* The GPU block on Performance: its words, and what somebody can type to find it. */
 import type { Searchable } from './search';
 
 export const COPY = {
@@ -39,8 +34,8 @@ export const COPY = {
 	},
 	remove: {
 		heading: 'GPU support',
-		/* What the group IS, said before the one act in it: the heading alone named a thing nobody
-		   had been told about. */
+		/* What the group IS, said before the one act in it: the heading alone named a thing
+		   nobody had been told about. */
 		lede: 'GPU support is the download that lets face recognition, Smart Search and watermark reading run on your NVIDIA GPU, which is faster. Without it they run on the CPU: everything still works, only more slowly. Nothing else in Sift uses it.',
 		label: 'Delete GPU support',
 		help: 'Face recognition, Smart Search and watermark reading go back to the CPU, and its disk space is freed. You can download it again.',

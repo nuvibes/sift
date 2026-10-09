@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Privacy pane's words, and what somebody can type to find what the registry does not describe.
- *
- * The rest of the pane's words are still written in its markup, and its registered rows (how long a
- * sign-in lasts, what Hidden hides, the locks, how long search history is kept) are the registry's
- * copy, which feeds the search by itself. The clean-up that deletes old search history runs in the
- * background and is set nowhere, so nothing here names it. */
+/* The Privacy pane's words, and what somebody can type to find what the registry does not
+ * describe. */
 import type { Searchable } from './search';
 
 export const COPY = {
@@ -33,8 +29,8 @@ export const COPY = {
 			failed: "Your history couldn't be cleared. Try again."
 		}
 	},
-	/* A pointer, not a list: what left this device is Activity's History filtered to saves, which
-	   keeps every save and says who saved what. Beside the switch that decides who may save. */
+	/* A pointer, not a list: what left this device is Activity's History filtered to saves,
+	   which keeps every save and says who saved what. */
 	saved: {
 		label: 'Copies saved to a device',
 		help: 'Every copy saved to a device is listed in Tasks and Activity, under App History.',

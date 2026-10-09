@@ -1,7 +1,4 @@
-/* The launch lock lands before a screen is drawn. A screen asks for its list as it mounts, and the
-   framed shell is the only branch that draws one for somebody signed in, so it waits for
-   `launched`, which turns true once `lockOnLaunch` has settled. Read from the source, because
-   mounting the root layout is mounting the whole application. */
+/* The launch lock lands before a screen is drawn. */
 import { expect, it } from 'vitest';
 
 import source from './+layout.svelte?raw';

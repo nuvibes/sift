@@ -1,9 +1,4 @@
-/*
- * Hidden, for somebody with no PIN yet.
- *
- * Nothing can be hidden or shown again without a PIN, so the first press on Hidden is where one
- * is made: the screen asks immediately, and its button names what pressing it will do.
- */
+/* Hidden, for somebody with no PIN yet. */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';

@@ -1,18 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The work already coming for some files, and a press taking over the part of it still waiting.
+"""The work already coming for some files, and a press taking over the part still waiting.
 
-ONE ANSWER FOR BOTH PRESSES THAT START A FILE'S WORK: a file's own "Run task" and a Build over the
-library. Each asks the same question of the queue (which of these files already has this work
-queued or running) and each does the same thing with the answer:
-
-* **Work still WAITING is pulled forward**, not duplicated. The payload is enqueued again with
-  `dedupe`, which collapses onto the waiting row and makes it the press: run now (or at quiet hours,
-  if that is what was pressed), at the press's priority, named for the presser. Otherwise a file's
-  pictures held for quiet hours would be made by the press and then again when the held rows ran
-  at the range's opening.
-* **Work already RUNNING is left alone**: a press has nothing to add to it.
-
-Either way the file is not handed a second task for this work.
+Waiting work is pulled forward onto the press; running work is left alone; nothing is queued twice.
 """
 
 from __future__ import annotations
@@ -25,8 +14,7 @@ from sift.kernel.jobs import JobQueue
 
 @dataclass(frozen=True, slots=True)
 class Coming:
-    """Of the files asked about, which already have this work queued or running, and which of
-    those were still waiting and are now the press's own."""
+    """Of the files asked about, which already have this work coming, and which were taken over."""
 
     files: frozenset[str]
     pulled: frozenset[str]
@@ -48,12 +36,7 @@ async def take_over(
     requested_by: str | None,
     at: str | None = None,
 ) -> Coming:
-    """The work of `key` already coming for these files, with its waiting part pulled forward.
-
-    `job_types` are every queue type that would answer this for a file: the Build's own per-file
-    type and, for a product, the arrival type its When governs. One write per type
-    (`enqueue_many`), whatever the number of files.
-    """
+    """The work of `key` already coming for these files, its waiting part pulled forward."""
     wanted = set(asset_ids)
     files: set[str] = set()
     pulled: set[str] = set()

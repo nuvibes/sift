@@ -16,7 +16,7 @@ from sift.kernel.access.history_line import Actor, Detail, Event, Link
 from sift.kernel.access.history_person import history_of_person
 from sift.kernel.access.sentences import Piece, said, thing
 from sift.kernel.db import Database
-from sift.kernel.tests.test_history import (
+from sift.kernel.tests.history_helpers import (
     ADDED_AT,
     ASSET,
     LIBRARY,

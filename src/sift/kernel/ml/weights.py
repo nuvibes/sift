@@ -1,35 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The models a feature can use, where to get them, and proving you got the right thing.
+"""The models a feature can use, where to get them, and proving the right file arrived.
 
-**No model file ships with Sift**, in the source or in the image, and that is a licence
-requirement rather than a size decision: the most accurate models available are published for
-non-commercial research only, and putting one inside a public image would be redistributing it
-under terms nobody granted. So Sift describes them, and the person running it obtains their own
-copy when they switch a feature on. `docs/model-licences.md` records the terms of each, read from
-the publisher's own files.
-
-Everything about the fetch is deliberate:
-
-- **It never happens on its own.** Nothing here runs until somebody enables a feature and asks
-  for a model.
-- **It resumes.** These are hundreds of megabytes; a connection dropping at 90 % must not mean
-  starting again.
-- **It can be stopped**, and stopping leaves a partial file that a later attempt continues from.
-- **It is verified**, by digest, before anything uses it. A model file that is not exactly the one
-  described is refused rather than loaded: a truncated download does not fail loudly on its own,
-  it produces a model that silently gives worse answers.
-- **A local file is always an alternative.** A machine with no route to the internet must still be
-  able to use the feature, and "download it on another machine and put it here" is the answer.
-
-Files land in the device's model store rather than the cache: they are expensive to obtain, they
-may have been placed there by hand, and a cache is something Sift is allowed to delete. One store
-per device, beside the libraries, because a model is the same for every library that uses it.
-
-**This is the kernel's copy, and it knows about no particular feature.** Which models exist, what
-they are for and where they sit on disk are the asking feature's business: it names a place to
-keep them and hands over a description of each file. What is here is the machinery every feature
-that loads a model needs and none of them should write twice.
-"""
+None ships with Sift (a licence requirement); a fetch is asked for, resumable and verified."""
 
 from __future__ import annotations
 
@@ -56,21 +28,17 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How much of a file to read at a time when hashing it. The same size the transfer uses, and read
-#: from there rather than declared again.
+#: The transfer's own read size.
 _CHUNK = CHUNK
 
 
 class WeightError(Exception):
-    """A model could not be obtained, or is not the one it claims to be. The message is for a
-    person to read."""
+    """A model could not be obtained, or is not the one it claims; the message is for a person."""
 
 
 @functools.cache
 def refused_for_good() -> type[WeightError]:
-    """A certificate refusal, which asking again within the second never changes: a job failure no
-    retry is spent on. Made on first use because the inference process imports this module and
-    never the job queue."""
+    """A certificate refusal, failing for good; built late, as the inference child imports this."""
     from sift.kernel.jobs.queue_rows import JobFailedPermanently
 
     return type("WeightRefused", (WeightError, JobFailedPermanently), {"__module__": __name__})
@@ -113,13 +81,7 @@ class Weight:
     and is obtained, verified and stored exactly the same way."""
 
 
-#: Re-exported rather than redeclared: a caller of this module should not have to know that the
-#: transfer underneath it is the kernel's.
-#:
-#: Named in `__all__` rather than rebound to themselves. `Progress = Progress` reads like a
-#: re-export and is not one to a type checker: it is an assignment from a name to itself, which
-#: says nothing about what this module offers, and the modules that import these through here
-#: would be told the attribute does not exist.
+#: Re-exported through `__all__`, as `Progress = Progress` is no re-export to a type checker.
 __all__ = [
     "CHUNK",
     "FetchFailed",
@@ -133,8 +95,7 @@ __all__ = [
 
 
 def digest_of(path: Path) -> str:
-    """The digest of a file on disk, read in pieces so a large model does not have to fit in
-    memory."""
+    """The digest of a file on disk, read in pieces so a large model need not fit in memory."""
     hasher = blake3()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(_CHUNK), b""):
@@ -143,12 +104,7 @@ def digest_of(path: Path) -> str:
 
 
 class WeightStore:
-    """Where one feature's model files live, and everything done to them.
-
-    A feature makes one of these with the name of its own corner of the data directory. Two
-    features never share a corner, so switching one off and deleting its models cannot take
-    another's with them.
-    """
+    """One feature's own corner of the model store, so removing one never takes another's."""
 
     def __init__(self, settings: Settings, namespace: str) -> None:
         self._settings = settings
@@ -164,33 +120,18 @@ class WeightStore:
         return self._namespace
 
     def directory(self) -> Path:
-        """This feature's corner of the device's model store (`Settings.models_dir`).
-
-        ONE STORE PER DEVICE, not one per library: a model gives the same answer whichever library
-        asks, so every library on this device reads the same files and a new or duplicated library
-        has them from its first start. Never under the cache, so a cache clean cannot take them.
-        Older versions used `<data folder>/<namespace>/models`, and a one-time move (now retired)
-        carried them here (`kernel.ml.store`).
-        """
+        """This feature's corner of the device's one model store, never under the cache."""
         return self._settings.models_dir / self._namespace
 
     def path_of(self, weight: Weight) -> Path:
         return self.directory() / f"{weight.id}{weight.suffix}"
 
     def installed(self, weight: Weight) -> bool:
-        """Whether the file is there. Says nothing about whether it is the right one: `verify`
-        does that, and it reads the whole file, so the two questions are kept apart."""
+        """Whether the file is there; `verify` reads the whole file to say if it is right."""
         return self.path_of(weight).is_file()
 
     def verify(self, weight: Weight) -> None:
-        """Prove an installed file is the model it claims to be. Raises with a readable reason.
-
-        Checked before a model is loaded, every time, rather than only when it was installed. A
-        file on disk can be truncated by a full disk, replaced by a restore from an older backup,
-        or edited by somebody who thought they were being helpful, and none of those announce
-        themselves: an ONNX file with its tail missing often loads and then produces subtly wrong
-        numbers.
-        """
+        """Prove an installed file is the expected model before every load; a truncated one lies."""
         path = self.path_of(weight)
         if not path.is_file():
             raise WeightError(f"the {weight.role} model has not been installed yet")
@@ -202,12 +143,7 @@ class WeightStore:
             )
 
     async def install_from_file(self, weight: Weight, source: Path) -> None:
-        """Take a model from a file the operator already has.
-
-        The offline answer, and the only one on a machine with no route out. The file is checked
-        against the same digest a download would be, so a wrong or corrupted copy is refused here
-        rather than producing quietly worse answers later.
-        """
+        """Take a model from a file already on the machine, checked against the same digest."""
         if not await asyncio.to_thread(source.is_file):
             raise WeightError(f"there is no file at {source}")
         await asyncio.to_thread(self._install_local, weight, source)
@@ -221,11 +157,7 @@ class WeightStore:
         progress: Progress | None = None,
         fresh: bool = False,
     ) -> None:
-        """Download a model, resuming a previous attempt unless `fresh` says start again.
-
-        The partial file is kept beside the destination and asked for by byte range on a second
-        attempt. Nothing is put in place until the digest matches; a partial that fails it goes.
-        """
+        """Download a model, resuming unless `fresh`; nothing is placed until the digest matches."""
         destination = self.path_of(weight)
         await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
         partial = destination.with_suffix(".part")
@@ -241,19 +173,18 @@ class WeightStore:
                 session_factory=session_factory,
             )
         except FetchFailed as exc:
-            # The client's own words after the sentence, where whoever chases the fault reads them.
+            # The client's own words follow the sentence, for whoever chases the fault.
             said = f"{exc.sentence} Or copy the file to this device yourself."
             kind = refused_for_good() if isinstance(exc, Untrusted) else WeightError
             raise kind(f"{said} {exc.words}" if exc.words else said) from exc
         if not finished:
-            # Stopped on purpose. What has arrived stays where it is, and the next attempt asks for
-            # the remainder rather than starting again.
+            # Stopped on purpose; what arrived stays for the next attempt to continue.
             return
 
         try:
             await asyncio.to_thread(self._install_local, weight, partial)
         except WeightError as exc:
-            # Resuming a wrong partial asks for nothing more and fails the same check for ever.
+            # A wrong partial would fail the same check for ever if resumed.
             await asyncio.to_thread(partial.unlink, True)
             raise WeightError(
                 f"The {weight.role} model came in damaged, so it was removed. Starting again "
@@ -290,12 +221,7 @@ class WeightStore:
 
 
 def _extract(archive: Path, weight: Weight, destination: Path) -> None:
-    """Pull one named file out of an archive, and nothing else.
-
-    The member is named exactly rather than searched for, and written to a path this module chose.
-    An archive that names its own destination is how an extraction writes outside the directory it
-    was supposed to stay in, and this one comes off the internet.
-    """
+    """Pull one named member out of an archive to a path chosen here, never the archive's own."""
     member_name = weight.archive_member or ""
     with zipfile.ZipFile(archive) as bundle:
         try:

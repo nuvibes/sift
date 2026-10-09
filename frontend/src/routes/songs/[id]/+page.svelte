@@ -1,20 +1,6 @@
 <script lang="ts">
-	/*
-	 * One song: its cover and name, who it credits, the files that carry it, and what else those
-	 * files reach.
-	 *
-	 * The same shape every entity page has (one frame, one scrolling region, the tabs inline with
-	 * the heading): a thing, and several walls about it. Its tabs are every tab but Photo Sets, in
-	 * the other pages' order (`TABS_FOR`), and it is shared, restricted and hidden like any other
-	 * named thing, through the same dialogs and the same rows in the header's menu. What a song has
-	 * fewer of is said by what is NOT here: no tags of its own (its Tags tab is its files' tags).
-	 *
-	 * Its artists are a line under the name, each a press to the Music wall filtered to that artist,
-	 * and a list in the record's form: the whole ordered list is sent in one go
-	 * (`PUT /songs/{id}/artists`), so adding, removing, reordering and correcting are one save.
-	 *
-	 * A song nobody chose a cover for is drawn as the music glyph, as its card on the wall is.
-	 */
+	/* One song: its cover and name, who it credits, the files that carry it, and what else those
+	 * files reach. */
 	import type { Crumb } from '$lib/components/common';
 	import { coverBody, type Frame } from '$lib/entity/cover-frame';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
@@ -106,14 +92,14 @@
 	const shown = $derived<RelatedKind>(chosenTab('song', asked));
 	const fileWords = new TabWords();
 
-	/* The subject, shared with every other entity page: a re-read leaves this song on screen, and
-	   `follow` re-reads a name, a heart or a cover that has moved. */
+	/* The subject, shared with every other entity page: a re-read leaves this song on screen,
+	   and `follow` re-reads a name, a heart or a cover that has moved. */
 	const subject = new EntitySubject<Song>((id) => api.get<Song>(`/songs/${id}`));
 	subject.follow(() => songId);
 	const song = $derived(subject.value);
 
-	/* Everything the record is made of, in one place: the summary under the name, the panel beside
-	   it and the form are three surfaces over the same facts. */
+	/* Everything the record is made of, in one place: the summary under the name, the panel
+	   beside it and the form are three surfaces over the same facts. */
 	const recordValues = $derived({
 		name: song?.name ?? '',
 		details: song?.notes ?? '',
@@ -135,12 +121,7 @@
 	const counts = new TabCounts();
 	let editing = $state(false);
 
-	/* What this page can do to this song, behind the one door every entity page wears. Sharing and
-	   Visibility, an admin's, as on a person's and a Photo Set's page; Merge, because a song typed
-	   by hand and the one AcoustID named can be one piece of music; Delete, worded here because
-	   what it leaves behind (the files, their fingerprints) is this page's to say. And Hide, which
-	   is this account's own (the vault is per account), so it is offered to everyone, as a
-	   person's page offers it. */
+	/* What this page can do to this song, behind the one door every entity page wears. */
 	const options = $derived<Verb[]>([
 		...(session.isAdmin
 			? [
@@ -150,8 +131,8 @@
 						icon: 'group' as const,
 						run: () => (shareOpen = true)
 					},
-					/* What the sharing above it comes to: who can actually reach this song, however
-					   the reach was arranged. */
+					/* What the sharing above it comes to: who can actually reach this song,
+					   however the reach was arranged. */
 					{
 						id: 'visibility',
 						label: 'Visibility',
@@ -174,7 +155,7 @@
 				]
 			: []),
 		/* Only reachable with Hidden open: with it shut, a hidden song's page answers that it is
-		   not here. So the row reads the way it can work. */
+		   not here. */
 		song?.vault
 			? {
 					id: 'unhide',
@@ -191,8 +172,7 @@
 	]);
 
 	/* Hiding the song and bringing it back, through the ONE mechanism every wall and page uses
-	   (`setHidden`: the Privacy wording, the refusal with no PIN set, the Undo). `stays` is the
-	   vault's state: with Hidden open the song is still listed. */
+	   (`setHidden`: the Privacy wording, the refusal with no PIN set, the Undo). */
 	const hiddenAs = $derived({
 		noun: 'song',
 		stays: vault.unlocked,
@@ -203,8 +183,7 @@
 	async function conceal() {
 		if (!song) return;
 		const moved = await setHidden([song.id], true, hiddenAs);
-		// Away from a page that is about to stop answering: hidden, it is not here for you. Only on
-		// a write that landed; a refusal has been said, and leaving would take the sentence with it.
+		// Away from a page that is about to stop answering: hidden, it is not here for you.
 		if (moved.length > 0) await leaveFor('/songs');
 	}
 
@@ -216,9 +195,8 @@
 	/** Whether the picture chooser is open. Opened by the pencil on the cover. */
 	let pickingPicture = $state(false);
 
-	/* WHO MADE IT, for the line under the name: by hand, from AcoustID, or from a download's page.
-	   Guarded by the id it was asked for, so a slower answer for a song navigated away from cannot
-	   land under this heading. */
+	/* WHO MADE IT, for the line under the name: by hand, from AcoustID, or from a download's
+	   page. */
 	let madeBy = $state<Maker | null>(null);
 	let madeByFor = $state('');
 	$effect(() => {
@@ -230,9 +208,8 @@
 		});
 	});
 
-	/** The whole record, saved once. The name, the details and the artists are three routes;
-	 *  what changed is what is sent. A rename moves every file's Music field with it, on the server.
-	 *  The artists go as the whole ordered list, so a reorder is a change like an add. */
+	/** The whole record, saved once. The name, the details and the artists are three routes; what
+	 * changed is what is sent. */
 	async function saveRecord(draft: Record<string, unknown>) {
 		if (!song) return;
 		const wanted = String(draft.name ?? '').trim() || song.name;
@@ -268,8 +245,7 @@
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
 	reloadOnLibraryChange(() => counts.refresh());
 
-	/* How many files the Files tab holds while picks filter it (null: nothing picked). See the
-	   Photo Set page. */
+	/* How many files the Files tab holds while picks filter it (null: nothing picked). */
 	let narrowedFiles = $state<number | null>(null);
 	let narrowedAsk = 0;
 	$effect(() => {
@@ -337,8 +313,7 @@
 		}
 	}
 
-	/* A picture from outside the library, an album's sleeve say. The refusal is the sheet's to
-	   show, in the server's words. */
+	/* A picture from outside the library, an album's sleeve say. */
 	async function uploadCover(file: File) {
 		if (!song) return;
 		const form = new FormData();

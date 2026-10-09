@@ -1,29 +1,4 @@
-/*
- * The stand-in data the gallery draws its specimens from.
- *
- * ## Why this is a module and not a block of `const`s on the page
- *
- * Fixtures invented where each is needed (lists of fake people, fake tags, fake assets, one per
- * section) do not agree with each other: the gallery would show the tag chip with one set of tags
- * and the tag editor with another. That is the same failure the components on this page exist to
- * fix, one level up.
- *
- * One place, one set of names, one library. Every specimen on the page draws from it.
- *
- * ## The two halves
- *
- * **Invented** is most of it: shapes the components take as props, written out below. Nothing here
- * touches the server and nothing here can fail.
- *
- * **Borrowed** is the handful of components that fetch their OWN data from an id: the faces on a
- * file, what a person appears in, how well Sift recognises them. Those cannot be faked from here
- * without reimplementing the thing being drawn, which is the one thing the gallery may not do. So
- * `borrowed` asks the library for one asset and one person and hands their ids over.
- *
- * If the library is empty, or the request fails, the ids stay null and those specimens draw their
- * own empty state. That is not a degraded gallery: an empty state is a state, it is the one a
- * fresh install sees, and it is worth being able to look at.
- */
+/* The stand-in data the gallery draws its specimens from. */
 import { api } from '$lib/api/client';
 import type { EditableAsset } from '$lib/edit/edit.svelte';
 import type { MoveTarget } from '$lib/components/MoveDialog.svelte';
@@ -75,12 +50,7 @@ async function ask(): Promise<void> {
 	found.asked = true;
 }
 
-/**
- * One real file and one real person from this library, for the specimens that fetch their own.
- *
- * Reading it starts the request if nothing has yet. Null until it lands, and null for ever on an
- * empty library. See the note at the top for why that is a specimen rather than a failure.
- */
+/** One real file and one real person from this library, for the specimens that fetch their own. */
 export function borrowed(): Borrowed {
 	asking ??= ask();
 	return found;
@@ -138,12 +108,8 @@ export const TAGS = [
 
 /* ------------------------------------------------------------ music lookup */
 
-/**
- * The music lookup block, answering from memory: pressing its switch, saving a key or pressing Test
- * here changes nothing on the server and sends nothing to AcoustID. Only the declarations (the
- * words the switch and the route are drawn with, the disclosure among them) are read from the
- * live settings, so the gallery shows the server's own sentence rather than a copy of it.
- */
+/** The music lookup block, answering from memory: pressing its switch, saving a key or pressing
+ * Test here changes nothing on the server and sends nothing to AcoustID. */
 export function lookupInMemory(): LookupWire {
 	let held = { on: false, key_set: false, key_ready: false, route: null as string | null };
 	/* A few files owed a lookup once it could be asked, as the server counts them. */

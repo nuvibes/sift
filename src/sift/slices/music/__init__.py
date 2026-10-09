@@ -1,33 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What song is in a file.
-
-A clip's sound is usually one track, unmixed, for the length of the clip, so the sound is the
-one part of a file that can be matched against something the person already owns. This slice keeps
-the evidence for that: a Chromaprint fingerprint of every file's audio, whole, computed once.
-
-Three decisions shape it.
-
-**The whole track, never a window.** Chromaprint's own tool reads the first two minutes and the
-public service is built around whole music files. Thirty seconds taken from five minutes into a
-track match a whole-track fingerprint at a bit error rate of 0.011 and score as random against a
-fingerprint of the same track's first two minutes, so a window is a different answer, not a
-cheaper one. See `kernel/chromaprint.py`.
-
-**The cost is the DECODE, and it is a few seconds a file.** On MP4, with the video dropped, the
-demuxer skips it, so the read is a small part of the file's bytes, and a three-minute video takes
-a few seconds, the same again when its bytes are already cached, so the time is the audio decode
-rather than the share. MKV, WebM and AVI,
-where sound and picture share blocks, may read nearly whole. A few seconds across a whole library is
-still hours nobody asked for, so nothing reads a library on its own: a file that arrives through
-Sift is fingerprinted while it is still on the local disk, and only when the folder it is going to
-says so (`slices/music/landing.py`); a library that was already here waits for the music task's
-Run now (`slices/music/queue.py`), priced as every pass is (`Ledger.estimate`).
-
-**Nothing here identifies a song yet.** What is gathered is the thing that cannot be gathered
-later without reading everything again; matching it (against a folder of the person's own music,
-or against the rest of the library to find the clips that share a track) reads these rows and
-opens no file.
-"""
+"""What song is in a file: a whole-track Chromaprint fingerprint per file, read only when asked."""
 
 from __future__ import annotations
 
@@ -60,13 +32,7 @@ from sift.slices.music.service import CLAIM_ONLY, SERVICE, MusicService
 from sift.slices.music.settings import FINGERPRINT_KEY, LOOKUP_KEY
 from sift.slices.music.store import MusicStore, NameStore
 
-#: Music fingerprints, as a task. It is also under Generate's own When on the way in (the import
-#: gate asks both), so a file arriving is fingerprinted only when both start on their own.
-#:
-#: ONLY WHEN PRESSED OUT OF THE BOX: a library is never read for its music on its own. A folder
-#: can say yes for itself, and then a file arriving in it is fingerprinted at staging; everything
-#: else waits for Run now, the Build or a file's Run task. An install that
-#: had this at "As soon as there is work" is moved here once by the settings step at v11.
+#: Only when pressed by default: a library is never read for its music on its own.
 register_schedule(
     ScheduledTask(
         id="music",
@@ -82,16 +48,7 @@ register_schedule(
     )
 )
 
-#: Naming songs with AcoustID, as a task of its own, beside the fingerprints and never inside them.
-#:
-#: Making a fingerprint sends nothing anywhere; this sends each file's music fingerprint and its
-#: length to AcoustID, a service somebody else runs, so it is a decision of its own with a When of
-#: its own, and pressing Generate music fingerprints asks AcoustID about nothing (see
-#: `slices/music/lookup.py`). ONLY WHEN PRESSED OUT OF THE BOX: nothing is stored under its When
-#: until somebody chooses one, so every install reads the default, and a library's fingerprints
-#: leave this device only on a press or on a When
-#: somebody chose. Its press refuses in words while the switch is off or there is no key, and its
-#: row says the switch is off (`switch`) and names the Music pane where it is turned on.
+#: AcoustID lookups get their own When, since they send fingerprints off this device.
 register_schedule(
     ScheduledTask(
         id=LOOKUP_TASK,

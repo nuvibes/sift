@@ -1,11 +1,4 @@
-/*
- * The sign-in screen draws NOTHING until the server has said whether the instance has its admin.
- *
- * A fresh instance has no account to sign in to, so the screen it needs is setup. Drawing the
- * sign-in form first and moving on once the answer lands shows a fresh install a login for a
- * moment, which reads as "this library already has somebody in it". So the form waits for the
- * answer, and a fresh instance goes to setup having drawn nothing at all.
- */
+/* The sign-in screen draws NOTHING until the server has said whether the instance has its admin. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 

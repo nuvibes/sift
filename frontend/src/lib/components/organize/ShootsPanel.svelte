@@ -11,9 +11,7 @@
 	}
 
 	/**
-	 * A shoot's answers, in the one order and the one wording both places ask them in: this wall's
-	 * card and the shoot's own page (`ShootDetail`). Create is the answer the question expects; the
-	 * others sit behind its chevron, Name the rest only where there is a rest.
+	 * A shoot's answers in one order and wording for this card and the shoot's page: Create leads.
 	 */
 	export function shootAnswers(one: Shoot, press: ShootPresses): { yes: Answer; rest: Answer[] } {
 		return {
@@ -31,47 +29,10 @@
 
 <script lang="ts">
 	import { counted } from '$lib/entity/entity-counts';
-	/*
-	 * Runs of one creator's loose pictures that look like one sitting.
-	 *
-	 * A wall of cards rather than a list of rows: the question is "are these the same shoot", and
-	 * only looking at the pictures answers it.
-	 *
-	 * The two answers sit apart on purpose. Create Photo Set is the safe affirmative; Not a set is
-	 * permanent (remembered against the pictures so no rearrangement brings it back), so it asks
-	 * first, here, where somebody is looking carefully. The board's own card offers only the
-	 * affirmative for that reason.
-	 *
-	 * Create Photo Set is a split button, the shape every Organize card wears: the lead half makes
-	 * the Photo Set under the proposal's name (the creator's), and the chevron offers "Create with
-	 * a name...". One act with one adjustable detail, and the ordinary press stays one press.
-	 *
-	 * The card asks the board's question in the board's words ("Do these 13 pictures of X belong
-	 * together?" over "13 pictures of X that are in no Photo Set"). Both come from the server
-	 * (`ShootView.question` / `.detail`, built by the one function the board's card uses), so the
-	 * two cards cannot disagree.
-	 *
-	 * The person's name in the question is a way to that person: the server sends who the sentences
-	 * name (`ShootView.links`), and `Said` finds and links the name with History's own
-	 * `sentenceParts` and `hrefOf`. Only the title line links; the line under it says the same name
-	 * and is plain, here and on the board's card, so a card carries one way to the person rather
-	 * than two.
-	 *
-	 * The count sits at the top, where Identified People says its own, the first thing read on
-	 * arrival. There is no "Look again" press: the pass is asked for by every scan as it settles
-	 * (`settles_into` in the composition root), by the board's card while nothing has been found,
-	 * and by the Activity screen's run-now.
-	 *
-	 * It pages the way every other Organize wall pages: `CardPaging` sizes a page to whole rows of
-	 * the screen, the pager goes to the frame's foot through `onpaging`, and the proposal the page
-	 * starts at goes in the address as `from`, so Back from a picture or a person lands on the page
-	 * it left.
-	 *
-	 * Name the rest is a third, separate press that appears only where there is a rest: a shoot can
-	 * pull in pictures of the same sitting that carry nobody, and putting the creator on those is a
-	 * different judgement from agreeing the pictures belong together. Each has its own receipt, so
-	 * either can be taken back alone.
-	 */
+	/* Runs of one creator's loose pictures that look like one sitting, as cards. Create Photo Set is a
+	 * split button (the chevron names it); Not a set is permanent, so it asks first; Name the rest
+	 * appears only where pictures carry nobody. The question and its links are the server's, as on
+	 * the board's card; it pages as every Organize wall, the page kept in the address. */
 	import { goto } from '$app/navigation';
 	import { thumbUrl } from '$lib/entity/art';
 	import { openAsset } from '$lib/player/asset-view';
@@ -114,14 +75,11 @@
 	let busy = $state<string | null>(null);
 	let refusing = $state<Shoot | null>(null);
 	let refuseOpen = $state(false);
-	/* "Create with a name...": the shoot it is about, whether the box is open, and what is typed.
-	   One box on the screen for whichever card opened it, the same arrangement as the refusal. */
+	/* "Create with a name...": one box for whichever card opened it. */
 	let naming = $state<Shoot | null>(null);
 	let nameOpen = $state(false);
 	let typed = $state('');
-	/* The pictures whose still could not be fetched, by id. Drawn as the empty-frame glyph a tile
-	   wears for the same thing (`Tile`'s `hide_image`), rather than the browser's broken-image box,
-	   which reads as the screen being broken rather than one picture having no still yet. */
+	/* Pictures with no still, drawn as the tile's `hide_image` glyph. */
 	let unseen = $state<Set<string>>(new Set());
 
 	/* A page of whole rows of cards, the same paging every Organize wall has. See `CardPaging`. */
@@ -134,17 +92,14 @@
 	});
 	onDestroy(() => onpaging?.(null));
 
-	/* Where this wall was left, carried in the address. See `$lib/grid/anchor`. `path` is caught
-	   once so a background re-read cannot rewrite the address after somebody has gone elsewhere,
-	   and `arriving` is true exactly once: after the first page the anchor there is one WE wrote. */
+	/* Where the wall was left, in the address; `path` caught once (`$lib/grid/anchor`). */
 	const path = address.url.pathname;
 	let arriving = true;
 
 	async function load() {
 		failed = false;
 		try {
-			// The rows go in as a function: `fill` reads them untracked, so the effect that runs
-			// this load cannot come to depend on its own answer.
+			// The rows as a function, read untracked by `fill`.
 			const page = await paging.fill(
 				'',
 				() => items,
@@ -158,8 +113,6 @@
 			// Overtaken by a newer read, which finishes this one's work.
 			if (page === null) return;
 			if (page.answer) automatic = page.answer.auto_file;
-			/* A page emptied by answering its last card comes back as the new last page: one rule
-			   for every wall, in `CardPaging.fill`. */
 			items = page.rows;
 			total = page.total;
 			// Through `land`, in the same step as the rows: see `CardPaging.land`.
@@ -185,13 +138,10 @@
 		untrack(() => void load());
 	});
 
-	/* And again whenever the library's shape changes underneath: a picture filed into a set while
-	   this screen is open is a picture that is no longer part of any proposal here. */
+	/* And when the library changes underneath. */
 	reloadOnLibraryChange(() => void load());
 
-	/* A 409 is a card whose pictures went into a Photo Set while it stood: the server refuses the
-	   press and answers the card by that set, so the page is re-read and the card goes. Its
-	   sentence goes to a toast; nothing about the queue is broken. */
+	/* A 409: the pictures went into a Photo Set; the page is re-read and the card goes. */
 	async function answer(one: Shoot, act: () => Promise<unknown>) {
 		busy = one.id;
 		try {
@@ -209,8 +159,7 @@
 		}
 	}
 
-	/* The refusal, once the dialog has been answered. Held as state rather than passed through the
-	   dialog, because there is one dialog on the screen and it is about whichever card opened it. */
+	/* The refusal, once the one dialog is answered. */
 	function doRefuse() {
 		const one = refusing;
 		refusing = null;
@@ -223,12 +172,8 @@
 		nameOpen = true;
 	}
 
-	/* The Photo Set, made under the name typed into the box.
+	/* Created under the typed name; a refusal is the server's sentence, in a toast. */
 
-	   A refusal is the SERVER'S sentence, shown as written: "a Photo Set's name cannot contain a
-	   double quote" is what somebody needs in order to type a different one. And it goes to a
-	   toast rather than to the whole-screen problem `answer` raises: one name was refused, nothing
-	   about the queue is broken. */
 	async function createNamed(): Promise<void> {
 		const one = naming;
 		naming = null;
@@ -253,35 +198,19 @@
 		unseen = new Set([...unseen, id]);
 	}
 
-	/**
-	 * How many of a shoot's pictures a card shows before the rest go behind a press.
-	 *
-	 * A proposal holds from the floor to sixty pictures, so cards would differ wildly in height.
-	 * Twelve is two rows of the strip at any card width, because the strip always fits at least six
-	 * to a row (see `.strip`), which is enough of a sitting to judge; every picture is on the
-	 * shoot's own page, one press away, and the question is unchanged.
-	 */
+	/** Pictures a card shows before the rest: twelve, two rows at any width. */
 	const SHEET = 12;
 
 	function shown(one: Shoot): Shoot['items'] {
 		return one.items.slice(0, SHEET);
 	}
 
-	/* Every card opens its shoot on a page of its own (`ShootDetail`), the way a Photo Set opens:
-	   every picture of it, with this card's question and answers. The address is the shoot's. */
+	/* A card opens its shoot's own page. */
 	function openShoot(id: string): void {
 		void goto(`/organize/shoots/${encodeURIComponent(id)}`);
 	}
 
-	/*
-	 * A picture pressed opens the viewer over this queue, on that picture.
-	 *
-	 * `openAsset` is the door every Organize card uses (Copies, Duplicates, the faces piles): the
-	 * viewer opens over the page as a shallow history entry, so closing it lands back here with the
-	 * queue as it was. The list handed in is the whole shoot, not the dozen the card draws, so Next
-	 * and Previous walk the sitting being judged. A GIF runs and a still does not; the server says
-	 * which (`ShootPictureView.media_type`).
-	 */
+	/* A picture opens the viewer over this queue (`openAsset`), walking the whole shoot. */
 	function look(one: Shoot, pictureId: string): void {
 		openAsset(
 			pictureId,
@@ -290,11 +219,7 @@
 	}
 </script>
 
-<!--
-	ONE OF THE CARD'S SENTENCES, with each name in it drawn as a way to the thing it names. Written
-	on one line on purpose: the runs sit inside the sentence, and a line break between them would be
-	a space in the words.
--->
+<!-- A sentence with each name a link, on one line, as a break would be a space. -->
 
 <section>
 	{#if loading && items.length === 0}
@@ -312,17 +237,15 @@
 			{/if}
 		</Empty>
 	{:else}
-		<!-- How many are waiting, over the wall rather than under it: this page has no tab to carry
-		     the count, as the faces tabs do. The server's total, not the cards drawn, so it is the
-		     size of the queue. -->
+		<!-- The queue's size over the wall, the server's total. -->
 		<p class="count">{total === 1 ? '1 shoot waiting' : `${counted(total)} shoots waiting`}</p>
 		<CardWall cards={paging.cards}>
 			{#each items as one (one.id)}
 				<li>
 					<DecisionCard opens={() => openShoot(one.id)}>
-						<!-- The question and the line under it at the card's foot, the answers after
-						     them: the one place every question on Organize is asked
-						     (`DecisionCard`). Only the question links the person. -->
+						<!--
+						The question and the line under it, then the answers (`DecisionCard`).
+						-->
 						{#snippet question()}<Said what={one.question} links={one.links} />{/snippet}
 						{#snippet detail()}{one.detail}{/snippet}
 						<ul class="strip">
@@ -352,8 +275,7 @@
 								</li>
 							{/each}
 						</ul>
-						<!-- Never sixty thumbnails on a card. The DECISION is one decision whatever the
-						     number is, and every picture is on the shoot's own page, a press away. -->
+						<!-- Never sixty thumbnails: every picture is on the shoot's page. -->
 						<div class="rest">
 							<Button
 								tone="link"
@@ -366,8 +288,7 @@
 									: 'Open this shoot'}
 							</Button>
 						</div>
-						<!-- Create is the answer the question expects; the others sit behind its
-						     chevron. Discard asks first, because it lasts. -->
+						<!-- Create leads; Discard asks first, because it lasts. -->
 						{#snippet answers()}
 							{@const given = shootAnswers(one, {
 								make: () => void answer(one, () => makeTheSet(one.id)),
@@ -402,9 +323,7 @@
 	onconfirm={doRefuse}
 />
 
-<!-- The rename box every named thing in Sift is renamed through (`EntityWallFlows`): a confirmation
-     with one field in it. It opens holding the proposal's own name, so the ordinary edit is a
-     change to it rather than a retype. -->
+<!-- The rename box, opening on the proposal's own name. -->
 <ConfirmDialog
 	bind:open={nameOpen}
 	title="Create a Photo Set with a name"
@@ -437,13 +356,8 @@
 		justify-content: var(--card-actions-justify, flex-end);
 	}
 
-	/* The pictures of the shoot, wrapping rather than scrolling: the question is about all of them
-	   together, and a strip that hides half of it behind a scroll asks it of half.
+	/* Wrapping, never scrolling, at least six to a row, so twelve are two rows. */
 
-	   AT LEAST SIX TO A ROW, so the twelve a card shows (`SHEET`) are never more than two rows and
-	   the cards of one wall stay close in height. A cell is 4rem
-	   where six of those fit, and a sixth of the row where they do not: a narrower picture rather
-	   than a third row. Wider cards still pack more than six. */
 	.strip {
 		list-style: none;
 		margin: var(--space-3) 0;
@@ -456,18 +370,14 @@
 		gap: var(--space-1);
 	}
 
-	/* No ground under the picture: it covers its own box, and a colour behind it would be a box
-	   drawn by hand where the card already provides one. */
-	/* The press is the whole picture, and takes no room of its own. `:global` because the class is
-	   handed to `Pressable` and lands on its element. */
+	/* The press is the whole picture; global, as it is Pressable's. */
 	.strip :global(.look) {
 		display: block;
 		inline-size: 100%;
 		padding: 0;
 	}
 
-	/* A picture with no still: the same square, holding the glyph a tile wears for it, and no
-	   ground of its own, for the reason the picture has none (the card is the box). */
+	/* No still: the tile's glyph in the same square. */
 	.strip .none {
 		display: grid;
 		place-items: center;
@@ -483,8 +393,7 @@
 		border-radius: var(--radius-sm);
 	}
 
-	/* A picture carrying nobody is marked, because it is what "Name the rest" is about and a button
-	   naming files somebody cannot pick out is a button they have to trust rather than read. */
+	/* A picture carrying nobody is marked, for Name the rest. */
 	.strip li.unnamed img {
 		outline: 2px dashed var(--sift-line);
 		outline-offset: -2px;

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The pictures a person is recognized by: how many there are and what they are worth, filing them
-from a folder of folders, and handing on what an import held for a name.
-"""
+"""The pictures a person is recognized by: how many and what they are worth, filing them from a
+folder of folders, and handing on what an import held for a name."""
 
 from __future__ import annotations
 
@@ -29,14 +28,12 @@ log = get_logger(__name__)
 
 
 class EntryTaken(Exception):
-    """Another write placed a held entry first: the write that would have placed it again is
-    undone whole."""
+    """Another write placed a held entry first; the would-be second write is undone whole."""
 
 
 @dataclass(frozen=True, slots=True)
 class EntryHeld:
-    """One held entry as its claim writes it: each face row with its picture, and the origin the
-    references take."""
+    """One held entry as its claim writes it: each face row with its picture, and the origin."""
 
     entry_id: str
     origin: Origin
@@ -45,13 +42,8 @@ class EntryHeld:
 
 @dataclass(frozen=True, slots=True)
 class Strength:
-    """How well Sift recognizes one person in this library, and what that rests on.
-
-    The measure is the library's own: of her faces Sift found, the share it named outright rather
-    than asked about, with every Yes on her counted as named and every No as asked (`rate`). Her
-    pictures by origin (`counted`) say what that rests on. The bands travel with the numbers, so
-    no screen bands a number for itself.
-    """
+    """How well Sift recognizes one person here: the share of her found faces named outright,
+    answers counted (`rate`), what it rests on, and the bands, so no screen bands it itself."""
 
     references: int
     target: int
@@ -79,9 +71,7 @@ class Strength:
 
     @property
     def verdict(self) -> str:
-        """The band, as a token the screen words: `none`, `few` under the floor of pictures,
-        `unseen` before any face of hers is found, then `weak`, `fair`, `good` and `strong` by the
-        rate."""
+        """The band, as a token the screen words, from the pictures and then the rate."""
         if self.references == 0:
             return "none"
         if self.references < tuning.FEWEST_REFERENCES:
@@ -97,8 +87,7 @@ class Strength:
 
 
 def band_of(confirmed: int) -> str:
-    """The word a chooser bands a person's count of confirmed faces with, for a list drawing many
-    people from counts alone."""
+    """The word a chooser bands a person's count of confirmed faces with."""
     if confirmed == 0:
         return "none"
     if confirmed < tuning.MIN_REFERENCES:
@@ -110,11 +99,7 @@ def band_of(confirmed: int) -> str:
 
 @dataclass(frozen=True, slots=True)
 class Strengths:
-    """Everybody's `Strength` in one go, with the bands every one of them is read against.
-
-    The wall's reading and the person's page read the same object, so a card on the wall and the
-    page it opens cannot say two different words about one number.
-    """
+    """Everybody's `Strength` in one go, read by the wall and the page alike."""
 
     people: dict[str, Strength]
     target: int
@@ -126,39 +111,18 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
     """Adding and reading a person's reference pictures."""
 
     async def roster(self, prefix: str = "") -> list[tuple[str, str, int, int]]:
-        """Who Sift can already recognize, their id, and how many reference faces each has.
-
-        Read before adding somebody, to answer "do I have them already" without hunting. Keyed on
-        having references rather than on being a Person: somebody with none is not recognizable,
-        and listing them here would answer yes to a question whose real answer is no.
-
-        The id travels with the name so the screen can link a name to that person's own page: the
-        answer to "do I have them" is very often followed by "show me them".
-        """
+        """Who Sift can already recognize, with their id and reference count; keyed on having
+        references, not on being a Person."""
         if not await self.enabled():
             return []
-        # The last is how many STARTER pictures she has in use, so the list can say Sift knows her
-        # only well enough to ask. See `Store.roster`.
+        # The last is her starters in use (`Store.roster`).
         return [
             (person_id, name, faces, starters)
             for person_id, name, faces, _, starters in await self._store.roster(prefix)
         ]
 
     async def reference_strengths(self, viewer: Viewer | None = None) -> Strengths:
-        """Everybody's reference count in one go, with the target and the floor they are read against.
-
-        `recognition_of` answers for one person and is right for a person's own page. A picker is
-        the other shape: it draws several people together, and asking per row turns choosing a name
-        into one request per keystroke per candidate. This is the same numbers in one answer.
-
-        The target and floor travel with the counts for the reason the meter's do: a screen
-        holding its own copy of the threshold goes on saying "weak" after the number behind it
-        moves.
-
-        Each person's `Strength`, not a bare count: the verdict is the same property the person's
-        own page reads, computed once here, so no screen bands the number for itself. A wall that
-        did its own banding could say "Identifies them" over a person the page calls "well".
-        """
+        """Everybody's `Strength` in one answer, for a picker drawing several people."""
         bands = {
             "target": tuning.GOOD_REFERENCES,
             "floor": tuning.FEWEST_REFERENCES,
@@ -183,17 +147,8 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         )
 
     async def recognition_of(self, person_id: str, viewer: Viewer | None = None) -> Strength:
-        """How reliably Sift can recognize one person, and what it rests on.
-
-        The number that was invisible. Matching against a person compares a new face with every
-        reference they have, so somebody with three references under-matches, correctly, quietly,
-        and with nothing on any screen to say so. Import six hundred people in one go and the ones
-        with two usable photos look exactly like the ones with fifty, until somebody notices they
-        are never recognized.
-
-        Reported and never enforced. Below the target Sift still matches; it is just worse at it,
-        and the useful thing is to say so where somebody can act on it.
-        """
+        """How reliably Sift can recognize one person, and what it rests on: reported, never
+        enforced."""
         in_use, retired, sources = await self._store.starters_of(person_id)
         counted = await self._store.strength_counts(person_id, viewer=viewer)
         return Strength(
@@ -208,24 +163,14 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         )
 
     def scratch_root(self) -> Path:
-        """Where an upload waiting to be read is put, made if it is not there.
-
-        Under the cache directory rather than the system temp area, on purpose. The container's
-        `/tmp` is a small in-memory mount; a folder of six hundred people's photographs written
-        there would fill the machine's memory instead of a disk. The cache is a real volume, it is
-        rebuildable, and it is already where everything large and temporary lives.
-        """
+        """Where an upload waiting to be read is put: the cache volume, never in-memory `/tmp`."""
         scratch = self._settings.cache_dir / "incoming"
         scratch.mkdir(parents=True, exist_ok=True)
         return scratch
 
     async def import_person_folder(self, folder: Path, *, source: str | None) -> PersonReport:
-        """One person's folder of `import_folder`, checked and held before the next is read.
-
-        One at a time so a long import keeps what it has done when it is stopped, and holds one
-        person's pictures in memory rather than the whole gallery's. `source` is the name of the
-        folder of people it sits in: what the entry says it came from.
-        """
+        """One person's folder of `import_folder`, checked and held before the next is read;
+        `source` is the folder of people it sits in."""
         await self._require_enabled()
         configured = await self.configuration()
         pack_id = await self._store.folder_import_pack(configured.recognizer)
@@ -259,20 +204,8 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         *,
         source: str | None,
     ) -> int:
-        """Hold what a FOLDER brought for somebody this library has nobody for.
-
-        The same holding place a pack's unplaced people go to, and deliberately so: what is held is
-        a name and some faces, and where they were read from stops mattering the moment they are
-        held. Adding that person later claims these by exactly the same route.
-
-        Idempotent for the same reason the pack path is: the entry is matched on its name and each
-        face on the identity of its picture, so re-running the import over the same folders writes
-        nothing at all. Returns how many faces were held new.
-
-        Every folder's entries hang off the one standing pack, so the entry itself keeps the
-        folder's name (`source`): the list of who is waiting, and the line under a person it
-        creates, name the folder rather than the pack.
-        """
+        """Hold what a folder brought for somebody this library has nobody for, as a pack's
+        unplaced people are; idempotent. Returns how many faces were held new."""
         if not usable:
             return 0
         pack_id = await self._store.folder_import_pack(recognizer)
@@ -297,18 +230,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
     async def release_deleted(self) -> int:
         """Put faces back among the questions after the person they named was deleted.
 
-        Two things have to happen that the key does not do. It cuts `person_id` loose on its own, so
-        the face stops being theirs, but it leaves `attribution` and `confidence` behind,
-        describing a decision about nobody. And a named face is in no pile, because naming took it
-        out of one, so cutting it loose does not put it anywhere: it is neither identified nor
-        waiting, and shows up on no screen at all until somebody presses "Group them again".
-
-        So the stale columns are cleared and the piles are rebuilt. Returns how many faces came back,
-        for the log: nothing acts on it.
-
-        Not narrowed to one person, deliberately. The row naming them is already gone by the time
-        this runs, which is what makes the clean-up possible at all: every track carrying an
-        attribution with no person attached is one of these, whoever it was.
+        Clears the decision columns the key left behind and regroups. Returns how many came back.
         """
         await self._require_enabled()
         released = await self._store.forget_attribution_without_a_person()
@@ -318,23 +240,13 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         return released
 
     async def claim_for(self, person_id: str, name: str) -> int:
-        """Give a person the faces a pack was holding for that name. Returns how many arrived.
-
-        Called when somebody is created and the name they were given is one a pack already knew,
-        by that name or by any of the also-known-as names it carried. The faces become ordinary
-        references, which is what makes the person recognizable from the moment they exist rather
-        than from the next time somebody imports anything.
-
-        Idempotent twice over: a reference is keyed by its picture, and the entry is marked claimed
-        so a second pass over the same name finds nothing left to give.
-        """
+        """Give a person the faces a pack was holding for that name or an alias; idempotent.
+        Returns how many arrived."""
         await self._require_enabled()
         return await self._claim(person_id, name)
 
     async def _claim(self, person_id: str, name: str) -> int:
-        """`claim_for` without asking whether recognition is on: a facial fingerprints file is
-        taken in with recognition off too (`import_pack(while_off=True)`), and what it held waits
-        until the switch is on."""
+        """`claim_for` without asking whether recognition is on: a file taken in while off waits."""
         arrived = 0
         for entry in await self._store.unclaimed_entries(name):
             arrived += len(await self._claim_entry(entry, person_id))
@@ -343,9 +255,8 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         return arrived
 
     async def _claim_entry(self, entry: Row, person_id: str) -> list[str]:
-        """Give one held entry's faces to a person as references and mark it claimed by her, in
-        one write. Returns the references written new, by id: what an Undo of the claim takes away
-        again. Nothing is written where another write claimed the entry first."""
+        """Give one held entry's faces to a person as references and mark it hers, in one write.
+        Returns the references written new, by id, for an Undo; nothing if claimed first."""
         held = await self._entry_held(entry)
         pictures: list[tuple[Path, bytes]] = []
         try:
@@ -357,15 +268,8 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         return written
 
     async def _entry_held(self, entry: Row) -> EntryHeld:
-        """What a claim of this entry writes, read before its write: the faces, their pictures,
-        and the origin they take.
-
-        WHERE the held faces came from decides their origin, which is not always a pack. A folder
-        import holds its people in the same place a pack does (`_hold_folder_faces`), under one
-        standing row, and a reference read off somebody's own folder of pictures is ADDED, never a
-        download's PACK. The source cannot be worked out afterwards (the claim is a copy and the
-        entry is marked spent), so it is decided here, where the entry still says which it was.
-        """
+        """What a claim of this entry writes, read before its write; a folder's entry files as
+        ADDED, a pack's as PACK, decided while the entry still says which."""
         folder_row = await self._store.pack_by_name(self._store.FOLDER_IMPORTS)
         from_folders = None if folder_row is None else str(folder_row["id"])
         entry_id = str(entry["id"])
@@ -383,8 +287,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         person_id: str,
         pictures: list[tuple[Path, bytes]],
     ) -> list[str]:
-        """`_claim_entry` inside the caller's write. Raises `EntryTaken`, which undoes the whole
-        write, where another write claimed the entry first."""
+        """`_claim_entry` inside the caller's write; raises `EntryTaken` if claimed first."""
         if not await self._store.claim_entry_on(connection, held.entry_id, person_id):
             raise EntryTaken(held.entry_id)
         written: list[str] = []
@@ -405,20 +308,11 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         return written
 
     async def waiting_for(self, name: str) -> list[str]:
-        """The names a pack is holding that this one would claim. What a suggestion is built from.
-
-        Read-only, so a screen can offer "this looks like somebody from your import" before
-        anything is written. Empty is the ordinary answer and means exactly what it says.
-        """
+        """The names a pack is holding that this one would claim. Read-only."""
         return [str(row["name"]) for row in await self._store.unclaimed_entries(name)]
 
     async def held_for(self, person_id: str, name: str) -> int:
-        """How many face descriptions `claim_for` would give this person now. Read-only.
-
-        What an offer to add them counts, so the number is the one the press would add: a
-        description this person already has as a reference (the same picture) is not counted,
-        because claiming it adds nothing.
-        """
+        """How many face descriptions `claim_for` would give this person now, new ones only."""
         await self._require_enabled()
         entries = await self._store.unclaimed_entries(name)
         if not entries:
@@ -433,16 +327,7 @@ class ReferencesMixin(WeightsMixin, GroupingMixin):
         return len(waiting)
 
     async def find_or_create_person(self, name: str, *, by: str) -> str | None:
-        """Somebody by that name, made if they are not there. None if the name is blank.
-
-        Matched before it is created, ignoring case, which is what stops pressing this twice
-        producing two of somebody. It is the same match a pack import uses, so a name typed here
-        and a name read from a folder resolve to the same person rather than to two spellings.
-
-        `by` is the user who TYPED the name, and it is what makes this road different from the
-        other two callers of `create_person`: nobody read this off anything, somebody wrote it into
-        a field over a group of faces. The row says so.
-        """
+        """Somebody by that name, matched ignoring case or made, as typed by `by`; None if blank."""
         await self._require_enabled()
         wanted = name.strip()
         if not wanted:

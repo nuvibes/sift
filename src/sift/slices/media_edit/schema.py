@@ -1,19 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The `produced_files` table: which file Sift made from which, and how.
 
-Nothing else in Sift records that one file came out of another. Identity is the contents, so a
-compressed copy is simply a different file: true, and useless to somebody looking at forty copies
-of forty originals trying to work out which is which.
-
-This is the missing sentence, written down once and read by three things that would otherwise each
-need their own answer: the copy's page, which links back to the original; the filter that finds
-every copy; and the near-duplicate wall, which must not offer a copy and its original as a mistake
-somebody made.
-
-Two delete behaviours, and they are deliberately different. Removing the COPY removes this row:
-there is nothing left to say. Removing the ORIGINAL leaves the row with an empty source, because
-the copy still exists, is still a copy, and still belongs in a list of them; only the link back has
-nowhere to go.
+Removing the copy removes its row; removing the original leaves the row with no source.
 """
 
 from __future__ import annotations
@@ -37,10 +25,7 @@ CREATE TABLE IF NOT EXISTS produced_files (
 """
 
 _INDEXES = (
-    # "what has been made from this file": asked by the original's own page, and by the check
-    # that stops a copy and its original being offered as a duplicate pair.
     "CREATE INDEX IF NOT EXISTS ix_produced_source ON produced_files(source_asset_id)",
-    # "everything Sift has produced, newest first": the list behind the filter.
     "CREATE INDEX IF NOT EXISTS ix_produced_at ON produced_files(produced_at)",
 )
 
@@ -52,7 +37,5 @@ async def initialize(connection: Connection, on_disk: int) -> None:
             await connection.execute(index)
 
 
-# It names `assets` and `users` in foreign keys without declaring a dependency on the components
-# that create them. SQLite resolves a foreign key's parent by name when a row is written rather than
-# when the table is created, so the references hold whichever order the tables were made in.
+# SQLite resolves a foreign key's parent when a row is written, so table order does not matter.
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=1)

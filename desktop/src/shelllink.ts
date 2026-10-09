@@ -1,37 +1,4 @@
-/* The door the backend on THIS machine asks its own shell through.
- *
- * WHY IT EXISTS. A window onto a library on another computer (client mode) draws that server's
- * settings, and every admin press there has to act on the SERVER machine, never on the computer the
- * window happens to be on. Starting with Windows and the firewall rule are facts only the shell of
- * the server machine can read or change: the backend is a Python process that cannot register a
- * login item or raise Windows' administrator prompt. So the server's shell offers the backend it
- * started a small set of acts, and the backend answers its own admin routes by asking it. The
- * client's shell never acts; its page asks the server's API like any other.
- *
- * WHAT KEEPS IT NARROW. It listens on 127.0.0.1 only, on a port the operating system picks, and
- * every request carries a secret made fresh for this launch and handed to the backend in its
- * environment, which only the process that spawned it can set. The acts are named and take one
- * word each (a boolean, a scope, a count); nothing here takes a command or a program. The same
- * rules the page's own verbs keep (`verbs.ts`) hold here: a firewall scope that is not `any` is the
- * narrow one, and a switch that is not `true` is off.
- *
- * TWO ACTS NAME A FOLDER, and each is held to what the page's own verb allows. Opening a library
- * takes a data folder and refuses any this copy has not opened before, as `openLibrary` does for
- * the page. Moving the storage folders takes the empty folder to move into, chosen in the server's
- * own folder browser, and every refusal `storage.refuse` makes is made before the backend stops.
- * Installing an update takes NOTHING: the shell reads the feed, checks the signature and refuses
- * anything not newer than itself, exactly as the page's verb does.
- *
- * AN ACT THAT STOPS THE BACKEND IS ANSWERED FIRST. Sharing, a move, a library and an update each
- * stop the process whose request is waiting on the answer, so the answer leaves first and the act
- * runs after it (`Deferred`). The page asking waits for a new run of the server to answer.
- *
- * THE ACTS THAT MUST BE PRESSED HERE. Opening the firewall raises Windows' own administrator
- * prompt, and an update opens the installer, both on THIS machine's screen. Nothing on the other
- * computer can answer them, which is the property rather than a gap: the screen there says to
- * approve them at the computer running Sift. So does choosing a database file in the picker,
- * which is never offered over the link at all.
- */
+/* The door the backend on THIS machine asks its own shell through. */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import * as http from 'node:http';
@@ -81,11 +48,7 @@ export interface ShellActs {
 	openLibrary(dataDir: string): Promise<Deferred<Settled>>;
 }
 
-/**
- * An act that stops the backend asking for it. `answer` is sent immediately; `after`, when there is
- * one, runs only once that answer has left, because the request waiting on it belongs to the
- * process `after` stops. No `after` is an act refused, or one with nothing to do.
- */
+/** An act that stops the backend asking for it. */
 export interface Deferred<T> {
 	answer: T;
 	after?: () => Promise<void>;
@@ -181,16 +144,29 @@ function named(value: unknown): string | null {
 	return typeof value === 'string' && value !== '' ? value : null;
 }
 
-/**
- * Everything the backend may ask, by method and path. Exported for the tests, which call it bare.
- * A GET's `body` is its query, read as an object.
- */
+/** Everything the backend may ask, by method and path. */
 export async function act(
 	acts: ShellActs,
 	method: string,
 	path: string,
 	body: unknown
 ): Promise<Done> {
+	return (
+		(await machineAct(acts, method, path, body)) ??
+		(await storageAct(acts, method, path, body)) ?? {
+			status: 404,
+			body: { detail: 'No such act.' }
+		}
+	);
+}
+
+/** The asks about this machine: its facts, sign-in start, firewall and sharing. */
+async function machineAct(
+	acts: ShellActs,
+	method: string,
+	path: string,
+	body: unknown
+): Promise<Done | null> {
 	if (method === 'GET' && path === '/facts') {
 		const facts: ShellFacts = {
 			machine: acts.machine(),
@@ -200,8 +176,8 @@ export async function act(
 		return { status: 200, body: facts };
 	}
 	if (method === 'PUT' && path === '/start-with-windows') {
-		/* Checked against `true` rather than cast, as the page's own verb is: it adds a program to
-		   what this machine runs at every sign-in. */
+		/* Checked against `true` rather than cast, as the page's own verb is: it adds a program
+		   to what this machine runs at every sign-in. */
 		const on = field(body, 'on') === true;
 		const now = acts.startup?.write(on) ?? null;
 		log.info('shell_link.start_with_windows', { on, now });
@@ -221,6 +197,16 @@ export async function act(
 		log.info('shell_link.sharing', { on });
 		return deferred(await acts.setSharing(on));
 	}
+	return null;
+}
+
+/** The asks about the library: its folders, an update, the log and the libraries. */
+async function storageAct(
+	acts: ShellActs,
+	method: string,
+	path: string,
+	body: unknown
+): Promise<Done | null> {
 	if (method === 'GET' && path === '/storage') {
 		return { status: 200, body: await acts.storage() };
 	}
@@ -248,13 +234,11 @@ export async function act(
 		log.info('shell_link.open_library', {});
 		return deferred(await acts.openLibrary(dataDir));
 	}
-	return { status: 404, body: { detail: 'No such act.' } };
+	return null;
 }
 
-/**
- * Open the link for this launch. One per shell, before the backend starts, so every start of the
- * backend (a restart, a library switch) is handed the same address and secret.
- */
+/** Open the link for this launch. One per shell, before the backend starts, so every start of the
+ * backend (a restart, a library switch) is handed the same address and secret. */
 export function openShellLink(
 	acts: ShellActs,
 	token: string = randomBytes(32).toString('hex')
@@ -278,8 +262,8 @@ export function openShellLink(
 				const done = await act(acts, request.method ?? '', path, body);
 				const after = done.after;
 				if (after !== undefined) {
-					/* Once the answer has left, and not before: the request waiting on it belongs
-					   to the backend this is about to stop. */
+					/* Once the answer has left, and not before: the request waiting on it
+					   belongs to the backend this is about to stop. */
 					response.once('finish', () => {
 						void after().catch((error: unknown) => {
 							log.warning('shell_link.after_failed', {

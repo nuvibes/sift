@@ -1,22 +1,13 @@
-/* One task's row, and the store both of its doors read.
- *
- * ## What is worth pinning here
- *
- * The row is drawn twice (on Tasks and on the section that owns the task), so the three things
- * that make it ONE row are what this file holds: it carries the When's own key as its address (the
- * id Activity's "Run in Tasks" and a search result ring), both halves of the press go to the one
- * run route with the half they are, and the store never has two reads of the list in the air
- * however often the queue rings. And the facts: a failed last run says it failed.
- */
+/* One task's row, and the store both of its doors read. */
 
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { wordsOf } from '$lib/components/common/toast-pieces';
 
 import type { TaskView, TasksView } from '$lib/jobs/tasks.svelte';
 
-/* Svelte itself is imported AFTER each test resets the module registry, beside the component: the
-   store is the app's one copy, so every test needs a fresh one, and a component compiled against
-   one copy of the runtime cannot be mounted by another (`effect_orphan`). */
+/* Svelte itself is imported AFTER each test resets the module registry, beside the component:
+   the store is the app's one copy, so every test needs a fresh one, and a component compiled
+   against one copy of the runtime cannot be mounted by another (`effect_orphan`). */
 let svelte: typeof import('svelte');
 
 const mocks = vi.hoisted(() => ({
@@ -126,8 +117,7 @@ async function choose(named: string): Promise<void> {
 }
 
 /* The first import of the component compiles its whole graph, which can cost more than one
-   test's time limit. Paid once here, so no test is timed on the compiler; each test still
-   evaluates a fresh copy after the reset below. */
+   test's time limit. */
 beforeAll(async () => {
 	await import('./TaskWhen.svelte');
 }, 60_000);
@@ -169,8 +159,8 @@ async function draw(
 }
 
 it('carries the When key as its address, before the list has even come back', async () => {
-	/* Activity's "Run in Tasks", a search result and Performance's pointer all ring this id, and a
-	   deep link must not race the request, so it is on the row from the first frame. */
+	/* Activity's "Run in Tasks", a search result and Performance's pointer all ring this id, and
+	   a deep link must not race the request, so it is on the row from the first frame. */
 	mocks.get.mockReturnValue(new Promise(() => {}));
 	const { default: TaskWhen } = await import('./TaskWhen.svelte');
 	drawn = svelte.mount(TaskWhen, { target: host, props: { task: 'faces' } }) as Record<
@@ -196,8 +186,8 @@ it('presses Run now and Run during quiet hours through the one run route, each w
 });
 
 it('says Run during quiet hours started when the run it landed on is not waiting for the range', async () => {
-	/* Run during quiet hours pressed on a Scan already going must not say "Queued for quiet hours"
-	   over a walk that is under way. No hour from the server is that answer. */
+	/* Run during quiet hours pressed on a Scan already going must not say "Queued for quiet
+	   hours" over a walk that is under way. */
 	const { COPY } = await import('./ScheduledTasks.search');
 	mocks.post.mockResolvedValue({ job_ids: ['j-1'], starts_at: null });
 	await draw(list(task()));
@@ -214,8 +204,7 @@ it('says Run during quiet hours started when the run it landed on is not waiting
 });
 
 it("says the server's own sentence when a press is refused", async () => {
-	/* "Smart Search is turned off. Turn it on under Smart Search." is written for a person; a
-	   refusal that read "That request was not valid" would leave them stuck. */
+	/* "Smart Search is turned off. Turn it on under Smart Search." */
 	const { ApiError } = await import('$lib/api/client');
 	mocks.post.mockRejectedValue(
 		new ApiError(409, 'Conflict', 'Smart Search is turned off. Turn it on under Smart Search.')
@@ -264,8 +253,8 @@ it('is one line: the press on the right with the choice inside it, the facts und
 	applyStyles(ownSource, when);
 	applyStyles(rowSource, row);
 	try {
-		// The facts are the row's foot, a line of its own under both columns at the reading measure,
-		// and nothing of them is in the control.
+		// The facts are the row's foot, a line of its own under both columns at the reading
+		// measure, and nothing of them is in the control.
 		expect(host.querySelector('.row > .foot .facts')?.textContent).toContain(
 			'Last ran 2 hours ago'
 		);
@@ -322,8 +311,7 @@ it('changes the When through the ordinary settings write, and puts it back on a 
 });
 
 it('never has two reads of the list in the air, and never drops the last ring', async () => {
-	/* The queue rings many times a second while a scan runs. Joined reads would be a request per
-	   ring; a dropped ring would leave the row describing the moment before the last change. */
+	/* The queue rings many times a second while a scan runs. */
 	let release: (value: TasksView) => void = () => {};
 	mocks.get.mockImplementationOnce(() => new Promise<TasksView>((resolve) => (release = resolve)));
 	mocks.get.mockResolvedValue(list(task({ waiting: 7 })));
@@ -609,8 +597,8 @@ it('asks for a dry run through the same route, and says its report on the row', 
 });
 
 it('says a run going now on the In progress chip, never a phrase of its own', async () => {
-	/* Not a grey "Running now" among the facts: Activity's rows and Downloads draw the same state
-	   as the blue In progress chip. One state, one chip, on every screen. */
+	/* Not a grey "Running now" among the facts: Activity's rows and Downloads draw the same
+	   state as the blue In progress chip. */
 	await draw(list(task({ running: true })));
 	const chip = host.querySelector('[data-fact="running"] .badge');
 	expect(chip, 'the In progress chip').not.toBeNull();
@@ -619,8 +607,7 @@ it('says a run going now on the In progress chip, never a phrase of its own', as
 });
 
 it('says a dry run is under way until its report lands, and follows the jobs bell to it', async () => {
-	/* A plan of a whole library can take half a minute. The row says so while it works, and the
-	   bell the queue rings as the job finishes is what brings the report's phrase in, no reload. */
+	/* A plan of a whole library can take half a minute. */
 	await draw(list(task({ dry: true, dry_running: true })));
 	const facts = () => host.querySelector('.facts')?.textContent ?? '';
 	expect(facts()).toContain('Dry run in progress');
@@ -645,8 +632,8 @@ it('says a dry run is under way until its report lands, and follows the jobs bel
 });
 
 it('heads the parts and the folders in its menu, so the two lists read apart', async () => {
-	/* Both lists are ticked rows, so a line alone would leave the parts and the folders reading as
-	   one list. Each group draws its label over its rows, and that heading is what names it. */
+	/* Both lists are ticked rows, so a line alone would leave the parts and the folders reading
+	   as one list. */
 	const { COPY } = await import('./ScheduledTasks.search');
 	const { applyStyles, removeStyles } = await import('$lib/design/testing-styles');
 	const { default: groupSource } =
@@ -684,8 +671,8 @@ it('heads the parts and the folders in its menu, so the two lists read apart', a
 });
 
 it('puts every way to run at the top, and filters the parts and folders with the box under them', async () => {
-	/* Under a long list of folders, Run the ticked ones now would be a scroll away from the ticks
-	   it runs; and a long list needs a box to find a folder in, as every Add to list has. */
+	/* Under a long list of folders, Run the ticked ones now would be a scroll away from the
+	   ticks it runs; and a long list needs a box to find a folder in, as every Add to list has. */
 	const { COPY } = await import('./ScheduledTasks.search');
 	await draw(
 		list(

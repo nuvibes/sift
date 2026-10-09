@@ -1,8 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-/* The download's end, as the Faces pane and the first run both read it. The watching machinery is
-   `jobs/watch-download`'s and has its own tests; what is here is the part about faces: the sentence
-   at the end, and the fresh answer about whether recognition can run now. */
+/* The download's end, as the Faces pane and the first run both read it. */
 
 const asked = vi.hoisted(() => ({ settings: vi.fn() }));
 vi.mock('$lib/api/client', () => ({

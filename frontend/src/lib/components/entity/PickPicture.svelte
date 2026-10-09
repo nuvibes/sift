@@ -1,65 +1,8 @@
 <script lang="ts">
 	/* LIVE: nothing moves it (the pictures to choose from, read each time the sheet opens and dropped when it closes) */
-	/*
-	 * Choosing the picture a person, a site or a tag is shown with.
-	 *
-	 * ## Why this exists when the cover could already be set
-	 *
-	 * It could, by right-clicking a file on that entity's Files tab and finding "Use as the
-	 * cover" in the menu. That is a real way to do it and it is not a way anybody finds. The
-	 * picture is on the page, at the top, and the gesture for changing a thing you are looking at
-	 * is to press it. So the pencil on the cover opens this, and this offers the same files the
-	 * menu would have.
-	 *
-	 * ## One page of them, newest first
-	 *
-	 * A cover is nearly always something recent, and a chooser that pages is a chooser somebody
-	 * browses instead of choosing from. If the right still is not here, the menu on the Files tab
-	 * still reaches every one of them: that path is not replaced, and both write the same field
-	 * through the same route.
-	 *
-	 * ## Two steps, and only for a clip
-	 *
-	 * A photograph has one frame, so choosing the file finishes it. A video does not: the picture a
-	 * file is drawn as is cut from its FIRST FRAME (`media_jobs.jobs.thumbnail` passes
-	 * `timestamp_ms=0` and says why) so a clip that opens on black or on a title card is drawn as
-	 * black, or as the title card. That is the whole reason this second step exists, and the answer
-	 * is stored on the entity rather than on the file: two things can be drawn as two different
-	 * moments of one clip.
-	 *
-	 * ## Which moment it opens on, and why it is zero
-	 *
-	 * The moment the tile you just pressed was taken at, not halfway through. The middle is past
-	 * the titles, which is true and is the wrong thing to optimise: pressing a picture and being
-	 * shown a DIFFERENT picture reads as the control being
-	 * broken, and the frames come from a sprite sheet whose tiles are small, so the substitute
-	 * arrives blurry as well as unexpected. Starting where the tile started means the first thing
-	 * you see is the thing you pressed, and moving is then a deliberate act rather than an undo.
-	 *
-	 * The frames come from the strip the player already scrubs against: one picture holding every
-	 * frame, built when the file was imported. So dragging costs no requests at all and nothing is
-	 * seeked, and the same two functions decide which tile to show here as decide it under the
-	 * player's own scrubber, rather than a second reading of the same sheet.
-	 *
-	 * ## And a last step for every picture: how it sits in the box
-	 *
-	 * Whatever was pressed (a photograph, a clip's own picture, a moment of it), the sheet then
-	 * shows it whole with the cover's window over it (`CoverFramer`), so the zoom and position are
-	 * chosen before Save rather than discovered on the card afterwards. The window is the picture
-	 * editor's own crop rectangle (`edit/CropStage`), held to the cover's shape: the same control
-	 * Modify draws over a photograph, so framing a cover is a thing already learned. The window opens in the
-	 * middle at its largest, which is exactly what the box would show with no frame, and a window
-	 * left there is saved as none: pressing straight through saves the cover with no frame at
-	 * all. The same editor reframes the cover already chosen, from the
-	 * page header (`EntityHeader`), so there is one way to frame a cover.
-	 *
-	 * ## What it does NOT offer
-	 *
-	 * A picture from a stash-box. That is a different kind of thing (fetched from somewhere else
-	 * rather than pointed at a file in this library) and it is offered where it comes from, in
-	 * the look-up sheet, beside the fields from the same entry. Two ways in from two places, and
-	 * neither can overwrite the other, because they are not the same field.
-	 */
+	/* Choosing the picture a person, a site or a tag is shown with, from the pencil on the cover: one
+	 * page of its files newest first; a clip then picks a moment (opening on the frame pressed, off
+	 * the player's strip), and every picture is framed with CoverFramer before Save. */
 	import {
 		Button,
 		ChooseFile,
@@ -85,24 +28,9 @@
 		query: Record<string, unknown>;
 		/** The file currently used, so it can be marked rather than offered again. */
 		current?: string | null;
-		/**
-		 * Chosen. The page writes it, because the page knows which route sets its own cover.
-		 *
-		 * The moment is null for a photograph and for "just use the file's own picture", which are
-		 * the same instruction as far as the server is concerned: no moment stored, so the still it
-		 * already has is the one that is served.
-		 */
+		/** Chosen; the page writes it. A null moment means the file's own still. */
 		onpick: (assetId: string, atMs: number | null, frame: Frame | null) => Promise<void>;
-		/**
-		 * A picture from OUTSIDE the library, chosen from the disk.
-		 *
-		 * The other half of the question. This sheet answers "which of my files", and this answers
-		 * "this photograph of her, which is not one of my files". The page writes
-		 * it, because the page knows which route its own kind of thing posts to.
-		 *
-		 * Optional, so a caller that has not been given a route simply does not offer the control,
-		 * rather than offering one that fails.
-		 */
+		/** A picture from the disk instead; absent where the caller has no route for it. */
 		onupload?: (file: File) => Promise<void>;
 	}
 
@@ -124,13 +52,7 @@
 	/** The clip a moment is being chosen from, or null while the wall of files is showing. */
 	let framing = $state<Framing | null>(null);
 
-	/**
-	 * The last step: the picture chosen, and the window of it the cover will be drawn as.
-	 *
-	 * `src` is the picture by address: a photograph's or a clip's own still. A MOVED moment has
-	 * no address of its own yet (its still is rendered after the choice is saved), so it is drawn
-	 * as its tile of the clip's strip instead, and `aspect` is that tile's shape.
-	 */
+	/** The last step: the picture and its window; a moved moment is drawn as its strip tile. */
 	type Fitting = {
 		id: string;
 		atMs: number | null;
@@ -154,19 +76,10 @@
 	}
 	/** Which moment, in milliseconds. Starts where the file's own picture was taken, which is zero. */
 	let atMs = $state(0);
-	/**
-	 * Whether the moment has been moved yet.
-	 *
-	 * Until it has, the picture shown is the file's OWN still: the exact image on the tile that
-	 * was pressed, at full thumbnail resolution. A sprite tile is a small cell of a large sheet and
-	 * is meant for scrubbing, so opening on one shows a soft version of a picture that already
-	 * exists sharp. Once somebody drags, the sheet is the only thing that can answer without a
-	 * request per frame, and it is what the player's own scrubber shows.
-	 */
+	/** Whether the moment moved; until then the file's own sharp still is shown. */
 	let moved = $state(false);
 
-	/* The frame to draw, worked out by the SAME two functions that decide it under the player's
-	   scrubber. A second reading of one sheet is how two views of one file come to disagree. */
+	/* The frame drawn by the player scrubber's own two functions. */
 	const FRAME_WIDTH = 320;
 	let sheetSize = $state({ width: 0, height: 0 });
 	const box = $derived.by(() => {
@@ -182,8 +95,7 @@
 		sheetSize = { width: image.naturalWidth, height: image.naturalHeight };
 	}
 
-	/* Closing the sheet leaves the wall of files showing, not a half-answered question about a clip
-	   nobody picked. Without this, re-opening it would land straight back in the second step. */
+	/* Closing returns to the wall of files. */
 	$effect(() => {
 		if (!open) {
 			framing = null;
@@ -191,11 +103,7 @@
 		}
 	});
 
-	/* Loaded when the sheet OPENS, not when the component mounts.
-	 *
-	 * The header holds one of these on every entity page, so mounting-time loading would be a
-	 * request for sixty files on every person anybody looks at, for a sheet almost nobody opens.
-	 */
+	/* Loaded when the sheet opens, not on mount: every entity page holds one. */
 	$effect(() => {
 		if (open) void load();
 	});
@@ -204,10 +112,7 @@
 		loading = true;
 		problem = undefined;
 		try {
-			/*
-			 * The listing answers with the assets themselves, not a wrapper carrying one; reading
-			 * `one.asset` would find nothing on every row and draw an empty chooser.
-			 */
+			/* The listing answers with the assets themselves, not a wrapper. */
 			const answer = await api.get<components['schemas']['AssetPageResponse']>('/assets', {
 				query: { ...query, limit: HOW_MANY, sort: 'newest' }
 			});
@@ -220,15 +125,8 @@
 		}
 	}
 
-	/*
-	 * Pressing a file: a photograph is the answer, a clip is a question.
-	 *
-	 * The strip of frames lives on the file's own record rather than in the listing, so it is
-	 * fetched here: one request, when somebody actually picks a clip, rather than sixty on the
-	 * chance that they will. A clip whose strip has not been built yet still works: the moment is
-	 * chosen against the clock with no frames to look at, which is worse than the picture and much
-	 * better than refusing.
-	 */
+	/* A photograph is the answer, a clip a question; its strip is fetched on the press, and a clip
+	   without one is still chosen against the clock. */
 	async function press(one: Row) {
 		if (saving || framing) return;
 		if (one.media_type !== 'video' || !one.duration_ms) {
@@ -257,12 +155,7 @@
 		}
 	}
 
-	/* A picture from the disk. The same three outcomes the pick has, said the same way.
-	 *
-	 * The server's OWN words on a refusal, which is the one place in this sheet that is true: it is
-	 * the half that knows why (too big, or not readable as a picture) and "that could not be
-	 * used" over a file somebody just chose is the sentence that leaves them pressing it again.
-	 */
+	/* A picture from the disk; a refusal is said in the server's own words. */
 	async function upload(file: File) {
 		if (saving || !onupload) return;
 		saving = 'upload';
@@ -279,9 +172,7 @@
 		}
 	}
 
-	/* From the moment step to the framing step: the clip's own still where the moment was not moved
-	   (that IS the still: see the note on the unmoved slider below), its tile of the strip where it
-	   was. */
+	/* To the framing step: the clip's own still, or its strip tile where the moment moved. */
 	function fitClip(clip: Framing, moment: number | null) {
 		if (moment === null || !clip.sheet || sheetSize.width === 0) {
 			fit({ id: clip.id, atMs: moment, src: thumbUrl({ id: clip.id, art: clip.art }) });
@@ -311,10 +202,7 @@
 			framing = null;
 			fitting = null;
 		} catch (error) {
-			/* A 404 here is not the same event as a refusal, and one sentence for both would make
-			   this undiagnosable. The chooser lists what the library held a moment ago; a file
-			   removed since is offered, drawn as a blank tile, and answers 404 to every write. Say
-			   which it was, and drop the row so it cannot be pressed a second time. */
+			/* A 404 is a file removed since: said apart from a refusal, and the row dropped. */
 			if (error instanceof ApiError && error.status === 404) {
 				problem = "That file isn't in your library any more.";
 				items = items.filter((one) => one.id !== assetId);
@@ -339,8 +227,7 @@
 		<Problem message={problem} />
 		{#if fitting}
 			{@const chosen = fitting}
-			<!-- The picture whole, and the window of it the cover will be drawn as. Keyed on the
-			     picture, so choosing another starts a new window rather than carrying this one over. -->
+			<!-- Keyed on the picture, so another starts a new window. -->
 			{#key `${chosen.id}:${chosen.atMs}`}
 				{#if chosen.tile}
 					{@const tile = chosen.tile}
@@ -367,12 +254,7 @@
 				{/if}
 			{/key}
 		{:else if framing}
-			<!--
-				Which moment of the clip. One picture holds every frame, so this seeks nothing and
-				fetches nothing per frame: the strip is loaded once, measured, and moved behind a
-				window one tile wide. The same thing the player's scrubber does, through the same two
-				functions rather than a second reading of the sheet.
-			-->
+			<!-- Which moment: the strip loaded once and moved behind a one-tile window. -->
 			<div class="moment">
 				{#if framing.sheet}
 					<!-- Fetched to be measured rather than looked at: what is shown is one tile of it. -->
@@ -386,8 +268,7 @@
 				{/if}
 
 				{#if !moved}
-					<!-- The picture that was pressed, unchanged. Already fetched by the tile, so this
-					     costs no request at all. -->
+					<!-- The pressed picture, already fetched. -->
 					<img class="still" src={thumbUrl({ id: framing.id, art: framing.art })} alt="" />
 				{:else if box}
 					<figure
@@ -399,8 +280,7 @@
 						style:background-position={box.backgroundPosition}
 					></figure>
 				{:else}
-					<!-- No strip built for this clip yet. The moment is still choosable against the
-					     clock, which is worse than seeing it and much better than being refused. -->
+					<!-- No strip yet: the moment is chosen against the clock. -->
 					<p class="quiet">
 						Sift hasn't built the frames for this clip yet. The moment can still be chosen.
 					</p>
@@ -429,17 +309,9 @@
 				{#each items as one (one.id)}
 					<li>
 						<!--
-							The app's own pressable surface rather than a bare `<button>`: a bare
-							one would give this sheet its own reset, its own focus ring and its own
-							idea of what pressing something looks like, three rules that exist once
-							and are meant to. The gate counts them.
-
-							The picture is a span inside it rather than the surface itself: a shared
-							component's own element carries that component's scoping, so a rule
-							written here for it loses on specificity and does nothing, silently. An
-							element declared in this file is styled by a rule with nothing to argue
-							with.
+						Pressable, not a bare button; the picture is a span this file styles.
 						-->
+
 						<Pressable
 							feedback="lift"
 							radius="md"
@@ -476,21 +348,14 @@
 			{:else if framing}
 				{@const clip = framing}
 				<Button type="button" onclick={() => (framing = null)}>Back</Button>
-				<!-- The way out for somebody who wanted the file and not a frame of it. It sends no
-				     moment at all, which is the same instruction a photograph sends: use the picture
-				     the file already has. -->
+				<!-- The file's own picture, with no moment, as a photograph sends. -->
 				<Button type="button" onclick={() => fitClip(clip, null)}>
 					Use the file's own picture
 				</Button>
 				<!--
-					An unmoved slider sends no moment, deliberately.
-
-					The picture on screen then is the file's own still (`thumbnail` cuts it at
-					`timestamp_ms=0`, and this step opens there so the first thing seen is the tile
-					pressed). Sending `at_ms: 0` would ask for a second rendering of the same frame
-					under a different key, queue an ffmpeg run, and leave the cover a letter until
-					it landed. What is shown is the same; sending nothing makes it instant.
+				An unmoved slider sends no moment: `at_ms: 0` would render the same frame again.
 				-->
+
 				<Button
 					type="button"
 					tone="primary"
@@ -500,10 +365,7 @@
 					Use this frame
 				</Button>
 			{:else}
-				<!-- The way out of the library entirely, offered beside the wall of files rather than
-				     inside the frame step: it is an answer to the same question the wall is asking,
-				     not to the question about which moment of a clip. The app's own file control, so
-				     this sheet is not the third screen to dress a file input as a button. -->
+				<!-- A picture from outside the library, beside the wall, through ChooseFile. -->
 				{#if onupload}
 					<ChooseFile
 						accept="image/*"
@@ -530,8 +392,7 @@
 		gap: var(--space-3);
 	}
 
-	/* Fetched, never shown. Out of the layout and out of the way of the pointer: the same two
-	   lines the player's own preview uses, for the same reason. */
+	/* Fetched, never shown, as the player's preview. */
 	.strip {
 		position: absolute;
 		inline-size: 0;
@@ -540,8 +401,7 @@
 		pointer-events: none;
 	}
 
-	/* The same box the sprite tile fills, so the picture does not resize under the pointer at the
-	   moment somebody starts dragging. */
+	/* The tile's box, so nothing resizes when dragging starts. */
 	.still {
 		inline-size: 320px;
 		max-inline-size: 100%;
@@ -571,8 +431,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* Fills whatever width the sheet has, at a size a face is recognisable at. Portrait, because
-	   every cover Sift draws is portrait and a landscape chooser would preview the wrong crop. */
+	/* Portrait, as every cover is. */
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr));
@@ -582,12 +441,7 @@
 		list-style: none;
 	}
 
-	/* `:global` INSIDE a scoped parent, and both halves matter.
-	 *
-	 * `:global` because the element wearing this is the shared pressable's own, so a plain rule
-	 * aimed at it matches nothing at all. The scoped `.grid` in front of it because the component's
-	 * own rule is TWO classes (`.pressable.svelte-hash`) and a bare `:global(.frame)` is one: it
-	 * would lose the specificity contest silently, which looks identical to matching. */
+	/* Global inside the scoped `.grid`: Pressable's own element, and two classes to win. */
 	.grid :global(.frame) {
 		inline-size: 100%;
 		padding: 0;

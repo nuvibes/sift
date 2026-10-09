@@ -1,29 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Asking AcoustID which song a file's fingerprint is, when an admin has turned that on.
-
-AcoustID is the one free service that names a song from a Chromaprint fingerprint. What leaves
-this device is the fingerprint of the first two minutes of the sound and the file's length, never
-the file, and nothing leaves at all unless `music.lookup` is on and a key is set (`lookup.py`
-asks both at run time). It is the same class of sender as the stash-box switch, and it is paced,
-routed and refused the same way (`slices/stash_boxes/adapter.py`).
-
-## What AcoustID answers, on real files
-
-Full-length music videos whose songs are known are mostly named correctly at the file's own
-length, and wrongly none of the time, at scores well above `FLOOR`. Some are named only when sent
-with another length, because AcoustID's server only considers recordings within 7 seconds of the
-length it is sent (`FINGERPRINT_MAX_LENGTH_DIFF = 7` in its own code). Short excerpts and clips
-name nothing, as AcoustID's own FAQ says they will not: the service was built for whole songs. So
-this names full-length files, and a short clip gets its name from a file it shares a song with
-(`names.py`), never from here.
-
-## The fingerprint AcoustID is sent is Chromaprint's COMPRESSED form
-
-Sift keeps the raw values (`kernel/chromaprint.py`); AcoustID takes the compressed base64 its own
-tool prints. `compress` makes one from the other in pure Python and is proved byte-for-byte against
-pairs made with ffmpeg's own muxer and against AcoustID's documented example
-(`tests/test_acoustid.py`).
-"""
+"""Ask AcoustID which song a fingerprint is; only two minutes of it and the length are sent."""
 
 from __future__ import annotations
 
@@ -49,37 +25,26 @@ log = get_logger(__name__)
 ENDPOINT = "https://api.acoustid.org/v2/lookup"
 HOST = "api.acoustid.org"
 
-#: One request every 0.4 s. AcoustID allows three a second per application key; this keeps under
-#: that with room for a clock that is not exact.
+#: AcoustID allows three a second per key; this leaves room for an inexact clock.
 PACE_SECONDS = 0.4
 
-#: How long a "slow down" keeps AcoustID off limits when it names no wait of its own.
 REFUSAL_BACKOFF_SECONDS = 60.0
 
 REQUEST_TIMEOUT_SECONDS = 20.0
 
-#: The most of an answer that is read. A lookup's answer is a few kilobytes; this is a cap on a
-#: machine Sift does not control, not a size anything is expected to reach.
+#: A cap on a machine Sift does not control.
 MAX_ANSWER_BYTES = 1 << 20
 
-#: How many values of the stored fingerprint are sent: the first two minutes. Checked twice over:
-#: ffmpeg's chromaprint muxer given `-t 120` writes exactly 948 values for a full-length track,
-#: and every recording longer than 118 s in a sample of AcoustID's own data holds exactly
-#: 948. AcoustID keeps only the start of a song, so sending more buys nothing.
+#: The first two minutes: AcoustID keeps only the start of a song, so more buys nothing.
 FIRST_VALUES = 948
 
-#: What is asked for beside the ids: the recordings (their titles and artists) and how many
-#: submissions each has, which is what `choose` weighs them by.
+#: The recordings and their submission counts, which `choose` weighs.
 META = "recordings sources"
 
-#: The lowest score a result may have and still name a song. Correct answers score above it; an
-#: answer just below it (at a length far off the song's) can name the right song, and such a file
-#: gets the name anyway through the file it pairs with.
+#: Correct answers on real files score above this.
 FLOOR = 0.80
 
-#: AcoustID's documented example: the fingerprint and length its own web service page gives
-#: (https://acoustid.org/webservice). The Check sends this, which proves the key works without
-#: sending anything of the library.
+#: AcoustID's documented example, so the Check sends nothing of the library.
 EXAMPLE_DURATION = 641
 EXAMPLE_FINGERPRINT = (
     "AQABz0qUkZK4oOfhL-CPc4e5C_wW2H2QH9uDL4cvoT8UNQ-eHtsE8cceeFJx-LiiHT-aPzhxoc-Opj_eI5d2hOFyMJRz"
@@ -111,38 +76,14 @@ class AcoustIDRefused(AcoustIDUnreachable):
     """AcoustID answered, and said no: too many requests, a key it does not accept, or an error."""
 
 
-# --- the compressed fingerprint -------------------------------------------------------------------
-
-#: A gap between two set bits shorter than this is written in three bits; one this long or longer
-#: writes 7 there and the rest (gap - 7) in five bits in the second list. Chromaprint's constants
-#: (`fingerprint_compressor.cpp`: kMaxNormalValue, kNormalBits, kExceptionBits).
+#: Chromaprint's constants (`fingerprint_compressor.cpp`).
 _MAX_NORMAL = 7
 _NORMAL_BITS = 3
 _EXCEPTION_BITS = 5
 
 
 def compress(values: Sequence[int], algorithm: int = 1) -> str:
-    """Chromaprint's compressed fingerprint, as the URL-safe base64 AcoustID is sent.
-
-    The reference implementation's algorithm (`FingerprintCompressor::Compress`), step by step:
-
-    1. **Differences.** The first value is taken as it is; every later one is XORed with the one
-       before it, so a run of similar values becomes a run of words with few bits set.
-    2. **Bit gaps.** For each word, walk its set bits from the lowest, writing the distance from the
-       previous set bit (the first counts from bit 0, so bit 0 set is a gap of 1). A gap under 7 is
-       written as it is; a gap of 7 or more writes 7 and puts `gap - 7` in a second list. A 0 ends
-       each word, so a word with no bits set is just the 0.
-    3. **Packing.** The first list is packed three bits a value and the second five bits a value,
-       each least-significant bit first into a continuous stream of bytes, the last byte padded with
-       zero bits.
-    4. **Header.** One byte of algorithm number and three bytes of value count, big-endian, then the
-       three-bit stream, then the five-bit stream.
-    5. **Base64**, URL-safe alphabet (`-` and `_`), no padding: what `fpcalc` prints and what
-       AcoustID's lookup takes.
-
-    Pure and total: any list of 32-bit values compresses, the empty list included (a header and
-    nothing else). A value outside 32 bits is refused rather than silently masked.
-    """
+    """Chromaprint's compressed fingerprint (`FingerprintCompressor::Compress`) in base64."""
     normal: list[int] = []
     exceptions: list[int] = []
     previous = 0
@@ -188,9 +129,6 @@ def _pack(values: Sequence[int], width: int) -> bytes:
     return bytes(out)
 
 
-# --- the answer, and choosing from it -------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class Recording:
     """One recording AcoustID lists under a result."""
@@ -198,11 +136,9 @@ class Recording:
     id: str
     title: str
     artists: str
-    #: How many submissions AcoustID has linking this recording to the fingerprint. None where the
-    #: answer did not say, which `choose` weighs as one: a recording listed at all was submitted once.
+    #: None counts as one: a listed recording was submitted once.
     sources: int | None = None
-    #: The same artists one by one, in AcoustID's order: what a song credits (`songs.credit`).
-    #: `artists` is them joined, which a name holding a comma would split wrongly.
+    #: One by one, since `artists` is joined and a name may hold a comma.
     artist_names: tuple[str, ...] = field(default=(), compare=False)
 
 
@@ -230,7 +166,6 @@ class Chosen:
     title: str
     artists: str
     score: float
-    #: The artists one by one, in AcoustID's order. See `Recording.artist_names`.
     artist_names: tuple[str, ...] = field(default=(), compare=False)
 
     @property
@@ -240,22 +175,7 @@ class Chosen:
 
 
 def choose(results: Sequence[Result]) -> Chosen | None:
-    """The one song these results name, or None where they do not name one clearly.
-
-    The rule, in the order it is applied:
-
-    1. **The floor.** Only results scoring `FLOOR` or more count, and only their recordings with a
-       title and at least one artist.
-    2. **The artists.** A result can list recordings by different artists (four by the singers
-       and one by a DJ, say): the artists who appear most across everything left win, each recording
-       weighing its `sources`. A tie between two sets of artists names nothing.
-    3. **The recording.** Among those artists' recordings, grouped by title (letter case aside),
-       the title with the most `sources` wins. A tie names nothing. Its best-weighted recording is
-       the one named, with the best score among the results that listed that title.
-
-    "Names nothing" is the honest answer to a tie: a wrong name spread to every file sharing the
-    song is worse than no name, and the person can type one.
-    """
+    """The one song these results name, or None on a tie: a wrong name spreads to every pair."""
     listed: list[tuple[Result, Recording]] = [
         (result, recording)
         for result in results
@@ -325,11 +245,7 @@ def _recording(rec: Mapping[str, Any]) -> Recording:
 
 
 def answer_of(body: Mapping[str, Any]) -> LookupAnswer:
-    """AcoustID's JSON as a `LookupAnswer`. Its `status` and `error` are read first.
-
-    A shape this does not expect is read as less, never as an error: a result with no recordings is
-    a result naming nothing, and an artist with no name is left out of the credit.
-    """
+    """AcoustID's JSON as a `LookupAnswer`; an unexpected shape reads as less, never an error."""
     if body.get("status") != "ok":
         problem = body.get("error")
         said = problem.get("message") if isinstance(problem, Mapping) else None
@@ -351,9 +267,6 @@ def answer_of(body: Mapping[str, Any]) -> LookupAnswer:
     return LookupAnswer(results=tuple(found))
 
 
-# --- asking ---------------------------------------------------------------------------------------
-
-
 class Session(Protocol):
     """The one call a lookup makes of an aiohttp session. A test hands in its own."""
 
@@ -369,15 +282,7 @@ async def lookup(
     proxy: str | None = None,
     on_refused: Callable[[float], None] | None = None,
 ) -> LookupAnswer:
-    """One lookup: a POST of the compressed fingerprint and a length, gzip-compressed.
-
-    The body is gzipped because a fingerprint is a few kilobytes of base64 and AcoustID asks for it.
-    The key goes in the body, never the address, so no log of an address can carry it; and a failure
-    is raised with a sentence of Sift's rather than the exception, which can carry the request.
-
-    A `429` or `503` is AcoustID asking for less: `on_refused` is told how long to keep off (its
-    `Retry-After`, or `REFUSAL_BACKOFF_SECONDS`) and the lookup is refused.
-    """
+    """One gzipped lookup POST; the key goes in the body, and a 429 or 503 calls `on_refused`."""
     body = urlencode(
         {
             "client": key,
@@ -426,18 +331,14 @@ async def lookup(
 
 
 class SessionFactory(Protocol):
-    """Opens a session whose connections are vetted before they are made: the application's
-    guarded connector (`slices/download/sources/net.guarded_session`), handed in at boot exactly as
-    the stash-boxes are handed it. `proxy` is how a tunnel is reached; None is direct."""
+    """Opens a session through the guarded connector handed in at boot; `proxy` reaches a tunnel."""
 
     def __call__(
         self, *, user_agent: str | None = None, proxy: str | None = None
     ) -> AbstractAsyncContextManager[Any]: ...
 
 
-#: Holds one stored route (None or a tunnel id) for the length of a request and yields the proxy
-#: address, or None for direct; raises when the tunnel is gone or down. The downloads' own resolver,
-#: handed in at boot, the same one a stash-box is handed (`stash_boxes.adapter.RouteOpener`).
+#: Holds a route for one request and yields its proxy, or None; raises when the tunnel is down.
 RouteOpener = Callable[[str | None], AbstractAsyncContextManager[str | None]]
 
 
@@ -450,12 +351,7 @@ async def _no_tunnels(route: str | None) -> AsyncIterator[str | None]:
 
 
 class AcoustIDClient:
-    """Asks AcoustID at Sift's pace, through the route an admin chose. One per application.
-
-    The limiter is held here rather than per job, so every lookup this process makes queues behind
-    the last one however many jobs are running: the property that keeps a whole library's worth of
-    lookups at three a second rather than three a second per worker.
-    """
+    """Asks AcoustID at Sift's pace, through the chosen route; one limiter for the whole process."""
 
     def __init__(
         self,
@@ -474,8 +370,7 @@ class AcoustIDClient:
         self, key: str, fingerprint_b64: str, duration: int, *, route: str | None
     ) -> LookupAnswer:
         """One paced lookup through `route`. Raises `AcoustIDUnreachable` (or `AcoustIDRefused`)."""
-        # Declared again on every ask, as a stash-box's pace is: `pace` never undoes a back-off a
-        # refusal recorded, and a limiter handed in by a test starts with no pace of its own.
+        # Declared on every ask: `pace` never undoes a recorded back-off.
         self._limiter.pace(HOST, PACE_SECONDS)
         await self._limiter.acquire(HOST)
         async with (
@@ -492,8 +387,7 @@ class AcoustIDClient:
             )
 
     async def check(self, key: str, *, route: str | None) -> tuple[bool, str]:
-        """Whether this key works, by one lookup of AcoustID's documented example. Nothing of the
-        library is sent. The sentence is what the settings screen shows beside the result."""
+        """Whether this key works, by one lookup of AcoustID's example, and the sentence to show."""
         try:
             answer = await self.ask(key, EXAMPLE_FINGERPRINT, EXAMPLE_DURATION, route=route)
         except AcoustIDUnreachable as failure:
@@ -504,13 +398,7 @@ class AcoustIDClient:
 
     @asynccontextmanager
     async def _way_out(self, route: str | None) -> AsyncIterator[str | None]:
-        """Hold the route for one request and yield the proxy address, or None for direct.
-
-        A tunnel that is gone or down refuses the lookup, in the words a stash-box gets, never a
-        fall back to a direct connection: the route exists so AcoustID does not see this device's
-        own address. Only the ENTRY is caught: the opener's refusal comes from the tunnels, whose
-        own error type this slice may not import.
-        """
+        """Hold the route for one request; a down tunnel refuses rather than going direct."""
         async with AsyncExitStack() as stack:
             try:
                 proxy = await stack.enter_async_context(self._through(route))

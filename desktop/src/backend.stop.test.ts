@@ -17,9 +17,7 @@ vi.mock('node:child_process', () => ({
 	spawn: vi.fn(() => spawned)
 }));
 
-/* Whether the bundled interpreter is "there". Answered here rather than read off the disk: these
-   tests spawn nothing real, and a suite that passed only on a machine with a development venv in
-   place would be a statement about that machine. */
+/* Whether the bundled interpreter is "there". */
 const interpreter = vi.hoisted(() => ({ present: true }));
 
 vi.mock('node:fs', async (original) => {
@@ -65,15 +63,12 @@ const path = await import('node:path');
 
 function started(): InstanceType<typeof Backend> {
 	const backend = new Backend({ dataDir: 'D:\\data', cacheDir: 'D:\\cache' }, () => {});
-	// The private field is filled by `start`, which also waits for health. Set directly: what is
-	// under test is `stop`, and a health wait would be a second thing to stand up.
+	// The private field is filled by `start`, which also waits for health.
 	(backend as unknown as { child: unknown }).child = spawned;
 	return backend;
 }
 
-/* Whether the fake child answers a stop by exiting, or sits there. Both are real: a backend that
-   goes when asked, and one that has to be taken. Default off, so a test that wants the timeout gets
-   it by doing nothing. */
+/* Whether the fake child answers a stop by exiting, or sits there. */
 let goesWhenAsked = false;
 
 beforeEach(() => {
@@ -130,17 +125,7 @@ describe('stopping', () => {
 	});
 });
 
-/*
- * Changing whether other computers can reach this library while it is running.
- *
- * The address a server listens on is chosen when its socket is opened, so the switch stops the
- * backend and starts it again. Listening on every address always and refusing unwanted requests
- * would put an application-level check where a closed socket is, and a check can have a bug. What
- * is proved here is the sequence.
- *
- * `start` is replaced rather than run: it binds a real port and polls a real `/health`, and neither
- * is what this is about. What is under test is what surrounds it.
- */
+/* Changing whether other computers can reach this library while it is running. */
 describe('changing the listening address while running', () => {
 	function backendListeningOn(share: boolean): InstanceType<typeof Backend> {
 		const backend = started();
@@ -175,8 +160,7 @@ describe('changing the listening address while running', () => {
 	});
 
 	it('LEAVES THE OLD ADDRESS RUNNING when the new one will not come up', async () => {
-		/* The window must not be left with no backend behind it. `false` is how the screen learns
-		   to say the change did not take, instead of showing a state that is not true. */
+		/* The window must not be left with no backend behind it. */
 		const backend = backendListeningOn(false);
 		const start = vi
 			.spyOn(backend, 'start')
@@ -202,10 +186,8 @@ describe('changing the listening address while running', () => {
 	});
 
 	it('leaves a LATER death still counting as a crash', async () => {
-		/* `stop` sets the flag that tells the exit handler a death was deliberate, and it is never
-		   cleared anywhere else. Forget to clear it here and the backend is supervised for the rest
-		   of the session by a handler that treats every crash as an intended shutdown, so it dies
-		   once and never comes back, silently. */
+		/* `stop` sets the flag that tells the exit handler a death was deliberate, and it is
+		   never cleared anywhere else. */
 		const backend = backendListeningOn(false);
 		vi.spyOn(backend, 'start').mockResolvedValue(undefined);
 
@@ -215,14 +197,7 @@ describe('changing the listening address while running', () => {
 	});
 });
 
-/* The exit code that says the stop was ASKED FOR.
- *
- * It is the whole contract between this shell and the backend, and the two are in different
- * languages: a Python test names the same number from the other side. What it buys is the
- * difference between "somebody pressed Restart" and "the backend has crashed again": counted as a
- * crash, four deliberate restarts in five minutes leave Sift refusing to start its own backend and
- * saying so in a message about repeated failure.
- */
+/* The exit code that says the stop was ASKED FOR. */
 describe('an exit the backend asked for', () => {
 	function spawnedOnce(gaveUp: (why: string) => void = () => {}) {
 		vi.mocked(spawn).mockClear();
@@ -285,8 +260,8 @@ describe('an exit the backend asked for', () => {
 		expect(said[6]?.[2]).toEqual({ why: 'stopped' });
 	});
 
-	/* A death that `stop` asked for is the end of it: started again, it would be a backend nobody
-	   wanted holding the port the next one needs. */
+	/* A death that `stop` asked for is the end of it: started again, it would be a backend
+	   nobody wanted holding the port the next one needs. */
 	it('is not started again when the stop was this side asking', () => {
 		const backend = spawnedOnce();
 		(backend as unknown as { stopping: boolean }).stopping = true;
@@ -296,8 +271,8 @@ describe('an exit the backend asked for', () => {
 		expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
 	});
 
-	/* A library switch: the server asked to restart, and the shell will start a DIFFERENT library.
-	   The backend must not start itself again on the old one underneath that. */
+	/* A library switch: the server asked to restart, and the shell will start a DIFFERENT
+	   library. */
 	it('is left to the caller when the caller takes the restart over', () => {
 		const gaveUp = vi.fn();
 		vi.mocked(spawn).mockClear();
@@ -378,7 +353,7 @@ describe('the release feed', () => {
 });
 
 /* The shell link: where the backend asks this shell for what only it can do, and this launch's
-   secret for asking. Handed down at start, and absent where there is no link. */
+   secret for asking. */
 describe('the shell link', () => {
 	function variablesWith(
 		link: { url: string; token: string } | null

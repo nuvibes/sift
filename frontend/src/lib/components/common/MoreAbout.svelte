@@ -12,19 +12,9 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: `<details>` is the site's disclosure and it is already right: open or
-	   closed, on the keyboard, in the accessibility tree, and found by find-in-page. bits-ui's
-	   Collapsible would replace all of that with script. */
+	closed, on the keyboard, in the accessibility tree and found by find-in-page. */
 
-	/*
-	 * Reference material, folded away: the second half of an explanation, a licence term, a
-	 * measured figure, the consequence nobody needs before deciding.
-	 *
-	 * A component so every disclosure opens the same way (the marker removed in both spellings, the
-	 * hover ground, the focus ring), wherever it is used.
-	 *
-	 * "More about this", everywhere, rather than a summary written per use: a label that never
-	 * changes becomes furniture, where one that changes has to be read first.
-	 */
+	/* Reference material folded away under the same words everywhere, "More about this". */
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -54,13 +44,10 @@
 		color: var(--sift-ink-2);
 		border-radius: var(--radius-sm);
 		text-decoration: underline;
-		/* Underlined only on hover, and the resting rule declares it transparent rather than absent
-		   so the change is a step rather than a line appearing between frames. There is no surface
-		   under this to step, which is the case `check_hover_answers.js` names an underline for. */
+		/* Underlined only on hover, from transparent (`check_hover_answers.js`). */
 		text-decoration-color: transparent;
 		text-underline-offset: 3px;
-		/* The Light register, declared on the resting rule so the step is animated in both
-		   directions rather than only on the way in. */
+		/* On the resting rule, so it steps both ways. */
 		transition:
 			color var(--dur-instant) var(--ease),
 			text-decoration-color var(--dur-instant) var(--ease);

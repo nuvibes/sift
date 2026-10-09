@@ -1,36 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""A song's name, spread to every file that shares the song, and taken back when somebody says no.
-
-A PMV named from its Site's page, or by AcoustID, carries the song; the clips cut from it and the
-other editors' mixes of it carry the same sound and, without this, nothing that says so. When the
-pairing of one file settles (`service.py` hands its pairs to `on_pairs_settled`), its group
-(the files it pairs with and the files those pair with, one hop) is read, and a name crosses to
-whichever side has none.
-
-## It is Sift's act, and every one can be taken back
-
-Each name written this way is one receipt: the file that received it is the subject, the file it
-came from is the object, and History says "Sift named the song X, from the same music as <file>",
-linked: the words of the file page's Same music strip, which say why the file has the name. Undo
-takes the name off only while the file still carries it (a song somebody chose by hand since is
-theirs) and writes a refusal, so the next time the group settles the same name does not come
-straight back. The refusal is per song: a different song is a different claim.
-
-## Which name, when a group disagrees
-
-A file with no name takes the name most of its named partners carry; a tie gives it nothing,
-because a wrong name spread through a group is worse than no name and a person can type one. A file
-that has a name gives it to every partner that has none, and the partner joins that file's SONG
-(`kernel/content/songs.py`). Never over a song: every write goes through the kernel's
-`seed_music_on`, which puts a song only on a file that carries none.
-
-## Why the spread reads the WHOLE group, unscoped
-
-Whether a file may be seen is a question about a person looking at it, and nobody is looking: this
-is Sift writing a fact about the files' sound, the way probing writes their length. The answer a
-person is given about the group is scoped (`MusicStore.same_music_of`); the write is not
-(`MusicStore.music_group`).
-"""
+"""Spread a song's name through the files that share it, each one undoable, never over a song."""
 
 from __future__ import annotations
 
@@ -54,24 +23,19 @@ from sift.slices.music.store import NameStore
 
 log = get_logger(__name__)
 
-#: The name the shared names' receipts are written under, and the reverser registered for them.
-#:
-#: NOT `music`: that name is the catch-up card's (`queue.QUEUE`), a queue that says no decision of
-#: its kind can ever be taken back (`MusicQueue.reversible = False`), and a workbench name has one
-#: reverser. Receipts under it would draw an Undo the card then refuses.
+#: Not `music`: that queue's decisions cannot be undone, and a workbench name has one reverser.
 QUEUE = "music_names"
 
-#: The address of one file's own page, as the client spells it (`history.ts`: `/asset/{id}`).
+#: As the client spells it (`history.ts`).
 _FILE_PAGE = "/asset/{}"
 
-#: The files that share a song with one file, as Sift's own acts see them (`MusicStore.music_group`).
+#: Unscoped: Sift writing a fact about the sound, not a person looking (`MusicStore.music_group`).
 GroupOf = Callable[[str], Awaitable[Sequence[str]]]
 
-#: Telling the search index that these files' words changed: a song's name is searchable text.
+#: A song's name is searchable text.
 Touched = Callable[[Sequence[str]], Awaitable[None]]
 
-#: What happens after the names have spread: the lookup's start (`lookup.LookupStarter.consider`),
-#: which queues the lookup task's own job only where that task's When starts it on its own.
+#: The lookup's start, which queues a job only where its task's When starts on its own.
 AfterSpread = Callable[[str], Awaitable[object]]
 
 
@@ -80,8 +44,6 @@ async def _nothing_touched(asset_ids: Sequence[str]) -> None:
 
 
 class SongNames:
-    """Spreading a song's name through a group of files that share it, and taking one back."""
-
     def __init__(
         self,
         names: NameStore,
@@ -96,22 +58,13 @@ class SongNames:
         self._after_spread = after_spread
 
     async def on_pairs_settled(self, asset_id: str, pairs: Sequence[object]) -> None:
-        """The hook the fingerprint job calls once a file's pairs are written.
-
-        The spread first, then whether AcoustID should be asked about this file, in that order,
-        because a name that arrived through the group is one the lookup does not need to send
-        anything for. `pairs` is not read: the group is, and it spans the pairs of the pairs.
-        """
+        """The fingerprint job's hook: spread first, since a name from the group needs no lookup."""
         await self.spread(asset_id)
         if self._after_spread is not None:
             await self._after_spread(asset_id)
 
     async def spread(self, asset_id: str) -> list[str]:
-        """Give the song to whichever side of this file's group has none. The files named, in order.
-
-        See the module docstring for the two directions and the tie. A file that received a name
-        here is named by one receipt each, with the file the name came from as the object.
-        """
+        """Give the song to whichever side of the group has none; returns the files named."""
         group = [one for one in await self._group_of(asset_id) if one != asset_id]
         if not group:
             return []
@@ -125,7 +78,7 @@ class SongNames:
             if not ranked or (len(ranked) > 1 and ranked[0][1] == ranked[1][1]):
                 return []
             song = ranked[0][0]
-            # The closest file carrying it: the group is closest first.
+            # The group is closest first.
             source = next(one for one in group if songs.get(one) == song)
             if not await self._give(asset_id, song, source):
                 return []
@@ -140,15 +93,11 @@ class SongNames:
         return named
 
     async def _give(self, asset_id: str, song: str, source_id: str) -> bool:
-        """One file takes a song from another: the name, where it came from, and its receipt, in
-        one transaction, with the refusal read inside it. Whether the file was named."""
+        """One file takes a song from another, with its receipt and refusal check, atomically."""
         cleaned = cleaned_song(song)
         if not cleaned:
             return False
-        # What the file it came from is called, as History calls it (`history.files_called`: the
-        # title somebody typed, the name it arrived under, or its name on the disk). Read before the
-        # write: it is the words of the line, and a rename between the two is a line naming the file
-        # by the name it had a moment ago, which is what every line does.
+        # Read before the write: these are the line's words.
         called = await files_called(self._names.database, [source_id])
         source_name = called.get(source_id) or "another file"
         async with self._names.database.write() as connection:
@@ -162,9 +111,6 @@ class SongNames:
                 from_asset=Object(kind="asset", id=source_id, name=source_name),
                 facts={
                     "asset": asset_id,
-                    # The way to the file the name came from, placed on its name in the receipt's
-                    # own words (`history._receipt_link`): the line on this file's page is the
-                    # title, and the name in it is what somebody presses to see where it came from.
                     "link": {
                         "kind": "asset",
                         "id": source_id,
@@ -183,18 +129,14 @@ class SongNames:
             )
             if not written:
                 return False
-            # The file's record changed (its Music field, and a line on its History), so whoever
-            # might be drawing it is told, as a record edit tells them (`who_may_see_a_file`).
             announce(await who_may_see_a_file(connection), About.LIBRARY)
         return True
 
 
 class SharedNameReceipts:
-    """How a shared song's name is taken back. A reverser with no card: the act is on a file's
-    History, not in a pile anybody works through. Registered with `Workbench.register_reverser`."""
+    """How a shared song's name is taken back, from a file's History; a reverser with no card."""
 
     name = QUEUE
-    #: Every name shared this way can be taken back.
     reversible = True
 
     def __init__(self, names: NameStore, *, touched: Touched = _nothing_touched) -> None:
@@ -202,22 +144,11 @@ class SharedNameReceipts:
         self._touched = touched
 
     async def pictures_of(self, viewer: Viewer, payload: str) -> tuple[Preview, ...]:
-        """Nothing. The line names both files, linked, and each is one press away; a picture here
-        would have to be scoped to the viewer, and the file's own page already is."""
+        """Nothing: the line links both files, each scoped on its own page."""
         return ()
 
     async def reverse(self, viewer: Viewer, receipt_id: str, payload: str) -> bool:
-        """Take the shared name back. True when the receipt said what to take back.
-
-        Two writes in one transaction, and each is its own rule:
-
-        - the file comes off the song ONLY while it still carries it as Sift put it there
-          (`unseed_music_on`, through the song's one door): a song somebody chose since is theirs;
-        - a refusal is written, so the next settle of the group does not name it again.
-
-        True even where the name had already been changed, because the refusal is still what the
-        Undo asked for. False only for a receipt that does not say which file and which song.
-        """
+        """Take Sift's name off if still there, and refuse it; False for an unreadable receipt."""
         found = _taken_back(payload)
         if found is None:
             return False
@@ -228,8 +159,7 @@ class SharedNameReceipts:
                 connection, asset_id, song, song_id=named if isinstance(named, str) else None
             )
             await NameStore.refuse_on(connection, asset_id, song)
-            # Told whether or not the name was still there: the receipt on the file's History is
-            # taken back either way, and that pane re-reads on the library's bell.
+            # Told either way: the receipt itself is taken back.
             announce(await who_may_see_a_file(connection), About.LIBRARY)
         if cleared:
             await self._touched([asset_id])
@@ -237,13 +167,7 @@ class SharedNameReceipts:
         return True
 
     def worded(self, recorded: Recorded) -> Worded | None:
-        """This decision's line, worded from what it recorded. See `kernel.workbench.Recorded`.
-
-        The receipt wrote down the song, the file it went on and the file it came from, and that
-        is the whole line: Sift is the actor, since nobody decided it, and both files are named as
-        things (the reader gives them their names and links). A receipt that recorded no file or
-        no song keeps its stored title, which is the honest answer for a row this cannot word.
-        """
+        """This decision's line, worded from what it recorded (see `kernel.workbench.Recorded`)."""
         found = _taken_back(recorded.payload)
         if found is None:
             return None
@@ -260,15 +184,11 @@ class SharedNameReceipts:
         return Worded(said=tuple(pieces))
 
 
-# A song somebody took off a file by hand is a refusal this feature keeps (the spread and the
-# lookup both honour it), and one somebody put on by hand takes a refusal of that song back. Told
-# by the kernel's song door, on the act's own connection (`songs.on_hand`): the kernel may not
-# import this feature, so it is registered here, at import.
+# Hand-made song changes refuse or unrefuse a name; registered here, as the kernel cannot import it.
 songs.on_hand(QUEUE, taken_off=NameStore.refuse_on, put_on=NameStore.unrefuse_on)
 
 
 def _taken_back(payload: str) -> tuple[str, str] | None:
-    """The file and the song a shared name's receipt wrote down, or None for any other shape."""
     held = payload_held(payload)
     asset_id, song = held.get("asset"), held.get("song")
     if not isinstance(asset_id, str) or not asset_id or not isinstance(song, str) or not song:

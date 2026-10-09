@@ -1,12 +1,5 @@
-/*
- * Waiting for a worker is not downloading.
- *
- * A download is a job like any other, so on a busy machine it sits on the queue until something
- * picks it up: minutes, behind hundreds of jobs. Treating any job that has not ended as one in
- * flight would have the Faces pane draw "0% - downloading" for the whole of that wait: a percentage
- * that is not moving, for a download that has not started, which reads as a stuck download rather
- * than a queue.
- */
+/* Waiting for a worker is not downloading. A download is a job like any other, so on a busy
+ * machine it sits on the queue until something picks it up: minutes, behind hundreds of jobs. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -137,12 +130,8 @@ describe('the end of one', () => {
 
 describe('where it is in the line', () => {
 	it('says what is ahead of it, and names being first rather than counting nought', () => {
-		/* A page of fifty rows and a tally by state are not a position, so the number comes from the
-		 * server, which counts the line in the order the queue is really claimed in.
-		 *
-		 * One-based off the wire; the words say what is AHEAD, which is the question somebody
-		 * watching a bar asks. "0 ahead" in a sentence about waiting reads as a fault, so first in
-		 * line is named. */
+		/* A page of fifty rows and a tally by state are not a position, so the number comes from
+		 * the server, which counts the line in the order the queue is really claimed in. */
 		expect(sayWaiting(1)).toBe('Next to start');
 		expect(sayWaiting(2)).toBe('Waiting to start — 1 ahead');
 		expect(sayWaiting(581)).toBe('Waiting to start — 580 ahead');

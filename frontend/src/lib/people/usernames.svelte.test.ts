@@ -1,11 +1,4 @@
-/* Usernames, read whole and filed by the card they are drawn under.
- *
- * A username has no page; it is drawn under its Site on a person's Sites tab and under its person
- * on a Site's People tab. Two things decide what those lines say, and both are here: WHICH
- * usernames are lines at all (the ones holding files or a number: the thousands of stash-box
- * profile links are the record's Links, not usernames), and that the read is the WHOLE set rather
- * than the first page of it.
- */
+/* Usernames, read whole and filed by the card they are drawn under. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,8 +62,8 @@ describe('which usernames are lines', () => {
 		expect(filed.get('s-2')?.map((one) => one.id)).toEqual(['a-3']);
 	});
 
-	/* The Site's "poster unknown" row holds files and has no name: its files stay filed, and it is
-	   never listed under a card on a Site's People tab or a person's Sites tab. */
+	/* The Site's "poster unknown" row holds files and has no name: its files stay filed, and it
+	   is never listed under a card on a Site's People tab or a person's Sites tab. */
 	it('never lists a username with no name, even one holding files', () => {
 		const rows = [
 			username({ id: 'a-1', person_id: 'p-1' }),
@@ -150,9 +143,7 @@ describe('the usernames under a wall of cards', () => {
 });
 
 describe("the two writes a username line's sheet makes", () => {
-	/* The sheet under a person's Sites tab is where these are made. Pinned to the ADDRESS, because
-	   "Take off" must be the route that records the unlinking in History (`detach_account` writes
-	   an `unlinked` event), and not a second way of clearing the join that leaves no trace. */
+	/* The sheet under a person's Sites tab is where these are made. */
 	it("writes a typed number through the username's own write", async () => {
 		mocks.put.mockResolvedValueOnce(username({ number: '4242' }));
 

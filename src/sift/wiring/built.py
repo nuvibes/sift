@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What each build step hands to the steps after it.
-
-Small groups rather than one bag, because what a step needs is a few named things, and taking
-the whole application back is how a step comes to depend on something built after it. Frozen, so
-a later step cannot quietly replace a part an earlier one settled.
-"""
+"""What each build step hands to the steps after it, in small frozen groups."""
 
 from __future__ import annotations
 
@@ -59,17 +54,7 @@ class Understanding:
 
 @dataclass(frozen=True, slots=True)
 class Diagnostics:
-    """Every way the application can stop being usable, each with something watching it.
-
-    Four of these measure WAITING: for the loop, for a thread, for a connection, and for the
-    loop's own queue to drain. The fifth measures the WORK, because a request that waits for
-    nothing and does a small thing several thousand times is slow and appears on none of the four.
-
-    The sixth measures none of that. Every reading above is a DURATION, and a duration is a fact
-    about the machine as much as about the query, and all five can read healthy through an
-    application that is unusable. How many rows a read hands back is the same number busy or idle, is knowable
-    before anything is slow, and is what actually decides whether a screen survives an import.
-    """
+    """Every way the application can stop being usable, each with something watching it."""
 
     watchdog: LoopWatchdog
     threads: ThreadPoolWatch

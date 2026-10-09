@@ -1,9 +1,4 @@
-/* The picture a chip, a pick row and the hover card draw an entity by.
- *
- * Given the row's cover fields, the address names which cover it is and carries the account's token:
- * the only address the server lets the browser keep for a week (`kernel/covers.py
- * names_its_cover`). Given nothing, it stays the bare address, which the server answers carefully.
- */
+/* The picture a chip, a pick row and the hover card draw an entity by. */
 import { describe, expect, it, vi } from 'vitest';
 
 /* The names Sift holds a creator picture for, which the store asks the server once for. */
@@ -38,8 +33,8 @@ describe('the address an entity is drawn by', () => {
 	});
 
 	it("draws a song nobody covered as the music glyph, at the song's own address", () => {
-		/* Every chip and hover card that names a song reads this, so none of them can fall back to
-		   the song's letter by forgetting. */
+		/* Every chip and hover card that names a song reads this, so none of them can fall back
+		   to the song's letter by forgetting. */
 		const drawn = entityPicture('song', 's1', 'Lantern Hum');
 		expect(drawn.src).toBe('/api/songs/s1/cover');
 		expect(drawn.glyph).toBe('music_note_2');
@@ -51,8 +46,7 @@ describe('the address an entity is drawn by', () => {
 });
 
 /* THE PICTURE A THING IS DRAWN BY in a picker: the rule its card and its page apply, branch by
- * branch, so a row in "Who is this?" wears what the person's page wears.
- */
+ * branch, so a row in "Who is this?" */
 describe('the picture a picker draws a thing by', () => {
 	it('draws an upload first, framed as chosen', () => {
 		expect(
@@ -119,9 +113,7 @@ describe('the picture a picker draws a thing by', () => {
 	});
 });
 
-/* EVERY PICTURE THAT MAY STAND FOR ONE LINK, best first, read by both link surfaces. The pack is
- * the only picture: nothing is fetched from a site for its mark.
- */
+/* EVERY PICTURE THAT MAY STAND FOR ONE LINK, best first, read by both link surfaces. */
 describe('the pictures a link may be drawn with', () => {
 	it("asks the pack by the link's host, and a filed site adds no second address", () => {
 		expect(linkMarks('https://www.example.test/jane?x=1', 'FiledSite')).toEqual([

@@ -12,11 +12,9 @@
 
 <script lang="ts">
 	/* NOT ON THE GALLERY: one of these exists, in the layout, for the whole app. Importing it into
-	   the gallery would put a SECOND one on the page and every message would be drawn twice. What it
-	   draws is already shown there: the toasts section fires a real one, and this is what catches
-	   it. */
+	the gallery would draw every message twice; the toasts section fires a real one. */
 	/* WHY NOT BITS-UI: bits-ui has no toast. What is here is a live region and a queue: announcement order and
-	   how long a message stays, neither of which is a widget. */
+	how long a message stays, neither of which is a widget. */
 	import Icon from '$lib/components/Icon.svelte';
 	import ProgressBar from '$lib/components/common/ProgressBar.svelte';
 	import { reflow, surface } from '$lib/shell/motion.svelte';
@@ -28,11 +26,9 @@
 	import { benchmarkRun } from '$lib/shell/toasts-benchmark.svelte';
 	import { session } from '$lib/shell/session.svelte';
 
-	/* A finished download is said here, on every screen, rather than by the Downloads screen
-	   alone; once an admin is signed in. See `toasts-downloads.svelte.ts`. */
+	/* A finished download is said here on every screen, once an admin is signed in. */
 	$effect(() => finishedDownloads.follow(session.adminUnlocked));
-	/* The benchmark Sift runs by itself on the first library folder: that it is running, and what it
-	   set, in every admin window. See `toasts-benchmark.svelte.ts`. */
+	/* The first-folder benchmark: that it runs, and what it set, in every admin window. */
 	$effect(() => benchmarkRun.follow(session.adminUnlocked));
 
 	const GLYPH: Record<ToastTone, IconName> = {
@@ -42,37 +38,17 @@
 	};
 </script>
 
-<!--
-	Rendered once, by the layout. Polite rather than assertive: these announce things that already
-	happened, and interrupting someone mid-sentence to tell them a tag was saved is not politeness.
--->
+<!-- Rendered once, by the layout; polite, since these report what already happened. -->
 <div class="toaster" role="status" aria-live="polite">
 	{#each toasts.items as toast (toast.id)}
 		<!--
-			They rise into place as they arrive and fade as they go, as every small surface does.
-
-			A toast that blinks into existence is one somebody's eye never catches, and these are
-			the only place an undo is ever offered, so a message missed is an action that cannot be
-			taken back. Leaving matters as much as arriving: three of them can be stacked, and one
-			vanishing instantly makes the two below it jump up a row for no visible reason.
+		They rise in and fade out, as every small surface does: a toast carries the only Undo.
 		-->
-		<!--
-			Pointing at a toast, or reaching into it with the keyboard, stops its clock.
+		<!-- Pointing at a toast, or focusing inside it, stops its clock; release hands back exactly
+		the time that was left (`hold`, `release`). -->
 
-			Four seconds is enough to read a short sentence and is not enough to read one, decide it
-			was not what you wanted, and reach the Undo before it goes. Both halves matter: the
-			pointer is how it is usually read, and the keyboard is the only way somebody who cannot
-			use a pointer reaches the button at all. `pointerenter`/`pointerleave` rather than
-			`mouseenter`, so a finger holds it too.
-
-			The counting is the store's: it hands back exactly the time that was left rather than
-			starting over, so a toast held three seconds into its four has one second when it is let
-			go. See `hold` and `release`.
-		-->
 		<!-- svelte-ignore a11y_no_static_element_interactions: nothing here is OPERATED by a
-		     pointer. The handlers stop a clock; the message is still a message, the buttons inside it
-		     are still the only things that do anything, and giving this box a role would announce a
-		     second live region inside the one the toaster already is. -->
+			pointer; the handlers stop a clock. -->
 		<div
 			class="toast {toast.tone}"
 			transition:surface
@@ -82,14 +58,11 @@
 			onfocusin={() => toasts.hold(toast.id)}
 			onfocusout={() => toasts.release(toast.id)}
 		>
-			<!-- The toast's own mark where it has one, its tone's otherwise. The wrapper is what the
-			     stylesheet can reach: `Icon` renders its own element carrying that component's hash,
-			     and a class handed to a component is not reached by the caller's scoped CSS. -->
+			<!-- The toast's mark, or its tone's; the wrapper is what scoped CSS can reach. -->
 			<span class="mark" class:fetching={toast.icon === 'download'}>
 				<Icon name={toast.icon ?? GLYPH[toast.tone]} size={16} />
 			</span>
-			<!-- The bar sits UNDER the words rather than beside them, so the message keeps the width
-			     it has in every other toast and the row does not change shape when work starts. -->
+			<!-- The bar sits under the words, so the row keeps its shape. -->
 			<span class="message">
 				<!-- The runs as a History line draws them: a thing it names is the way to it. -->
 				<span><HistorySentence pieces={toast.pieces} /></span>
@@ -102,11 +75,7 @@
 				{/if}
 			</span>
 
-			<!--
-				Named by what they act on, not by what they do. Three of these can be stacked, and
-				"Dismiss, Dismiss, Dismiss" is a list of buttons a screen reader cannot tell apart:
-				the message is the only thing that distinguishes them.
-			-->
+			<!-- Named by what they act on, so stacked buttons can be told apart. -->
 			{#if toast.action}
 				<button
 					class="action"
@@ -130,30 +99,8 @@
 </div>
 
 <style>
-	/*
-	 * The mark does not TURN, and it does move. Those are two different things and the difference is
-	 * the whole reason this works.
-	 *
-	 * A turning mark would rotate the ARROW, and an arrow that points down for only part of every
-	 * revolution has stopped saying "down".
-	 *
-	 * The mark is the bare `download` arrow, the one this application uses for downloading
-	 * everywhere, and a bare arrow can be moved in the one direction it is already pointing. So it
-	 * travels down and fades, and comes back at the top, which is the thing an arrow means, done
-	 * repeatedly, rather than the thing a ring means done sideways. The glyph never leaves the
-	 * vertical, so it says "down" at every instant of it.
-	 *
-	 * Keyed on the MARK rather than on the toast: what moves is the download arrow, wherever a toast
-	 * has one, and a toast that is announcing rather than working does not carry it. See `icon` in
-	 * `toasts.svelte.ts`, which exists for exactly the handful of messages about work in flight.
-	 *
-	 * `fetching` is one of the motions `app.css` names, at the pace of anything that repeats while
-	 * work runs.
-	 *
-	 * Reduced motion stops it: the arrow simply sits still, which is the correct answer for a mark
-	 * whose whole content is movement. There is nothing left to say quietly, and a static arrow
-	 * beside the word "Downloading..." says it in words instead.
-	 */
+	/* The download arrow travels down and fades, never turning, so it always says "down"
+	   (`fetching`). Reduced motion holds it still. */
 	.mark {
 		display: inline-flex;
 		flex: none;
@@ -201,21 +148,13 @@
 		color: var(--sift-bad-text);
 	}
 
-	/* The tone colours the glyph, not the words. Body text stays the colour body text is: a
-	   sentence in red is harder to read and says nothing the icon has not already said. */
+	/* The tone colours the glyph, not the words. */
 	.message {
 		flex: 1;
 		display: grid;
 		gap: var(--space-2);
 		color: var(--sift-ink);
-		/* A long word breaks rather than running out of the toast. A downloaded file's name is ONE
-		   word to the layout ("Instagram810000000_10000000001..." has no space in it) and a flex
-		   item's floor is its longest word, so the message would push straight past the toast's
-		   right edge and under the close button. `min-inline-size: 0` lets the message be narrower
-		   than that word; `overflow-wrap: anywhere` is what then breaks it. Wrapped, not cut with
-		   an ellipsis: the toast is the one place the name is said, and the end of a download's
-		   name (the number) is the part that tells two of them apart. In the primitive, so no
-		   caller has to remember it. */
+		/* min 0 and anywhere, so a long filename wraps whole inside the toast, never cut. */
 		min-inline-size: 0;
 		overflow-wrap: anywhere;
 	}
@@ -244,16 +183,13 @@
 			color var(--dur-instant) var(--ease);
 	}
 
-	/* A ground as well as the ink. The registers refuse a colour change on its own (it is invisible
-	   to anybody not looking straight at it) and this is the one control on a toast, so missing it
-	   means missing the only way to dismiss the thing by hand. */
+	/* A ground as well as ink: the one control on a toast. */
 	.close:hover {
 		background: var(--sift-surface-4);
 		color: var(--sift-ink);
 	}
 
-	/* A finger's reach around the cross on a phone, without the toast growing: the ring `Pressable`
-	   draws, for the reason given there. */
+	/* A finger's reach around the cross on a phone, through Pressable's ring. */
 	@media (max-width: 767px) {
 		.close {
 			position: relative;

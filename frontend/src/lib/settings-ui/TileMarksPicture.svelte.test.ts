@@ -1,17 +1,4 @@
-/* The picture of a tile that every mark is set from.
- *
- * The component's own note argues that a picture is right where seven rows would be wrong, and
- * the argument turns entirely on two things a rendering test can check and nothing else can.
- * Every mark has to be PRESSABLE where it really sits: eight of them, one per declared key, and
- * a mark that quietly went missing would leave a setting registered, served and reachable from
- * nowhere, a fault that comes back in different clothes. And each one has to carry its name and
- * its current answer for somebody who cannot see the picture at all, which is the half a picture
- * cannot do for itself.
- *
- * The cycle is a third claim: pressing steps always -> only on hover -> never -> always. The
- * store that performs the step has its own tests; what is checked here is that the button is
- * wired to it and that the wording follows the answer rather than being written once.
- */
+/* The picture of a tile that every mark is set from. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';
@@ -29,7 +16,7 @@ import {
 } from '$lib/grid/tile-marks.svelte';
 
 /* The store, stood in for. Its own behaviour (what it saves, what it puts back on a refusal) is
-   `tile-marks.svelte.test.ts`. What is left here is the markup. */
+   `tile-marks.svelte.test.ts`. */
 const answers = vi.hoisted(() => new Map<string, string>());
 const set = vi.hoisted(() => vi.fn());
 

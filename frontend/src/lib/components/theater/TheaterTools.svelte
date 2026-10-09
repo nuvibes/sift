@@ -1,13 +1,7 @@
 <script lang="ts">
 	/*
-	 * Theater's own controls on the shared bar: the ones that act rather than open something.
-	 *
-	 * A component and not a snippet, which the bar's own comment explains: a snippet is compiled
-	 * where it is written and STYLED where it is rendered, so these buttons handed up as markup would
-	 * arrive on the most visible row in the app wearing the browser's own chrome.
-	 *
-	 * Play all is drawn with the same glyph the grid's own playback toggle uses, because it is the
-	 * same question asked of a different kind of screen: is everything moving or not.
+	 * Theater's own controls on the shared bar: a component, since a snippet would be styled where
+	 * rendered.
 	 */
 	import { Button, type ButtonSize } from '$lib/components/common';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -15,14 +9,10 @@
 	import { ACTS, keyOf } from '$lib/player/acts';
 
 	interface Props {
-		/** Small on the wall's own bar, where every control is; medium on the top bar. */
 		size?: ButtonSize;
 		/**
-		 * Draw the play-everything control too.
-		 *
-		 * On the top bar it is not drawn here: the bar draws one on every screen and the wall
-		 * answers it. Beside the cell chip while the screen is filled the top bar is gone, so the
-		 * verb has to come from here. One component, two doors.
+		 * On the top bar it is the bar's own; beside the cell chip while filled, it comes from
+		 * here.
 		 */
 		pauseToo?: boolean;
 	}
@@ -32,9 +22,7 @@
 	const wall = $derived(showing.wall);
 </script>
 
-<!-- No play control here. It is the top bar's, which draws one on every screen and the wall
-     answers; a second here would be a copy of it directly below the live one. See the screen's own
-     publish. -->
+<!-- No play control: the top bar draws one on every screen. -->
 {#if wall}
 	{#if pauseToo}
 		<Tooltip
@@ -64,16 +52,7 @@
 			onclick={() => wall.toggleMaster()}
 		/>
 	</Tooltip>
-	<!--
-		No Screenshot here. A cell's screenshot is the first control in that cell's drawer, where the
-		popout player's drawer keeps it (`CellControls`). This bar holds what acts on the whole wall,
-		and a verb about one cell has one door, in the cell's own controls.
-	-->
+	<!-- No Screenshot: it is one cell's, in its drawer. -->
 {/if}
 
-<!--
-	The two ways out (the corner panel and filling the screen) are not here. They are on the wall's
-	own scrub bar, where the ordinary player keeps them and where a hand already is. This row is at
-	the top of the window and is not drawn at all while the wall fills it, so controls for leaving a
-	filled wall cannot live on it.
--->
+<!-- The ways out are on the wall's own scrub bar; this row is not drawn while the wall fills. -->

@@ -1,33 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Leftovers, counted before anything is removed.
+"""Leftovers, counted before anything is removed, and never removed on their own.
 
-A library accumulates things nothing points at any more. A folder removed from the library leaves
-the rows for the files that were in it, because a file can sit in several folders and Sift cannot
-tell "this drive is unplugged" from "I do not want these any more". A file scanned twice leaves the
-pictures the first scan made. A job that failed on every attempt sits in the queue forever, because the
-alternative is a queue that quietly forgets its failures.
-
-None of that is a fault on its own. Each one is a deliberate refusal to delete something on a guess.
-This module is the other half: somewhere to see what has built up and remove it on purpose.
-
-Two rules hold for everything registered here, and they are the whole design:
-
-- **Counted before it is offered.** A tidying says what it would remove and how much space it would
-  free without removing anything. A control whose effect is only visible afterwards is one nobody
-  can use carefully.
-- **It never runs on its own.** No schedule, no threshold, no tidying at boot. Everything here is
-  irreversible, and the thing standing between somebody and a mistake is that they pressed it.
-
-Each area registers its own, because the leftovers of a feature are that feature's business and the
-kernel has no way to know what a face picture is. What the kernel owns is the shape: a name, a
-sentence, a count, and a way to run it.
-
-A count is taken one of two ways. A tidying that counts rows answers when the screen asks. One
-that has to read a whole directory off the disk is **costly** and answers from the last survey,
-which a job takes when somebody asks for one and this module keeps, with the moment it was taken:
-reading the cache directory of a large library takes seconds on a fast disk and much longer on a
-share, and a screen that paid that on every visit would take half a minute to open.
-"""
+Each area registers its own; a costly tidying reads the disk, so it answers from its last survey."""
 
 from __future__ import annotations
 
@@ -51,8 +25,7 @@ log = get_logger(__name__)
 COMPONENT = "tidy"
 VERSION = 1
 
-#: The last survey of each costly tidying: what it counted and when. One row per name; a name
-#: nothing registers any more is a row nothing reads.
+#: The last survey of each costly tidying: what it counted and when.
 _CREATE_SURVEYS = """
 CREATE TABLE IF NOT EXISTS tidy_surveys (
   name        TEXT PRIMARY KEY,
@@ -80,20 +53,12 @@ register_schema_initializer(COMPONENT, VERSION, _initialize, baseline=1)
 
 @dataclass(frozen=True, slots=True)
 class Leftovers:
-    """What one tidying would remove, having looked.
-
-    `frees_bytes` is None when the answer is not about disk: rows in a table take no space worth
-    naming, and quoting a number for them would invite somebody to run it for the wrong reason.
-
-    `count` is None for a costly tidying nothing has surveyed yet: not zero, which would read as
-    nothing to do. `surveyed_at` is when a kept count was taken, and None for one taken now.
-    """
+    """What one tidying would remove; `frees_bytes` None for rows, `count` None before a survey."""
 
     name: str
     title: str
     detail: str
-    #: What one of the things counted is called, and more than one: the count on screen says its
-    #: noun ("134 jobs"), and only the tidying knows what it counts.
+    #: What one counted thing is called, and more than one ("134 jobs").
     noun: str
     nouns: str
     count: int | None
@@ -102,11 +67,7 @@ class Leftovers:
 
 
 class Tidying(Protocol):
-    """One kind of leftover: how to count it, and how to remove it.
-
-    `costly` says the count reads the disk, so the screen shows the last survey rather than
-    taking one; `title` and `detail` are what the screen says about it either way.
-    """
+    """One kind of leftover: how to count it, and how to remove it; `costly` reads the disk."""
 
     @property
     def name(self) -> str: ...
@@ -133,18 +94,7 @@ class Tidying(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Resources:
-    """What a tidying is built from. Deliberately only three things.
-
-    A tidying that needs a store builds its own from these. Passing the assembled stores instead
-    would mean the kernel holding a reference to every slice's objects, which is the coupling this
-    registry exists to avoid.
-
-    `preferences` is the third, and the kernel's own read seam rather than a slice's object: the
-    descriptions a Smart Search model no longer in use left behind can only be told apart from the
-    rest by which model IS in use, and that is a preference. None where the caller has no settings
-    to hand (the background survey, which surveys only the costly tidyings) and a tidying that
-    needs one says it cannot count rather than guessing.
-    """
+    """What a tidying is built from: the database, settings and the preference seam, if any."""
 
     database: Database
     settings: Settings
@@ -155,28 +105,14 @@ Builder = Callable[[Resources], Tidying]
 
 
 async def existing_asset_ids(resources: Resources, asset_ids: Sequence[str]) -> set[str]:
-    """Which of these ids are still assets in the library.
-
-    Here rather than in the tidying that needs it. A feature keeping its own table of asset ids has
-    no way to be told when a file is deleted (a virtual table takes no foreign key, so nothing
-    cascades) and it has to ask. But reaching for the content store from inside a feature is
-    refused by a gate, and rightly: that store reads any asset with no permission check.
-
-    A tidying is the one place that is genuinely a maintenance question rather than a viewer's, so
-    the answer lives here, in the kernel, where the assets table belongs.
-    """
+    """Which of these ids are still assets, as no feature may read the content store."""
     return await ContentStore(resources.database, settings=resources.settings).existing_ids(
         asset_ids
     )
 
 
 async def existing_job_ids(resources: Resources, job_ids: Sequence[str]) -> set[str]:
-    """Which of these ids are still rows in the queue.
-
-    Here for the reason `existing_asset_ids` is: a feature that names its scratch after a job has
-    no way to be told when the queue sweeps the row, and the jobs table is the kernel's. Asked in
-    one statement, chunked by the same rule every id list in Sift is.
-    """
+    """Which of these ids are still rows in the queue, asked in chunked statements."""
     if not job_ids:
         return set()
     from sift.kernel.db import in_clause
@@ -190,8 +126,7 @@ async def existing_job_ids(resources: Resources, job_ids: Sequence[str]) -> set[
     return found
 
 
-# Registered by the areas that own the leftovers, at import. Process-global, like the schema and
-# handler registries: which tidyings exist is a property of the code that is running.
+# Registered at import by the areas that own the leftovers.
 _BUILDERS: dict[str, Builder] = {}
 
 
@@ -208,18 +143,12 @@ def registered_tidyings() -> dict[str, Builder]:
 
 
 def build_all(resources: Resources) -> list[Tidying]:
-    """Every registered tidying, in the order they were registered.
-
-    The order matters and is not alphabetical. Removing rows leaves the files they pointed at
-    behind, so the row tidyings are registered before the file ones: run in order, the second
-    picks up what the first stranded. Run out of order nothing breaks; it just takes two passes.
-    """
+    """Every registered tidying in registration order: rows first, then the files they stranded."""
     return [builder(resources) for builder in _BUILDERS.values()]
 
 
 async def survey_all(resources: Resources) -> list[Leftovers]:
-    """What every tidying would remove. Removes nothing, and reads no directory: a costly
-    tidying answers with its last survey, or with no count when there has never been one."""
+    """What every tidying would remove, reading no directory: a costly one gives its last survey."""
     return [await _current(resources, tidying) for tidying in build_all(resources)]
 
 
@@ -260,7 +189,7 @@ async def remember_survey(resources: Resources, tidying: Tidying) -> Leftovers:
 
 
 async def survey_costly(resources: Resources) -> list[Leftovers]:
-    """Every costly tidying's survey, taken now and kept. What the survey job does."""
+    """Every costly tidying's survey, taken now and kept: what the survey job does."""
     return [
         await remember_survey(resources, tidying)
         for tidying in build_all(resources)
@@ -268,15 +197,8 @@ async def survey_costly(resources: Resources) -> list[Leftovers]:
     ]
 
 
-# --- helpers the file-based tidyings share ---------------------------------------------------
-
-
 def walk_files(root: Path) -> list[Path]:
-    """Every file under a directory, or nothing if it is not there.
-
-    A cache directory that does not exist yet is an ordinary state on a new install, not an error
-    to report to somebody looking at a maintenance screen.
-    """
+    """Every file under a directory, or nothing where it is not there yet."""
     if not root.is_dir():
         return []
     return [path for path in root.rglob("*") if path.is_file()]
@@ -288,13 +210,13 @@ def size_of(paths: list[Path]) -> int:
         try:
             total += path.stat().st_size
         except OSError:
-            # A file that vanished between listing and measuring is one fewer thing to remove.
+            # A file that vanished between listing and measuring is one fewer to remove.
             continue
     return total
 
 
 def remove_files(paths: list[Path]) -> int:
-    """Unlink each, and say how many went. One that is already gone counts as done."""
+    """Unlink each, and say how many went; one already gone counts as done."""
     removed = 0
     for path in paths:
         try:
@@ -308,34 +230,16 @@ def remove_files(paths: list[Path]) -> int:
 
 
 async def in_thread_files(root: Path) -> list[Path]:
-    """`walk_files` off the event loop.
-
-    A cache directory holds a file per thumbnail, per preview and per sprite sheet of every file in
-    the library, and listing it is one long synchronous walk. Sift is a single process: the API,
-    the job feed and every video anybody is watching share one loop, so a walk on it stops the
-    application for as long as it takes.
-    """
+    """`walk_files` off the event loop, as a large cache walk would stop the application."""
     return await asyncio.to_thread(walk_files, root)
 
 
-# --- what the kernel itself leaves behind -----------------------------------------------------
-
-
-#: How long a record whose folder was removed is left alone before Maintenance offers it. The
-#: promise at the remove is that adding the folder back brings everything with it; thirty days
-#: is long enough for a drive that went away for a holiday, and the sentence on the card says it.
+#: How long a stranded record is kept before Maintenance offers it, so re-adding brings it back.
 STRANDED_KEEP_DAYS = 30
 
 
 class StrandedAssets:
-    """Files Sift still has a record of, in no folder it can reach.
-
-    Removing a folder from the library deletes the places its files sat, and deliberately does not
-    delete the files themselves: the same bytes can sit in several folders, and a folder is removed
-    far more often because a drive is unplugged than because somebody wants their tags and ratings
-    thrown away. What is left when the last place goes is a record of a file that appears on no
-    screen, can never be opened, and is still counted in every total.
-    """
+    """Files Sift still has a record of in no folder it can reach, kept until cleared."""
 
     name = "stranded-assets"
     costly = False
@@ -371,16 +275,14 @@ class StrandedAssets:
         )
 
     async def run(self) -> int:
-        # Imported here rather than at the top: the access repository holds a content store, and
-        # importing it up there would make this module part of a cycle for the sake of one call.
+        # Imported here, as the access repository holds a content store and would close a cycle.
         from sift.kernel.access import ObjectType, Repository
 
         access = Repository(self._db, self._content)
         removed = 0
         for asset_id in await self._content.stranded_asset_ids(self._stranded_before()):
             if await self._content.remove_asset_if_unplaced(asset_id):
-                # Grants name their object by id with no foreign key behind it, so nothing
-                # cascades them. One left behind goes on applying to whatever is issued that id.
+                # Grants carry no foreign key; one left behind would apply to a reused id.
                 await access.forget_object(ObjectType.ITEM, asset_id)
                 removed += 1
         log.info("tidy.stranded_assets", removed=removed)
@@ -388,19 +290,10 @@ class StrandedAssets:
 
 
 class LeftoverDerivatives:
-    """Thumbnails, previews and sprite sheets nothing points at.
-
-    Every one of these was made from a file, and the row that named it went when the file did. The
-    picture itself is not deleted at the same moment on purpose: unlinking during a delete would
-    make removing a file depend on the cache being writable, and the cache is the disposable half.
-
-    Safe by construction, and worth saying why: everything under the cache is rebuildable from the
-    original, so the worst case of removing one wrongly is that it is made again the next time it
-    is asked for.
-    """
+    """Thumbnails, previews and sprite sheets nothing points at; all rebuildable from originals."""
 
     name = "leftover-derivatives"
-    #: Reads the whole cache directory: a file per picture of every file in the library.
+    #: Reads the whole cache directory.
     costly = True
     title = "Leftover thumbnails and previews"
     noun = "file"
@@ -419,16 +312,12 @@ class LeftoverDerivatives:
         cache = self._settings.cache_dir
         known = await self._content.derivative_paths()
         files = await in_thread_files(cache)
-        # The transcode cache is its own thing with its own lifetime and no rows in this table.
-        # Sweeping it from here would delete segments out from under somebody watching a video.
+        # The transcode cache has its own lifetime and no rows here; never swept from this.
         transcode = self._settings.transcode_cache_dir
         return [
             path
             for path in files
-            # `as_posix`: the rows spell the path with slashes on every site (`derivative_relpath`),
-            # where `str()` renders backslashes on Windows, so nothing on disk would match a row
-            # and every derivative in use would be an orphan this DELETED.
-            # A file in the cache's root is Sift's own (the kept probe), never a picture.
+            # `as_posix`, as rows use slashes everywhere; a file in the cache's root is Sift's own.
             if (
                 not path.is_relative_to(transcode)
                 and len(path.relative_to(cache).parts) > 1
@@ -459,15 +348,7 @@ _DELETE_SETTLED_FAILURES = "DELETE FROM jobs WHERE state = 'failed'"
 
 
 class SettledFailures:
-    """Jobs that failed on every attempt and will not be retried.
-
-    They are kept rather than cleared because a queue that forgets its failures is a queue that
-    cannot answer why something never happened. That is right up until the reason has been read and
-    dealt with, after which they are a growing list nobody looks at.
-
-    Removing one loses the recorded reason it failed. It does not retry anything and it does not
-    bring anything back: a file whose scan failed is scanned again by asking for a scan.
-    """
+    """Jobs that failed on every attempt; clearing them loses only the recorded reasons."""
 
     name = "settled-failures"
     costly = False
@@ -494,8 +375,7 @@ class SettledFailures:
         )
 
     async def run(self) -> int:
-        # The failed jobs are Activity's and their count is Maintenance's, and both read again on
-        # the jobs bell.
+        # Activity and Maintenance both read again on the jobs bell.
         async with telling(self._db, EVERY_ADMIN, About.JOBS) as connection:
             cursor = await connection.execute(_DELETE_SETTLED_FAILURES)
             removed = cursor.rowcount
@@ -503,24 +383,12 @@ class SettledFailures:
         return max(removed, 0)
 
 
-#: The switch that makes repaired copies, named as a string: the kernel may not import the feature
-#: that declares it (`performance.REPAIR_PLAYBACK_KEY`), and only needs to read the answer.
+#: The repair switch, named as a string, as the kernel may not import its feature.
 REPAIR_PLAYBACK_KEY = "performance.repair_playback"
 
 
 class RepackagedCopies:
-    """Whole second copies of videos, offered for deleting while the switch that makes them is off.
-
-    The switch stops Sift making them and deletes none: a copy is cache, and a delete on Off
-    takes the copies a browser needs to play a file's container as well as the repaired ones. So
-    the space is given back HERE, on purpose, counted first like every tidying.
-
-    Only while the switch is off, and that is what keeps the delete honest. With it on, a repaired
-    copy is in use and deleting it would leave the file stuttering until the switch was turned off
-    and on again; with it off, nothing is making them and they are exactly the leftovers this
-    screen is for. A copy the player needs to play a file in the browser is made again the next
-    time that file is played. No preferences to read is no count, never "all of them".
-    """
+    """Whole second copies of videos, offered only while the switch that makes them is off."""
 
     name = "repackaged-copies"
     costly = False
@@ -539,7 +407,7 @@ class RepackagedCopies:
         self._preferences = resources.preferences
 
     async def _offered(self) -> bool | None:
-        """Whether the switch is off, so the copies are leftovers. None where it cannot be read."""
+        """Whether the switch is off, so the copies are leftovers; None where it cannot be read."""
         if self._preferences is None:
             return None
         return not await self._preferences.get_app(REPAIR_PLAYBACK_KEY)
@@ -570,8 +438,7 @@ class RepackagedCopies:
         return removed
 
 
-# Registered in the order they should run: rows first, then the files those rows were holding on
-# to. See `build_all`.
+# Registered in run order: rows first, then the files they held (see `build_all`).
 register_tidying(StrandedAssets.name, StrandedAssets)
 register_tidying(SettledFailures.name, SettledFailures)
 register_tidying(LeftoverDerivatives.name, LeftoverDerivatives)

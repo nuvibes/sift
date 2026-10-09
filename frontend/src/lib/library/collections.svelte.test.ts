@@ -1,9 +1,4 @@
-/* The collections store: one page of the shelf, in the order the server put it in.
- *
- * The same shape as the tag store and for the same reasons. See its file for the argument about
- * why a wall that pages cannot also order itself in the browser. What is different here is the
- * default order, which is by name.
- */
+/* The collections store: one page of the shelf, in the order the server put it in. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -274,9 +269,9 @@ describe('making and unmaking', () => {
 
 describe('a write while a page is still in the air', () => {
 	it('keeps the new collection rather than letting the older answer land on top of it', async () => {
-		/* The race that would make a wall lose the thing somebody had just made, and only under load:
-		   the page is asked for, the create lands first, and the page's own answer arrives afterwards
-		   and replaces the rows, the new one among them. */
+		/* The race that would make a wall lose the thing somebody had just made, and only under
+		   load: the page is asked for, the create lands first, and the page's own answer arrives
+		   afterwards and replaces the rows, the new one among them. */
 		let release: (value: unknown) => void = () => {};
 		const inFlight = new Promise((resolve) => {
 			release = resolve;

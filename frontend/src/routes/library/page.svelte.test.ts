@@ -1,9 +1,4 @@
-/*
- * Library, the phone's list of every kind of thing.
- *
- * What would be silent if it broke: Recently viewed losing the first row, a row that is not a link
- * to its screen, and a guest offered an admin's row.
- */
+/* Library, the phone's list of every kind of thing. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

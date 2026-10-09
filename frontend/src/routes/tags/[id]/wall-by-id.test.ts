@@ -1,7 +1,5 @@
-/*
- * A tag's page asks for ITS files: the wall names the tag by id, so another tag spelled the same
- * way never adds its files to this page's count.
- */
+/* A tag's page asks for ITS files: the wall names the tag by id, so another tag spelled the same
+ * way never adds its files to this page's count. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

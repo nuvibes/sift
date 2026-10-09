@@ -11,11 +11,7 @@ from sift.kernel.wire import Wire
 
 
 class FolderAnswers(Wire):
-    """One library folder, and where it disagrees with the library.
-
-    `answers` holds only the keys this folder overrides. An absent key is not "off": it is
-    "whatever the library says", which is a third state and the one almost every folder is in.
-    """
+    """One library folder, and where it disagrees with the library: an absent key follows it."""
 
     root_id: str
     name: str
@@ -23,11 +19,7 @@ class FolderAnswers(Wire):
 
 
 class FolderList(Wire):
-    """Every folder, and which switches may be answered per folder.
-
-    `keys` comes from the same map that gates the jobs, so the screen cannot offer a switch that
-    nothing reads or miss one that something does.
-    """
+    """Every folder, and which switches may be answered per folder."""
 
     folders: list[FolderAnswers]
     keys: list[str]
@@ -51,43 +43,23 @@ class SetFolderAnswers(Wire):
 
 
 class BuildRow(Wire):
-    """One product on the Build sheet: what it is, whether the switches want it, and what it
-    would cost to make for every file that lacks it."""
+    """One product on the Build sheet: what it is, whether wanted, and what making it would cost."""
 
     key: str
     label: str
     help: str
-    #: Whether the library's own switches say this is wanted for files as they arrive. The sheet
-    #: ticks the row to match; the person may untick it for one run.
+    #: Whether the library's switches want it for arriving files; the sheet ticks to match.
     switched_on: bool
-    #: How many files in the library lack it, counted now. Exact, before anything starts.
+    #: How many files in the library lack it, counted now.
     files: int
-    #: What one file cost a WORKER the last time this machine built this, in seconds, or null where
-    #: no Build has finished on this machine yet: a guess would read as a measurement. How hard
-    #: the machine worked per file, not how long anybody waited: several jobs run at the same time,
-    #: so this is several times the wall clock. Not what the estimate below is made of.
+    #: Worker-seconds per file on this machine's last Build, or null before one: not wall time.
     seconds_per_file: float | None = None
-    #: How long `files` of them would take ON THE CLOCK, at the cheapest and at the dearest stretch
-    #: of this machine's recent runs that made it: each run's wall time shared between the products
-    #: it made, divided by how many files each got. Null where those runs made too few to say.
-    #:
-    #: Not `files` times the figure above, which is worker-seconds presented as wall time and out by
-    #: the number of jobs running at the same time.
+    #: Wall time for `files` of them at the quickest and slowest of recent runs, or null.
     quick_seconds: int | None = None
     slow_seconds: int | None = None
-    #: How many jobs ran at the same time during the newest run the window was priced from. It
-    #: assumes the next run gets the same, so the sentence on screen says the number rather than
-    #: leaving somebody to guess what it was measured under. Null where the run predates this being
-    #: recorded, or where there is no run.
+    #: Jobs running together in the newest priced run, so the screen can name it; null if unknown.
     jobs_at_once: int | None = None
-    #: How many files this product has given up on (a file that will not decode, one with no
-    #: frame to cut), which a Build leaves out. Its own line on the row, with a way to try them
-    #: again; folded into `files` they would be offered on every Build for ever.
-    #:
-    #: COUNTED AS THE WALL IT OPENS COUNTS THEM: the line's count is a link to the Files wall
-    #: filtered `left_out:<key>`, so it is that wall's own total for this viewer (the vault's rule
-    #: included), never the table's. A count that outran its wall would say, in the difference,
-    #: how many files a shut vault holds back. Try again still forgets every one of them.
+    #: Files this product gave up on, counted as the `left_out:<key>` wall counts them.
     cannot: int = 0
 
 
@@ -95,26 +67,17 @@ class BuildSheet(Wire):
     """What a Build would do, laid out before anybody presses it."""
 
     rows: list[BuildRow]
-    #: How many files lack at least one product the switches want: the union, so a file lacking
-    #: two is one file. What the run is weighed by.
+    #: Files lacking at least one wanted product, each once: what the run is weighed by.
     files: int
-    #: Files still to be brought forward to the sampled identity. Zero once the
-    #: background pass after an upgrade has finished, and on every fresh library.
+    #: Files still to be brought forward to the sampled identity.
     identifying: int = 0
-    #: Whether a Build is already going or waiting. A second one queued behind it would walk the
-    #: same library for the same gaps.
+    #: Whether a Build is already going or waiting.
     running: bool = False
-    #: Files that are in the library and have never been READ, which is a different fault from a
-    #: missing product and has a different answer: a file nobody has read has no dimensions at all,
-    #: so nothing can be built for it, and only a scan of its folder can fix it. Counted here
-    #: because this is the one thing the Importing pane reads, and these files are drawn on the
-    #: wall and included in every total, so a library can be four-fifths unread and look full.
+    #: Files never read: nothing can be built for them until a scan of their folder reads them.
     unread: int = 0
-    #: When quiet hours begin, as "HH:MM" on this device's clock: the one range chosen on Tasks,
-    #: which a Build asked for "Run during quiet hours" waits for and pauses at the end of.
+    #: When quiet hours begin, "HH:MM" on this device's clock.
     night_start: str = "23:00"
-    #: Whether this machine has never been measured, so the run measures it first (a few
-    #: minutes before the first file) and the sheet can say so before anybody presses.
+    #: Whether this machine was never measured, so the run measures it first.
     measure_first: bool = False
 
 
@@ -122,10 +85,8 @@ class BuildRequest(Wire):
     """Which rows were ticked, and whether to start now or in quiet hours."""
 
     products: list[str]
-    #: `now`, or `quiet`: wait for quiet hours and pause when they close.
     at: Literal["now", "quiet"] = "now"
-    #: An older spelling of `at: "quiet"`, still read so a client that sends it keeps working; the
-    #: task's Run now | Run during quiet hours sends `at`.
+    #: An older spelling of `at: "quiet"`, still read for older clients.
     tonight: bool = False
 
 
@@ -145,23 +106,15 @@ class BuildStarted(Wire):
     """A Build has been asked for. It runs in the background like every other long pass."""
 
     queued: bool
-    #: How many files it will touch, counted before it started. Zero is a real answer and is what
-    #: lets the screen say the library is already built rather than offering a button that would
-    #: do nothing.
+    #: How many files it will touch, counted before it started; zero is a real answer.
     files: int
-    #: The first run queued, kept for the screens that read one. `job_ids` is all of them: a
-    #: request naming products of both families starts a Generate run and an Identify run.
+    #: The first run queued; `job_ids` holds every one.
     job_id: str | None = None
     job_ids: list[str] = Field(default=[])
-    #: When it will begin, as seconds since the epoch, where it was asked for tonight.
     starts_at: int | None = None
 
 
-#: HOW MANY FILES ONE "Run task" PRESS MAY NAME. The cap every bulk sheet in Sift already holds a
-#: selection to (`MAX_BULK_ASSETS` in browse, organize, delete, tags), and for their reason: the
-#: request writes one task per file on the one write connection before it answers, and a selection
-#: is what a person picked on a wall, which is never a library. Anything wider is the Importing
-#: pane's own pass, which walks the library from a worker.
+#: How many files one "Run task" press may name: the bulk cap, since each file is one write.
 MAX_RUN_FILES = 500
 
 
@@ -188,12 +141,7 @@ class RunNowGroup(Wire):
 
 
 class RunNowPasses(Wire):
-    """Every pass a press on a file or a selection can start, grouped the way Importing draws them.
-
-    Only the passes that run PER FILE. The rest of what Importing's stages do (walking the folders,
-    looking for near duplicates, grouping faces, suggesting people) is a question about the whole
-    library, and one file is not a smaller copy of it.
-    """
+    """Every pass a press on a file can start, grouped the way Importing draws them."""
 
     groups: list[RunNowGroup]
 
@@ -208,11 +156,7 @@ class RunNowRequest(Wire):
 
 
 class RunNowStarted(Wire):
-    """What one press did, counted, and the sentence the screen says about it.
-
-    A stage's every-pass press counts FILES, never tasks: a file handed three passes is one file
-    queued, and a file left out of any pass for a reason is counted once under that reason.
-    """
+    """What one press did, counted in files, and the sentence the screen says about it."""
 
     queued: int = Field(description="Files handed to the queue by this press.")
     waiting: int = Field(

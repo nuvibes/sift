@@ -1,10 +1,4 @@
-/*
- * The settings shell: the list of sections, and the pane that shows one of them.
- *
- * What is held here is how the pane behaves when the section changes. The pane is one scrolling
- * box for every section, so a section that did not reset it would open part way down, wherever
- * the last one had been left.
- */
+/* The settings shell: the list of sections, and the pane that shows one of them. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
@@ -102,14 +96,7 @@ describe('changing section', () => {
 	});
 });
 
-/*
- * THE SECTION'S TITLE AND THE SEARCH BOX START ON ONE LINE, at the desktop width.
- *
- * The unit environment lays nothing out, so this reads the compiled stylesheet the shell really
- * ships, as the document has it: the pane must start on the search box's grid row, and the two
- * must be inset from that row's top by the same amount (the pane's ring allowance). Either
- * half wrong puts the title a row, or a few pixels, below the box.
- */
+/* THE SECTION'S TITLE AND THE SEARCH BOX START ON ONE LINE, at the desktop width. */
 describe('the pane heading and the search box', () => {
 	/** Every style rule in the shell's sheet, with the media condition it sits under, if any. */
 	function rules(): { media: string; selector: string; style: CSSStyleDeclaration }[] {

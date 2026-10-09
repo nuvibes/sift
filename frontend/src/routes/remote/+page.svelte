@@ -1,10 +1,5 @@
 <script lang="ts">
-	/*
-	 * Remote: the phone as a remote for what is already open at the desk.
-	 *
-	 * The screen itself is `$lib/remote/RemoteScreen`, which Theater's second mode on a phone draws
-	 * as well; this page gives it the Remote's own frame and title.
-	 */
+	/* Remote: the phone as a remote for what is already open at the desk. */
 	import PageFrame from '$lib/components/shell/PageFrame.svelte';
 	import PageHeader from '$lib/components/shell/PageHeader.svelte';
 	import RemoteScreen from '$lib/remote/RemoteScreen.svelte';

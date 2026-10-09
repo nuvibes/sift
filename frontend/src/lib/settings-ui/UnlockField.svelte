@@ -3,19 +3,8 @@
 	   gallery cannot produce without a restart. The `PasswordInput` and `Button` it is made of are
 	   on the gallery. */
 
-	/*
-	 * The password field that unlocks the saved keys, cookies and tunnels, wherever it is offered.
-	 *
-	 * ONE FIELD, SEVERAL DOORS: `Settings > Sites and Tunnels` and the panes beside it, the bar across
-	 * the top of every screen after a restart, and a task on Activity parked for the password. A door
-	 * free to write its own box, its own request and its own refusal would, written differently, be
-	 * the one that unlocked and left the others asking. So the box, the press and what a
-	 * refusal says live here, and the act itself is `unlock` in `$lib/shell/unlock.svelte`.
-	 *
-	 * Two shapes for the two kinds of place. `row` is a settings pane's labelled row, the way every
-	 * other field on that pane is drawn. `inline` is the box and its press on one line, for a bar or
-	 * a row of a list that has no column of names to put a label in.
-	 */
+	/* The password field that unlocks the saved keys, cookies and tunnels, wherever it is
+	 * offered. */
 	import { onMount, type Snippet } from 'svelte';
 	import { Button, FormCard, PasswordInput } from '$lib/components/common';
 	import FieldRow from './FieldRow.svelte';
@@ -115,8 +104,7 @@
 {/if}
 
 <style>
-	/* The box and its press on one line, the words naming the box before it. Wrapping rather than
-	   squeezing: on a phone the refusal takes a line of its own under the box. */
+	/* The box and its press on one line, the words naming the box before it. */
 	.inline {
 		display: flex;
 		flex-wrap: wrap;

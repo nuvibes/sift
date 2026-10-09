@@ -12,32 +12,10 @@
 
 <script lang="ts">
 	/*
-	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a filled box over text, shape and colour only.
-	 *
-	 * Text somebody should not read over a shoulder: the rest of a machine's address, the name of
-	 * the profile folder in a file's place. The one drawing for both, so a hidden part reads the
-	 * same wherever it is.
-	 *
-	 * ## Covered, never blurred
-	 *
-	 * The text is painted OVER (a filled box the width of the text) rather than blurred. A blur is
-	 * not a mask: the shapes are still there, a long number is still legible at a glance from the
-	 * right distance, and a screenshot of it can be sharpened. A solid ground says plainly that
-	 * something is being withheld, and it cannot be read back. The text stays in the page under it,
-	 * so the line does not change width when it is shown, and it still reads as a word rather than
-	 * as a gap. The same surface a field is drawn on, so it reads as a filled-in box and not as a
-	 * rendering fault.
-	 *
-	 * ## Drawn with the veils' softness
-	 *
-	 * The box wears the frost (`--frost-edge`, `--frost-line` in `app.css`): its edge faded inward
-	 * along a gaussian's curve and a band of light across it blurred by the veil, so it reads as
-	 * a line of text out of focus rather than a hard tile. What is blurred is that
-	 * made-up light and never the text, which stays transparent on the opaque ground: the look
-	 * of a blur, with nothing under it to sharpen.
-	 *
-	 * `shown` lifts the cover (an address somebody pressed to read). The press is the caller's:
-	 * this draws, and holds no answer of its own.
+	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a filled box over text, shape and
+	 * colour only. Text not to be read over a shoulder, covered and never blurred (a blur can be
+	 * read back); the frost is made-up light on the box, never the text. `shown` lifts it; the
+	 * press is the caller's.
 	 */
 	import type { Snippet } from 'svelte';
 
@@ -54,8 +32,7 @@
 <span class="covered" class:shown>{@render children()}</span>
 
 <style>
-	/* The ground is opaque and the text on it transparent, so nothing of the words is drawn at all;
-	   the frost (the soft edge and the blurred light) is laid on that ground, never made from the text. */
+	/* Opaque ground, transparent text: nothing of the words is drawn. */
 	.covered {
 		position: relative;
 		color: transparent;
@@ -67,8 +44,7 @@
 		user-select: none;
 	}
 
-	/* The light, on its own layer so the blur reaches only it: the box, never the text in it, and
-	   never anything a caller draws beside it. */
+	/* The light on its own layer, so the blur reaches only it. */
 	.covered::after {
 		content: '';
 		position: absolute;

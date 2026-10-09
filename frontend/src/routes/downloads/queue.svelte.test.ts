@@ -17,11 +17,9 @@ import {
 import { SITE_ORDER, SORT_OPTIONS, sortIcon } from '$lib/grid/sort-state.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 
-/* The queue reads when the connection says it moved, so the thing worth guarding is when it stops
- * asking: a guest who types the address gets a 403 from the list, and that is a stop, not a thing to
- * keep asking about. Everything else is the server being briefly unreachable, and the last good list
- * stays on screen while the next read tries again.
- */
+/* The queue reads when the connection says it moved, so the thing worth guarding is when it
+ * stops asking: a guest who types the address gets a 403 from the list, and that is a stop, not
+ * a thing to keep asking about. */
 
 function item(over: Partial<DownloadItem> = {}): DownloadItem {
 	return {
@@ -248,7 +246,7 @@ describe('DownloadQueue', () => {
 
 /* The page decides for THIS paste: its folder and its switch go with the paste, on every route
    the box can take, and nothing chosen is sent as null, which the server reads as "follow the
-   setting". A route that dropped them would quietly put the stored default back in charge. */
+   setting". */
 it('sends what the page chose for this paste on every route the box uses', async () => {
 	reply = (url, init) =>
 		init.method === 'POST'
@@ -290,8 +288,7 @@ describe('a paste of several links', () => {
 	});
 
 	it('names the lines that were not links rather than losing the paste', async () => {
-		// The behaviour that decides whether anybody uses this instead of pasting one at a time. A
-		// list copied out of a page has a stray line in it, and "2 were refused" tells nobody which.
+		// The behaviour that decides whether anybody uses this instead of pasting one at a time.
 		answering({
 			queued: 2,
 			refused: [{ url: 'not a link', reason: 'That line has no website in it.' }],
@@ -305,8 +302,7 @@ describe('a paste of several links', () => {
 	});
 
 	it('says what it silently dropped as well as what it refused', async () => {
-		// A repeat and an overflow both mean a link somebody pasted did not become a download. Said
-		// nowhere, the count on screen simply does not match the paste and there is nothing to read.
+		// A repeat and an overflow both mean a link somebody pasted did not become a download.
 		answering({ queued: 2, refused: [], duplicates: 1, left_over: ['https://a/9'] });
 		const queue = new DownloadQueue();
 		await queue.submitMany(['https://a/1', 'https://a/1', 'https://a/2', 'https://a/9']);
@@ -323,14 +319,7 @@ describe('a paste of several links', () => {
 	});
 });
 
-/* The chips, the filtering and the verbs a row can take.
- *
- * ## Why the counts are of the QUEUE and not of the search
- *
- * A chip whose count changed as somebody typed would be answering "how many failures match this
- * search", and the question a chip answers is "how many failures are there". The list under it is
- * what the search filters. The two are tested apart for that reason.
- */
+/* The chips, the filtering and the verbs a row can take. */
 describe('what the state tabs show', () => {
 	function mixed(): DownloadItem[] {
 		return [
@@ -434,8 +423,8 @@ describe('what the state tabs show', () => {
 		});
 	});
 
-	/* The filter panel's Site column can tick two, and the server reads a repeated `site` as either
-	   of them: the same "or" every entity wall's column is. None ticked sends no `site` at all. */
+	/* The filter panel's Site column can tick two, and the server reads a repeated `site` as
+	   either of them: the same "or" every entity wall's column is. */
 	it('asks for every ticked Site as a repeated parameter, and none for every Site', async () => {
 		const queue = await loaded();
 		await queue.narrow({ siteNames: ['YouTube', 'TikTok'] });
@@ -493,10 +482,7 @@ describe('what the state tabs show', () => {
 	});
 });
 
-/* Holding one where it is, letting it go again, and the way back from Remove.
- *
- * The addresses are asserted whole rather than by `includes`: `/pauses` contains `/pause`, so a
- * substring check passes against an address the server does not answer. */
+/* Holding one where it is, letting it go again, and the way back from Remove. */
 describe('holding a download, and putting a removed one back', () => {
 	function pathsPosted(): string[] {
 		return calls.filter((one) => one.method === 'POST').map((one) => new URL(one.url).pathname);
@@ -551,11 +537,7 @@ describe('holding a download, and putting a removed one back', () => {
 	});
 });
 
-/* A row waiting on a person, and the verbs a row can take.
- *
- * These are here rather than on the row because the selection bar reads them too, and its whole
- * rule is that it offers only what EVERY picked row can take. Two copies of these would agree until
- * the day one of them learned a new state. */
+/* A row waiting on a person, and the verbs a row can take. */
 describe('what a row needs and what it can take', () => {
 	it('counts a blocked row and a failed one as needing somebody', () => {
 		expect(needsYou(item({ status: 'blocked' }))).toBe(true);
@@ -601,9 +583,8 @@ describe('what a row needs and what it can take', () => {
 		}
 	});
 
-	/* A held row is live work, not history, and the three answers below all come off that one fact.
-	   Taking it off the list would leave a job holding a staging folder with nothing on screen
-	   saying so, which is the same reason a running row cannot be removed. */
+	/* A held row is live work, not history, and the three answers below all come off that one
+	   fact. */
 	it('counts a held row as live rather than as history', () => {
 		expect(canCancel(item({ status: 'paused' }))).toBe(true);
 		expect(canRemove(item({ status: 'paused' }))).toBe(false);
@@ -612,7 +593,7 @@ describe('what a row needs and what it can take', () => {
 });
 
 /* One splitter, because the box counts the lines to label its button and the page counts them to
-   decide whether to send one link or a list. Two copies is two answers to "how many links". */
+   decide whether to send one link or a list. */
 describe('reading a paste', () => {
 	it('drops blank lines and trims each address', () => {
 		expect(lines('  https://a/1 \n\n\r\nhttps://a/2\n')).toEqual(['https://a/1', 'https://a/2']);
@@ -623,9 +604,7 @@ describe('reading a paste', () => {
 	});
 });
 
-/* "Saving to" only while it is saving. One case per state the server shows, so a state added
-   later that nobody thought about lands on "Save to" by the rule rather than by whichever branch
-   happened to catch it. */
+/* "Saving to" only while it is saving. */
 describe('what a download calls its folder', () => {
 	it.each([
 		['running', 'Saving to'],
@@ -644,9 +623,7 @@ describe('what a download calls its folder', () => {
 });
 
 /* The order menu is the top bar's, and every other wall fills it from the one shared list: the
- * words, the keys and (looked up by key) the glyphs. A list of this screen's own would say
- * different words under no glyph.
- */
+ * words, the keys and (looked up by key) the glyphs. */
 describe('the orders the queue offers', () => {
 	it('are the shared entries, word for word, and the Site order declared beside them', () => {
 		const everyShared = [...SORT_OPTIONS, SITE_ORDER];

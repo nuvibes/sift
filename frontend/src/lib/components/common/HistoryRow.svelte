@@ -22,33 +22,11 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: there is nothing here for a component library to own. It is a glyph, two
-	   lines of text and one button, and the only behaviour is the button, which is Sift's own
-	   `Button`. Nothing opens, nothing floats, nothing traps focus. */
+	lines of text and one button, Sift's own Button. */
 
-	/*
-	 * One event, one row, and only one of these in the whole app on purpose.
-	 *
-	 * A person and a queue have histories of the same shape as a file's, drawn from the same
-	 * events, so one row means one answer to where the mark sits, what a reversed entry looks like,
-	 * and how an event with no time is drawn.
-	 *
-	 * It knows nothing about what it is drawing. The sentence arrives finished, written by the
-	 * server in the app's own voice, so the words match the rest of Sift for the same act; a row
-	 * that assembled them would be a second vocabulary.
-	 *
-	 * The mark says who, and that is the one thing colour is spent on: a ring means this account
-	 * did it, and everything else (Sift's own passes, a stash-box, another account, somebody
-	 * unnamed) is plain, because "which of these did I do" is the question somebody scanning a
-	 * history asks.
-	 *
-	 * The line is the server's pieces, drawn by `HistorySentence`, the same drawing the Settings
-	 * feed and its Decisions use. It begins with who did it ("You added ...", "Sift filed ..."),
-	 * so no separate name sits beside the time.
-	 *
-	 * Undo is a request, never a promise. The button appears when the server said this event can be
-	 * taken back (only the last move of a file, and only by an admin); an affordance the server
-	 * would refuse is worse than none.
-	 */
+	/* One event, one row, the only one in the app: the sentence is the server's, drawn by
+	 * HistorySentence; a ring marks this account's own act; Undo shows only where the server offers
+	 * it. */
 	import Button from './Button.svelte';
 	import HistorySentence from './HistorySentence.svelte';
 	import Tooltip from './Tooltip.svelte';
@@ -57,13 +35,7 @@
 
 	interface Props {
 		event: HistoryEvent;
-		/**
-		 * What to do when Undo is pressed. Absent, no Undo is drawn at all.
-		 *
-		 * The caller wires the request, because which address takes an event back is a fact about
-		 * the API and not about a row, and the row is drawn in places that have no business
-		 * knowing it. The event says which door through `undo.kind`.
-		 */
+		/** What Undo does; absent, no Undo. The caller wires the request (`undo.kind`). */
 		onundo?: (event: HistoryEvent) => void;
 		/** Waiting on the undo this row asked for. Stops a second press while the first is in flight. */
 		undoing?: boolean;
@@ -71,27 +43,19 @@
 
 	let { event, onundo, undoing = false }: Props = $props();
 
-	/* Undoable, drawn: the server offered a way back, it has not already been taken, and somebody is
-	   listening. All three, because any one of them alone draws a button that does nothing. */
+	/* Offered, not taken, and somebody listening: any one alone is a button doing nothing. */
 	const canUndo = $derived(event.undo !== null && !event.reversed && onundo !== undefined);
 
 	/* What the mark means, in words. `markOf` and this answer the same question. See there. */
 	const means = $derived(markWords(event));
 
-	/* What else a decision wrote, under its line while it stands; read through a narrow type until
-	   the generated schema carries the field. */
+	/* What else a decision wrote, while it stands. */
 	const more = $derived(event.reversed ? '' : (event.more ?? ''));
 </script>
 
 <div class="history-row">
-	<!--
-		The mark, with what it means on hover and on focus: a glyph is a picture of a category and
-		nothing says which until you know. The words are the server's, sent beside the line
-		(`means`); a task's own mark reads the filter's label for it (`markWords`).
+	<!-- The mark, named by what it means (the server's words), hovered or focused. -->
 
-		`role="img"` named by what the mark means, because a span holding a ligature would otherwise
-		be read out as the icon's own name, and the stored kind is a machine word.
-	-->
 	<Tooltip label={means}>
 		<span class="mark" class:mine={event.actor === BY_YOU} role="img" aria-label={means}>
 			<Icon name={markOf(event.kind, event.via, event.how)} size={14} />
@@ -99,9 +63,7 @@
 	</Tooltip>
 
 	<div class="said">
-		<!-- The line, from the server's pieces, and what it stands for under "Show each". Every
-		     History surface draws a line through `HistorySentence`, so a name, a thing that has
-		     gone and a folded list look and behave the same everywhere. -->
+		<!-- The line from the server's pieces, as every History surface draws it. -->
 		<div class="what" class:taken-back={event.reversed}>
 			<HistorySentence
 				pieces={event.pieces}
@@ -137,24 +99,14 @@
 </div>
 
 <style>
-	/*
-	 * The mark, what was said, and whatever can be done about it. Aligned to the START rather than
-	 * centred: a long sentence wraps to two or three lines, and a mark floating level with the
-	 * middle of them reads as belonging to none of them.
-	 */
+	/* Aligned to the start, so the mark stays by a wrapped sentence's first line. */
 	.history-row {
 		display: flex;
 		align-items: flex-start;
 		gap: var(--space-3);
 	}
 
-	/*
-	 * A small disc with the glyph in it. Round, because the line the list draws runs through the
-	 * middle of these and a rounded rectangle on a vertical line reads as a step in a form.
-	 *
-	 * `flex: none` so a long sentence cannot squeeze it into an oval, which is what happens to any
-	 * fixed-size flex child that is allowed to shrink.
-	 */
+	/* A round disc on the list's thread, never squeezed. */
 	.mark {
 		display: flex;
 		flex: none;
@@ -168,17 +120,14 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* This account's own act. The one thing colour is spent on here. See the header. The glyph
-	   takes the accent's TEXT colour, not the fill: the fill on its own tint is 3.2:1, which the
-	   contrast test refuses for anything drawn as a mark on a surface. */
+	/* This account's own act, in the accent's text colour (the fill fails 3:1 on its tint). */
 	.mark.mine {
 		border-color: var(--sift-accent);
 		background: var(--sift-accent-bg);
 		color: var(--sift-accent-text);
 	}
 
-	/* The two lines, and `min-inline-size: 0` because a flex item's floor is its content: without
-	   it a long unbroken sentence pushes the Undo off the row instead of wrapping. */
+	/* min 0, so a long sentence wraps rather than pushing Undo off. */
 	.said {
 		flex: 1 1 auto;
 		min-inline-size: 0;
@@ -190,15 +139,12 @@
 		color: var(--sift-ink);
 	}
 
-	/* An event that was undone is still something that happened, so it stays legible rather than
-	   being struck through: a line through a sentence is read as "this is not true", and it was true
-	   at the time. Quieter ink says it no longer stands, and `HistorySentence` takes its links down. */
+	/* Undone is still something that happened: quieter, never struck through. */
 	.what.taken-back {
 		color: var(--sift-ink-3);
 	}
 
-	/* What else the decision wrote: the line's own size, in caption ink, so it reads as part of
-	   the line and not as its footnote. */
+	/* The line's own size in caption ink, part of the line. */
 	.more {
 		margin: 0;
 		font: var(--text-body-sm);
@@ -215,8 +161,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* A time nobody recorded. Set in italic rather than given a colour of its own: it is a phrase
-	   where every other row has a date, and the shape of the words is what says so at a glance. */
+	/* An unrecorded time in italic, a phrase where others have a date. */
 	.moment.unrecorded {
 		font-style: italic;
 	}

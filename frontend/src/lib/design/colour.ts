@@ -1,13 +1,4 @@
-/** Colour arithmetic, for the gates that measure the token layer.
- *
- * Nothing here is imported by the running app: it exists so `contrast.test.ts` can answer "is this
- * pair legible" from the stylesheet itself rather than from a comment somebody wrote beside it.
- *
- * WCAG 2.x, exactly as written: linearize each channel, weight them, and take the ratio of the two
- * relative luminances with the 0.05 flare term. The formula is worth stating rather than importing,
- * because a library that computes it slightly differently would make the floors mean slightly
- * different things than the ones the design system quotes.
- */
+/** Colour arithmetic, for the gates that measure the token layer. */
 
 /** Red, green and blue in 0..1, plus alpha. */
 export type Rgba = { r: number; g: number; b: number; a: number };
@@ -15,25 +6,11 @@ export type Rgba = { r: number; g: number; b: number; a: number };
 const clamp = (n: number): number => Math.min(1, Math.max(0, n));
 
 /** `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(...)`, `rgba(...)` and the one `color-mix` form the token
- *  layer uses. Throws on anything else: a colour the gate cannot read is a colour the gate must
- *  not silently pass. */
+ * layer uses. */
 export function parseColour(value: string): Rgba {
 	const text = value.trim();
 
-	/*
-	 * `color-mix(in srgb, <colour> N%, transparent)`, which is how a WASH is written.
-	 *
-	 * Mixing a colour with `transparent` is exactly "the same colour at N% alpha" (the
-	 * transparent side contributes no channels, only the missing alpha), so this is read as that
-	 * and nothing more. It is the only `color-mix` in the stylesheet, and it is not read for the
-	 * sake of measuring it: the contrast sweep SKIPS a translucent background on purpose, because a
-	 * wash has to be composited over whatever is behind it and a rule block does not say what that
-	 * is. Without this the sweep would not skip it: it would THROW, on `not a colour`, and take
-	 * every base-and-accent case down with it.
-	 *
-	 * Any other mix still throws, deliberately: two opaque colours mixed is a value this cannot
-	 * infer, and guessing at one is worse than refusing.
-	 */
+	/* `color-mix(in srgb, <colour> N%, transparent)`, which is how a WASH is written. */
 	const wash = text.match(
 		/^color-mix\(\s*in\s+srgb\s*,\s*(.+?)\s+([\d.]+)%\s*,\s*transparent\s*\)$/i
 	);

@@ -1,10 +1,4 @@
-/* The one file that survives between launches, and what happens when it is wrong.
- *
- * It is a plain JSON file in the user's profile, so every case below is reachable by hand: somebody
- * edits it, a disk fills up mid-write, a backup restores half of it. A truncated settings file is
- * indistinguishable from a fresh install, and a fresh install re-points somebody's library, which
- * is why the write is temp-then-rename and why that is asserted here rather than assumed.
- */
+/* The one file that survives between launches, and what happens when it is wrong. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -53,14 +47,8 @@ describe('load', () => {
 		expect(load().mode).toBeNull();
 	});
 
-	/* The setting that decides whether this is a program on one computer or a service on a network.
-	 *
-	 * A fresh install must be the former, and nothing short of the word `true` may make it the
-	 * latter. This file is a plain, hand-editable JSON file, and every other setting here can
-	 * afford to be forgiving about a string where a boolean was meant. This one cannot, because
-	 * being talked into it by a truthy value is the difference between a machine that answers only
-	 * to itself and one that answers to the whole house.
-	 */
+	/* The setting that decides whether this is a program on one computer or a service on a
+	 * network. */
 	it('does not share on the network unless it has been asked to, in so many words', () => {
 		expect(load().shareOnNetwork).toBe(false);
 
@@ -73,18 +61,7 @@ describe('load', () => {
 		expect(load().shareOnNetwork).toBe(true);
 	});
 
-	/*
-	 * The browser links open in, and the reason it is checked at all.
-	 *
-	 * The value is a path this application will later START AS A PROGRAM. Everything else in this
-	 * file describes Sift to itself; this one names something outside it to run. So the same rule
-	 * the sharing switch gets applies here: a hand-edited file may say a string or it may say
-	 * nothing, and anything else means nothing.
-	 *
-	 * `null` is what "no choice" has to be. Recording the system default as a path would freeze it,
-	 * and somebody who later changed their Windows default would find Sift still opening the old
-	 * one, under a setting that says "Default browser" and does not mean it.
-	 */
+	/* The browser links open in, and the reason it is checked at all. */
 	it('takes a browser only as a string, and treats anything else as no choice', () => {
 		expect(load().browser).toBeNull();
 
@@ -114,8 +91,7 @@ describe('load', () => {
 		expect(settings.servers).toEqual([{ label: 'the study', origin: 'http://10.0.0.5:5171' }]);
 	});
 
-	/* Hand-editable, so the shape is trusted nowhere. A wrong type here would surface much later as
-	 * an unreadable error in whichever screen happened to read it first. */
+	/* Hand-editable, so the shape is trusted nowhere. */
 	it('drops a saved server that is not one, and keeps the ones that are', () => {
 		write(
 			JSON.stringify({
@@ -131,9 +107,7 @@ describe('load', () => {
 	});
 
 	/* THE DEFENSIVE READING GOES TOWARDS THE SETTING'S OWN DEFAULT, which for this one is ON and
-	 * for `shareOnNetwork` above is off. Both rules exist for the same reason (the file is
-	 * hand-editable), and reading them as one rule is how a switch ends up defaulting the wrong
-	 * way: a copy of Sift whose file predates this field would stop mid-scan on every window close. */
+	 * for `shareOnNetwork` above is off. */
 	it('keeps Sift running when the file says nothing at all about it', () => {
 		write('{"version":1,"mode":"standalone"}');
 		expect(load().keepRunningWhenClosed).toBe(true);
@@ -222,9 +196,8 @@ describe('locations', () => {
 		expect(chosen.dataDir.endsWith(path.join('Local', 'Sift', 'data'))).toBe(true);
 	});
 
-	/* Half-settled is reachable: the two questions are asked separately, and somebody can close the
-	 * window between them. The unanswered half falls back rather than becoming undefined, which
-	 * would be handed to the backend as a literal "undefined" folder. */
+	/* Half-settled is reachable: the two questions are asked separately, and somebody can close
+	 * the window between them. */
 	it('falls back for one half while keeping the other', () => {
 		const chosen = locations({ ...load(), dataDir: 'E:\\d' });
 		expect(chosen.dataDir).toBe('E:\\d');
@@ -240,8 +213,7 @@ describe('the sharing switch belongs to a server', () => {
 	});
 
 	/* A machine used as a client and then set up as a server must not boot on every address
-	 * unasked: unsaying the mode takes the sharing switch with it.
-	 */
+	 * unasked: unsaying the mode takes the sharing switch with it. */
 	it('goes when the mode is unsaid, with the server last joined', () => {
 		const forgotten = withoutMode({
 			...load(),

@@ -14,19 +14,8 @@ import {
 	knownPeople
 } from '$lib/people/faces.svelte';
 
-/* The client side of recognizing faces.
- *
- * Two things are worth testing here and neither is about drawing anything.
- *
- * **Faces are optional, and a screen must not report a fault where there is none.** Most installs
- * never turn this on. A block headed "Who is in this" that says "something went wrong" on every one
- * of them would be describing the absence of a feature as a failure. So a refusal that is about
- * faces comes back as "there is nothing to show", and a refusal that is about the session does not.
- *
- * **Nothing here recomputes what the server already decided.** A face arriving with no name has had
- * the name withheld on purpose, and the only thing worth asserting about that is that this layer
- * hands it on untouched rather than trying to fill the gap in.
- */
+/* The client side of recognizing faces. Two things are worth testing here and neither is about
+ * drawing anything. */
 
 const get = vi.hoisted(() => vi.fn());
 const post = vi.hoisted(() => vi.fn());
@@ -55,8 +44,8 @@ describe('when the feature is not there to answer', () => {
 	});
 
 	it('lets a refusal that is not about faces through', async () => {
-		// A session that ended has to reach the client's own handler, or somebody sits looking at an
-		// app that has quietly stopped working.
+		// A session that ended has to reach the client's own handler, or somebody sits looking at
+		// an app that has quietly stopped working.
 		get.mockRejectedValue(new ApiError(401, 'Please sign in.'));
 
 		await expect(facesOf('a1')).rejects.toBeInstanceOf(ApiError);
@@ -105,8 +94,7 @@ describe('what comes back', () => {
 	});
 
 	it('reports the total the server gave rather than counting the rows', async () => {
-		// The two differ whenever a page is smaller than the set. Counting the rows here would make
-		// every long list report its page size as its size.
+		// The two differ whenever a page is smaller than the set.
 		get.mockResolvedValue({ items: [{ track_id: 't1' }], total: 9 });
 
 		await expect(identifiedForPerson('p1')).resolves.toMatchObject({ total: 9 });
@@ -120,8 +108,7 @@ describe('a face crop address', () => {
 
 	it('carries the token the server sent, so the picture can be kept without asking', () => {
 		/* Without it the address never moves, so a face already in the browser would go on being
-		   shown after the person in it was hidden: no request, and so no check. Nothing on
-		   screen would show the difference, which is why it is asserted here. */
+		   shown after the person in it was hidden: no request, and so no check. */
 		expect(cropUrl({ track_id: 'abc', art: 'f3a1b2c4' })).toBe('/api/faces/abc/crop?v=f3a1b2c4');
 	});
 
@@ -131,11 +118,7 @@ describe('a face crop address', () => {
 	});
 
 	it('is the hidden mark, and not an address at all, for a face the vault is holding', () => {
-		/* Decided here rather than at each of the nine screens that draw one. The server refuses
-		   that crop exactly as it refuses the file, so a screen that asked anyway would draw the
-		   browser's own torn-page glyph, which reads as Sift being broken rather than as something being
-		   kept back. It has to be a picture the browser can draw with no request behind it, because
-		   there is no request that would be allowed. */
+		/* Decided here rather than at each of the nine screens that draw one. */
 		const drawn = cropUrl({ track_id: 'abc', art: 'f3a1b2c4', locked: true });
 
 		expect(drawn.startsWith('data:image/svg+xml')).toBe(true);
@@ -202,8 +185,7 @@ describe('agreeing with every match Sift made for one person', () => {
 	});
 
 	it('does not swallow a refusal, because this writes', async () => {
-		// The reads above answer "nothing to show" on a refusal. A write that did that would leave
-		// somebody believing a decision was taken.
+		// The reads above answer "nothing to show" on a refusal.
 		post.mockRejectedValue(new ApiError(409, 'That is already done.'));
 
 		await expect(confirmMatches('p1')).rejects.toBeInstanceOf(ApiError);
@@ -212,9 +194,9 @@ describe('agreeing with every match Sift made for one person', () => {
 
 describe('a face on a file in the vault', () => {
 	it('is drawn as the hidden mark instead of asking for a crop the server refuses', () => {
-		// Decided in one place because nine screens draw a crop, and the server answers 404 for this
-		// one: a screen that asked anyway would draw the browser's torn-page glyph, which reads as Sift
-		// being broken rather than as something being kept back.
+		// Decided in one place because nine screens draw a crop, and the server answers 404 for
+		// this one: a screen that asked anyway would draw the browser's torn-page glyph, which
+		// reads as Sift being broken rather than as something being kept back.
 		const drawn = cropUrl({ track_id: 't1', art: 'v1', locked: true });
 
 		expect(drawn.startsWith('data:image/svg+xml')).toBe(true);

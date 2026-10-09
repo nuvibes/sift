@@ -8,30 +8,7 @@
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 	import { COPY } from './SupportedSites.search';
 
-	/* Which sites Sift knows, and what it can do with each.
-	 *
-	 * Reference material rather than a setting: it answers "what happens when I paste a link from
-	 * here", which is a question asked before anything is configured. Nothing on it is adjustable.
-	 *
-	 * The known issues column is the one people actually come here for. The question asked in
-	 * front of this table is rarely "is this site supported": it is "why did that not work", and a
-	 * site's age gate or region block answers with an ordinary 403 that says nothing. What is listed
-	 * is only what somebody has watched a site actually say.
-	 *
-	 * The tested column is the honest one. It says whether downloads from a site have actually been
-	 * run and found working, not whether the code for it exists. A matrix that marks a site tested
-	 * because it looks right is worth less than no matrix, because it is believed.
-	 *
-	 * And a row is not a claim of support by itself. Some sites are listed only so that traffic to
-	 * them can be given a way out, which needs the address recognised and nothing else, so the
-	 * table says which, rather than leaving somebody to read support into the site being here.
-	 *
-	 * ON A PHONE EACH SITE IS A CARD, not a row of six columns. The table is 650 pixels wide at its
-	 * narrowest (the badges and the addresses do not wrap below that), so at 393 it would
-	 * scroll sideways inside the pane, the one thing on a phone that does. A card says the same words: the
-	 * Site's name, then each column's heading beside what the row said under it, drawn by the same
-	 * snippets below, so the two shapes cannot come to say one Site two ways.
-	 */
+	/* Which sites Sift knows, and what it can do with each. */
 
 	type SupportedSite = components['schemas']['SupportedSite'];
 
@@ -54,8 +31,7 @@
 	{#if site.supported}
 		<Badge state="done" label={COPY.supported} />
 	{:else}
-		<!-- Not a shortcoming either: it is what this row is FOR. The site is here so its traffic
-		     can be routed, and saying otherwise would be a claim nobody has earned. -->
+		<!-- Not a shortcoming either: it is what this row is FOR. -->
 		<Badge state="canceled" icon="error" label={COPY.routing} />
 	{/if}
 {/snippet}
@@ -101,10 +77,10 @@
 	<SectionHeading id="sites.supported">{COPY.name}</SectionHeading>
 	<p class="lede">{COPY.lede}</p>
 
-	<!-- The three words the Support and Bulk downloads columns use, said once, drawn with the
-	     same badges the rows are drawn with. Written out by hand it would be a legend
-	     describing what the table once said: the reason `SharingLegend` is built the way it
-	     is. -->
+	<!--
+		The three words the Support and Bulk downloads columns use, said once, drawn with the same
+		badges the rows are drawn with.
+	-->
 	<ul class="answer-key">
 		<li>
 			<Badge state="done" label={COPY.supported} />
@@ -221,12 +197,10 @@
 <style>
 	/* `answer-key`, the same name the Appearance pane's second legend takes, and for the same
 	   reason: `.legend` is already drawn elsewhere in settings and Svelte scopes the styles
-	   without scoping the name in the DOM. Rows rather than a wrapping line, because each of
-	   these badges is explained by a whole sentence. */
+	   without scoping the name in the DOM. */
 	/* Two declared columns, the badges in the first and every sentence starting on one line in
 	   the second, as the naming template's glossary lays its words: a row that started its
-	   sentence where its own badge ended would put six sentences at six different x. Each item is a
-	   subgrid of the list's two tracks, so the list stays a list. */
+	   sentence where its own badge ended would put six sentences at six different x. */
 	.answer-key {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
@@ -320,13 +294,7 @@
 		margin-block-end: var(--space-1);
 	}
 
-	/*
-	 * A SITE AS A CARD, on a phone: the table's row turned on its side. The name first, in the row
-	 * header's type; then each column's heading beside what the row said, the headings in one
-	 * column and every answer starting on one line, as the answer key above lays its badges and
-	 * sentences. A hairline between two Sites, drawn on the later one's top edge as every row
-	 * of a pane draws its line, so the first card has none over it and the last leaves none under.
-	 */
+	/* A SITE AS A CARD, on a phone: the table's row turned on its side. */
 	.site-cards {
 		margin: 0;
 		padding: 0;
@@ -374,8 +342,8 @@
 		min-inline-size: 0;
 	}
 
-	/* The addresses are one run of words that wraps anywhere in the card, never past its edge; the
-	   table's measures are a column's, and the card's column is the card. */
+	/* The addresses are one run of words that wraps anywhere in the card, never past its edge;
+	   the table's measures are a column's, and the card's column is the card. */
 	.site-facts .hosts,
 	.site-facts .cookies,
 	.site-facts .walls {

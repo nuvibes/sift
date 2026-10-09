@@ -1,7 +1,5 @@
 /* A drawer beside the page (swap mode's) says how wide it is, and the main column keeps clear of
-   it. The walls are full-bleed screens, whose own rule resets the padding, so without this the
-   wall would run on under the drawer and its last column be hidden. Read from the compiled rules:
-   the cascade is what decides, so both main rules are asked in the order they are written. */
+   it. */
 import { compile } from 'svelte/compiler';
 import { expect, it } from 'vitest';
 

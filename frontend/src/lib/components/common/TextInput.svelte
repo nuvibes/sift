@@ -12,28 +12,10 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: a text box is the site's. There is no text input in the library because
-	   there is nothing for one to add: typing, selection, the caret, autofill and the keyboard are
-	   the browser's, and `app.css` dresses the element once for the whole app. */
+	there is nothing for one to add, and app.css dresses the element once. */
 
-	/*
-	 * The one text box.
-	 *
-	 * ## Why a component for an element the stylesheet already dresses
-	 *
-	 * A bare `<input>` inside a `Field`'s control snippet copies out the same four attributes (the
-	 * id, the description, the invalid mark, the autocomplete) and is tempted to dress the box
-	 * again in its own stylesheet. The look is not the problem; the stylesheet has that. The
-	 * problem is that a bare element is a thing every file writes slightly differently, and a gate
-	 * cannot tell a text box from a slider from a file picker by the tag alone. Naming it makes it
-	 * one thing: the ratchet counts a bare `<input>` outside the primitives.
-	 *
-	 * ## What it forwards
-	 *
-	 * Everything. The value and the element are bindable; every other attribute and handler an
-	 * `<input>` takes goes straight through, so a caller loses nothing by naming the box. `class` is
-	 * taken out of the spread and added to the box's own: a spread applied after the literal
-	 * `class` would replace it; `caller-class.test.ts` refuses it.
-	 */
+	/* The one text box, named so a gate can count bare inputs. Everything is forwarded; `class` is
+	 * merged, never spread over (caller-class.test.ts). */
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
 	interface Props extends Omit<HTMLInputAttributes, 'value' | 'type'> {
@@ -69,8 +51,7 @@
 />
 
 <style>
-	/* The look is app.css's: height, inset, edge, corner, ground and face, once for every box. What
-	   is here is the one thing the stylesheet cannot say for a box in a column: fill the column. */
+	/* The look is app.css's; here the box fills its column. */
 	.text-input {
 		inline-size: 100%;
 		min-inline-size: 0;

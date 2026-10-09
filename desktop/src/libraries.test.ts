@@ -1,17 +1,8 @@
-/* The libraries this copy has opened, and what is asked of a folder before it is opened.
- *
- * The list is a pure function over the settings, so what it does is a thing a test can state; the
- * asking is a subprocess, so it is exercised through the runner it takes rather than by starting a
- * real Python: what is worth being sure of is how each ANSWER is read, including the answers that
- * are not answers.
- */
+/* The libraries this copy has opened, and what is asked of a folder before it is opened. */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-/* The runner of last resort really starts a Python. What matters is the command it builds and how
- * it reads what comes back (including the two failures that are not answers), so the starting
- * is stood in for and the argument list is what the tests look at.
- */
+/* The runner of last resort really starts a Python. */
 const ran: {
   file: string;
   args: string[];
@@ -177,9 +168,7 @@ describe("asking what is in a folder", () => {
   });
 
   /* A THIRD OUTCOME, not folded into `unreadable`, and the difference is the whole point:
-   * `unreadable` is a folder that is not a library, and `unknown` is Sift failing to look.
-   * Offering to upgrade on the strength of a failed look is the mistake this path exists to
-   * avoid. */
+   * `unreadable` is a folder that is not a library, and `unknown` is Sift failing to look. */
   it("answers unknown when the question could not be put at all", async () => {
     const { run } = answering(null);
     expect((await inspectLibrary(HERE, run)).verdict).toBe("unknown");
@@ -217,8 +206,7 @@ describe("the copy made before an upgrade", () => {
     expect(asked).toEqual([[BACK_UP_FLAG, THERE.dataDir]]);
   });
 
-  /* Null is a REFUSAL to the caller, not a detail. The sentence on the dialog promises a way back,
-   * and a one-way migration with no copy behind it is the one thing this must never do quietly. */
+  /* Null is a REFUSAL to the caller, not a detail. */
   it("answers null when the copy could not be made, however the failure arrived", async () => {
     expect(await backUpLibrary(THERE, answering(null).run)).toBeNull();
     expect(
@@ -231,14 +219,7 @@ describe("the copy made before an upgrade", () => {
   });
 });
 
-/*
- * How the question is actually put, when nobody hands in a runner.
- *
- * The same interpreter and the same flags the backend itself is started with, because a preflight
- * run under a different Python from the one that will do the work can disagree with it. And the
- * answer is the LAST line by contract: a deprecation warning from a dependency, or a line printed
- * at import, would otherwise make a good answer unreadable.
- */
+/* How the question is actually put, when nobody hands in a runner. */
 describe("the runner of last resort", () => {
   beforeEach(() => {
     ran.length = 0;
@@ -263,7 +244,7 @@ describe("the runner of last resort", () => {
   });
 
   /* No window, and a timeout: a folder on a network share that has gone away must not leave
-	   somebody looking at a dialog that never arrives. */
+     somebody looking at a dialog that never arrives. */
   it("hides the console window and gives up rather than waiting for ever", async () => {
     answer.stdout = '{"verdict": "empty", "detail": ""}';
 
@@ -284,9 +265,7 @@ describe("the runner of last resort", () => {
     });
   });
 
-  /* "I could not look" rather than "that is not a library". The two mean opposite things to the
-	   caller, and offering an upgrade on the strength of a failed look is the mistake the whole
-	   path exists to avoid. */
+  /* "I could not look" rather than "that is not a library". */
   it("answers unknown when the interpreter could not be run at all", async () => {
     answer.error = new Error("no such file");
     answer.stdout = "";
@@ -314,7 +293,7 @@ describe("the runner of last resort", () => {
   });
 
   /* Valid JSON that is not an object. `null` and a bare number both parse, and reading a verdict
-	   off either would be reading a property of something that has none. */
+     off either would be reading a property of something that has none. */
   it("answers unknown for JSON that is not an answer", async () => {
     answer.stdout = "5";
 
@@ -449,9 +428,7 @@ describe("taking back the folders a failed copy made", () => {
   });
 });
 
-/* The note a backend leaves when a switch was asked for on the page. Read from a real folder: what
- * matters is that it is taken exactly once, and that anything that is not two absolute folders is
- * not a switch. */
+/* The note a backend leaves when a switch was asked for on the page. */
 describe("the switch note", () => {
   function folderWith(note: string | null): string {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "sift-note-"));
@@ -498,8 +475,7 @@ describe("the switch note", () => {
   });
 });
 
-/* THE PIN the comment beside the flags promises. They are two copies of one string across a
- * language boundary, so each is read out of the Python that answers it. */
+/* THE PIN the comment beside the flags promises. */
 describe("the words the backend answers to", () => {
   const REPO = path.resolve(__dirname, "..", "..");
   const main = fs.readFileSync(

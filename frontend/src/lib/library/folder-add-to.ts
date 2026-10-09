@@ -1,34 +1,4 @@
-/*
- * Add to, opened on a FOLDER: the declared door, aimed at every file the folder holds.
- *
- * A folder's menu offers the same Add to a file's menu and the selection bar offer: the same six
- * rows, the same lists opening out of them, the same writes behind each pick. The rows come from
- * the one declaration (`grid/verbs.ts`, handed out by `FileVerbs`) and nothing here words or
- * draws a row. What differs is only WHAT the rows act on: a menu opened on files knows their ids,
- * and a menu opened on a folder knows a folder. So each row's list is handed the folder's files,
- * read when a row is used, and everything after that is the files' own act: the toast, the
- * History line per file and the Undo are the ones a pick over a selection makes.
- *
- * The folder's files are everything under it, the folders inside it included, which is what the
- * folder's tally counts and what "this folder" means to somebody pointing at it.
- *
- * ## Person and Site name the FOLDER
- *
- * Add to > Person and Add to > Site on a folder are the folder's own act, not a filing per file:
- * the pick names the folder (`sayWhoAFolderIs`, the route "Who is this?" and "Which Site is this?"
- * pressed). That act files everything under it however many files there are, links the name's
- * aliases and usernames, and is the one record the folder reader learns a MISS from, which a
- * per-file filing would lose. The picker is still Add to's own list; only the write differs, so the
- * selection ceiling below does not apply to those two rows.
- *
- * ## The ceiling is the selection's
- *
- * A pick from here is a selection of the folder's files made at the moment of the press, so it
- * keeps the ceiling "select all" keeps (`MOST_SELECTED`), for the same reason: a press nobody can
- * size by eye must not become tens of thousands of writes. Over it, the row writes nothing and
- * says why and what to do instead, rather than adding the first thousand and calling that the
- * folder.
- */
+/* Add to, opened on a FOLDER: the declared door, aimed at every file the folder holds. */
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import { counted, filesSaid } from '$lib/entity/entity-counts';
@@ -49,12 +19,7 @@ class TooManyFiles extends Error {
 	}
 }
 
-/**
- * Every file under this folder, read a page at a time.
- *
- * THROWS rather than answering short: over the ceiling with `TooManyFiles`, and on a failed read
- * with the read's own error. A short answer would be a pick that quietly missed part of a folder.
- */
+/** Every file under this folder, read a page at a time. */
 export async function filesUnder(folderId: string): Promise<string[]> {
 	const ids: string[] = [];
 	let total = Infinity;
@@ -101,10 +66,7 @@ const NAMES_THE_FOLDER: Readonly<Record<string, 'person' | 'site'>> = {
 /** Name a folder as a person or a Site, as the pick on Add to > Person or > Site. */
 type NameFolder = (kind: 'person' | 'site', choice: PickChoice) => Promise<PickLanded>;
 
-/**
- * The folder's own naming, through the route "Who is this?" presses. Says what it filed,
- * or the server's sentence for why it would not.
- */
+/** The folder's own naming, through the route "Who is this?" */
 export function namingFolder(folderId: string): NameFolder {
 	return async (kind, choice) => {
 		try {
@@ -121,13 +83,7 @@ export function namingFolder(folderId: string): NameFolder {
 	};
 }
 
-/**
- * The declared Add to, with every row aimed at the files under one folder.
- *
- * `files` is read once per door and shared by its rows, so opening a list (which asks what the
- * files are already on) and then picking from it reads the folder once. A failed read is not
- * kept: the next row used asks again.
- */
+/** The declared Add to, with every row aimed at the files under one folder. */
 export function overFolder(
 	door: Verb,
 	folder: string | { id: string; name: string },

@@ -1,6 +1,4 @@
-/* The sentence over People Sift can recognize says who is on the list. The list has a column for
- * starter pictures, so somebody known by starters alone is listed, and the sentence has to say so
- * rather than promise that only confirmed faces put a person there. */
+/* The sentence over People Sift can recognize says who is on the list. */
 import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 

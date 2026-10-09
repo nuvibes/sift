@@ -1,19 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Asking the desktop app that started this backend for an act only it can do.
-
-The app opens a small door on 127.0.0.1 for each launch and hands this process its address and a
-secret in the environment (`Settings.shell_url`, `Settings.shell_token`). Nothing here takes a
-command: each ask is a named act with one word in it (a switch, a scope, a count), and the app checks
-the word again on its side. Two acts name a folder, and the app holds each to what its own page may
-ask: a library it has opened before, and an empty folder to move its storage into.
-
-An act that stops this backend (sharing, a move, a library, an update) is answered by the app
-FIRST and carried out after the answer has left, so the ask returns while this process still runs.
-
-A backend with no app behind it (run by hand, in a container) has no link at all, and says so with
-`NoShell` rather than pretending a switch is off. An app that does not answer is `ShellUnreachable`:
-a fact about now, said as one.
-"""
+"""Asking the desktop app that started this backend for an act only it can do, by named act."""
 
 from __future__ import annotations
 
@@ -27,15 +13,13 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: How long a read may take. The firewall read starts PowerShell, which the app gives 15 seconds.
+#: The firewall read starts PowerShell, which the app gives 15 seconds.
 READ_SECONDS = 30.0
 
-#: How long opening the firewall may take: the admin walks to the computer running Sift and answers
-#: Windows' own prompt there, which the app waits three minutes for.
+#: The admin answers Windows' own prompt at the computer, which the app waits three minutes for.
 PROMPT_SECONDS = 200.0
 
-#: How long an update may take to answer: the app reads the release, downloads the installer and
-#: checks its signature and its hash before it says anything.
+#: The app downloads the installer and checks its signature and hash before it answers.
 UPDATE_SECONDS = 900.0
 
 Scope = Literal["private", "any"]
@@ -119,13 +103,11 @@ class ShellLink:
         return await self._ask("GET", "/storage", None, READ_SECONDS)
 
     async def move_storage(self, folder: str) -> dict[str, Any]:
-        """Move both storage folders into `folder`: refused in words before anything stops, or
-        answered first and moved after."""
+        """Move both storage folders into `folder`: refused in words, or answered, then moved."""
         return await self._ask("POST", "/storage/move", {"folder": folder}, READ_SECONDS)
 
     async def update(self) -> dict[str, Any]:
-        """Install a newer release there. Names nothing: the app reads its own feed, checks the
-        signature and refuses anything not newer than itself, then opens the installer THERE."""
+        """Install a newer release there: the app reads its own feed and checks the signature."""
         return await self._ask("POST", "/update", {}, UPDATE_SECONDS)
 
     async def log(self, lines: int) -> dict[str, Any]:

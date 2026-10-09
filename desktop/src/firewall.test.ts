@@ -1,10 +1,4 @@
-/* Opening the port, which is the one thing Sift does that needs rights it otherwise never has.
- *
- * What can be tested here is what is ASKED and what is BELIEVED: the exact rule the script would
- * create, that the elevated half really is elevated, and that the answer comes from reading the
- * state afterwards rather than from whether the command claimed to work. Whether Windows then
- * creates the rule is a hand check on a real machine: there is no firewall in a test.
- */
+/* Opening the port, which is the one thing Sift does that needs rights it otherwise never has. */
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -28,16 +22,13 @@ describe('what it asks Windows', () => {
 		expect(read).toContain(`-contains '${PORT}'`);
 	});
 
-	/* Windows translates `netsh`'s output and does not translate object fields. A check that read
-	 * words would answer "closed" on a machine whose language nobody here chose, with the rule
-	 * sitting right there. */
+	/* Windows translates `netsh`'s output and does not translate object fields. */
 	it('reads the rule as an object rather than parsing printed text', () => {
 		expect(scripts.read(PORT)).toContain('Get-NetFirewallRule');
 		expect(scripts.read(PORT)).not.toContain('netsh');
 	});
 
-	/* A rule that is disabled, outbound or blocking has the right name and lets nothing through.
-	 * Counting it would report a working setup to somebody whose other computer cannot connect. */
+	/* A rule that is disabled, outbound or blocking has the right name and lets nothing through. */
 	it('counts only a rule that is enabled, inbound and allowing', () => {
 		const read = scripts.read(PORT);
 
@@ -59,18 +50,16 @@ describe('what it asks Windows', () => {
 		expect(create).toContain('-Profile Private');
 	});
 
-	/* Windows files a new network as Public unless told otherwise, and a rule on private networks
-	 * only opens nothing there. So the machine's networks are read beside the rule, and opening on
-	 * public networks as well is a choice the screen offers rather than a default it takes. */
+	/* Windows files a new network as Public unless told otherwise, and a rule on private
+	 * networks only opens nothing there. */
 	it('reads which networks the machine is on, and the profile the rule reaches', () => {
 		const read = scripts.read(PORT);
 		expect(read).toContain('Get-NetConnectionProfile');
 		expect(read).toContain('$rule.Profile');
 	});
 
-	/* The profile says which KIND of network; it says nothing about where a connection comes from.
-	 * Without the address scope the rule answers anything that can route to this machine, so the
-	 * scope is on the rule whichever profile was asked for, and nowhere is it left off. */
+	/* The profile says which KIND of network; it says nothing about where a connection comes
+	 * from. */
 	it('lets in only addresses on the same local network, on every profile', () => {
 		expect(scripts.create(PORT)).toContain('-RemoteAddress LocalSubnet');
 		expect(scripts.create(PORT, 'any')).toContain('-RemoteAddress LocalSubnet');
@@ -105,9 +94,7 @@ describe('the elevated half', () => {
 		expect(elevate).toContain('-Wait');
 	});
 
-	/* The inner script travels as an argument of the outer one, through two layers of quoting. It
-	 * is carried encoded so there is nothing to escape, and this is what proves the thing that
-	 * arrives on the far side is the rule above and not a mangled version of it. */
+	/* The inner script travels as an argument of the outer one, through two layers of quoting. */
 	it('carries the rule across intact', () => {
 		const create = scripts.create(PORT);
 		const elevate = scripts.elevate(create);
@@ -117,8 +104,7 @@ describe('the elevated half', () => {
 		expect(decode((carried as RegExpExecArray)[1] as string)).toBe(create);
 	});
 
-	/* A cancelled prompt is an ordinary answer, not a crash. Windows reports it as a failure to
-	 * start the process, which would otherwise be read as a missing exit code. */
+	/* A cancelled prompt is an ordinary answer, not a crash. */
 	it('survives a prompt that was refused', () => {
 		expect(scripts.elevate('whatever')).toContain('catch');
 	});
@@ -138,9 +124,8 @@ describe('what it answers', () => {
 		});
 	});
 
-	/* The rule is there and reads as open, and the network the machine is on is one the rule does
-	 * not reach. Both facts travel, and the screen decides.
-	 */
+	/* The rule is there and reads as open, and the network the machine is on is one the rule
+	 * does not reach. */
 	it('says which networks the rule reaches, so a public network can be told from a private one', async () => {
 		const onPublic = await firewallState(
 			PORT,
@@ -170,9 +155,7 @@ describe('what it answers', () => {
 		);
 	});
 
-	/* THE ANSWER IS READ, NOT CLAIMED. Somebody who cancels the prompt, a machine where elevation
-	 * is forbidden by policy, and a rule created and then removed by something else are three
-	 * different stories with one true ending. */
+	/* THE ANSWER IS READ, NOT CLAIMED. */
 	it('answers with the state afterwards, whatever the elevated half said', async () => {
 		const run = vi.fn<Runner>();
 		run
@@ -191,8 +174,7 @@ describe('what it answers', () => {
 	});
 
 	/* The elevated call is given minutes because a person has to answer a dialog; the read is
-	 * given seconds because nobody is waiting on it. A read that inherited the long one would hang
-	 * a screen for three minutes on a machine where PowerShell never answers. */
+	 * given seconds because nobody is waiting on it. */
 	it('gives the prompt longer than the read', async () => {
 		const waits: number[] = [];
 		const run: Runner = async (_script, timeout) => {

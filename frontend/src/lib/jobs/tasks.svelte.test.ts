@@ -1,9 +1,4 @@
-/*
- * What a press of Run now tells somebody: where to follow the run it started.
- *
- * Most tasks' work is drawn on Activity, so the toast sends them there. The backup is upkeep that
- * Activity does not list, and the server says so on the answer; its toast points at its own row.
- */
+/* What a press of Run now tells somebody: where to follow the run it started. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { wordsOf, type ToastWords } from '$lib/components/common/toast-pieces';
 

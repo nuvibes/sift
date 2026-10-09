@@ -1,9 +1,5 @@
-/*
- * The two edges every row on a settings pane stands on: the names start on one line and the
- * controls end on another. A list of data rows pads its words in from its own hover ground, so a
- * pane that holds one pulls the list out by that padding; read here from the compiled stylesheets
- * with the spacing tokens the app declares, because the unit environment lays nothing out.
- */
+/* The two edges every row on a settings pane stands on: the names start on one line and the
+ * controls end on another. */
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { flushSync, mount, tick, unmount } from 'svelte';
@@ -44,11 +40,7 @@ function pixels(value: string): number {
 	return Number(plain[1]);
 }
 
-/**
- * One side of a logical box. The unit environment keeps a logical shorthand as written and does
- * not fold it into the sides, which it reports at their initial `0`; so a side still at `0` is read
- * from the shorthand, and one a rule wrote is read as written.
- */
+/** One side of a logical box. */
 function side(element: Element, box: 'margin' | 'padding', end: 'start' | 'end'): number {
 	const style = getComputedStyle(element);
 	const longhand = style.getPropertyValue(`${box}-inline-${end}`).trim();
@@ -99,9 +91,8 @@ describe('the guests on Users', () => {
 });
 
 describe('every list of data rows on a settings pane', () => {
-	/* Read from the panes' sources: a list mounted without the option sits 12 px inside every other
-	   row on its pane, which nobody sees until two lists stand one above the other. The tag runs to
-	   the first `>` that ends a line and closes no arrow function. */
+	/* Read from the panes' sources: a list mounted without the option sits 12 px inside every
+	   other row on its pane, which nobody sees until two lists stand one above the other. */
 	const PANES = resolve('src/lib/settings-ui');
 	const mounts = readdirSync(PANES)
 		.filter((name) => name.endsWith('.svelte'))

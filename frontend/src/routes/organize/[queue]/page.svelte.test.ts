@@ -1,9 +1,5 @@
-/* One queue's screen: the board it stands on, and what it draws when the board has no such queue.
- *
- * It looks the queue up by name and renders whatever the panel registry says draws it, and it
- * says so plainly when there is none. The queue's history and its Undo are Settings > History's
- * (`Ledger.svelte.test.ts`).
- */
+/* One queue's screen: the board it stands on, and what it draws when the board has no such
+ * queue. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -15,12 +11,11 @@ import Queue from './+page.svelte';
 const mocks = vi.hoisted(() => ({
 	board: vi.fn(),
 	held: { found: null } as { found: unknown },
-	/* Replaced by the factory below, which is the only place state the component can subscribe to
-	   can be declared. The address has to be REACTIVE here rather than a plain object: the tabs
-	   move between the queues of a group WITHOUT remounting this screen. */
+	/* Replaced by the factory below, which is the only place state the component can subscribe
+	   to can be declared. */
 	at: { params: { queue: 'folders' } } as { params: { queue: string } },
-	/* Which component the registry hands back. A hairline by default; the tab-line tests swap in a
-	   panel that reports a control. */
+	/* Which component the registry hands back. A hairline by default; the tab-line tests swap in
+	   a panel that reports a control. */
 	panel: null as unknown,
 	/* What the screen asked for when it asked again for some queues, and what it runs when the
 	   library moves. */
@@ -46,18 +41,16 @@ vi.mock('$app/state', async () => {
 });
 
 vi.mock('$lib/organize/organize.svelte', async (importOriginal) => {
-	/* Built ON the real module rather than instead of it, so an export nobody here thought about is
-	   still the real one rather than absent. The failure that shape produces is the whole file
-	   refusing to mount, naming neither the export nor the double. */
+	/* Built ON the real module rather than instead of it, so an export nobody here thought about
+	   is still the real one rather than absent. */
 	const real = await importOriginal<Record<string, unknown>>();
 	const { reactiveProps } = await import('$lib/design/testing.svelte');
 	const held = reactiveProps<{ found: unknown }>({ found: null });
 	mocks.held = held;
 	return {
 		...real,
-		/* The real store's two halves, kept to their real rule: `refresh` publishes its ask and never
-		   joins one, `ensure` joins whatever is in flight. Without that rule here, a screen asking
-		   twice for one board could not be told apart from one asking once. */
+		/* The real store's two halves, kept to their real rule: `refresh` publishes its ask and
+		   never joins one, `ensure` joins whatever is in flight. */
 		heldBoard: {
 			asking: null as Promise<unknown> | null,
 			get found() {
@@ -98,9 +91,7 @@ vi.mock('$lib/library/changes.svelte', async () => ({
 	}
 }));
 
-/* A panel that draws a hairline and nothing else. A real one would drag the feature behind it into
-   every assertion here. `Separator` is borrowed rather than a harness written, because what this
-   needs is any component that mounts. The extra prop it is handed is ignored. */
+/* A panel that draws a hairline and nothing else. */
 vi.mock('$lib/organize/panels', async (importOriginal) => {
 	const real = await importOriginal<Record<string, unknown>>();
 	const Separator = (await import('$lib/components/common/Separator.svelte')).default;
@@ -108,12 +99,7 @@ vi.mock('$lib/organize/panels', async (importOriginal) => {
 });
 
 let host: HTMLElement;
-/* The mounted screen, kept so it can be TAKEN DOWN again.
- *
- * REMOVING THE HOST ELEMENT IS NOT UNMOUNTING. A component mounted and never unmounted keeps its
- * effects alive for the rest of the file, so an announcement in a later test wakes every screen
- * the earlier ones left running.
- */
+/* The mounted screen, kept so it can be TAKEN DOWN again. */
 let screen: Record<string, unknown> | undefined;
 
 function queue(over: Record<string, unknown> = {}) {
@@ -162,8 +148,7 @@ afterEach(() => {
 
 it('asks the board and draws the panel the registry says belongs to this queue', async () => {
 	/* Not a COUNT of the reads: the effect that loads the board also re-runs when the board it
-	   loaded changes, which is the shape the announcement bus gives it and not a fault. What is
-	   asserted is that the board was asked for and the queue's own panel is what came out. */
+	   loaded changes, which is the shape the announcement bus gives it and not a fault. */
 	await render();
 
 	expect(mocks.board).toHaveBeenCalled();
@@ -172,7 +157,7 @@ it('asks the board and draws the panel the registry says belongs to this queue',
 
 it('says plainly that there is no queue of that name, rather than drawing an error page', async () => {
 	/* Not a fault: the feature behind it is switched off, or it belongs to a version this one is
-	   not. Either way there is a way back rather than a stack trace. */
+	   not. */
 	mocks.at.params = { queue: 'nowhere' };
 
 	await render();
@@ -183,8 +168,8 @@ it('says plainly that there is no queue of that name, rather than drawing an err
 });
 
 it("draws the queue's own sentence under its title, and the advice after it", async () => {
-	/* The board card carries this sentence only as its title's tooltip, which a touch screen and a
-	   screen reader never show, so the queue's own page is where it has to be on the screen. */
+	/* The board card carries this sentence only as its title's tooltip, which a touch screen and
+	   a screen reader never show, so the queue's own page is where it has to be on the screen. */
 	mocks.board.mockResolvedValue({
 		queues: [queue({ advice: 'Work from the top.' })],
 		decisions: [],
@@ -223,9 +208,7 @@ it('draws work waiting elsewhere as a line of its own under the lede, with its l
 });
 
 it("titles the page with its group's name, and puts the tabs and the sentence under it", async () => {
-	/* Every Organize screen is titled like every other page, not only a trail and tabs. A queue
-	   that is one tab of a page takes the page's name, the word the board's row and the trail
-	   already use. */
+	/* Every Organize screen is titled like every other page, not only a trail and tabs. */
 	mocks.at.params = { queue: 'faces' };
 	mocks.board.mockResolvedValue({
 		queues: [
@@ -261,17 +244,14 @@ it('titles a queue standing alone with its own name', async () => {
 });
 
 it('draws nothing of the work above the heading', async () => {
-	/* No record above the work: its thread is in Settings > History. Pinned so that a screen
-	   quietly growing a second record above the work is a failure rather than a silence. */
+	/* No record above the work: its thread is in Settings > History. */
 	await render();
 
 	expect(host.textContent).not.toContain('What happened here');
 	expect(host.textContent).not.toContain('All activity');
 });
 
-/* ONE SLOT FOR TAB-LINE CONTROLS. A panel reports its controls for the whole tab through
-   `ontools`, exactly as it reports its pager through `onpaging`, and the route draws them at the
-   far end of the tab line (`OrganizeHeader.controls`). */
+/* ONE SLOT FOR TAB-LINE CONTROLS. */
 it("draws a panel's reported controls at the far end of the tab line", async () => {
 	mocks.panel = (await import('./ToolsProbe.test.svelte')).default;
 
@@ -308,17 +288,15 @@ it('draws nothing there for a panel that never reports', async () => {
 });
 
 it('asks for the board ONCE on arrival, however many parts of the screen want it', async () => {
-	/* The header asks for the board to name the queue and this screen asks for its counts. A
-	   first read from an effect runs after the child header's, and `refresh` never joins, so
-	   every arrival would make two surveys of every queue, served one after the other. */
+	/* The header asks for the board to name the queue and this screen asks for its counts. */
 	await render();
 
 	expect(mocks.board).toHaveBeenCalledTimes(1);
 });
 
 it('draws the panel before the board has answered, so its own list is not kept waiting', async () => {
-	/* The panel fetches its own rows. Gated on the board, every thumbnail on the screen would wait
-	   on a survey of every queue before its own list was even asked for. */
+	/* The panel fetches its own rows. Gated on the board, every thumbnail on the screen would
+	   wait on a survey of every queue before its own list was even asked for. */
 	mocks.board.mockReturnValue(new Promise(() => {}));
 
 	await render();
@@ -339,8 +317,8 @@ it('asks again when something is decided, and only then', async () => {
 });
 
 it('asks only for its own queue and the tabs beside it on arrival when a board is held', async () => {
-	/* Arriving from Organize, the board was just drawn: asking for every queue again on the way in
-	   would survey the whole board for a screen that draws two of them. */
+	/* Arriving from Organize, the board was just drawn: asking for every queue again on the way
+	   in would survey the whole board for a screen that draws two of them. */
 	mocks.at.params = { queue: 'duplicates' };
 	const board = {
 		queues: [
@@ -361,8 +339,8 @@ it('asks only for its own queue and the tabs beside it on arrival when a board i
 });
 
 it('asks again for its own queue and the tabs beside it when the library moves, not every queue', async () => {
-	/* A survey of every queue costs what the slowest one costs, too much to ask on every change of
-	   the library for a screen that draws two queues. */
+	/* A survey of every queue costs what the slowest one costs, too much to ask on every change
+	   of the library for a screen that draws two queues. */
 	mocks.at.params = { queue: 'duplicates' };
 	mocks.board.mockResolvedValue({
 		queues: [

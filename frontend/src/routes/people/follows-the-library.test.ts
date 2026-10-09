@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * A FILTERED PEOPLE WALL FOLLOWS THE LIBRARY.
- *
- * The wall draws one of two answers: its page, or, while a name is typed in the box, the search's
- * answer. The library bell and the merge sheet must re-read whichever is drawn, or a wall filtered
- * by a search keeps drawing somebody who has been merged away until the page is reloaded.
- *
- * The stand-in server below holds a roster the test can change, as a merge on another screen would,
- * and the bell is rung the way the live connection rings it.
- */
+/* A FILTERED PEOPLE WALL FOLLOWS THE LIBRARY. The wall draws one of two answers: its page, or,
+ * while a name is typed in the box, the search's answer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import Wall from './+page.svelte';

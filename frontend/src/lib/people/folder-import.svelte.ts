@@ -1,9 +1,4 @@
-/*
- * Importing a folder of people, as the task Sift runs it. The press hands Sift the folder (its
- * path, or an upload from another device) and answers straight away; the server reads it a person
- * at a time. Followed at module level, as a download is, so the row on Settings > Faces shows the
- * task after the pane is closed and opened again.
- */
+/* Importing a folder of people, as the task Sift runs it. */
 
 /* LIVE: followed by lib/jobs/watch-download.svelte.ts (the task's row read again every two seconds until it ends) */
 import { api, ApiError } from '$lib/api/client';

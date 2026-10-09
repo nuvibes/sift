@@ -1,16 +1,4 @@
-/* The songs a file's verbs and the merge sheet ask about, and the writes they make.
- *
- * The same narrow shape as the Photo Set store beside it, and for the same reason: the Songs wall
- * reads its own page with its own paging, sorting and filters. What this is for is the question the
- * FILE side asks (which songs are there, make one, put these files on it) and the one the merge
- * sheet asks (read these picks by id, offer the rest by name).
- *
- * Nothing is cached. A list held here would be one more copy of the wall to keep honest, and every
- * caller of this asks once, for what is typed or picked, and draws the answer it is given.
- *
- * A file carries ONE song. Putting a file on a song that is already on another moves it: the
- * server says so, and the toast the caller draws says how many changed, never how many were asked.
- */
+/* The songs a file's verbs and the merge sheet ask about, and the writes they make. */
 
 import { recorded } from '$lib/library/changes.svelte';
 import { overChunks, type BulkWriteDone } from '$lib/library/bulk';
@@ -22,13 +10,7 @@ import type { components } from '$lib/api/schema';
 export type Song = components['schemas']['SongSummary'];
 
 class Songs {
-	/**
-	 * One page for a PICKER, alphabetical, filtered by what is being typed anywhere in a name.
-	 *
-	 * `name_az` for the reason the Photo Set store gives: a picker is read by somebody looking for
-	 * a name they already have in mind. `total` comes back beside the page so the picker can say
-	 * how many it is not showing.
-	 */
+	/** One page for a PICKER, alphabetical, filtered by what is being typed anywhere in a name. */
 	async choices(prefix = '', limit = PICK_PAGE): Promise<{ items: Song[]; total: number }> {
 		const page = await api.get<components['schemas']['SongList']>('/songs', {
 			query: { prefix, anywhere: 'true', limit, offset: 0, sort: 'name_az' }

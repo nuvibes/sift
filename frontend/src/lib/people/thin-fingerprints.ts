@@ -1,17 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * A person whose facial fingerprints are thin, said where they are chosen to leave this library:
- * the export's Choose people sheet and a swap's facial fingerprints sheet.
- *
- * Under twenty confirmed faces the person's own page draws its bar in the red, orange or yellow
- * band, and a file or a swap carrying them hands the other Sift the same few faces. The chooser
- * says so on the row, with the band the page draws and the count in words, so nobody sends three
- * faces believing they sent somebody Sift knows well.
- *
- * The band is the server's word (`KnownPerson.verdict`, the page's `Strength.verdict`), never
- * worked out here from the count: a copy of the five, ten and twenty would go on marking the
- * wrong people after the curve moved.
- */
+/* A person whose facial fingerprints are thin, said where they are chosen to leave this library:
+ * the export's Choose people sheet and a swap's facial fingerprints sheet. */
 
 import type { PickChoice } from '$lib/components/common/verbs';
 

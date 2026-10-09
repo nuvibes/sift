@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts" module>
 	/* WHY NOT BITS-UI: the library has no mark, and there is nothing for it to have. This is a glyph
-	   with a tooltip: no focus, no keyboard, no state of its own. */
+	with a tooltip, with no focus or state. */
 	import type { DesignEntry } from '$lib/design/entry';
 
 	export const design = {
@@ -12,46 +12,22 @@
 		states: ['asking', 'recognized', 'reference', 'learned', 'small', 'announced', 'decorative']
 	} satisfies DesignEntry;
 
-	/**
-	 * Which mark.
-	 *
-	 * `asking`: Sift suggested this name and is asking (Needs your input), the one mark that is work.
-	 * `recognized`: Sift named this face without asking (Recognized by Sift).
-	 * `reference`: Sift matches other faces against this one; its sentence says whose face it helps
-	 * find, so the caller hands the words (`label`, required for this kind).
-	 * `learned`: a reference Sift took from a face it named itself, in History's glyph for faces.
-	 *
-	 * A face somebody confirmed has no mark: "there is nothing to do here" is the absence of one.
-	 */
+	/** Which mark: `asking` (the one that is work), `recognized`, `reference` (the caller's words)
+	 * or `learned`. A confirmed face has none. */
 	export type FaceMarkKind = 'asking' | 'recognized' | 'reference' | 'learned';
 </script>
 
 <script lang="ts">
-	/*
-	 * THE FACE'S MARKS, drawn once.
-	 *
-	 * A mark that means one thing drawn in two files is two marks the moment one of them changes, so
-	 * the glyph, the words and the tooltip live here, and a screen says only which mark and how big.
-	 *
-	 * The glyph alone in the accent's text role (`--sift-accent-text`), nothing filled behind it:
-	 * the fill's accent is too faint on a card bare. Green would read as approval on a mark that
-	 * reports a fact. The asking mark is as strong as the others: it is the state that wants somebody.
-	 */
+	/* A face's marks, drawn once: the glyph alone in the accent's text role. */
 	import Icon from '$lib/components/Icon.svelte';
 	import { facetValueIcon } from '$lib/components/shell/facet-labels';
 	import type { IconName } from '$lib/design/icons';
 	import Tooltip from './Tooltip.svelte';
 
 	interface Shared {
-		/**
-		 * `small` beside a name in a line of small print (the strip under a file); `medium` on a
-		 * face's card, the size of the card's selection tick, so the things on a card are one family.
-		 */
+		/** `small` beside a name, `medium` on a card at the selection tick's size. */
 		size?: 'small' | 'medium';
-		/**
-		 * Announced by its words (the default), or left out of what is read because the thing it
-		 * sits on already says it in its own accessible name (a face card names its state).
-		 */
+		/** Left out of what is read where the thing it sits on already says it. */
 		decorative?: boolean;
 	}
 
@@ -61,11 +37,7 @@
 		label?: undefined;
 	}
 
-	/**
-	 * The reference mark: its words are the caller's, because the sentence somebody needs is whose
-	 * face it helps Sift find, and only the screen knows whose. The tooltip, and the mark's name
-	 * when it is announced.
-	 */
+	/** The reference mark, in the caller's words: whose face it helps find. */
 	interface Reference extends Shared {
 		kind: 'reference' | 'learned';
 		label: string;
@@ -102,12 +74,7 @@
 </Tooltip>
 
 <style>
-	/*
-	 * The glyph's size and a half-step round it, so it adds no literal size and keeps one
-	 * footprint: 14 and 2 each side beside a name, 16 and 2 on a card, which is the selection
-	 * tick's family. It takes the pointer back from whatever column it sits in, because its tooltip
-	 * is how its words are read.
-	 */
+	/* The glyph and a half-step round it; it takes the pointer back for its tooltip. */
 	.face-mark {
 		display: inline-grid;
 		place-items: center;

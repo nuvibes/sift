@@ -1,26 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""This install's name to a peer: an Ed25519 key, sealed, and the device id made from it.
-
-## The id
-
-The first 20 bytes of BLAKE3 over the raw public key, in base32 without padding (exactly 32
-characters, since 20 bytes are 160 bits and base32 carries five a character), grouped in eight
-fours: `ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567`. It is what History says a file arrived from and
-what Settings > Privacy > Swaps shows, and it changes only when somebody presses Reset device id.
-
-Twenty bytes rather than all thirty-two, because the id is read and compared by people, and 160
-bits is still far past anything a peer could search for: finding a second key with the same id is
-a 2**160 search.
-
-## Why a key at all, when every session has a new token
-
-The token's secret is what locks a session, so the key is not the lock. It is what makes the id
-TRUE: each side's hello carries its public key and a signature bound to the session's secret
-(`session.hello`), so a peer cannot claim another install's id: History's "from device ABCD-EFGH"
-names a device that proved it holds the key. The key is sealed under an admin's master key
-through the secret store, like a stash-box's key, and unsealed only by the session task for its
-own length (`session.py`), never by a route.
-"""
+"""This install's name to a peer: a sealed Ed25519 key, and the device id made from it."""
 
 from __future__ import annotations
 
@@ -44,19 +23,16 @@ from sift.slices.swap.store import SessionStore
 
 log = get_logger(__name__)
 
-#: How many bytes of the digest the id keeps. 20 bytes = 32 base32 characters, exactly.
+#: 20 bytes = 32 base32 characters, exactly: 2**160 is past any search.
 ID_BYTES = 20
 
-#: The groups the id is shown in.
 GROUP = 4
 
-#: The shape of a device id as shown: eight groups of four base32 characters.
 DEVICE_ID = re.compile(r"^[A-Z2-7]{4}(?:-[A-Z2-7]{4}){7}$")
 
 
 class DeviceLocked(Exception):
-    """The device key cannot be made or opened: nobody has entered an admin's password since
-    this device started, or the sealed key is no longer readable."""
+    """The device key cannot be made or opened: no admin password since start, or unreadable."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,8 +40,7 @@ class Device:
     """This install's id and its unsealed key. Held by a session task for its length only."""
 
     id: str
-    #: Named for what it does. A field called `key` of a typed value reads as a hardcoded
-    #: secret to the scanner that guards every commit, and a name is cheaper than an excuse.
+    #: Not `key`: the commit scanner reads that name on a typed value as a hardcoded secret.
     signer: Ed25519PrivateKey = field(repr=False)
 
     @property
@@ -117,11 +92,7 @@ async def device_id(store: SessionStore) -> str | None:
 async def ensure_device(
     store: SessionStore, secrets: SecretStore, master_key: bytes | None, *, now: int | None = None
 ) -> str:
-    """The id, minting the key the first time. Raises `DeviceLocked` when a first mint has no key.
-
-    Two presses racing on a fresh install both mint; the row keeps one (`ON CONFLICT DO NOTHING`)
-    and the loser forgets the secret it sealed, so no orphaned key is left in the secrets table.
-    """
+    """The id, minting the key the first time; a racing loser forgets the secret it sealed."""
     row = await store.device()
     if row is not None:
         return row.device_id

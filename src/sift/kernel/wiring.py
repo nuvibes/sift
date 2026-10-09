@@ -1,26 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Where the running application's parts are kept, and the only place they are read from.
 
-Sift builds about fifty working parts at start-up (the database, the job queue, the permission
-resolver, one service per feature) and every route needs a handful of them. They live on the
-application object, which is a bag with no type: reading one gives back "something", and the reader
-has to tell the type checker what it expects to find. Written out per route that would be dozens
-of separate promises, most of every type exemption in the server, and none of them checked
-against what start-up actually puts there. A part renamed on one side and not the other is not a
-build failure; it is a live error in front of somebody.
-
-A part is declared once, next to the type it holds, and read through `part_of`. The name is written
-in exactly one place, so a rename is a build error rather than a surprise, and the type comes back
-already known. One exemption remains, in `part_of` below, which is the boundary between an untyped
-bag and everything above it.
-
-**This module is the only thing that may touch `app.state`,** and a gate says so. The composition
-root publishes through `provide`; everything else reads through `part_of` or one of the shared
-dependencies at the bottom.
-
-Parts belonging to a feature are declared by that feature, beside the class they hold. The kernel
-does not name features, and this module is no exception.
-"""
+A part's name and type are declared once; only this module touches `app.state`; a gate holds it."""
 
 from __future__ import annotations
 
@@ -74,12 +55,7 @@ from sift.kernel.workbench import Recorder, Workbench
 
 
 class Part[T]:
-    """One thing the application is built from: the name it is stored under, and what it is.
-
-    Declared beside the class it holds, so the name and the type are decided together and neither
-    can drift from the other. Comparing two parts is comparing their names, because a part is the
-    name: there is never a second one under the same name.
-    """
+    """One part: the name it is stored under and the type it holds; parts compare by name."""
 
     __slots__ = ("name",)
 
@@ -96,19 +72,7 @@ def provide[T](app: FastAPI, part: Part[T], value: T) -> None:
 
 
 def part_of[T](connection: HTTPConnection, part: Part[T]) -> T:
-    """The part, typed as it was declared.
-
-    The one exemption in the server that is load-bearing rather than incidental: what comes off the
-    application object is genuinely untyped, and this is where that stops being true. Everything
-    above it is checked.
-
-    Takes the connection rather than the request, because the job feed is a socket and needs the
-    same four parts every route does. A socket is not a request and has no response, but both are
-    connections and both arrive holding the application.
-
-    A part that was never published raises here, at the first request that wants it, rather than
-    coming back as None and failing further in with nothing saying why.
-    """
+    """The part, typed as declared: the one place the untyped bag becomes typed; never None."""
     try:
         return getattr(connection.app.state, part.name)  # type: ignore[no-any-return]
     except AttributeError:
@@ -116,11 +80,7 @@ def part_of[T](connection: HTTPConnection, part: Part[T]) -> T:
 
 
 def part_of_app[T](app: FastAPI, part: Part[T]) -> T:
-    """The part, read from the application rather than from a connection.
-
-    For the few places holding the application itself instead of a request: start-up, and the test
-    helpers that seed a row before anything is called.
-    """
+    """The part, read from the application itself: start-up and test helpers."""
     try:
         return getattr(app.state, part.name)  # type: ignore[no-any-return]
     except AttributeError:
@@ -128,44 +88,23 @@ def part_of_app[T](app: FastAPI, part: Part[T]) -> T:
 
 
 def part_or_none[T](connection: HTTPConnection, part: Part[T]) -> T | None:
-    """The part, or None where its absence is an answer rather than a fault.
-
-    For the handful of routes that stay useful without one: the job dashboard names what each job
-    is doing and needs the database only to say which file, so a route built without one shows a
-    smaller answer instead of a broken page. Anything that genuinely cannot work without its part
-    uses `part_of` and gets told which one was missing.
-    """
+    """The part, or None where its absence is an answer rather than a fault."""
     found: T | None = getattr(connection.app.state, part.name, None)
     return found
 
 
 def part_of_app_or_none[T](app: FastAPI, part: Part[T]) -> T | None:
-    """The part, read from the application, where not being built yet is an answer.
-
-    What `part_or_none` is for a request, this is for the application itself. Start-up builds the
-    features in dependency order, so a builder that closes over something built after it has to read
-    it when it is used rather than when it is wired, and until then the honest answer is that
-    there is none.
-    """
+    """The part from the application, or None while it is not built yet."""
     found: T | None = getattr(app.state, part.name, None)
     return found
 
 
 def hold[T](connection: HTTPConnection, part: Part[T], value: T) -> None:
-    """Publish a part from a running request, for the one thing that is built on first use.
-
-    Separate from `provide` and deliberately narrow. Almost everything is built once at start-up,
-    where the order is decided and visible; this is for state that belongs to the application rather
-    than to a module: the self-test, which must go away with the application so that a second one
-    does not inherit the first one's answer.
-    """
+    """Publish a part from a running request, for state built on first use, like the self-test."""
     setattr(connection.app.state, part.name, value)
 
 
-# --- The kernel's own parts ---------------------------------------------------------------------
-#
-# Everything a feature may depend on without depending on another feature. A feature's own parts
-# are declared by that feature.
+# The kernel's own parts; a feature declares its own.
 
 ACCESS: Part[Repository] = Part("access")
 """The permission resolver. The only sanctioned way to read an asset or a folder."""
@@ -174,24 +113,17 @@ DATABASE: Part[Database] = Part("database")
 CONTENT: Part[ContentStore] = Part("content")
 LIBRARY: Part[LibraryStore] = Part("library")
 USER_STATE: Part[UserStateStore] = Part("user_state")
-#: The pin on a person, a Site, a collection, a tag or a photo set. Its own part rather
-#: than a method on the one above, because that one is about a FILE and this is about a named
-#: thing, and five slices reach for this where three reach for that.
+#: The pin on named things, apart from the file opinions above.
 ENTITY_STATE: Part[EntityStateStore] = Part("entity_state")
 QUEUE: Part[JobQueue] = Part("queue")
-#: How much work each kind has that has not been made into a job yet. Registered into by the
-#: composition root, because the counters belong to the features that own the records they read.
-#:
-#: NOT "backlog": that name is taken twenty lines down for the event loop's ready queue, and the
-#: `Part` name is a key on `app.state`, so the two would have silently overwritten each other.
+#: Work not yet made into jobs; not "backlog", which names the loop's ready queue below.
 WORK_AHEAD: Part[WorkAhead] = Part("work_ahead")
 POOL: Part[WorkerPool] = Part("pool")
-#: What each run of the long passes cost, and the estimate of time left that reads from it.
+#: What each run of the long passes cost, and the time-left estimate read from it.
 LEDGER: Part[Ledger] = Part("ledger")
 WORKBENCH: Part[Workbench] = Part("workbench")
 ENRICHER: Part[Enricher] = Part("enricher")
-#: Turning a name into a row of this library, or finding the row it already is. Built at
-#: composition because it spans people, tags and sites; read by the stash-box confirm.
+#: Turning a name into a row of this library, or finding the row it already is.
 NAMING: Part[Naming] = Part("naming")
 RECORDER: Part[Recorder] = Part("recorder")
 """Somewhere to write down what a decision did. The workbench's own store, seen as the one call a
@@ -228,23 +160,16 @@ URL_IMPORTER: Part[UrlImporter] = Part("downloads")
 is why its readers use `part_or_none`; the download feature names this same part when it publishes
 itself, so the name is written once and read from here."""
 THREADS: Part[ThreadPoolWatch] = Part("threads")
-#: How many files are being read from each storage, and how long reads have waited for a place.
-#: The reading for the one resource the others are blind to: a network share that has stopped
-#: coping reads as a healthy loop, a healthy pool and healthy readers, with every job slow.
+#: Files read per storage and the waits for a place: a struggling share shows nowhere else.
 LANES: Part[StorageLanes] = Part("lanes")
 
-#: How long a read waits for a database connection. The third finite thing every request
-#: needs, and one that fills without anything else saying so.
+#: How long a read waits for a database connection.
 READS: Part[ReadPoolWatch] = Part("reads")
 
-#: How long the loop's ready queue takes to drain. The three above measure waiting for a resource;
-#: this measures the loop being buried in work that each returns promptly, which reads as perfectly
-#: healthy on all three while nothing on screen loads.
+#: How long the loop's ready queue takes to drain: buried in prompt work, not held.
 BACKLOG: Part[LoopBacklogWatch] = Part("backlog")
 
-#: What is costing the time, by kind of work. The other half of every watch here: a request that
-#: queues for nothing and simply does a small thing several thousand times is slow, and appears on
-#: none of the four measurements above.
+#: What costs the time by kind: a small thing done thousands of times queues for nothing.
 SLOWEST: Part[SlowestWork] = Part("slowest")
 WIDEST: Part[WidestReads] = Part("widest")
 
@@ -263,21 +188,12 @@ itself, after work that has to come first (the benchmark of a device never measu
 start-up for the reason `ON_SETTINGS_CHANGED` is."""
 
 
-# --- Parts a feature builds and several features read --------------------------------------------
-#
-# Declared here rather than by the feature that builds them, and typed by the interface rather than
-# by the class. That is what keeps a reader from importing the feature behind it: the shape is the
-# kernel's, the implementation is wired in at start-up, and no slice ends up naming another. The
-# feature that owns one holds a second, concrete view of it (same name, its own type) because
-# the feature it belongs to uses more of the object than the interface describes.
+# Parts a feature builds and others read, typed by the kernel's interface so no slice names another.
 
 SETTINGS_HUB: Part[SettingsSeam] = Part("settings_hub")
-#: The one filter engine: the search feature's compiler, published at boot. The grid, the search
-#: endpoints and a collection's Files tab all hold this same instance, so none of them can come to
-#: disagree with another about what a query means. See `FilterEngine`.
+#: The one filter engine, shared so no two readers disagree about a query.
 FILTER_ENGINE: Part[FilterEngine] = Part("filter_engine")
-#: Giving a person, a site or a tag a picture Sift fetched, as their cover. Built at composition
-#: from each slice's own cover verbs; asked by the stash-box enrichment. See `SubjectCovers`.
+#: Giving a subject a fetched picture as its cover. See `SubjectCovers`.
 SUBJECT_COVERS: Part[SubjectCovers] = Part("subject_covers")
 """Reading a preference. Seven features do; none of them owns the store."""
 
@@ -310,11 +226,7 @@ PHOTO_SET_MAKER: Part[PhotoSetSeam] = Part("photo_set_maker")
 """Making a Photo Set out of pictures, for a feature that proposes groupings and owns none."""
 
 
-# --- The shared dependencies ---------------------------------------------------------------------
-#
-# The same three-line accessor would otherwise be written out per route, for the resolver, the
-# queue and the filter engine alike. They are here once, so a route asks for the type it wants
-# and gets it.
+# The shared dependencies, so a route asks for the type it wants.
 
 
 def access(request: Request) -> Repository:
@@ -408,11 +320,7 @@ def subject_covers(request: Request) -> SubjectCovers:
 async def whereabouts(
     request: Request, viewer: Viewer, *, root_id: str | None = None
 ) -> where.Whereabouts:
-    """Where files sit, as `viewer` may be told it (`kernel.where`), in one library or in all.
-
-    The three parts it reads are the ones every screen naming a file's place needs, so a route asks
-    here rather than assembling them.
-    """
+    """Where files sit, as `viewer` may be told it (`kernel.where`), in one library or in all."""
     return await where.whereabouts(
         viewer,
         access=access(request),

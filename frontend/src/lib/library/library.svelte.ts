@@ -1,8 +1,4 @@
-/* What the Library screen knows, and how it asks the server for it.
- *
- * Kept out of the component because the interesting parts are decisions rather than markup: what a
- * failure does to the screen, and what happens between asking for a move and being told it worked.
- */
+/* What the Library screen knows, and how it asks the server for it. */
 
 import { UNREACHABLE } from '$lib/shell/unreachable';
 import { api, ApiError, request } from '$lib/api/client';
@@ -21,13 +17,7 @@ export type FolderDetail = components['schemas']['FolderDetail'];
 export class Library {
 	roots = $state<Root[]>([]);
 	folders = $state<Folder[]>([]);
-	/**
-	 * Whether the server answered when this asked for the roots.
-	 *
-	 * Not `roots.length > 0`, which is the same thing only until somebody has no folders yet, and
-	 * then the one screen that could add the first one refuses to draw itself, forever. An empty
-	 * library is the state every install starts in.
-	 */
+	/** Whether the server answered when this asked for the roots. */
 	canManage = $state(false);
 	loading = $state(true);
 	/** Set when the whole screen could not load. A screen with no data and no explanation is worse. */
@@ -37,20 +27,8 @@ export class Library {
 	tree = $derived<FolderNode[]>(buildTree(this.folders));
 
 	async load(): Promise<void> {
-		/*
-		 * `loading` is true until the first answer and never again, which is not the same as "a
-		 * request is in flight": this screen re-reads on every library announcement.
-		 *
-		 * Set on every read, an announcement would replace the whole screen with a skeleton for the
-		 * length of two round trips: the folder list, whatever was expanded on it, and any menu or
-		 * dialog somebody had open all gone and back a moment later. Set on every read of an EMPTY
-		 * library, that is the Add a folder dialog closing under the person adding their first one.
-		 *
-		 * The screen keeps what it has and swaps in the new rows when they arrive. `failed` is the
-		 * other half of that promise: a screen with no data and no explanation is worse than
-		 * either. Nothing here reads the lists it writes, so calling it from an `$effect` cannot
-		 * make that effect depend on them and run again on its own write.
-		 */
+		/* `loading` is true until the first answer and never again, which is not the same as "a
+		 * request is in flight": this screen re-reads on every library announcement. */
 		try {
 			// The tree first: a guest may have it and may not have the roots, and the tree is the
 			// part of this screen they are here for.
@@ -64,17 +42,7 @@ export class Library {
 			return;
 		}
 
-		/*
-		 * THE ROOTS ARE AN ADMIN'S QUESTION, SO ONLY AN ADMIN ASKS IT.
-		 *
-		 * The list of roots describes the server's disk and the route answers an admin alone. Asked
-		 * by a guest's browser, it is a refusal in the server's log and the browser's console on
-		 * every visit to Browse, for an answer this screen already has: a guest manages nothing.
-		 * The role is known here (the shell draws nothing until the session has answered), so the
-		 * store asks only what its viewer may ask. Kept in the store rather than at each call site
-		 * because every screen that reads the library comes through `load`, and the next one would
-		 * not know to check. Deciding what to ask, never a permission: the route refuses on its own.
-		 */
+		/* THE ROOTS ARE AN ADMIN'S QUESTION, SO ONLY AN ADMIN ASKS IT. */
 		if (!session.isAdmin) {
 			this.roots = [];
 			this.canManage = false;
@@ -84,14 +52,12 @@ export class Library {
 
 		try {
 			this.roots = (await api.get<components['schemas']['RootsView']>('/library/roots')).roots;
-			// Answered, so this account may manage the library. Deciding what to draw, never a
-			// permission: every endpoint behind this screen refuses on its own, and would refuse a
-			// request this screen never made.
+			// Answered, so this account may manage the library.
 			this.canManage = true;
 		} catch (error) {
 			// A refusal here is an account whose role changed after the session was read (an admin
 			// made a guest in another tab): not a failure of this screen, they get the tree and the
-			// settings simply are not theirs. Anything else is worth saying out loud.
+			// settings simply are not theirs.
 			if (!(error instanceof ApiError && (error.status === 403 || error.status === 401))) {
 				toasts.show(messageOf(error), { tone: 'error' });
 			}
@@ -119,33 +85,18 @@ export class Library {
 		}
 	}
 
-	/**
-	 * Point Sift at a folder.
-	 *
-	 * `scan` false adds the folder without reading it yet. See `NewRoot.scan` on the server. It
-	 * is the only second argument: whether Sift may change the files there is decided elsewhere, so
-	 * a caller passing `false` here is asking for no read, and nothing else (see `AddFolder`).
-	 */
+	/** Point Sift at a folder. `scan` false adds the folder without reading it yet. */
 	async addRoot(absPath: string, scan = true): Promise<string | null> {
 		this.busy = true;
 		try {
 			const made = await api.post<Root>('/library/roots', { body: { abs_path: absPath, scan } });
 			await this.load();
-			/* What the folder is called on disk, which is the only name it has.
-			 *
-			 * Split on EITHER separator: a Windows path has no forward slash in it at all, so a split
-			 * on `/` alone would hand back the whole path as the folder's name, and the message would
-			 * read "Sift is reading C:\Users\me\Videos." A network share written with backslashes
-			 * takes the same answer. */
+			/* What the folder is called on disk, which is the only name it has. */
 			const called = absPath.split(/[\\/]/).filter(Boolean).pop() ?? absPath;
-			/* WHAT ACTUALLY HAPPENED, which is not the same on both paths. Adding a folder from
-			   Settings queues a scan and "Sift is reading" is true. Adding one during setup
-			   deliberately does not (see `scan`), so the same words there promise work that is not
-			   running, and somebody waits for a library that is never going to fill. */
-			/* AND WHAT IS TRUE OF THE FIRST FOLDER ON A DEVICE NEVER MEASURED: nothing of it is read
-			   until the benchmark it queued has settled, so "Sift is reading" would promise work
-			   that is minutes away. The server's sentence for that wait instead, the one the wall
-			   and Activity say (`performance/benchmark.py HELD`). */
+			/* WHAT ACTUALLY HAPPENED, which is not the same on both paths. */
+			/* AND WHAT IS TRUE OF THE FIRST FOLDER ON A DEVICE NEVER MEASURED: nothing of it is
+			   read until the benchmark it queued has settled, so "Sift is reading" would promise
+			   work that is minutes away. */
 			const held = await heldFolder();
 			const named = this.named(made.id, called);
 			toasts.show(held ?? [scan ? 'Sift is reading ' : 'Sift has added ', named], {
@@ -155,28 +106,13 @@ export class Library {
 		} catch (error) {
 			// Handed back rather than toasted: every refusal here is about the folder somebody just
 			// typed, so it belongs under the box they typed it in, where they can fix it.
-			//
-			// And the server's own words, not the client's one-liner. This is the one endpoint on
-			// this screen whose refusals are written for the person reading them: "Sift is already
-			// watching that folder as part of Videos" says what to change, where "That request was
-			// not valid" leaves them stuck holding a path and no idea what is wrong with it.
 			return refusalOf(error);
 		} finally {
 			this.busy = false;
 		}
 	}
 
-	/**
-	 * Tell Sift where a library folder is now, after it was moved or renamed outside Sift.
-	 *
-	 * A folder INSIDE a library is recognised on the next walk, from what is inside it. The library
-	 * folder itself cannot be: Sift is pointed at it by its path, so once that path stops existing
-	 * it is not looking anywhere near the new one.
-	 *
-	 * Nothing under it is re-read, and nothing recorded about any folder in it is lost. Removing the
-	 * library and adding it back recovers the files by their digests and drops every share on every
-	 * folder, deliberately.
-	 */
+	/** Tell Sift where a library folder is now, after it was moved or renamed outside Sift. */
 	async moved(root: Root, absPath: string): Promise<string | null> {
 		this.busy = true;
 		try {
@@ -202,13 +138,7 @@ export class Library {
 		);
 	}
 
-	/**
-	 * Rename a folder, move it, or both. One act on the disk and one rewrite of the rows.
-	 *
-	 * The folder keeps its id, so a share, a restriction, a concealment and the rule saying whose
-	 * files land in it all survive being rearranged. That is the whole reason this exists rather
-	 * than leaving people to do it in a file manager and have Sift work out what happened after.
-	 */
+	/** Rename a folder, move it, or both. One act on the disk and one rewrite of the rows. */
 	async renameFolder(folderId: string, name: string): Promise<string | null> {
 		return await this.write(() =>
 			request('PATCH', `/library/folders/${folderId}`, { body: { name } })
@@ -221,17 +151,7 @@ export class Library {
 		);
 	}
 
-	/**
-	 * Delete a folder from the disk, with every file Sift indexed under it.
-	 *
-	 * `/folders/{id}` and not `/library/folders/{id}`, which is where every other folder call goes:
-	 * removing a file somebody else put on a disk is owned by one service in Sift, and its routes
-	 * live together. It is the only call on this class that changes bytes rather than rows.
-	 *
-	 * Hands back what happened rather than only a refusal, because this is the one delete that can
-	 * do most of what was asked and not all of it: a folder holding something Sift never indexed
-	 * is left standing, with its files gone.
-	 */
+	/** Delete a folder from the disk, with every file Sift indexed under it. */
 	async deleteFolder(
 		folderId: string
 	): Promise<{ said: components['schemas']['FolderDeleted'] | null; refusal: string | null }> {
@@ -249,11 +169,8 @@ export class Library {
 		}
 	}
 
-	/** One shape for the three writes above: do it, re-read, and hand back the server's own words.
-	 *
-	 * The refusals here are written for the person who typed the name ("that name is reserved",
-	 * "there is already something called that"), so they are handed back to the dialog rather than
-	 * toasted past. `messageOf` would replace them with a one-liner about a request. */
+	/** One shape for the three writes above: do it, re-read, and hand back the server's own
+	 * words. */
 	private async write(send: () => Promise<unknown>): Promise<string | null> {
 		this.busy = true;
 		try {
@@ -292,9 +209,8 @@ export class Library {
 		try {
 			await api.del(`/library/roots/${root.id}`);
 			await this.load();
-			// The grid on the page behind this one has to lose the removed folder's tiles, and nothing
-			// else would tell it to: a removal enqueues no job the way adding one does. Bump the shared
-			// signal it watches, so it re-reads and the files drop off without a reload.
+			// The grid on the page behind this one has to lose the removed folder's tiles, and
+			// nothing else would tell it to: a removal enqueues no job the way adding one does.
 			libraryChanges.changed();
 			toasts.show(`Sift has forgotten ${root.name}. The files are untouched.`, { tone: 'success' });
 		} catch (error) {
@@ -304,17 +220,7 @@ export class Library {
 		}
 	}
 
-	/**
-	 * Walk one folder again, rather than the whole root it is in.
-	 *
-	 * The scan can walk one folder (the watcher uses it for a single arriving file), and a
-	 * person asking about one folder should not have to walk the whole root: on a large library
-	 * that is minutes of walking to notice one folder.
-	 *
-	 * Does nothing at all when the folder's root is unknown, which can only happen if the row was
-	 * removed while its menu was open. Silence is right there: the folder is gone, and an error
-	 * about it would be about something that is not on screen any more.
-	 */
+	/** Walk one folder again, rather than the whole root it is in. */
 	async rescanFolder(rootId: string | undefined, folderId: string, name: string): Promise<void> {
 		if (!rootId) return;
 		this.busy = true;
@@ -333,20 +239,9 @@ export class Library {
 		}
 	}
 
-	/*
-	 * There is no whole-library rescan here. Importing's Scan now and the empty library's Scan Now
-	 * are the Scan task's own press (`pressTask('scan', ...)` in `$lib/jobs/tasks.svelte`), which reads
-	 * every folder and stops. One way to start the whole-library scan, not two.
-	 */
+	/* There is no whole-library rescan here. */
 
-	/**
-	 * `scanOnly` asks for the READING and nothing after it.
-	 *
-	 * A scan is where every other stage is started from: it hands out a read of each file, and each
-	 * read hands out the pictures, the faces and the descriptions. That is right for a file
-	 * arriving, and wrong for somebody who pressed a button that says Scan and got all three. It is
-	 * off by default, so a scan from the watcher or the Folders screen starts every stage.
-	 */
+	/** `scanOnly` asks for the READING and nothing after it. */
 	async rescan(root: Root, options: { scanOnly?: boolean } = {}): Promise<void> {
 		this.busy = true;
 		try {
@@ -362,17 +257,7 @@ export class Library {
 	}
 }
 
-/**
- * `scan_only` as a query, and left OUT rather than sent false.
- *
- * The client has one way to add a parameter to a request and this is it, so the address stays the
- * typed thing the schema knows about. Glued onto the path by hand it would type-check on one of the
- * two routes and not on the other: the openings in `ApiPath` stand in for an id, and a route with
- * no id in it has no opening for a query to hide in.
- *
- * Absent when false, so an ordinary rescan asks for exactly the plain address. The server matches a
- * job's payload exactly to decide whether work is already coming; see `rescan_root`.
- */
+/** `scan_only` as a query, and left OUT rather than sent false. */
 function asked(options: { scanOnly?: boolean }): { scan_only: boolean } | undefined {
 	return options.scanOnly ? { scan_only: true } : undefined;
 }
@@ -382,14 +267,7 @@ function messageOf(error: unknown): string {
 	return UNREACHABLE;
 }
 
-/**
- * A refusal in the server's words where it has any, and the client's otherwise.
- *
- * For adding a folder and for moving one. Both are refused for reasons that name the next thing to
- * do, and both were written for the person reading them. Everywhere else on this screen the
- * one-liner is what should be shown. See `ApiError.detail` for why saying more is usually saying
- * too much.
- */
+/** A refusal in the server's words where it has any, and the client's otherwise. */
 function refusalOf(error: unknown): string {
 	if (error instanceof ApiError) return error.detail ?? error.message;
 	return messageOf(error);

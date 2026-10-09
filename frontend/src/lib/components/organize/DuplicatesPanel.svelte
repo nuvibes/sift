@@ -1,20 +1,9 @@
 <script lang="ts">
 	import { counted } from '$lib/entity/entity-counts';
-	/*
-	 * Files that look alike, gathered into groups, with the one Sift would keep already marked.
-	 *
-	 * Groups, not pairs, so three copies of one clip are one question rather than three that could
-	 * contradict each other. The machine proposes on every group, the person skims a page and
-	 * confirms it, and the only groups costing a real decision are the ones no rule could separate:
-	 * an automatic choice is a starting point, and the reviewer's job is to skim what the rule
-	 * marked. The queue is paged, so it is clear how many are left.
-	 *
-	 * The rule is a setting, and it lives on the server: applied to the whole library rather than
-	 * to what the browser has loaded. Changing it here saves the preference and re-reads; it writes
-	 * nothing to any file.
-	 *
-	 * Nothing here deletes anything without a confirm naming the count and the bytes.
-	 */
+	/* Files that look alike, gathered into groups with the one Sift would keep marked: the rule
+	 * proposes, a person skims and confirms a page. The rule is a server setting; nothing is
+	 * deleted
+	 * without a confirm naming the count and the bytes. */
 	import {
 		Button,
 		ConfirmDialog,
@@ -59,8 +48,7 @@
 
 	const view = new Maintenance();
 
-	/* The comparison's last run, from its row on Tasks: a reload still says when the files were
-	   last compared, and a run pressed from here moves the line when it ends. */
+	/* The comparison's last run, from its row on Tasks. */
 	const DUPLICATES_TASK = 'duplicates';
 	const COMPARED: RunWords = {
 		ran: (when) => `Sift last compared your files ${when}.`,
@@ -68,44 +56,27 @@
 		canceled: (when) => `The last comparison was stopped ${when}.`
 	};
 
-	/*
-	 * The three dials this screen owns, by the keys they are stored under.
-	 *
-	 * A dial and the pile it governs are read together (how close is close enough, how far apart
-	 * two may run, and which copy to keep all decide what the list below is), and a control on a
-	 * different screen from its result is one nobody dares move. So they live here, not on the
-	 * Maintenance pane.
-	 *
-	 * They are still settings: stored in the registry like every other preference, saved through
-	 * the same endpoint, and a change made in another window reaches this one (see the effect
-	 * below).
-	 */
+	/* The three dials this screen owns, read together with the pile they govern; still settings,
+	 * saved through the same endpoint and heard from other windows. */
 	const KEEP_SETTING = 'dedup.keep';
 	const LEVEL_SETTING = 'dedup.level';
 	const GAP_SETTING = 'dedup.max_duration_gap_seconds';
 
 	let problem = $state<string | undefined>(undefined);
 
-	/* How many groups a page holds: the server's own page size. Not measured off the screen the way
-	   a wall of cards is: a group is as tall as its files, so there is no row to count in. */
+	/* The server's page size: a group's height varies, so there is no row to measure. */
 	const PAGE = 24;
 
-	/*
-	 * Which page: the same paging every list in Organize has (`CardPaging`), with the group the
-	 * page starts at written into the address as `from` (and `near`, where it was), so Back from a
-	 * chain's own screen, the crumbs or anywhere else lands on this page again.
-	 *
-	 * The address names a row, not an offset, so a queue that empties as you work still has a page
-	 * worth returning to: a row decided away is answered with where the page was (`near`), which
-	 * after a decision is the same page with the gap closed.
-	 */
+	/* Paged as every Organize list, the page in the address by a row (`from`, `near`), so a queue
+	 * that empties still has a page to return to. */
 	const paging = new CardPaging(PAGE);
 	const path = address.url.pathname;
 	let arriving = true;
 
-	/* Whether the page is filtered to the groups a rule could not settle: in the address, as the
-	   tagger's state is, because it decides which list the row in `from` is a place in. Held in
-	   memory it would be lost on the way back, and the anchor looked for in the other list. */
+	/*
+	 * The filter to unsettled groups lives in the address, since it decides which list `from` is
+	 * in.
+	 */
 	const NARROW = 'show';
 	const NEEDS_YOU = 'needs-you';
 	const needsYou = $derived(address.url.searchParams.get(NARROW) === NEEDS_YOU);
@@ -114,16 +85,7 @@
 	let dismissOpen = $state(false);
 	let carryOpen = $state(false);
 
-	/*
-	 * Loaded on arrival, and again whenever the library's shape changes underneath.
-	 *
-	 * This list is ABOUT which files exist. Deleting one anywhere else in the application settles
-	 * the groups it was in, and a screen that loaded once would go on offering a decision about a
-	 * file that was already gone, with a Delete button pointed at it.
-	 */
-	/* The panel's own element, so a page turn can put the box that scrolls back at the top. Left
-	   wherever the pager was pressed (at the foot of the last group), the next page would open on
-	   its last card and read as nothing having changed. */
+	/* The panel's own element, so a page turn scrolls back to the top. */
 	let panel = $state<HTMLElement | null>(null);
 
 	/** Where the pager goes: the frame's foot, drawn by the route. See `PagerProps`. */
@@ -137,22 +99,19 @@
 		void paging.offset;
 		if (!panel) return;
 		const box = scrollParent(panel);
-		// jsdom reports a missing method as `undefined` rather than throwing on the call, and a
-		// test that draws the panel is not a test of where it scrolls.
+		// jsdom has no `scrollTo`.
 		if (typeof box.scrollTo === 'function') box.scrollTo({ top: 0 });
 	});
 
-	/** The page on screen, read through the paging, and where it now starts written into the
-	 *  address, only once it has landed, so an overtaken read cannot write a place it never drew. */
+	/** The page on screen, its start written to the address only once it landed. */
 	async function load(): Promise<void> {
 		if (!(await view.fillGroups(paging, needsYou))) return;
 		const first = view.groups[0];
 		rememberAnchor(address.url, path, first ? keyOf(first) : null, paging.offset);
 	}
 
-	/* A page turned, or the filtering moved. The anchor in the address is honoured once, on
-	   arrival: after that the anchor there is one this panel wrote. Filtering is a different list,
-	   so it starts at its top with no anchor carried across. */
+	/* A page turned or the filter moved; the address's anchor is honoured once, a new filter starts at
+	   the top. */
 	let narrowedAt: boolean | null = null;
 	$effect(() => {
 		void paging.offset;
@@ -171,26 +130,21 @@
 		untrack(() => void load());
 	});
 
-	/* And again whenever the library's shape changes underneath, and when a dial moves ANYWHERE:
-	   this window, another tab, another admin's browser. The bell is rung by the settings
-	   endpoint's own announcement, so what reaches this screen is the same event whichever of them
-	   did it, and there is one way the queue re-reads rather than a local path and a remote one
-	   that can disagree. At the same place: a page emptied by it steps back in `CardPaging.fill`. */
+	/* And on any library change or dial moved anywhere, through the settings endpoint's own bell, at
+	   the same place. */
 	whenChanged(libraryChanges, () => void load());
 	whenChanged(settingChanges, () => void load());
 
-	/* And what could be carried across the copies, which is about the whole library rather than
-	   about this page, so it is read beside the list, and not again when a page turns. */
+	/* And what could be carried across copies, read once beside the list. */
 	$effect(() => {
 		void libraryChanges.generation;
 		void settingChanges.generation;
 		untrack(() => void view.loadCarry());
 	});
 
-	/** Read the queue again after a verb: from the FRONT when the whole question or the whole page
-	 *  moved, at the same place when one group did. */
+	/** Read again after a verb: from the front when the question or page moved, else in place. */
 	async function reread(fromTheFront: boolean): Promise<void> {
-		// A move to the front is itself what reads the page; at the front already, read it here.
+		// A move to the front is itself what reads the page.
 		if (fromTheFront && paging.restart()) return;
 		await load();
 	}
@@ -200,9 +154,7 @@
 		void goto(on ? `${path}?${NARROW}=${NEEDS_YOU}` : path, { keepFocus: true, noScroll: true });
 	}
 
-	/* Arrived here pointed at one group: a still on the board's Duplicates card. See
-	   `$lib/organize/anchor`, and `_group_anchor` on the server for the other half of the name. Once
-	   per fragment, for the reason the copies tab next door gives. */
+	/* Arrived pointing at one group from the board (`_group_anchor`); once per fragment. */
 	let revealed = '';
 
 	$effect(() => {
@@ -211,14 +163,7 @@
 		if (revealAnchored(wanted)) revealed = wanted;
 	});
 
-	/*
-	 * A closer look: the player, opened over this screen, with the group as what it can step
-	 * through.
-	 *
-	 * `openAsset` is what every other wall uses, so the picture opens full size and plays video;
-	 * handing it the group makes Next and Previous step between the files being compared, which is
-	 * the whole question this screen asks.
-	 */
+	/* A closer look: `openAsset` over this screen, Next and Previous stepping through the group. */
 	function look(group: Group, file: GroupFile) {
 		openAsset(
 			file.id,
@@ -226,15 +171,12 @@
 		);
 	}
 
-	/** What to call a file in a sentence. The original name where there is one, and a short form of
-	    its id where there is not: never nothing, because these sentences are the ones naming which
-	    file is about to be thrown away. */
+	/** A file's name in a sentence: its original name, or a short id, never nothing. */
 	function nameOf(file: GroupFile): string {
 		return file.original_filename || `the file ending ${file.id.slice(-6)}`;
 	}
 
-	/** What one group would free: every file in it but the keeper. Unknown sizes count as nothing
-	    rather than being estimated, which is the same rule the reclaim screen states. */
+	/** What one group would free; unknown sizes count as nothing. */
 	function freedBy(group: Group): number {
 		const keep = view.keeperOf(group);
 		return group.files
@@ -252,15 +194,8 @@
 		return `${files}, ${going} would be deleted, frees ${formatBytes(freedBy(group))}`;
 	}
 
-	/*
-	 * Move a dial: save it, then read the queue back from the start, because every dial changes
-	 * what a group is (widening the closeness makes new groups out of pairs already on file, and
-	 * the rule re-marks all of them), so the page somebody was on is a position in a list that no
-	 * longer exists.
-	 *
-	 * `answered.changed()` carries it off this screen: the board's card and the tab beside this one
-	 * both count groups, and must not keep showing the count from before the dial moved.
-	 */
+	/* Move a dial: save it and read from the start, as a dial changes what a group is; announced so
+	 * the board and the next tab recount. */
 	async function moveDial(key: string, value: string | number) {
 		try {
 			await saveSettings({ [key]: value });
@@ -275,8 +210,7 @@
 	async function doConfirm() {
 		const outcome = await view.confirmMarked(view.marked);
 		problem = outcome.problem ?? refusedMessage(outcome.refused, outcome.unknown);
-		/* From the FRONT: every group on the page has just left it, and the closest groups are
-		   the ones worth showing next. */
+		/* From the front: every group on the page has left it. */
 		await reread(true);
 		answered.changed();
 	}
@@ -290,16 +224,14 @@
 		answered.changed();
 	}
 
-	/** Copy details to every duplicate from its identical copy. Nothing is deleted and every file it
-	    writes on can be undone on its own, which is why the count is the whole of the warning. */
+	/** Copy details from each duplicate's identical copy; nothing deleted, each write undoable. */
 	async function doCarry() {
 		const outcome = await view.carryEverywhere();
 		problem = typeof outcome === 'string' ? outcome : undefined;
 		if (typeof outcome !== 'string') answered.changed();
 	}
 
-	/** What to say when the disk would not let a file go, or a group had moved on. Not a failure:
-	    the press did what it could, but silence here would claim a clean sweep it did not have. */
+	/** What to say when the disk kept a file or a group had moved: not silence. */
 	function refusedMessage(refused: number, unknown: number): string | undefined {
 		const parts: string[] = [];
 		if (refused > 0) {
@@ -324,10 +256,7 @@
 		view.summary.levels.map((one) => ({ value: one.key, label: one.label }))
 	);
 
-	/* The sentence over the list, which is where the numbers are said. "1,204 groups" and "24 of
-	   them need you" are different facts, and a screen that says only the first hides where the
-	   work actually is. The buttons beside it are verbs and carry no counts: a count in a label
-	   changes the button's width with every answer and says the number a second time. */
+	/* The sentence over the list carries the counts; the buttons are verbs with none. */
 	const standing = $derived.by(() => {
 		if (!view.loaded) return '';
 		const groups = `${counted(view.summary.total)} ${view.summary.total === 1 ? 'group' : 'groups'}`;
@@ -358,16 +287,9 @@
 <section bind:this={panel}>
 	<Problem message={problem ?? view.problem} />
 
-	<!--
-		The bar over the list: what the rule is, what the queue is, and the one press that settles
-		this page. Here rather than in the page's own header because the header is shared by every
-		Organize screen and knows nothing about what it is drawing. See `OrganizeHeader`.
-	-->
+	<!-- The bar over the list: the rule, the queue and the one press that settles this page. -->
 	<PanelBar>
-		<!--
-			The dials, together, because they are read together: what counts as alike, how far apart
-			two may run, and which copy a rule would keep. Each writes its setting and re-reads.
-		-->
+		<!-- The dials together, as they are read together. -->
 		<div class="dials">
 			<div class="dial">
 				<span class="dial-label">Keep</span>
@@ -391,9 +313,7 @@
 			</div>
 			<div class="dial">
 				<span class="dial-label">Length within</span>
-				<!-- Zero means lengths are not compared at all, which is why it has a word of its own
-				     rather than reading as "they must run for exactly the same no time": the word the
-				     setting declares, so this dial and the settings pane say the same thing. -->
+				<!-- Zero means lengths are not compared, said in the setting's own word. -->
 				<NumberInput
 					value={Math.round((view.summary.maxDurationGapMs ?? 0) / 1000)}
 					min={0}
@@ -412,17 +332,16 @@
 		</p>
 		<div class="presses">
 			{#if view.summary.needsYou > 0}
-				<!-- A filter rather than a second screen. The groups a rule could not settle are the
-				     same groups; what changes is that these are all that is showing. -->
-				<!-- The same tone as the two beside it: the words say which of the two it shows. -->
+				<!-- A filter, not a second screen; the words say which of the two it shows. -->
 				<Button disabled={view.busy} onclick={() => narrowTo(!needsYou)}>
 					{needsYou ? 'Show all groups' : 'Show the ones that need you'}
 				</Button>
 			{/if}
 			{#if view.carry.files > 0}
-				<!-- A file whose bit-for-bit twin carries a person or a site while it carries nothing.
-				     Offered here because this is the screen about files that look alike; the count is
-				     the whole library's, so the press is the same whichever page is showing. -->
+				<!--
+				Identical copies where one carries a person or a Site; the count is the whole
+				library's.
+				-->
 				<Button icon="content_copy" disabled={view.busy} onclick={() => (carryOpen = true)}
 					>Copy details</Button
 				>
@@ -435,9 +354,7 @@
 	</PanelBar>
 
 	<!--
-		What the reader has to know before they can read an empty list. Each sentence is about a
-		different population and says which, because "nothing to review" is the same words whether
-		the library is clean, the dial is tight, or half of it has never been looked at.
+	What the reader needs before reading an empty list, each sentence naming its population.
 	-->
 	<div class="standing-facts">
 		{#if view.summary.awaitingFingerprint > 0}
@@ -450,14 +367,9 @@
 			</Note>
 		{/if}
 		<!--
-			WORK THAT WILL NOT HAPPEN, said apart from the work in flight above it.
-
-			A file whose frames the decoder refused has no fingerprint and never will, so it is not
-			in this queue and no amount of waiting puts it there. Counted rather than left out: an
-			empty queue with fifty such files in the library reads as a clean library, which is the
-			one thing it is not. The way back is Generate, which offers to forget these verdicts and
-			try again: a file replaced on disk since is a real reason to.
+		Files the decoder refused have no fingerprint and are counted apart; Generate retries them.
 		-->
+
 		{#if view.summary.cannotFingerprint > 0}
 			<Note tone="caution">
 				<strong class="data">{counted(view.summary.cannotFingerprint)}</strong>
@@ -471,8 +383,7 @@
 			<Note>
 				<strong class="data">{counted(hidden)}</strong>
 				more {hidden === 1 ? 'pair is' : 'pairs are'} waiting that your closeness setting doesn't show.
-				<!-- The dial is above, on this panel: Settings does not draw it, so a link there
-				     would land on a pane without it. -->
+				<!-- The dial is on this panel, not in Settings. -->
 				Loosen Alike above to see them. It takes effect straight away, without comparing again.
 			</Note>
 		{/if}
@@ -488,8 +399,7 @@
 	{#if view.loading && view.groups.length === 0}
 		<Skeleton lines={3} />
 	{:else if !view.loaded}
-		<!-- Deliberately not "nothing to review". A request that failed says nothing about the
-		     library, and the reassuring reading of silence here is the wrong one. -->
+		<!-- Not "nothing to review": a failed read says nothing about the library. -->
 		<Problem message="Duplicates couldn't be loaded. Refresh the page to try again." />
 	{:else if view.groups.length === 0}
 		<Empty scope="block">
@@ -500,8 +410,7 @@
 			{:else}
 				Nothing matches your current settings.
 			{/if}
-			<!-- The scan runs by itself once importing settles, which never happens on a library that
-			     was already there when Sift was installed. This is the control for that case. -->
+			<!-- For a library that existed before Sift, where the scan never ran by itself. -->
 			{#snippet action()}
 				<Button
 					tone="ghost"
@@ -515,35 +424,23 @@
 		</Empty>
 	{:else}
 		<ul class="groups">
-			<!-- Keyed by the group's METHOD and its smallest file, from the one place that names a
-			     group. See `keyOf`. The file alone is not unique: a GIF is fingerprinted twice, so
-			     the same two files are a group under each method, and two groups on one page can
-			     share a first file. Svelte answers a duplicate key by throwing, so the screen
-			     would draw nothing at all. -->
+			<!-- Keyed by method and smallest file (`keyOf`), since a GIF is grouped twice. -->
 			{#each view.groups as group (keyOf(group))}
 				{@const keep = view.keeperOf(group)}
-				<!-- Named so a still on the board can point at THIS group. A group has no address of its
-				     own and cannot be given one (it is computed from the pair table at the dials in
-				     force) so the anchor is the page and the only stable name a group has, which is
-				     the same key this list is drawn by. `_group_anchor` writes the other half. -->
+				<!-- Named so a board still can point at this group (`_group_anchor`). -->
 				<li id="group-{keyOf(group)}">
 					<DecisionCard unsettled={group.too_big}>
 						<header>
-							<!--
-							Not the Badge component. That one carries job state (queued, running, failed)
-							and its colours mean severity. How alike two files look is neither a job nor
-							a severity, and borrowing the vocabulary would make amber mean "needs a person"
-							in one place and "very similar" in another.
-						-->
+							<!-- Not Badge: closeness is neither a job nor a severity. -->
 							<span class="closeness">{describeCloseness(group)}</span>
 							<span class="shape data">{shapeOf(group)}</span>
 						</header>
 
 						{#if group.too_big}
-							<!-- A chain, not a group: every pair in it is under the threshold and its two ends
-						     may look nothing alike. Nothing is marked here and nothing is deleted from
-						     here; it opens on a screen of its own where every file in it can be looked
-						     at, and the honest fix is a tighter dial. -->
+							<!--
+							A chain, not a group: its ends may look nothing alike; it opens on its
+							own screen.
+							-->
 							<p class="chain-note">
 								These are joined in a chain &mdash; each one looks like the next, and the two ends
 								may look nothing alike.
@@ -563,8 +460,9 @@
 										disabled={file.concealed}
 										aria-label="Open {nameOf(file)}"
 									>
-										<!-- `Thumb` for the still a file may not have yet: it leaves the
-									     picture's ground rather than the browser's broken glyph. -->
+										<!--
+										`Thumb`, which leaves the ground for a missing still.
+										-->
 										<Thumb
 											kind="asset"
 											id={file.id}
@@ -578,9 +476,9 @@
 										<p class="unknown">Hidden. Unlock the vault to see this file.</p>
 									{:else}
 										<p class="name"><FileName name={nameOf(file)} /></p>
-										<!-- Where it is, which on this screen is often the only thing that tells the
-									     files apart: the pictures look the same, that is why they are here, and
-									     two copies of one clip in two folders have the same name and size. -->
+										<!--
+										Where it is, often the only thing telling copies apart.
+										-->
 										{#if file.where}
 											<p class="where"><PathText path={file.where} /></p>
 										{/if}
@@ -597,11 +495,9 @@
 										<p class="kept"><Icon name="check_circle" /> Keeping this one</p>
 									{:else}
 										<!--
-										The override, and it writes nothing. Somebody who disagrees with the
-										rule on one group marks a different file and presses the page's own
-										confirm; the alternative (a per-file Delete) would have every group
-										chosen from scratch.
-									-->
+										The override writes nothing: mark a different file and
+										confirm the page.
+										-->
 										<Button
 											tone="ghost"
 											disabled={view.busy || file.concealed}
@@ -626,11 +522,8 @@
 
 						{#if !group.too_big && !group.files.some((one) => one.concealed)}
 							<!--
-							Not on a chain or a group holding a vaulted file: the server refuses both, and
-							a button that does nothing is worse than none. "These eleven are not
-							duplicates of each other" is a claim about ten pairs nobody can check by
-							looking, and that is exactly what makes it a chain. The answer is the dial.
-						-->
+							Not on a chain or a group with a vaulted file: the server refuses both.
+							-->
 							<footer>
 								<Button
 									tone="ghost"
@@ -770,20 +663,8 @@
 		font: var(--text-micro);
 	}
 
-	/*
-	 * Every card of a group in one row wherever the row can hold them at 120 pixels or more, each
-	 * at most 160 pixels wide.
-	 *
-	 * The tracks are `1fr` over a grid no wider than `--cards` tiles of 160 pixels. A track with a
-	 * fixed maximum makes the browser count columns at that maximum, so eight cards in a row a
-	 * little short of eight times 160 would drop the eighth onto a line of its own. Counted at the
-	 * 120-pixel minimum, they all stay in the row and share it. The cap is what keeps two files
-	 * from stretching across the window: a group is skimmed, not studied, and the closer look is a
-	 * press away in the player.
-	 *
-	 * `auto-fit`, not `auto-fill`, so empty tracks collapse; `min(120px, 100%)` so a track is never
-	 * wider than a narrow window.
-	 */
+	/* Every card of a group in one row where it fits at 120px, each at most 160px: `1fr` tracks
+	 * under a `--cards` ceiling, `auto-fit` so empty tracks collapse. */
 	.files {
 		display: grid;
 		/* One card's width, named once: the grid's ceiling and the tile's own height read it. */
@@ -805,19 +686,14 @@
 		min-inline-size: 0;
 	}
 
-	/* The keeper is marked on the FILE rather than only on its button, because the mark is what
-	   somebody skims for: a page of twenty-four groups is read by looking for what is lit. */
+	/* The keeper is marked on the file, which is what somebody skims for. */
 	.keeping {
 		outline: 2px solid var(--sift-accent);
 		outline-offset: var(--space-2);
 		border-radius: var(--radius-sm);
 	}
 
-	/* Something happens under the pointer, on the PICTURE rather than on the button around it: the
-	   thumbnail fills the control, so an outline on the control would be drawn under the image and
-	   invisible. `:global` because the class is handed to `Pressable`. */
-	/* Reserved transparent at rest, so the outline STEPS in rather than appearing between two
-	   frames. An outline is drawn outside the box, so reserving it moves nothing. */
+	/* The outline on the picture, reserved transparent so it steps in; global, as Pressable's. */
 	.file :global(.preview img) {
 		outline: 2px solid transparent;
 		outline-offset: 2px;
@@ -829,10 +705,7 @@
 		outline-offset: 2px;
 	}
 
-	/* Square, and it fills the tile: `Thumb`'s whole fit, drawn `contain` and never cropped, because
-	   you are choosing which copy to delete and nothing may be hidden. Much of what these queues
-	   hold is portrait, and a square box wastes the least on both shapes. No taller than the track is
-	   wide at its widest. */
+	/* Square and uncropped, as nothing may be hidden when choosing a copy to delete. */
 	.file :global(img.whole) {
 		max-block-size: 160px;
 	}
@@ -868,8 +741,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The words beside the tick, so the mark is not colour alone. A control's height, so its words
-	   stand on the line of the keep press beside it. */
+	/* Words beside the tick, at a control's height. */
 	.kept {
 		display: flex;
 		align-items: center;
@@ -884,8 +756,7 @@
 		justify-content: center;
 	}
 
-	/* The keep press and the keeping mark at the tile's foot. The tiles of one group share a row's
-	   height, so the presses of a group stand on one line whether a name took one line or two. */
+	/* The presses of a group on one line at the tiles' foot. */
 	.file > :global(.btn),
 	.kept {
 		margin-block-start: auto;

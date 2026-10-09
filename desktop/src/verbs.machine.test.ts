@@ -1,10 +1,6 @@
 /* The verbs about this machine and the network: the address another computer types, this
- * machine's hardware and name, the connect screen, the firewall, the version, the window buttons,
- * and offering the library.
- *
- * The stand-ins below are the ones `verbs.test.ts` explains, one per module that would otherwise
- * reach the real machine.
- */
+ * machine's hardware and name, the connect screen, the firewall, the version, the window
+ * buttons, and offering the library. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -139,9 +135,7 @@ afterEach(() => {
 
 describe('the address to type on the other computer', () => {
 	/* A machine running a VPN client has two: an address in the carrier range and the one the
-	 * person knows their computer by. The first one the operating system lists is often the VPN
-	 * one: an address their other machine on the same switch cannot reach.
-	 */
+	 * person knows their computer by. */
 	it('prefers a home-network address over anything else on offer', () => {
 		expect(preferredAddress(['100.64.0.7', '192.168.1.41'])).toBe('192.168.1.41');
 		/* Anything that is not four numbers is no home-network address, whatever it starts with. */
@@ -170,13 +164,7 @@ describe('the address to type on the other computer', () => {
 	});
 });
 
-/* What computer this window is on.
- *
- * The whole design of it is in the two answers, not in the facts: it says NOTHING on the machine
- * running the library, because the hardware block there already describes that machine, and a
- * second block saying the same thing twice would invite somebody to look for a difference that
- * cannot exist. That null is also what saves the page from needing a mode flag of its own.
- */
+/* What computer this window is on. */
 describe('localHardware', () => {
 	function withMode(mode: 'standalone' | 'client') {
 		registerVerbs(localAt(TRUSTED), {
@@ -235,9 +223,7 @@ describe('machineName', () => {
 	});
 });
 
-/* The firewall verbs. The rule they would create is firewall.test.ts's subject; what matters here
- * is that they are a security boundary like every other verb, and that the port they open is the
- * one the backend is listening on rather than one the page chose. */
+/* The firewall verbs. */
 /** What the verbs answer when the question cannot be put at all. */
 const NOT_ASKED = { state: 'unknown', networks: null, scope: null };
 
@@ -314,8 +300,7 @@ describe('opening the firewall', () => {
 	});
 
 	/* The one that matters. Opening a port needs administrator rights, so a page that had been
-	 * navigated somewhere else must not be able to raise that prompt. A person shown an elevation
-	 * dialog they did not ask for is being trained to click yes. */
+	 * navigated somewhere else must not be able to raise that prompt. */
 	it('refuses a page that has been navigated somewhere else', async () => {
 		sender.senderFrame = { url: 'https://example.com/anything', parent: null };
 
@@ -343,15 +328,7 @@ describe('opening the firewall', () => {
 	});
 });
 
-/* What this copy of Sift is. On the machine holding the library it is the same install as the
- * backend and the answer is redundant; in client mode it is the only true thing on a screen whose
- * every other number came from somewhere else.
- *
- * The packaged case is what makes the refusal testable at all. Unpackaged the verb answers null
- * whoever asks, so a refusal test written against a checkout passes with the check taken out.
- * Every test here that is about who is asking has to be a test of a copy that has something to
- * tell them.
- */
+/* What this copy of Sift is. */
 const asClient = {
 	read: () => ({
 		enabled: false,
@@ -380,10 +357,7 @@ describe('the version of this copy', () => {
 		expect(await ipcRenderer.invoke(SHELL_VERSION)).toBeNull();
 	});
 
-	/* THE ANSWER IS THE SIGNAL. A version means there is a second computer to name, so it is given
-	 * in client mode and withheld on the machine holding the library, where the backend travels
-	 * inside this application and the two numbers are one install. The screen then needs no mode
-	 * flag: it names two versions exactly when it is handed two. Same rule as `localHardware`. */
+	/* THE ANSWER IS THE SIGNAL. */
 	it('answers the application own version in client mode', async () => {
 		resetElectronStub();
 		app.isPackaged = true;
@@ -438,13 +412,7 @@ describe('the version of this copy', () => {
 	});
 });
 
-/* The one verb that changes something the operating system owns.
- *
- * What matters is not that a colour arrives: it is that nothing ELSE can. The caption buttons are
- * how a window gets closed, so a verb able to move, resize or hide them would be a verb for making a
- * window nobody can shut. It takes two colours, it is refused for anything that is not plain hex,
- * and the height is the shell's own rather than anything the page said.
- */
+/* The one verb that changes something the operating system owns. */
 describe('painting the window buttons', () => {
 	const OVERLAY = 56;
 
@@ -541,10 +509,8 @@ describe('painting the window buttons', () => {
 	});
 
 	it('does nothing at all on a window that was drawn with a real title bar', async () => {
-		/* No overlay height was passed, which is what a shell that never asked for one looks like,
-		   and every test in this file that is not about this verb. Answering false is the honest
-		   outcome: the page is already drawing itself correctly and only the buttons stay as they
-		   were. */
+		/* No overlay height was passed, which is what a shell that never asked for one looks
+		   like, and every test in this file that is not about this verb. */
 		resetElectronStub();
 		registerVerbs(localAt(TRUSTED));
 		const window = new BrowserWindow({});
@@ -561,14 +527,7 @@ describe('painting the window buttons', () => {
 
 /* --- The settings the window keeps for itself -------------------------------------------- */
 
-/*
- * Offering this library to the network.
- *
- * The verb answers the state AFTER the change rather than whether the change was accepted, and
- * that is the whole point of it: turning sharing on opens a socket on another address, and a
- * screen told "yes, done" while the socket refused to move would be a screen saying something
- * that is not true. Both halves come back, so it can say which.
- */
+/* Offering this library to the network. */
 describe('offering the library to the network', () => {
 	let enabled: boolean;
 	let live: boolean;
@@ -616,10 +575,7 @@ describe('offering the library to the network', () => {
 		expect(write).toHaveBeenCalledWith(true);
 	});
 
-	/* Checked against a real boolean rather than cast. What this opens is a socket the rest of the
-	   network can reach, so anything that is not one of the two answers is a value that should
-	   never have arrived, and it reads the state back rather than refusing silently, so the
-	   screen is left drawing the truth. */
+	/* Checked against a real boolean rather than cast. */
 	it('opens nothing at all for a value that is not yes or no', async () => {
 		expect(await ipcRenderer.invoke(SET_SHARING, 'on')).toMatchObject({
 			enabled: false
@@ -635,8 +591,7 @@ describe('offering the library to the network', () => {
 		expect(write).not.toHaveBeenCalled();
 	});
 
-	/* A client is looking at somebody else's library and has nothing of its own to offer. Null is
-	   the answer, and the screen draws no switch rather than one that cannot do anything. */
+	/* A client is looking at somebody else's library and has nothing of its own to offer. */
 	it('answers nothing on a shell with no library of its own', async () => {
 		resetElectronStub();
 		registerVerbs(localAt(TRUSTED));
@@ -646,13 +601,7 @@ describe('offering the library to the network', () => {
 	});
 });
 
-/*
- * The address to offer for a second computer, read off this machine's own interfaces.
- *
- * `preferredAddress` above states the choice; this states the reading: only IPv4, never the
- * loopback one, because the point of the string is that somebody TYPES IT INTO ANOTHER COMPUTER
- * and 127.0.0.1 gets them nowhere.
- */
+/* The address to offer for a second computer, read off this machine's own interfaces. */
 describe('reading this machine own addresses', () => {
 	afterEach(() => {
 		for (const key of Object.keys(machineInterfaces)) delete machineInterfaces[key];

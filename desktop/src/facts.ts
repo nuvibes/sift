@@ -72,8 +72,7 @@ function systemRuntime(): string {
 	return path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'msvcp140.dll');
 }
 
-/** The facts of this start: the interpreter is the bundled one, or a checkout's. `versions` are
- *  the two runtime libraries' versions when already read. */
+/** The facts of this start: the interpreter is the bundled one, or a checkout's. */
 export function startFacts(
 	python: string,
 	held: boolean,

@@ -1,9 +1,4 @@
-/* The signed-out card's words, and where the caution about the one admin account sits.
- *
- * On first run the card creates the only account there is, and it is an admin, so the caution
- * about keeping its password to yourself is read where the password is being chosen: under the
- * two password fields, not above the username before anything has been typed.
- */
+/* The signed-out card's words, and where the caution about the one admin account sits. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -124,8 +119,8 @@ describe('a sign-in the server refuses', () => {
 		expect(where.textContent).not.toContain('Incorrect username or password.');
 	});
 
-	/* One sentence for a wrong username and a wrong password alike, so the screen never says which
-	   half was right. */
+	/* One sentence for a wrong username and a wrong password alike, so the screen never says
+	   which half was right. */
 	it('says Incorrect username or password, whichever half was wrong', async () => {
 		vi.spyOn(api, 'post').mockRejectedValue(new ApiError(401, 'Incorrect username or password.'));
 		const where = render('login');

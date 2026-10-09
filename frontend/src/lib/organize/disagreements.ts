@@ -1,21 +1,11 @@
-/*
- * The Disagreements tab gathered by person: who the rows are about, one person's page of them, and
- * the Yes or No over a run of hers.
- *
- * A disagreement is a name a pass filed (a folder, a filename, a stash-box) on a file whose one face
- * Sift recognized as somebody else. A pass files a whole folder in one go, so its mistakes come by
- * the hundred under one name, and the tab reads them a person at a time. The server gathers, orders
- * and narrows (`FaceService.disagreeing_people`, `disagreements_of`, `answer_disagreements`); this
- * is the three doors to it and nothing else.
- */
+/* The Disagreements tab gathered by person: who the rows are about, one person's page of them,
+ * and the Yes or No over a run of hers. */
 import { ApiError, api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 
-/**
- * One person the tab is about: how many of her files, the word for where most came from, and
+/** One person the tab is about: how many of her files, the word for where most came from, and
  * that said in full with the folders it came from (`filed`, its names in `filed_links`), the
- * server's sentence drawn as it comes.
- */
+ * server's sentence drawn as it comes. */
 export type DisagreeingPerson = components['schemas']['DisagreeingPersonView'];
 
 /** One of her files, as the tab draws it: the file's id, and its one face. */
@@ -63,12 +53,7 @@ export async function disagreementsOf(
 	);
 }
 
-/**
- * Yes (the face is her) or No (take her off the file) over some of hers.
- *
- * A page or a pick names its files; all of hers names none, because that set is the server's to
- * know. The reply carries the receipt a No wrote, for the toast's Undo.
- */
+/** Yes (the face is her) or No (take her off the file) over some of hers. */
 export async function answerDisagreements(
 	personId: string,
 	yes: boolean,
@@ -83,12 +68,7 @@ export async function answerDisagreements(
 	);
 }
 
-/**
- * Where the name on her files came from, in words, for the line under her name.
- *
- * The one-file card's words, said of a person's files: a stash-box recognised the file itself,
- * while a folder name is somebody's filing from years ago, so somebody weighing the two answers is entitled to know which they are looking at.
- */
+/** Where the name on her files came from, in words, for the line under her name. */
 export function filedFrom(source: string | null | undefined): string {
 	if (source === 'folder') return 'Added from a folder name';
 	if (source === 'stash_box') return 'Added by a stash-box';

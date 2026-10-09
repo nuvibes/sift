@@ -1,36 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /*
- * The words of every act a player offers, declared once, and every player reads them from here.
- *
- * ## One act, one tooltip
- *
- * Sift has several players: the Player (on the file page and in its own window), the mini player,
- * the Audio player, Theater's wall and its cells, the phone's viewer and its Remote. The same press
- * turns up on several of them, and words each wrote for itself would let the one act of filling
- * the screen read "Full screen" on one and "Fill the screen" on another. Somebody who learns a
- * press on one player should meet the same words for it on the next.
- *
- * So the words live here and nowhere else. A player names `ACTS.fullScreen`, never the words
- * themselves, and `acts-gate.test.ts` holds it: inside a player a string equal to one of these
- * words is refused (it must be read from here), a button wearing an act's glyph takes its words
- * from here, and anywhere in the client the retired second names below are refused.
- *
- * A dimmed control keeps its reason as its words ("A picture has no seconds to clip"); a reason is
- * about what is on screen, not a name for the act.
- *
- * ## One act, one key, on every player that answers it
- *
- * An act with a key shows it on its tooltip, and the key comes from here too: `ACT_KEYS` joins each
- * act to the shortcut that answers it on each keyboard (`shortcuts.ts` declares the keys), and a
- * tooltip asks `keyOf(act, keyboard)`. Written by hand beside each button, the keys would go
- * uneven: I on one "Open mini player" and nothing on another that answers I as well. A player that does not answer a key on some screen (a mini
- * player with nothing playing has no M) passes no key there, never a different one. The gate holds
- * a tooltip inside a player to reading its key from here.
+ * The words of every act a player offers, and the key each answers on each keyboard (`ACT_KEYS`),
+ * declared once. `acts-gate.test.ts` refuses a player's own copy, and the retired names anywhere.
  */
 
 import type { ShortcutId } from '$lib/shell/shortcuts';
 
-/** Every act's words, as its tooltip and its button's accessible name both say them. */
 export const ACTS = {
 	play: 'Play',
 	pause: 'Pause',
@@ -38,15 +13,12 @@ export const ACTS = {
 	next: 'Next',
 	mute: 'Mute',
 	unmute: 'Unmute',
-	/* Theater's tools, over the whole wall: the player's own words with "everything". */
 	playEverything: 'Play everything',
 	pauseEverything: 'Pause everything',
 	muteEverything: 'Mute everything',
 	unmuteEverything: 'Unmute everything',
 	fullScreen: 'Full screen',
 	leaveFullScreen: 'Leave full screen',
-	/* The three sizes of a player: full size, the mini player, and the Audio player (the strip
-	   along the foot of the window that keeps the sound). */
 	miniPlayer: 'Open mini player',
 	audioPlayer: 'Open audio player',
 	fullSize: 'Back to full size',
@@ -58,24 +30,18 @@ export const ACTS = {
 	quality: 'Quality',
 	stats: 'Stats for nerds',
 	saveLoop: 'Save as Loop',
-	/* Theater's chip that points the bar's controls at the whole wall. */
 	everyCell: 'All cells'
 } as const;
 
 export type Act = keyof typeof ACTS;
 
 /**
- * Whose keys a player answers. `player`: the full-size Player, where Ctrl + Left is the file
- * before. `mini`: the mini player and the Audio player, which answer the player's keys less the
- * file before and after and Shuffle. `picture`: a picture's bar, where the bare arrows are the
- * viewer's own and step between files. `theater`: Theater's wall and its cells.
+ * `mini` answers the player's keys less the step pair and Shuffle; `picture`'s bare arrows step
+ * files.
  */
 export type Keyboard = 'player' | 'mini' | 'picture' | 'theater';
 
-/**
- * The shortcut that answers each act, on each keyboard that has one. An act absent here, or a
- * keyboard absent under it, has no key there, and its tooltip shows none.
- */
+/** No key where an act or a keyboard is absent. */
 export const ACT_KEYS: Readonly<
 	Partial<Record<Act, Readonly<Partial<Record<Keyboard, ShortcutId>>>>>
 > = {
@@ -113,15 +79,11 @@ export const ACT_KEYS: Readonly<
 	everyCell: { theater: 'theater.everyCell' }
 };
 
-/** The key a tooltip for `act` shows on `keyboard`, or undefined where that keyboard has none. */
 export function keyOf(act: Act, keyboard: Keyboard): ShortcutId | undefined {
 	return ACT_KEYS[act]?.[keyboard];
 }
 
-/**
- * The glyph each act wears on a player, so the gate can tell a button that IS the act from one
- * that only sits beside it. One glyph, one act: a button wearing it names that act from `ACTS`.
- */
+/** One glyph, one act, so the gate can tell a button that IS the act. */
 export const ACT_GLYPHS: Readonly<Record<string, readonly Act[]>> = {
 	play_arrow: ['play', 'pause'],
 	pause: ['play', 'pause'],
@@ -146,10 +108,7 @@ export const ACT_GLYPHS: Readonly<Record<string, readonly Act[]>> = {
 	bookmark_add: ['saveLoop']
 };
 
-/**
- * The second names an act has had, each with the act that replaced it. Refused anywhere in the
- * client as a tooltip or a name, so a player cannot drift back to its own words for a shared act.
- */
+/** Retired names, refused anywhere in the client. */
 export const RETIRED: Readonly<Record<string, Act>> = {
 	'Fill the screen': 'fullScreen',
 	'Go fullscreen': 'fullScreen',

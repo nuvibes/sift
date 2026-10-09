@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* What a downloaded file is named and where it lands: the words, and what somebody can type to
- * find them. Drawn on Downloads, per Site as well as once for everything, which is why it is a
- * table rather than a setting.
- *
- * ONE COPY MODULE PER PANE. `NamingTemplate.svelte` and the name builder inside it,
- * `NameTemplateField.svelte`, draw every word they add from `COPY`, and the search entries are built
- * from the same object. "Download folder" is the row every download follows, and a Site's own
- * card uses the same words for the one it follows instead.
- */
+ * find them. */
 import type { Searchable } from './search';
 import { NO_DOWNLOAD_FOLDER } from '$lib/library/destinations.svelte';
 
@@ -43,9 +36,8 @@ export const COPY = {
 	noneYet: 'No Site has its own settings yet.',
 	addSite: 'Give a Site its own settings',
 	/* A Site card's three answers each follow something different when the Site has none of its
-	   own: the folder follows the row above, the name is the one Sift ships for that Site, and the
-	   downloader is Sift's choice (the server's word for it, "Sift"). So no press or option on the
-	   card says "default", which would mean all three: each names what it follows. */
+	   own: the folder follows the row above, the name is the one Sift ships for that Site, and
+	   the downloader is Sift's choice (the server's word for it, "Sift"). */
 	/* Short enough for the row's control column, where a longer phrase would be cut short. */
 	followFolder: 'The download folder above',
 	reset: 'Remove its own settings',
@@ -55,9 +47,7 @@ export const COPY = {
 	folderFor: (site: string) => `Download folder for ${site}`,
 	downloader: 'Downloader',
 	downloaderFor: (site: string) => `Downloader for ${site}`,
-	/** The box for the rule every address Sift has no Site for follows. Every Site Sift knows has
-	 *  a name of its own, so this rule reaches no Site, and its line has to say so or a rule typed
-	 *  here reads as ignored on TikTok. */
+	/** The box for the rule every address Sift has no Site for follows. */
 	otherAddresses: 'Name template for other addresses',
 	otherAddressesHelp:
 		'For addresses Sift has no Site for. Each Site names its files its own way, which you can change under Per-Site settings.',
@@ -72,8 +62,7 @@ export const COPY = {
 		tokens: 'Choose one to add it to the name.',
 		tokensFor: (site: string) =>
 			`Choose one to add it to the name. These are the words ${site} can fill.`,
-		/* Which of the three states a Site's row is in. No rule and keep are both an empty box, so
-		   the line under the label is what tells them apart. */
+		/* Which of the three states a Site's row is in. */
 		shippedRule: (site: string, rule: string) =>
 			`Sift names ${site} files ${rule} unless you type a rule.`,
 		shippedKeep: (site: string) =>

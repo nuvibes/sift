@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* Which order the Collections shelf is in, and where that choice is kept.
- *
- * A MODULE rather than a `$state` inside the screen: opening a collection unmounts the shelf, so
- * an order held in the component would go with it and the shelf would come back in an order
- * nobody had chosen.
- *
- * It orders the SHELF. A collection's own files follow the wall's Sort by.
- *
- * The rule itself (read at import, refuse an order this shelf does not offer, sort anyway where
- * storage is refused) lives in `lib/grid/wall-sort`.
- */
+/* Which order the Collections shelf is in, and where that choice is kept. */
 import { COLLECTION_ORDERS } from '$lib/library/collections.svelte';
 import { WallSort } from '$lib/grid/wall-sort.svelte';
 

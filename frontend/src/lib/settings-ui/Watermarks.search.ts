@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The watermark pane's own words, and its search entries built from the same objects, so a row on
- * the pane and the result a search finds cannot say two different things. The switch and the device
- * are registered settings and find themselves; the feature as a whole, the page one level in and
- * deleting the results are not. */
+/* The watermark pane's own words, and its search entries built from the same objects, so a row
+ * on the pane and the result a search finds cannot say two different things. */
 import type { Searchable } from './search';
 import { counted, filesSaid } from '$lib/entity/entity-counts';
 import type { WatermarkStatus } from '$lib/library/watermarks.svelte';
@@ -19,10 +17,7 @@ export const WATERMARK_RESULTS = {
 	help: 'Delete the watermark results, so the next scan checks every file again.'
 };
 
-/**
- * The words the pane writes itself: the status line, the page one level in, and the download. The
- * registered rows carry their own words.
- */
+/** The words the pane writes itself: the status line, the page one level in, and the download. */
 export const COPY = {
 	status: {
 		off: 'Turned off.',
@@ -61,10 +56,8 @@ export const COPY = {
 	}
 } as const;
 
-/**
- * Where reading stands, in one line under its switch, shared with the Recognition switches on
- * Importing. The count still to read stops at a page, so it says "at least".
- */
+/** Where reading stands, in one line under its switch, shared with the Recognition switches on
+ * Importing. */
 export function watermarksStatusLine(
 	status: WatermarkStatus | null,
 	enabled: boolean,

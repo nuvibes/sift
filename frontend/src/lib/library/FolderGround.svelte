@@ -1,11 +1,7 @@
 <script lang="ts">
 	/* WHY NOT SHARED: button: there is nothing to share with. These are the shared menu rows, the
 	   folder's own verbs (`folderVerbs`) and the rule about which of them a guest gets. */
-	/*
-	 * The menu on the GROUND of the folder view: right-click where there is nothing. Its own file
-	 * because the ground is in two places and is one place: the empty space around the folder band
-	 * and around the wall are both "in this folder", and written twice the two menus would drift.
-	 */
+	/* The menu on the GROUND of the folder view: right-click where there is nothing. */
 	import ContextMenuGroup from '$lib/components/common/ContextMenuGroup.svelte';
 	import ContextMenuItem from '$lib/components/common/ContextMenuItem.svelte';
 	import VerbMenuItems from '$lib/components/common/VerbMenuItems.svelte';
@@ -15,11 +11,7 @@
 	interface Props {
 		/** Make a folder inside the one being looked at. Absent where there is nowhere to make one. */
 		onnew?: () => void;
-		/*
-		 * Say what the folder being looked at IS, and who can reach it. Both absent at the top of the
-		 * tree: "Your folders" is a place in this screen rather than a folder on a disk, and a panel
-		 * about it would have nothing true to put in any of its rows.
-		 */
+		/* Say what the folder being looked at IS, and who can reach it. */
 		onproperties?: () => void;
 		onvisibility?: () => void;
 		marks?: FolderMarks;

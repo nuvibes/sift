@@ -24,9 +24,9 @@ it('holds the menus whole immediately, so the title under it never slides', () =
 		'utf8'
 	).replace(/\t/g, '');
 	expect(source, 'the row eased in with the menus and carried the title down').toContain(
-		'.bar-clip:has(> .bar > :global(.menus)) {\ngrid-row: 2;\n}'
+		'.bar-clip:has(> .bar.handed) {\ngrid-row: 2;\n}'
 	);
 	expect(source, 'the menus dropped in on the spring inside a still row').toContain(
-		'.bar-clip:has(> .bar > :global(.menus)) > .bar {\ntransition: opacity var(--dur-slow) var(--ease);\n}'
+		'.bar-clip:has(> .bar.handed) > .bar {\ntransition: opacity var(--dur-slow) var(--ease);\n}'
 	);
 });

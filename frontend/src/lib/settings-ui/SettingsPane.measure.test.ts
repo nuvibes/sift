@@ -1,7 +1,5 @@
-/*
- * A pane's prose takes the row help's measure from the frame, so a paragraph a pane did not bound
- * itself stops at a readable width, and one a pane bounded tighter keeps its own.
- */
+/* A pane's prose takes the row help's measure from the frame, so a paragraph a pane did not
+ * bound itself stops at a readable width, and one a pane bounded tighter keeps its own. */
 import { afterEach, expect, it } from 'vitest';
 
 import { applyStyles, removeStyles } from '$lib/design/testing-styles';
@@ -50,11 +48,8 @@ it('draws nothing outside settings, and yields to a pane that bounds its own par
 	own.remove();
 });
 
-/*
- * ONE MEASURE: no pane sets a line length of its own on its prose, so every paragraph in Settings
- * wraps at the frame's. A box or a span the frame's paragraph rule cannot reach may repeat the one
- * measure; any other measure in `ch` is a column of a table or a legend, named here.
- */
+/* ONE MEASURE: no pane sets a line length of its own on its prose, so every paragraph in
+ * Settings wraps at the frame's. */
 const PANES = import.meta.glob('./*.svelte', { query: '?raw', import: 'default', eager: true });
 
 /** Measures that bound something other than prose, by file and rule. */

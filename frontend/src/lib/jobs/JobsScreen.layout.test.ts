@@ -1,16 +1,17 @@
-/*
- * How the Now tab is laid out: its lists on the pane's edges, the state of every pass a pill like
- * the rows' own, and the pile strip set off from the list above with the pile's actions at its end.
- *
- * Read from the source, the way the header's test reads it: what is asserted is what the screen
- * declares, whatever today's queue happens to draw.
- */
+/* How the Now tab is laid out: its lists on the pane's edges, the state of every pass a pill
+ * like the rows' own, and the pile strip set off from the list above with the pile's actions at
+ * its end. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-const source = readFileSync('src/lib/jobs/JobsScreen.svelte', 'utf8');
-const markup = source.slice(source.lastIndexOf('</script>'), source.indexOf('<style>'));
-const style = source.slice(source.indexOf('<style>'));
+// The screen and the summary list it draws above the queue.
+const files = ['JobsScreen.svelte', 'ActivitySummary.svelte'].map((name) =>
+	readFileSync(`src/lib/jobs/${name}`, 'utf8')
+);
+const markup = files
+	.map((one) => one.slice(one.lastIndexOf('</script>'), one.indexOf('<style>')))
+	.join('\n');
+const style = files.map((one) => one.slice(one.indexOf('<style>'))).join('\n');
 
 describe('the Now tab', () => {
 	it('stands both lists on the pane edges, where the tabs and the strip start', () => {
@@ -32,8 +33,8 @@ describe('the Now tab', () => {
 	});
 
 	it('sets the task list off from the groups above by the space between two groups', () => {
-		/* The list's heading and Type row stand first now, so they take the group's space and the
-		   strip under them is set off from them by the space inside one. */
+		/* The list's heading and Type row stand first now, so they take the group's space and
+		   the strip under them is set off from them by the space inside one. */
 		const head = style.slice(
 			style.indexOf('.list-head {'),
 			style.indexOf('}', style.indexOf('.list-head {'))

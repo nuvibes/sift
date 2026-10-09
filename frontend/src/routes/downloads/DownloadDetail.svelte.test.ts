@@ -1,14 +1,4 @@
-/* What the detail under a download row says.
- *
- * Two halves, and the order is what is being tested as much as the content: a row that failed shows
- * the failure and the way out of it FIRST, because that is what somebody opened the row for, and
- * the facts second. A row that did not fail has no card at all: a "nothing went wrong" panel on
- * every finished download is a sentence nobody reads on a screen that is already long.
- *
- * The two omissions are deliberate and are tested as omissions, because a label with nothing under
- * it reads as a fact Sift has lost rather than one it never had: `DownloadItem` carries no attempt
- * count and no downloader name, so there is no "Tried" row and no "Fetcher" row.
- */
+/* What the detail under a download row says. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -97,8 +87,7 @@ describe('the facts', () => {
 	it('names only what the wire actually carries', () => {
 		render(item('done', { asset_id: 'a1' }));
 		expect(terms()).toEqual(['Link', 'Site', 'IP used', 'Saved to', 'Added', 'File']);
-		// The two in the design that the server does not send. A label with nothing under it reads
-		// as a fact Sift has lost; these are facts it has never been told.
+		// The two in the design that the server does not send.
 		expect(terms()).not.toContain('Tried');
 		expect(terms()).not.toContain('Fetcher');
 	});
@@ -112,9 +101,7 @@ describe('the facts', () => {
 		expect(terms()).not.toContain('IP used');
 	});
 
-	/* The address beside the tunnel's name, covered as Settings covers it. The one RECORDED when
-	   the download went (a provider can move a tunnel to another server under the same name),
-	   so it comes off the row, never off today's tunnel list. */
+	/* The address beside the tunnel's name, covered as Settings covers it. */
 	it('puts the server the download went out through beside the tunnel, most of it covered', () => {
 		render(item('failed', { via: 'Iceland', via_address: '192.0.2.44' }));
 		expect(valueOf('Tunnel')).toBe('Iceland');
@@ -136,8 +123,8 @@ describe('the facts', () => {
 		expect(host.querySelector('.covered')).toBeNull();
 	});
 
-	/* "Your own" is wrong for a row with no route recorded at all: a download not sent yet, refused
-	   before anything was sent, or older than the record. None of those went out of your own IP. */
+	/* "Your own" is wrong for a row with no route recorded at all: a download not sent yet,
+	   refused before anything was sent, or older than the record. */
 	it('says the route was not recorded rather than claiming your own IP', () => {
 		render(item('queued', { via: null }));
 		expect(valueOf('IP used')).toBe('Not recorded');
@@ -164,7 +151,7 @@ describe('the facts', () => {
 
 	it('names the actual folder and where it is, never "the default folder"', () => {
 		// Nothing chosen is not nothing: the download went to the folder the settings give it, and
-		// the server sends that folder by name and path. "The default folder" named nothing.
+		// the server sends that folder by name and path.
 		render(
 			item('done', {
 				asset_id: 'a1',
@@ -218,8 +205,7 @@ describe('a file that has since been deleted', () => {
 
 describe('the held card', () => {
 	/* A pause raises exactly one question (are the bytes still there?), and the card answers it
-	   before anything else on the screen. It is NOT the failure card in a third colour: nothing
-	   went wrong, so there is no red line and no code underneath. */
+	   before anything else on the screen. */
 	it('says what a pause means, and offers the way out of it', () => {
 		const onresume = vi.fn();
 		render(item('paused'), { onresume });

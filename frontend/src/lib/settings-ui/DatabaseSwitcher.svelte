@@ -1,46 +1,7 @@
 <script lang="ts">
 	/* LIVE: nothing moves it (the libraries on this machine change only by a press here or by opening another library, which restarts the server) */
-	/*
-	 * The Database Switcher: every library the server knows of, making a new one, and opening another.
-	 *
-	 * ## Why it asks the SERVER, from the app and from a browser alike
-	 *
-	 * Which library is open is a fact about the server, and the server is on whichever computer
-	 * holds the libraries: somebody reading this may be in a browser on another machine. So the
-	 * list, "New library", "Open" and "Import" are all requests to the server, which checks the
-	 * library, backs up an older one, and asks to be started again on it. In the app, the shell reads
-	 * that ask and starts the backend on the other folder; the page is then reloaded by the shell. In
-	 * a browser, this page waits for a DIFFERENT run of the server to answer and reloads itself.
-	 * Either way everybody using it is signed out, because the new library has its own sign-ins.
-	 *
-	 * ## What the page may name
-	 *
-	 * Never a path. A library on the list is named by the id the server handed out, and a new one by
-	 * a name the server checks is one folder name; the folder it goes in is the server's. What only
-	 * the app can grant (a database file chosen in the machine's own picker, and the libraries the
-	 * app remembers from elsewhere) still goes through the app's bridge, which is the one thing
-	 * that can name a path. A browser gets "Import a database file" instead: an upload, made into a
-	 * NEW library, so the file somebody kept is never the one that is upgraded.
-	 *
-	 * From ANOTHER computer, where the Sift app on the computer running Sift answers through the
-	 * server (`server-shell.ts`), the libraries THAT app remembers are listed too and open through
-	 * it, and an older one is refused in words rather than asked about, since its question is a
-	 * dialog on that computer's screen. Its file picker is that computer's own, so the screen says
-	 * where it is instead of offering it.
-	 *
-	 * ## Where the upgrade question is
-	 *
-	 * Here, for the server's list: a library made by an older Sift says so in the list, and opening it
-	 * asks first, because opening upgrades it in one direction. The server refuses to upgrade one it
-	 * was not told was agreed to, and makes the backup copy before it stops anything.
-	 *
-	 * ## Duplicate this library
-	 *
-	 * Beside "New library", and the one thing here that does NOT switch: the copy is a task (minutes
-	 * of copying), followed here by its progress, and opened from the list whenever somebody wants
-	 * it. The form measures on opening, not with the pane, because the server walks the cache to say
-	 * how big the pictures are.
-	 */
+	/* The Database Switcher: every library the server knows of, making a new one, and opening
+	 * another. */
 	import { onMount } from 'svelte';
 	import {
 		Button,
@@ -112,8 +73,8 @@
 			if (!on) deleting = null;
 		}
 	};
-	/** The library the delete question is about. Kept while the question closes, so the press that
-	   answers it still names the library after the dialog has let go of `open`. */
+	/** The library the delete question is about. Kept while the question closes, so the press
+	   that answers it still names the library after the dialog has let go of `open`. */
 	let condemned = $state<ServerLibrary | null>(null);
 	let typedName = $state('');
 	/* What the last delete did, said under the list. */
@@ -124,8 +85,7 @@
 	let desk = $state<ServerDesktop | null>(null);
 	const fromAfar = $derived(!offered && offersServer(desk));
 
-	/* How long a switch is given, and how often it is looked at. The same as the server restart on
-	   the Performance screen: a first start of a library can create and migrate a database. */
+	/* How long a switch is given, and how often it is looked at. */
 
 	onMount(() => {
 		void read();
@@ -171,7 +131,7 @@
 	}
 
 	/* The libraries the app remembers that the server does not list: kept somewhere of their own
-	   and never switched away from by the server. Opened through the app, which can name them. */
+	   and never switched away from by the server. */
 	const remembered = $derived(
 		(shell?.libraries ?? []).filter(
 			(one) => !(server?.libraries ?? []).some((known) => same(known.data_dir, one.dataDir))
@@ -194,13 +154,7 @@
 		return !one.current && (one.verdict === 'current' || one.verdict === 'older');
 	}
 
-	/**
-	 * Wait until a DIFFERENT run of the server answers, then load the page it serves.
-	 *
-	 * On the boot id rather than on "does it answer": the server replies to the ask before it goes,
-	 * so a poll for any reply would decide it had come back before it had left. In the app the shell
-	 * reloads the window first, and this simply never finishes.
-	 */
+	/** Wait until a DIFFERENT run of the server answers, then load the page it serves. */
 	async function followTheSwitch(before: string | null, name: string) {
 		switchingTo = name;
 		if (await followSwitch(before)) return;
@@ -275,14 +229,7 @@
 
 	/* --- which opens at start, deleting one, taking one off the list ------------------------- */
 
-	/*
-	 * Behind each row's door: which library opens when Sift starts, and the way off the list.
-	 *
-	 * A library in the libraries folder is DELETED (to the Recycle Bin, with its name typed first);
-	 * one kept in a folder of its own is only taken off the list, because that folder is somebody's
-	 * own. The open library has neither: it is the one running. Each answer is the list again,
-	 * which is what is drawn, so the rows say what the server now holds.
-	 */
+	/* Behind each row's door: which library opens when Sift starts, and the way off the list. */
 	async function chooseOpening(library: string | null) {
 		problem = null;
 		try {
@@ -318,8 +265,8 @@
 			});
 			deleting = null;
 			deletedNote = COPY.remove.done(one.name);
-			/* The app remembers every library it has opened; one in the Recycle Bin is not one it can
-			   offer to open again. */
+			/* The app remembers every library it has opened; one in the Recycle Bin is not one
+			   it can offer to open again. */
 			if (offered) shell = await bridge.forgetLibrary(one.data_dir);
 		} catch (error) {
 			problem = sayRefusal(error, COPY.remove.failed);
@@ -334,8 +281,8 @@
 		busy = dataDir;
 		problem = null;
 		if (fromAfar) {
-			/* Through the app there, which answers before Sift restarts on it; this page then waits
-			   for the new run, as a switch the server arranges does. */
+			/* Through the app there, which answers before Sift restarts on it; this page then
+			   waits for the new run, as a switch the server arranges does. */
 			switchingTo = name;
 			const outcome = await actThere(
 				() => openServerLibrary(dataDir),
@@ -349,8 +296,7 @@
 			return;
 		}
 		const settled = await bridge.openLibrary(dataDir);
-		/* Nothing is put back on `ok`: the shell is already loading the new library's own page. A
-		   null refusal is somebody answering no to the shell's own question, which has nothing to say. */
+		/* Nothing is put back on `ok`: the shell is already loading the new library's own page. */
 		if (settled.ok) return;
 		problem = settled.refusal;
 		busy = null;
@@ -387,9 +333,7 @@
 	/* The name asked for, so the sentence at the end can say it. */
 	let copyAsked = $state<string | null>(null);
 
-	/* The task, followed by the watcher every long task on Settings uses. When it ends the queue's
-	   record of it is the line under the press, as after a reload; the watch's own words are for a
-	   run with no record. */
+	/* The task, followed by the watcher every long task on Settings uses. */
 	const copying = new DownloadWatch(
 		DUPLICATE_JOB,
 		async () => {
@@ -747,16 +691,16 @@
 		align-self: stretch;
 	}
 
-	/* A library's folder and, for one that cannot be read, why: each its own line in the row's foot,
-	   the path free to break anywhere, since it has no spaces to break at. */
+	/* A library's folder and, for one that cannot be read, why: each its own line in the row's
+	   foot, the path free to break anywhere, since it has no spaces to break at. */
 	.path,
 	.why,
 	.start {
 		display: block;
 	}
 
-	/* Which library opens when Sift starts, in the row's own ink so it reads as a fact about the row
-	   rather than more of its folder. */
+	/* Which library opens when Sift starts, in the row's own ink so it reads as a fact about the
+	   row rather than more of its folder. */
 	.start {
 		color: var(--sift-ink-2);
 	}
@@ -765,8 +709,8 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* A path inside a sentence ("Created in <path>."): it stays in the line and breaks where it has
-	   to, so the full stop after it ends the sentence rather than a line of its own. */
+	/* A path inside a sentence ("Created in <path>."): it stays in the line and breaks where it
+	   has to, so the full stop after it ends the sentence rather than a line of its own. */
 	.inline-path {
 		overflow-wrap: anywhere;
 	}

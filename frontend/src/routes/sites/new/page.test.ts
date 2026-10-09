@@ -1,5 +1,5 @@
-/* The page's heading is its last crumb, and Site is a proper word on screen wherever it names the
-   thing: "New site" read as a site in general. */
+/* The page's heading is its last crumb, and Site is a proper word on screen wherever it names
+   the thing: "New site" read as a site in general. */
 import { expect, it } from 'vitest';
 
 import source from './+page.svelte?raw';

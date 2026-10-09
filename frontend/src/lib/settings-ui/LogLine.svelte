@@ -1,22 +1,6 @@
 <script lang="ts" module>
-	/*
-	 * One line of a log, as `Settings > Tasks and Activity > Logs` draws it: the time, the level, which
-	 * log it is from where there are two, and the line.
-	 *
-	 * ## A LINE IS READ WHOLE
-	 *
-	 * The line is the record's name in bold and then its fields, wrapping as a sentence wraps, so a
-	 * long record is a taller row rather than a row cut off at the column's end. The answer is
-	 * usually in the last field (the route, the path, the statement), and an ellipsis there would hide it
-	 * from exactly the person who opened the log to find it. A value too long for the column (a path,
-	 * a statement) breaks at any character rather than running past the edge.
-	 *
-	 * Nothing has to be pressed to read a line: a row that opened on a press would still show the
-	 * cut line first, and somebody scanning for one route would have to open every row to find it.
-	 *
-	 * Its own component so the design gallery can draw the same line the Log draws, from lines
-	 * written for the purpose, without a log to read.
-	 */
+	/* One line of a log, as `Settings > Tasks and Activity > Logs` draws it: the time, the
+	 * level, which log it is from where there are two, and the line. */
 	import type { components } from '$lib/api/schema';
 
 	type LogLine = components['schemas']['LogLine'];
@@ -83,18 +67,14 @@
 </p>
 
 <style>
-	/* Three columns, and the third wraps. The time and the level stay one line each at the top of
-	   their row, so a taller row still reads left to right from its time. The time column is sized
-	   in the line's own figures to the widest time a line carries ("12:58:54.332 AM", thirteen
-	   digit widths in tabular figures), with a digit to spare. */
+	/* Three columns, and the third wraps. The time and the level stay one line each at the top
+	   of their row, so a taller row still reads left to right from its time. */
 	.line {
 		--log-time: 14ch;
 		scroll-snap-align: start;
 		display: grid;
 		grid-template-columns: var(--log-time) 4.5rem minmax(0, 1fr);
-		/* The whole width of the list. A settings pane gives its prose a reading measure
-		   (`SettingsPane.svelte`), which is right for a sentence and wrong for a row: under it a line
-		   would stop at two thirds of the box with the rest of the box empty. */
+		/* The whole width of the list. */
 		max-inline-size: none;
 		align-items: start;
 		gap: var(--space-2);
@@ -120,8 +100,8 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* The line itself: wraps at the spaces between fields first, and inside a value only where one
-	   value alone is wider than the column. Never cut, never past the edge. */
+	/* The line itself: wraps at the spaces between fields first, and inside a value only where
+	   one value alone is wider than the column. */
 	.said {
 		min-inline-size: 0;
 		overflow-wrap: anywhere;
@@ -159,8 +139,8 @@
 		color: var(--sift-bad-text);
 	}
 
-	/* A phone: the time and the level head the row and the line takes the whole width under them,
-	   since a third of a phone's width would wrap a request into a column of single words. */
+	/* A phone: the time and the level head the row and the line takes the whole width under
+	   them, since a third of a phone's width would wrap a request into a column of single words. */
 	@media (max-width: 767px) {
 		.line {
 			grid-template-columns: var(--log-time) minmax(0, 1fr);

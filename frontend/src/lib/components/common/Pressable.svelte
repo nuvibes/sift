@@ -12,76 +12,26 @@
 
 <script lang="ts">
 	/* WHY NOT BITS-UI: the site element already does all of it. This is a real <button> with the
-	   browser's own chrome taken off and Sift's focus ring put on: there is no behaviour here for
-	   a library to own, and wrapping one would add a component between a press and its handler. */
+	browser's chrome off and Sift's focus ring on; there is no behaviour to own. */
 
-	/*
-	 * A whole thing that can be pressed: a tile, a face, a card.
-	 *
-	 * ## Why this is not `Button`
-	 *
-	 * `Button` is a control with a label on it. Everything that makes it one (padding, a minimum
-	 * height, a fitted width, a border, `white-space: nowrap`) is wrong for a surface whose SHAPE
-	 * is decided by the picture inside it. Passing `tone="ghost"` and then undoing six properties at
-	 * the call site is not using the shared button; it is using its name.
-	 *
-	 * So the two are separate on purpose, and the line between them is: does the content define the
-	 * size, or does the control? A row of words in a box is a Button. A 180-pixel still with a
-	 * caption under it is this.
-	 *
-	 * ## What it actually contributes
-	 *
-	 * Three things, each of which would otherwise be written out per screen.
-	 *
-	 * The reset: a `<button>` arrives with the operating system's padding, border, background and
-	 * font, and a card that forgets one of the four is a grey slab in the middle of the app.
-	 *
-	 * The focus ring: the app's, not the browser's, and on `:focus-visible` so a pointer press does
-	 * not leave a ring behind.
-	 *
-	 * And the lift, which is what says a picture is pressable at all. A tile has no edge and no
-	 * label; without something happening under the pointer it is indistinguishable from a picture.
-	 */
+	/* A whole thing that can be pressed (a tile, a face, a card) whose content sets its size, unlike
+	 * Button: the reset, the app's focus ring, and a lift that says a picture can be pressed. */
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 
 	interface Props extends HTMLButtonAttributes {
 		children: Snippet;
-		/**
-		 * Currently chosen, picked, or open. Draws the accent ring.
-		 *
-		 * Reported rather than held, because what is selected nearly always lives elsewhere (the
-		 * address, a selection store, the server), and a control keeping its own copy is a second
-		 * answer that cannot be corrected when the first changes.
-		 */
+		/** Chosen, picked or open: the accent ring. Reported, never held. */
 		picked?: boolean;
 		/**
-		 * How much it moves under the pointer.
-		 *
-		 * `lift` scales it slightly, for something in a wall of its own kind where a small change is
-		 * legible against its neighbours. `wash` only lightens the ground, for something in a list,
-		 * where scaling one row shoves the rest around. `none` for a surface that is inside another
-		 * pressable thing and must not answer twice.
+		 * How it answers the pointer: `lift` in a wall, `wash` in a list, `none` inside another.
 		 */
 		feedback?: 'lift' | 'wash' | 'none';
 		/** The corner. Matches whatever it holds: a tile's is large, a row's is small. */
 		radius?: 'sm' | 'md' | 'lg' | 'full';
-		/**
-		 * Room inside the edge. `none` is the reset (the content is the box); `sm` is one step, for a
-		 * glyph that needs a hit area: the cross on a search box. A prop rather than a caller's
-		 * rule because the reset here is scoped and beats any plain class a caller puts on it.
-		 */
+		/** Room inside the edge: `sm` for a glyph needing a hit area. */
 		pad?: 'none' | 'sm';
-		/**
-		 * Extra classes from the caller, for position and shape, never for the reset.
-		 *
-		 * Merged rather than spread, and that distinction is load-bearing. `{...rest}` is applied
-		 * last, so a `class` arriving that way would replace `pressable wash r-md` outright: the
-		 * surface would keep the caller's one class and lose every rule that makes it a pressable
-		 * thing, including the reset, leaving the operating system's grey slab with the caller's
-		 * layout on it. `Button` merges its classes for the same reason, in the same words, because
-		 * the next component to take a `class` prop will need it too.
-		 */
+		/** Extra classes for position and shape, merged so the reset is never replaced. */
 		class?: string;
 	}
 
@@ -111,8 +61,7 @@
 	.pressable {
 		position: relative;
 		display: block;
-		/* Everything the site puts on a button, off. A card that keeps any one of these is the
-		   operating system's control sitting in the middle of Sift's. */
+		/* Everything the browser puts on a button, off. */
 		margin: 0;
 		padding: 0;
 		border: 0;
@@ -121,11 +70,7 @@
 		font: inherit;
 		text-align: inherit;
 		cursor: pointer;
-		/*
-		 * Two registers, two durations. A ground lighting up under the pointer is acknowledgement
-		 * and gets the instant duration, since anything slower reads as lag; the scale and the ring
-		 * are movement, which needs long enough to be seen.
-		 */
+		/* The ground answers instantly; the scale and ring move slower, to be seen. */
 		transition:
 			transform var(--dur-fast) var(--ease),
 			background-color var(--dur-instant) var(--ease),
@@ -149,14 +94,7 @@
 		padding: var(--space-1);
 	}
 
-	/*
-	 * A FINGER'S REACH on a phone, without the mark growing. A tab's word, a chip, a swatch and a
-	 * 22px badge are drawn at the size that reads; what a finger needs is the 44px square around
-	 * it (`--touch-target`). The ring is invisible and belongs to this element, so a press on it IS
-	 * a press here, and it reaches out only as far as the element falls short on each axis: a
-	 * pressable already a finger's size draws none past its own edge. Nothing is laid out around
-	 * it, so no row grows for a ring nobody sees.
-	 */
+	/* A finger's 44px reach on a phone, by an invisible ring that lays nothing out. */
 	@media (max-width: 767px) {
 		.pressable::after {
 			content: '';
@@ -166,8 +104,7 @@
 		}
 	}
 
-	/* Outside the shape, not on it: a ring drawn inside the corner is clipped by whatever the card
-	   holds, and a picture with `overflow: hidden` eats it entirely. */
+	/* Outside the shape, so a clipped picture cannot eat it. */
 	.pressable:focus-visible {
 		outline: none;
 		box-shadow: var(--focus-ring);
@@ -177,8 +114,7 @@
 		transform: scale(var(--lift-scale));
 	}
 
-	/* The state layer (see `--layer-hover`) over no ground of its own, so it answers on whatever
-	   the surface is resting on, a card or a translucent panel alike. */
+	/* The state layer over no ground, so it answers on any surface. */
 	.wash:hover:not(:disabled) {
 		background-color: color-mix(in srgb, currentColor var(--layer-hover), transparent);
 	}
@@ -197,20 +133,7 @@
 		opacity: var(--disabled-opacity);
 	}
 
-	/*
-	 * Chosen: the accent as a ring rather than a fill. A fill behind a picture is invisible, and
-	 * one over it hides the thing being chosen.
-	 *
-	 * Inset, like `--focus-ring`: a shadow painted beyond an element is taken away by any ancestor
-	 * that scrolls or clips (see where `app.css` defines the sheet's scroll gutter), so an outset
-	 * ring would lose the edge nearest the boundary, as in the cover chooser, whose grid sits
-	 * against the top of its viewport. Inset costs a few pixels of the picture, against losing the
-	 * ring that says which one is chosen.
-	 *
-	 * The ring is the selected ring every picture wears (`--selected-ring`). The tick and the
-	 * pulled-in picture are the holder's to draw, since this surface does not know whether what it
-	 * holds is a picture or a row of words.
-	 */
+	/* Chosen: the selected ring, inset so a clipping ancestor cannot cut it. */
 	.picked {
 		box-shadow: var(--selected-ring);
 	}

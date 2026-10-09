@@ -1,13 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Renaming a batch of files from one template: what the sheet asks the server, and the words it
- * says about the answer.
- *
- * The plan is the server's, every name of it. The sheet shows what the server would do and never
- * works a name out itself: a preview filled in here would be a second copy of the naming words
- * that agrees with the real one until the day it does not, and the day it does not is a thousand
- * files named something nobody saw.
- */
+/* Renaming a batch of files from one template: what the sheet asks the server, and the words it
+ * says about the answer. */
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import { counted, filesSaid } from '$lib/entity/entity-counts';
@@ -60,12 +53,7 @@ export async function applyRename(
 	});
 }
 
-/**
- * The files a folder shows, in name order, up to `MOST_FILES`: a folder as a batch.
- *
- * Read through the wall's own list, so a file the viewer may not see is not in the batch, and the
- * order `{n}` counts in is the order the folder is read in.
- */
+/** The files a folder shows, in name order, up to `MOST_FILES`: a folder as a batch. */
 export async function folderFiles(folderId: string): Promise<string[]> {
 	const ids: string[] = [];
 	for (let offset = 0; offset < MOST_FILES; offset += PAGE) {
@@ -88,10 +76,8 @@ const ENDS_IN_A_WORD = /[\p{L}\p{N}}]$/u;
 /** Text that starts with a word or an opening brace, so it needs a separator after one. */
 const STARTS_WITH_A_WORD = /^[\p{L}\p{N}{]/u;
 
-/**
- * A word put where the cursor is, with a space between it and a word beside it, and where the
- * cursor goes after it. Two presses make `{name} {n}`, never `{name}{n}`.
- */
+/** A word put where the cursor is, with a space between it and a word beside it, and where the
+ * cursor goes after it. */
 export function insertWord(
 	text: string,
 	from: number,
@@ -109,10 +95,8 @@ export function insertWord(
 	};
 }
 
-/**
- * What the plan will do, in one or two sentences a person can act on: how many files change, what
- * the clashes do, and how many keep their names.
- */
+/** What the plan will do, in one or two sentences a person can act on: how many files change,
+ * what the clashes do, and how many keep their names. */
 export function summary(preview: RenamePreview, onClash: OnClash): string {
 	const said: string[] = [];
 	if (preview.renaming === 0) said.push('No file gets a new name.');

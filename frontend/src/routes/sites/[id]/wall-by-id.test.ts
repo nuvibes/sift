@@ -1,7 +1,5 @@
-/*
- * A Site's page asks for ITS files: the wall names the Site by id, so another Site spelled the same
- * way never adds its files to this page's count.
- */
+/* A Site's page asks for ITS files: the wall names the Site by id, so another Site spelled the
+ * same way never adds its files to this page's count. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

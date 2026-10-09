@@ -97,9 +97,7 @@ describe("a folded row's line", () => {
 });
 
 describe('the one state a folded row shows', () => {
-	/* FAILED WINS. A download reads done the moment its file lands; its steps can still fail. The
-	   folded row shows the server's verdict over the whole family, never the top's own state, so
-	   folding never hides a failure. */
+	/* FAILED WINS. A download reads done the moment its file lands; its steps can still fail. */
 	it("is the family's, so a failed step makes a finished download read failed", () => {
 		const top = job({
 			state: 'done',
@@ -129,8 +127,8 @@ describe('what a cancel on a folded row calls off', () => {
 });
 
 describe("the Now tab's columns", () => {
-	/* One declaration, read by both lists: a track sized by its content would stand the two lists'
-	   columns at different x. */
+	/* One declaration, read by both lists: a track sized by its content would stand the two
+	   lists' columns at different x. */
 	it('are sized by the column, never by what is in them', () => {
 		expect(() => checkColumns(ACTIVITY_COLUMNS, ACTIVITY_ACTIONS)).not.toThrow();
 		for (const column of ACTIVITY_COLUMNS) {
@@ -141,8 +139,8 @@ describe("the Now tab's columns", () => {
 	it('put words left and only the count right', () => {
 		const right = ACTIVITY_COLUMNS.filter((column) => column.align === 'end').map((one) => one.id);
 		expect(right).toEqual(['count']);
-		// "Time left" is words ("Nothing waiting", "Change in Importing"): right-aligned, its left edge
-		// would be ragged.
+		// "Time left" is words ("Nothing waiting", "Change in Importing"): right-aligned, its left
+		// edge would be ragged.
 		expect(ACTIVITY_COLUMNS.find((column) => column.id === 'left')?.align ?? 'start').toBe('start');
 	});
 
@@ -156,9 +154,7 @@ describe("the Now tab's columns", () => {
 });
 
 /* ---------------------------------------------------------------------------------------------
- * THE LONG PASSES, and the two things the line must not say that are not true.
- * -------------------------------------------------------------------------------------------
- */
+ * THE LONG PASSES, and the two things the line must not say that are not true. */
 
 type Work = NonNullable<JobsPage['work']>[string];
 type Family = NonNullable<JobsPage['families']>[string];
@@ -249,9 +245,7 @@ function page(
 
 describe('the bar, which is done over what wants doing', () => {
 	it('is full on a finished library rather than empty', () => {
-		/* A library with nothing outstanding is not at 0 percent. With the denominator the size
-		   of the RUN, a kind that is not busy has no run, so a library that was entirely
-		   finished would divide nought by nought. Both numbers come from the library. */
+		/* A library with nothing outstanding is not at 0 percent. */
 		const [one] = passes(
 			page(
 				{ generate: { label: 'Generate', types: ['thumbnail'], done: 100000, total: 100000 } },
@@ -289,8 +283,7 @@ describe('the bar, which is done over what wants doing', () => {
 	});
 
 	it('says each kind of a two-kind pass in its own words, not one figure over both', () => {
-		/* Identify is the faces pass AND the watermark read. A figure like "9,000 of 200,000"
-		   would be the library counted once per kind, and a figure about neither. */
+		/* Identify is the faces pass AND the watermark read. */
 		const [one] = passes(
 			page(
 				{
@@ -413,7 +406,7 @@ describe('the bar, which is done over what wants doing', () => {
 			2
 		]);
 		expect(two(0).moving).toBe(false);
-		const markup = readFileSync('src/lib/jobs/JobsScreen.svelte', 'utf8');
+		const markup = readFileSync('src/lib/jobs/ActivitySummary.svelte', 'utf8');
 		expect(markup.match(/line\.pass\.parts\.length === 0 \|\| line\.pass\.moving/g)).toHaveLength(
 			2
 		);
@@ -449,8 +442,7 @@ describe('the bar, which is done over what wants doing', () => {
 	});
 
 	it('says up to date, once, when the server says nothing is waiting', () => {
-		/* The server's "Nothing waiting" is the time-left column's sentence. Drawn in the Now
-		   column as well, the row would read "Nothing waiting  Nothing waiting". */
+		/* The server's "Nothing waiting" is the time-left column's sentence. */
 		const [one] = passes(
 			page(
 				{
@@ -471,8 +463,7 @@ describe('the bar, which is done over what wants doing', () => {
 	});
 
 	it('says what waits and what starts it for work that lacks a job, never "Not started"', () => {
-		/* Files lack the work and nothing is queued for it: they run when the task's When says.
-		   "Not started" read as never begun over a pass forty-eight files from done. */
+		/* Files lack the work and nothing is queued for it: they run when the task's When says. */
 		const lacking = (whens?: Record<string, string>) =>
 			passes(
 				page(
@@ -628,8 +619,7 @@ describe('the estimate, as a range in words', () => {
 	it('says it cannot say rather than guessing from too small a sample', () => {
 		/* The number is not the single newest run of the family with no minimum sample: a run of
 		   ONE arriving file would set the price of a hundred thousand, and an unchanging backlog
-		   would read days apart from one hour to the next. The server sends nothing at all when the sample is under twenty
-		   items, and this is what the column says instead. */
+		   would read days apart from one hour to the next. */
 		expect(priced({ quick_seconds: null, slow_seconds: null }).when).toBe(NOT_ENOUGH);
 	});
 });
@@ -710,8 +700,7 @@ describe('a pass whose work cannot run', () => {
 	});
 
 	it('says a pass is switched off before it says anything about a runtime', () => {
-		/* Somebody who turned a pass off is owed that answer, not a sentence about model files.
-		   Both are false here on purpose: the switch has to win. */
+		/* Somebody who turned a pass off is owed that answer, not a sentence about model files. */
 		const [identify] = passes(
 			held({ identify: { on: false, ready: false, problem: 'No runtime.' } })
 		);
@@ -732,8 +721,8 @@ describe('a pass whose work cannot run', () => {
 	});
 
 	it('says a pass whose queued work waits for quiet hours is waiting, not running', () => {
-		/* Generate set to "In quiet hours" and a file arriving in the afternoon: three jobs queued,
-		   none running, and the bar must not read as running in the running colour. */
+		/* Generate set to "In quiet hours" and a file arriving in the afternoon: three jobs
+		   queued, none running, and the bar must not read as running in the running colour. */
 		const [identify] = passes(
 			held({ identify: { outstanding: 3, waiting: 3, reason: 'Waiting for quiet hours.' } })
 		);
@@ -845,8 +834,7 @@ describe('the housekeeping', () => {
 		expect(at(noon - 26 * 60 * 60, 'failed')).toBe('Yesterday, failed');
 	});
 
-	/* "Yesterday, failed" alone says nothing of what failed or where to look. The row carries its
-	   job row's own first line, and only for a run that failed. */
+	/* "Yesterday, failed" alone says nothing of what failed or where to look. */
 	it('carries why the last run failed, and nothing for a run that did not', () => {
 		const why = (last_state: string, last_error: string | null) =>
 			chores(
@@ -904,9 +892,8 @@ describe('the housekeeping', () => {
 	});
 
 	it("says a running swap is waiting for them rather than a time, then its own rate's time", () => {
-		/* A swap's line must not say "about 3 minutes" before anybody has joined, a time taken from
-		   the swaps before it. Waiting on a person, the server sends its words and no time; once the
-		   files move, its own rate's time and no words. */
+		/* A swap's line must not say "about 3 minutes" before anybody has joined, a time taken
+		   from the swaps before it. */
 		const swaps = (over: Partial<NonNullable<JobsPage['housekeeping']>[number]>) =>
 			chores(
 				{

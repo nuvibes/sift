@@ -1,9 +1,4 @@
-/*
- * A collection the server says is not there draws the page saying so, and nothing to act on.
- *
- * A 404 is the one answer that is a fact about the library ("no such id" and "not yours" alike);
- * every other failure is Sift's own and keeps the page with the problem said on it.
- */
+/* A collection the server says is not there draws the page saying so, and nothing to act on. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

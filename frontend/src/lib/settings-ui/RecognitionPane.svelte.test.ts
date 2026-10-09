@@ -1,10 +1,4 @@
-/* The one Recognition layout: Faces, Smart Search, Watermarks and Stash-boxes read the same way.
- *
- * What the layout owns is the ORDER and the doors, and each is a promise somebody relies on without
- * reading it: the switch and where it stands come first, when it runs is the task's own row and is
- * only offered while the feature is on, the pages one level in can be reached by a deep link, and
- * the act that deletes things is the last thing on the page whatever else the page holds.
- */
+/* The one Recognition layout: Faces, Smart Search, Watermarks and Stash-boxes read the same way. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, tick, unmount } from 'svelte';

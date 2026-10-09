@@ -450,42 +450,54 @@ def _named(piece: Named, now: _Now) -> tuple[str, HistoryLink | None, say.Line]:
         words = piece.recorded or A_THING.get(kind, "something")
         return words, None, say.said(words)
     if key in now.present or not can_be_found(kind):
-        called = now.names.get(key)
-        words = called or piece.recorded or A_THING.get(kind, "something")
-        if piece.as_recorded and piece.recorded and called and called != piece.recorded:
-            # The recorded name is the fact; the name it has now follows it, and is the link.
-            if key in now.present and linked is not None:
-                return (
-                    f"{piece.recorded} (now {called})",
-                    HistoryLink(kind=linked, id=piece.id, name=called),
-                    say.said(f"{piece.recorded} (now ", say.thing(linked, piece.id, called), ")"),
-                )
-            words = f"{piece.recorded} (now {called})"
-            return words, None, say.said(words)
-        if key in now.present and linked is not None:
-            return (
-                words,
-                HistoryLink(kind=linked, id=piece.id, name=words),
-                (say.thing(linked, piece.id, words),),
-            )
-        return words, None, say.said(words)
+        return _named_now(piece, now, kind, key, linked)
     merged = now.merged.get(key)
     if merged is not None:
-        into_kind, into_id, into_name = merged
-        into = now.names.get((into_kind, into_id)) or into_name or A_THING.get(into_kind, "")
-        was = piece.recorded or A_THING.get(kind, "something")
-        if linked is not None and into and (into_kind, into_id) in now.present:
-            return (
-                f"{was} (since merged into {into})",
-                HistoryLink(kind=linked, id=into_id, name=into),
-                say.said(f"{was} (since merged into ", say.thing(linked, into_id, into), ")"),
-            )
-        words = f"{was} (since merged into {into})"
-        return words, None, say.said(words)
+        return _named_merged(piece, now, kind, linked, merged)
     if piece.recorded:
         words = say.since_deleted(piece.recorded)
         return words, None, say.said(words)
     words = A_GONE.get(kind, "something that is gone")
+    return words, None, say.said(words)
+
+
+def _named_now(
+    piece: Named, now: _Now, kind: str, key: tuple[str, str], linked: str | None
+) -> tuple[str, HistoryLink | None, say.Line]:
+    called = now.names.get(key)
+    words = called or piece.recorded or A_THING.get(kind, "something")
+    if piece.as_recorded and piece.recorded and called and called != piece.recorded:
+        # The recorded name is the fact; the name it has now follows it, and is the link.
+        if key in now.present and linked is not None:
+            return (
+                f"{piece.recorded} (now {called})",
+                HistoryLink(kind=linked, id=piece.id, name=called),
+                say.said(f"{piece.recorded} (now ", say.thing(linked, piece.id, called), ")"),
+            )
+        words = f"{piece.recorded} (now {called})"
+        return words, None, say.said(words)
+    if key in now.present and linked is not None:
+        return (
+            words,
+            HistoryLink(kind=linked, id=piece.id, name=words),
+            (say.thing(linked, piece.id, words),),
+        )
+    return words, None, say.said(words)
+
+
+def _named_merged(
+    piece: Named, now: _Now, kind: str, linked: str | None, merged: tuple[str, str, str | None]
+) -> tuple[str, HistoryLink | None, say.Line]:
+    into_kind, into_id, into_name = merged
+    into = now.names.get((into_kind, into_id)) or into_name or A_THING.get(into_kind, "")
+    was = piece.recorded or A_THING.get(kind, "something")
+    if linked is not None and into and (into_kind, into_id) in now.present:
+        return (
+            f"{was} (since merged into {into})",
+            HistoryLink(kind=linked, id=into_id, name=into),
+            say.said(f"{was} (since merged into ", say.thing(linked, into_id, into), ")"),
+        )
+    words = f"{was} (since merged into {into})"
     return words, None, say.said(words)
 
 

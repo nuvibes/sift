@@ -1,11 +1,4 @@
-/* How the board sorts what registered into bands, and into cards.
- *
- * Two rules with nothing else between them, and both are easy to get wrong on screen. A queue
- * that is a RECORD is not a card at all: a count that never goes down cannot sit on a screen
- * whose promise is that it empties. And queues sharing a group are one card, because a group is one
- * page with tabs: drawn separately, near duplicates and exact copies would be two ways in to one
- * screen, in two different bands of the board.
- */
+/* How the board sorts what registered into bands, and into cards. */
 
 import { describe, expect, it } from 'vitest';
 
@@ -13,15 +6,8 @@ import type { components } from '$lib/api/schema';
 
 import { bandsOf, organizeCrumbs, tabsFor, titleOf } from './bands';
 
-/*
- * The seven fields of the server's own queue that these two rules read, taken FROM it rather than
- * written out again beside it.
- *
- * A `Pick` rather than the whole `QueueView` because that is the honest statement: `bandsOf`,
- * `titleOf` and `tabsFor` are generic over structural subsets and none of them looks at `icon`,
- * `decision` or `preview`. A field the server removes is a build error here, which is the whole
- * point: a hand-written copy could not go wrong loudly.
- */
+/* The seven fields of the server's own queue that these two rules read, taken FROM it rather
+ * than written out again beside it. */
 type Row = Pick<
 	components['schemas']['QueueView'],
 	'name' | 'title' | 'band' | 'pending' | 'group' | 'group_title' | 'count'
@@ -51,9 +37,7 @@ describe('what lands in which band', () => {
 	});
 
 	it('puts a band this build has never heard of under the last heading', () => {
-		/* A newer server can send a band this build does not know. Falling back is the same answer
-		   the panel registry gives for a queue it cannot draw: the card still says what it is and
-		   how much of it there is, and nothing disappears. */
+		/* A newer server can send a band this build does not know. */
 		const bands = bandsOf([queue({ name: 'newish', band: 'something-later' })]);
 
 		expect(bands).toHaveLength(1);
@@ -70,9 +54,7 @@ describe('what lands in which band', () => {
 describe('a group is one card', () => {
 	it("joins the members, adds their counts, and takes the LEAD's band", () => {
 		/* Near duplicates is a judgement and exact copies are housekeeping, so they declare
-		   different bands. And drawn as two cards they would sit in two halves of the board,
-		   both opening the same screen. The first queue of a group is what says where the page
-		   lives. */
+		   different bands. */
 		const bands = bandsOf([
 			queue({
 				name: 'duplicates',
@@ -109,9 +91,9 @@ describe('a group is one card', () => {
 	});
 
 	it("calls a card of one by its queue's own name, even where the queue names a group", () => {
-		/* A group whose other members are switched off on this install: the queue still carries the
-		   group's name, and a card titled after a group it alone stands for names a page that is
-		   not there. */
+		/* A group whose other members are switched off on this install: the queue still carries
+		   the group's name, and a card titled after a group it alone stands for names a page
+		   that is not there. */
 		const [band] = bandsOf([
 			queue({
 				name: 'faces',
@@ -129,15 +111,7 @@ describe('a group is one card', () => {
 
 	it("puts a group's records on its card, without counting them", () => {
 		/* A card says what the page it opens is made of, and the tab row is that list: records
-		   included, or the faces card would name only some of its tabs.
-
-		   A card of one keeping its own title rather than the page's would lose the other tab, a
-		   whole screen the card opens on to and never mentions. What matters about the queue is
-		   on the card twice over: the count leads it in the queue's own words, and the tab row
-		   names the same queue with the same number.
-
-		   The count is the part to be careful about: a record's count never goes down, so adding
-		   it would put a figure on the board that can never reach zero. */
+		   included, or the faces card would name only some of its tabs. */
 		const [band] = bandsOf([
 			queue({
 				name: 'faces',
@@ -164,15 +138,14 @@ describe('a group is one card', () => {
 
 	it('leaves a record whose group has no card off the board entirely', () => {
 		// The known positive beside the rule above: a record rides along on a card, it never makes
-		// one. A card that is only a record is a card that can never be finished.
+		// one.
 		expect(
 			bandsOf([queue({ name: 'filed', band: 'record', pending: false, group: 'folders' })])
 		).toEqual([]);
 	});
 
 	it("falls back to the lead's own title when no group name was declared", () => {
-		/* A group whose lead names nothing was never meant to be one card. Titling it after half of
-		   itself is the honest thing to do with that, and it is visible rather than silent. */
+		/* A group whose lead names nothing was never meant to be one card. */
 		const [band] = bandsOf([
 			queue({ name: 'a', title: 'First', group: 'pair', count: 1 }),
 			queue({ name: 'b', title: 'Second', group: 'pair', count: 2 })
@@ -183,8 +156,8 @@ describe('a group is one card', () => {
 	});
 
 	it("never joins a record onto its group's card", () => {
-		/* The count would then include something that never goes down, on a card whose whole promise
-		   is that it reaches zero. */
+		/* The count would then include something that never goes down, on a card whose whole
+		   promise is that it reaches zero. */
 		const [band] = bandsOf([
 			queue({ name: 'unidentified', group: 'faces', group_title: 'Faces', count: 10 }),
 			queue({ name: 'identified', band: 'record', pending: false, group: 'faces', count: 900 })
@@ -241,13 +214,7 @@ describe('the trail under Organize', () => {
 		]);
 	});
 
-	/*
-	 * Until the board has been read the queue crumb is not drawn. `organizeCrumbs([],
-	 * 'unidentified', 'A group of faces')[1]` must not be `{ label: 'Organize', href:
-	 * '/organize/unidentified' }`: the board's own word over the queue's address, which on a
-	 * direct load of a pile page would read "Organize > Organize > A group of faces", one word
-	 * twice, the second of them naming somewhere it does not go.
-	 */
+	/* Until the board has been read the queue crumb is not drawn. */
 	it('leaves the queue out of the trail until the board has named it', () => {
 		expect(organizeCrumbs([], 'unidentified', 'A group of faces')).toEqual([
 			{ label: 'Organize', href: '/organize' },
@@ -256,21 +223,13 @@ describe('the trail under Organize', () => {
 	});
 
 	it('draws no trail at all on a queue screen the board has not named yet', () => {
-		// One crumb, which `Breadcrumbs` draws as nothing. And the frame's band is the same
-		// height either way, so what arrives is a trail rather than a shove. The board's word
-		// standing in for the queue's would read "Organize > Organize" on this screen.
+		// One crumb, which `Breadcrumbs` draws as nothing.
 		expect(organizeCrumbs([], 'unidentified', undefined)).toEqual([
 			{ label: 'Organize', href: '/organize' }
 		]);
 	});
 
-	/*
-	 * THE PAGE A TAB IS ON, AND THE TAB A DETAIL WAS OPENED FROM.
-	 *
-	 * Five tabs of one page must not read as five unrelated places, with a detail opened from one
-	 * of them reading as a sixth: "Organize > Suggestions" becoming "Organize > People Sift can recognize
-	 * > <name>" on one press, and the way back going somewhere nobody had been.
-	 */
+	/* THE PAGE A TAB IS ON, AND THE TAB A DETAIL WAS OPENED FROM. */
 	const TABS = [
 		{ name: 'faces', title: 'Needs Your Input', group: 'faces', group_title: 'Faces' },
 		{ name: 'discarded-faces', title: 'Discarded', group: 'faces', group_title: null },
@@ -296,8 +255,8 @@ describe('the trail under Organize', () => {
 
 	it('refuses an origin that is not a tab of this page', () => {
 		// An address is somebody else's to write. A `from` naming any queue at all would draw a
-		// trail through a screen this detail has nothing to do with: read, followed, and only
-		// then found to be a lie.
+		// trail through a screen this detail has nothing to do with: read, followed, and only then
+		// found to be a lie.
 		expect(organizeCrumbs(TABS, 'known-people', 'Marissa Vale', undefined, 'duplicates')).toEqual([
 			{ label: 'Organize', href: '/organize' },
 			{ label: 'Faces', href: '/organize/faces' },
@@ -308,7 +267,7 @@ describe('the trail under Organize', () => {
 
 	it('still takes a title from the caller where one is handed in', () => {
 		// The way the unknown-queue branch of the pile route names itself: no board, no queue, a
-		// word of its own. Nothing about waiting for the board may take that away.
+		// word of its own.
 		expect(organizeCrumbs([], undefined, 'Not found')).toEqual([
 			{ label: 'Organize', href: '/organize' },
 			{ label: 'Not found' }

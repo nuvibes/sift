@@ -17,11 +17,7 @@ export function fingerprintQuestion(offer: Asked): string {
 export type FingerprintOffer = components['schemas']['FingerprintOfferView'];
 type Asked = Pick<FingerprintOffer, 'name'> & Partial<FingerprintOffer>;
 
-/* The groups that look like somebody a facial fingerprints file holds, keyed by the group.
- *
- * The server answers only while making people from fingerprints is off, and only to somebody who
- * may make people, so an empty map is the ordinary answer and a refusal reads as one: a card with
- * no offer asks its ordinary question. */
+/* The groups that look like somebody a facial fingerprints file holds, keyed by the group. */
 export async function fingerprintOffers(): Promise<Map<string, FingerprintOffer>> {
 	try {
 		const answer = await api.get<components['schemas']['FingerprintOffers']>(
@@ -47,7 +43,7 @@ export async function removeWaitingFingerprints(entryId: string): Promise<void> 
 }
 
 /* The Yes to a group's question: the person is made with the file's faces, and the library is
-   matched again so the faces that look like them are named. Undone from History. */
+   matched again so the faces that look like them are named. */
 export async function makePersonFromFingerprints(entryId: string): Promise<string> {
 	const made = await api.post<components['schemas']['MadeFromFingerprints']>(
 		`/faces/fingerprints/${encodeURIComponent(entryId)}/person`

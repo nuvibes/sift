@@ -1,10 +1,4 @@
-/*
- * Following a deletion Sift runs as a job (Delete face data, Delete index).
- *
- * On a large library each is minutes of small writes, so the press queues it and hands back the
- * job. Held at module level, like a download, so a pane closed and opened again shows it still
- * going rather than offering the press twice, and the end is said once however it ended.
- */
+/* Following a deletion Sift runs as a job (Delete face data, Delete index). */
 
 import { DownloadWatch, jobProgress } from '$lib/jobs/watch-download.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';

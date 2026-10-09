@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Tasks pane's words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `ScheduledTasks.svelte` draws every word it adds from `COPY`, and so
- * does `TaskWhen.svelte`: the task's row, which is this pane's row drawn a second time beside the
- * thing it runs (Faces, Importing, Smart Search...). One row, so one set of words: a Run now called
- * one thing here and another on Faces would be two controls to a reader. Each task's own title and
- * sentence are the server's (`register_schedule`), and so are quiet hours' rows and the When's three
- * answers; this holds only what the pane and the row say around them.
- *
- * No hand-written search entry: every task's When is a registered setting under its own title, and
- * the registry feeds the search by itself: a second entry here would be the same row found twice.
- */
+/* The Tasks pane's words, and what somebody can type to find them. */
 import { counted } from '$lib/entity/entity-counts';
 import type { Searchable } from './search';
 

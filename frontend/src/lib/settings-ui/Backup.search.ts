@@ -1,23 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Backup pane's words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Backup.svelte` draws every word it adds from `COPY`, and the search
- * entries below are built from the same objects, so a heading cannot read one way on the screen
- * and another in a search result. The registered rows (how many to keep, the folder, the detected
- * faces, and the schedule drawn on Tasks) are not here: the registry is their copy, and it feeds
- * the search index by itself.
- *
- * Taking a backup, restoring one and opening another library are not preferences stored anywhere,
- * so the registry could not describe them. The Database Switcher is not a preference stored in any
- * one library either (which library is open is a fact about the running Sift); the words
- * "Libraries on this computer" find it here too. */
+/* The Backup pane's words, and what somebody can type to find them. */
 import { counted } from '$lib/entity/entity-counts';
 import type { Searchable } from './search';
 
-/**
- * How the two rules on automatic backups read together, in one sentence somebody can predict the
- * folder from: the newest `keep`, and none older than `days` (zero is never).
- */
+/** How the two rules on automatic backups read together, in one sentence somebody can predict the
+ * folder from: the newest `keep`, and none older than `days` (zero is never). */
 export function keptSaid(keep: number, days: number): string {
 	const newest =
 		keep === 1 ? 'only the newest automatic backup' : `the newest ${keep} automatic backups`;
@@ -27,8 +14,7 @@ export function keptSaid(keep: number, days: number): string {
 
 export const COPY = {
 	/* What a person needs before pressing, once each: what is in a backup, what is not, how a
-	   library comes back, and what needs the admin password. A fact a row already says beside its
-	   switch (the detected faces) is that row's, not this paragraph's. */
+	   library comes back, and what needs the admin password. */
 	holds:
 		'A backup holds your Sift library: tags, ratings, People, collections and settings. It also holds the faces you confirmed, the covers you uploaded and the fingerprints that link them to your files.',
 	notMedia: "It doesn't copy your media files.",
@@ -47,8 +33,7 @@ export const COPY = {
 		copy: 'Download a copy',
 		copyLabel: (name: string) => `Download a copy of ${name}`
 	},
-	/** What the next file holds, read from the disk: `parts` is empty until the sizes are in. Both
-	 * halves of the press in one sentence: where it goes, and how another device gets a copy. */
+	/** What the next file holds, read from the disk: `parts` is empty until the sizes are in. */
 	fileHolds: (parts: string) =>
 		`One file in the backup folder, beside the automatic backups, which Sift never deletes by itself. It holds the database${parts ? `, plus ${parts}` : ''}. On another device, you can download a copy once it's saved.`,
 	automatic: 'Automatic backups',
@@ -83,12 +68,7 @@ export const COPY = {
 			`Your tags, ratings, People, collections, settings, confirmed faces and uploaded covers are replaced by what is in ${file}. Your media files aren't touched, and this can't be undone.`,
 		confirm: 'Restore'
 	},
-	/**
-	 * The libraries on this device, drawn at the foot of this pane by `DatabaseSwitcher.svelte`.
-	 * Headed "Libraries", in the word every row under it uses ("Sift opens one library at a time",
-	 * "New library", "Duplicate this library") rather than a word for the machinery. "switcher" and
-	 * "database" stay in its search words, so either still finds it.
-	 */
+	/** The libraries on this device, drawn at the foot of this pane by `DatabaseSwitcher.svelte`. */
 	switcher: {
 		name: 'Libraries',
 		help: 'Create a new library, open a different one, or import a database file.',
@@ -235,8 +215,8 @@ export const COPY = {
 				`${n === 1 ? '1 of its folders matches a folder' : `${counted(n)} of its folders match folders`} in this library by name. Anything else is found by its fingerprint where it can be.`,
 			noneMatched:
 				'None of its folders match a folder in this library by name, so files are found by their fingerprints alone.',
-			/* Everything that stays behind, said in full, one thing a line, under a fold on the pane.
-			   Kept to what the run really leaves: a line here is a promise about what it does. */
+			/* Everything that stays behind, said in full, one thing a line, under a fold on the
+			   pane. */
 			notComingFold: 'What stays behind in Stash',
 			notComing: [
 				'When anything was played or given an O. Stash made most of those dates up, so only the counts come across, with where you left off and how long you watched.',

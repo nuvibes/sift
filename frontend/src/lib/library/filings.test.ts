@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * What a filing is called, over the four shapes one can arrive in.
- *
- * Three of the four are cases the screen cannot conveniently produce and a person will still meet:
- * a drop names nobody, a download names a username, and deleting a site leaves the usernames on it
- * still holding files. The label is the only thing standing between those and a chip with nothing
- * in it, which is a chip nobody presses, on the one row whose whole purpose is to be pressed.
- */
+/* What a filing is called, over the four shapes one can arrive in. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -38,8 +31,8 @@ function filing(overrides: Partial<Filing> = {}): Filing {
 		username: null,
 		source_name: null,
 		person_id: null,
-		// How the filing was decided. Null is somebody doing it, which is the ordinary case; the one
-		// word the server writes today is `stash_box`.
+		// How the filing was decided. Null is somebody doing it, which is the ordinary case; the
+		// one word the server writes today is `stash_box`.
 		source: null,
 		// What names the site's cover on its chip's address; none chosen and no logo here.
 		art: null,
@@ -73,14 +66,7 @@ describe('filingLabel', () => {
 	});
 });
 
-/*
- * The chip's own word, which is a different question from the sentence above.
- *
- * The chip stands in a row of SITES under the Sites glyph, so the kind is already said and
- * the site's name is the one word somebody is scanning for. What the removal control promises has
- * not changed, and neither has what an orphaned filing says. Both are asserted here beside it, so
- * a change to one cannot quietly be read as a change to the other.
- */
+/* The chip's own word, which is a different question from the sentence above. */
 describe('filingName', () => {
 	it('is the site alone, even where the filing names a username', () => {
 		expect(filingName(filing({ username: '@harlowquin' }))).toBe('OnlyFans');
@@ -114,13 +100,7 @@ describe('filingRemovalLabel', () => {
 	});
 });
 
-/*
- * The two addresses, asserted.
- *
- * A request typed one character wrong is a 404 the screen swallows: `AssetView` leaves the row
- * empty on a failure, deliberately, so the whole feature would simply not appear and nothing would
- * say why. The names are the server's own, and these are the only place the client writes them.
- */
+/* The two addresses, asserted. */
 describe('the two addresses', () => {
 	it("reads a file's filings from the file", async () => {
 		mocked.get.mockResolvedValue([]);

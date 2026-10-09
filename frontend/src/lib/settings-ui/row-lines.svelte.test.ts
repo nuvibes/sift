@@ -1,10 +1,6 @@
-/*
- * The line rule of a settings pane, read from the rendered pane with the compiled stylesheets in
+/* The line rule of a settings pane, read from the rendered pane with the compiled stylesheets in
  * place: a line is drawn only BETWEEN two rows, by the lower one; a group's first and last rows
- * draw none; and the group heading's hairline is the only line between two groups. So walking the
- * pane top to bottom never meets two lines with no row between them, which is what a double rule
- * is.
- */
+ * draw none; and the group heading's hairline is the only line between two groups. */
 import { readdirSync, readFileSync } from 'node:fs';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -55,11 +51,8 @@ function drawPane(): HTMLElement {
 	return pane;
 }
 
-/**
- * The hairline an element draws on one side, from its computed style: a logical border as the
- * rows write it, or a physical one. The unit environment keeps a logical border as written and
- * does not fold it into the physical sides, so both are read.
- */
+/** The hairline an element draws on one side, from its computed style: a logical border as the
+ * rows write it, or a physical one. */
 function ruled(element: Element, side: 'start' | 'end'): boolean {
 	const style = getComputedStyle(element);
 	const logical = style.getPropertyValue(`border-block-${side}`);
@@ -120,11 +113,9 @@ describe('the lines on a settings pane', () => {
 	});
 });
 
-/*
- * A group a pane draws through another component is held to the same rule: the Swaps block on
- * Updates and Info is the pane's own rows, so its lines are the rows' lines and nothing it builds
- * by hand touches the row above it.
- */
+/* A group a pane draws through another component is held to the same rule: the Swaps block on
+ * Updates and Info is the pane's own rows, so its lines are the rows' lines and nothing it
+ * builds by hand touches the row above it. */
 describe('the Swaps group on Updates and Info', () => {
 	async function drawSwaps(): Promise<HTMLElement> {
 		swapApi.swapDevice.mockResolvedValue({ device_id: 'ABCDEFGHIJKLMNOP', locked: false });
@@ -156,12 +147,8 @@ describe('the Swaps group on Updates and Info', () => {
 	});
 });
 
-/*
- * The space between two groups is the group's own (its margin, which collapses with the room above
- * the next heading). A pane that also lays its groups out as a column with a gap adds the gap on
- * top, and in a flex column the two stop collapsing, so the bands between its groups come out two
- * or three times the height of every other pane's.
- */
+/* The space between two groups is the group's own (its margin, which collapses with the room
+ * above the next heading). */
 describe('the space between groups', () => {
 	/** What draws a group, or a run of them. */
 	const GROUPS = /<(SettingGroup|RecognitionPane|PresetGroup)[\s>]/;

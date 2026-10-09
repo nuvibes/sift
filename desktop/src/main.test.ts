@@ -1,18 +1,4 @@
-/* The shell's composition: what `main.ts` does with the pieces every other file supplies.
- *
- * `main.ts` runs on import (it asks for the single-instance lock, waits for the app to be
- * ready, wires the verbs, makes the window and walks first run), so each test here imports it
- * fresh, after setting the scene, and then presses what a person or Windows would press: a verb
- * the page calls, an `app` event, a link on the page, the close button.
- *
- * Every module it composes is doubled (`test/main-scene.ts`). Each of them has its own suite; what is under test here is
- * only the order and the choice: stop before move, check before save, the connect screen rather
- * than a stack trace.
- *
- * Out of reach here: that a real Electron honours the options the window is made with (the hidden
- * title bar, renderer isolation), that the privileged scheme is declared early enough for a real
- * `app`, and the real process lifecycle. Those are checked by driving the installed application.
- */
+/* The shell's composition: what `main.ts` does with the pieces every other file supplies. */
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -346,7 +332,7 @@ describe("a copy set up for its own library", () => {
     const electron = await boot({ mode: "standalone", ...LIBRARY });
 
     /* The chosen one was tried, stopped, and the one open last started in its place: a choice
-		   about which library comes first never becomes a reason nothing opens. */
+       about which library comes first never becomes a reason nothing opens. */
     expect(scene.backends.map((one) => one.locations)).toEqual([
       OTHER,
       LIBRARY,
@@ -613,8 +599,8 @@ describe("a copy set up for its own library", () => {
   });
 
   /* Restart is a quit and a fresh launch, in that order, with the backend stopped cleanly before
-	   either: a relaunch asked for while the backend still held the database would start a copy
-	   that finds it busy. */
+     either: a relaunch asked for while the backend still held the database would start a copy
+     that finds it busy. */
   it("restarts by stopping the backend, then asking for a fresh copy, then quitting", async () => {
     const electron = await boot({ mode: "standalone", ...LIBRARY });
     let stoppedAtRelaunch: number | undefined;
@@ -1006,8 +992,7 @@ describe("switching library", () => {
   });
 
   /* THE SERVER'S SWITCH: a page (in a browser anywhere) asked the backend, which checked the
-   * library, left a note and stopped asking to be restarted. The backend's exit handler asks this
-   * shell first; a note means the restart is this shell's to make, on the library named. */
+   * library, left a note and stopped asking to be restarted. */
   it("starts on the library the server named when its backend stops asking to be restarted", async () => {
     const electron = await boot({ mode: "standalone", ...LIBRARY });
     scene.note = OTHER;
@@ -1529,8 +1514,8 @@ describe("saving a file without asking", () => {
     );
   });
 
-  /* Bounded: a thousand copies is somebody holding a key down, and the hunt for a free name stops
-	   there rather than running for as long as that took. */
+  /* Bounded: a thousand copies is somebody holding a key down, and the hunt for a free name
+     stops there rather than running for as long as that took. */
   it("stops counting at a thousand and hands back the name it was given", async () => {
     const electron = await boot({
       mode: "standalone",
@@ -1608,9 +1593,7 @@ describe("a start Windows made at sign-in", () => {
     expect(windowOf(electron).shown).toBe(1);
   });
 
-  /* The sign-in start is spent by the first window it shows. Somebody who answered that question is
-	   at the keyboard, and a library that then loaded out of sight would look like the answer doing
-	   nothing. */
+  /* The sign-in start is spent by the first window it shows. */
   it("shows the library a person has just answered their way to", async () => {
     process.argv.push("--hidden");
     const electron = await boot({

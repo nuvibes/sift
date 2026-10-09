@@ -12,17 +12,10 @@
 
 <script lang="ts">
 	/*
-	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a sheet of colour and one sentence, with no behaviour of its own.
-	 * What the window looks like while it offers to take a drop: a light veil, a dashed accent
-	 * line along the window's own edge, a faint accent wash, and one sentence saying where the
-	 * thing will go. Every whole-window offer draws this, so a drop reads the same wherever it is
-	 * aimed and only the sentence differs.
-	 *
-	 * The veil is the drop veil, lighter than a dialog's: the page behind is what somebody is
-	 * aiming at, so it stays readable. The pointer is mid-drag, so nothing here takes a pointer.
-	 * Hidden from assistive technology: it only repeats a gesture the pointer is already making.
-	 *
-	 * The caller owns the drag and says when it is shown; this owns only the drawing.
+	 * WHY NOT BITS-UI: bits-ui has no such primitive: this is a sheet of colour and one sentence,
+	 * with no behaviour of its own. The window's offer to take a drop: a light veil, a dashed
+	 * accent edge and one sentence; hidden from assistive technology, as it repeats a gesture in
+	 * progress. The caller owns the drag.
 	 */
 	import { arrive } from '$lib/shell/motion.svelte';
 
@@ -37,8 +30,7 @@
 </script>
 
 {#if shown}
-	<!-- A fade and never a slide: something the size of the window arriving in one frame reads as
-	     the page being replaced, and an overlay that slides has an edge where this has none. -->
+	<!-- A fade, never a slide, which would give it an edge. -->
 	<div class="overlay" aria-hidden="true" transition:arrive={{ pace: 'fast' }}>
 		<div class="frame">
 			<p>{words}</p>
@@ -57,9 +49,7 @@
 		pointer-events: none;
 	}
 
-	/* The line traces the WINDOW, not a box inside it: "this whole window takes it". Drawn inside the
-	   element box, so `inset: 0` keeps all of it on screen. The wash is mixed from the accent, so it
-	   follows whichever accent is chosen, and is light enough to see the page through. */
+	/* The line traces the window; the wash follows the accent. */
 	.frame {
 		position: absolute;
 		inset: 0;
@@ -82,8 +72,7 @@
 		text-align: center;
 	}
 
-	/* In the desktop shell the top-right corner is square: the window's own buttons are drawn over
-	   the page there, and the content card gives up its curve for them. */
+	/* Square top-right under the desktop window's own buttons. */
 	:global(:root[data-window='overlaid']) .frame {
 		border-start-end-radius: 0;
 	}

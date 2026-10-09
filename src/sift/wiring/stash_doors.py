@@ -109,15 +109,7 @@ class StashDoorsFromApp:
         if not heart and stars is None:
             return False
         if kind == "tag":
-            viewer = await self._viewer(user_id)
-            if viewer is None:
-                return False
-            tags = wiring.part_of_app(self._app, tags_ratings.SERVICE)
-            if heart:
-                await tags.set_favorite(viewer, entity_id, favorite=True)
-            if stars is not None:
-                await tags.set_rating(viewer, entity_id, rating=stars)
-            return True
+            return await self._tag_opinion(entity_id, user_id, heart=heart, stars=stars)
         catalog = wiring.part_of_app(self._app, people.SERVICE)
         if kind == "person":
             if heart:
@@ -129,6 +121,19 @@ class StashDoorsFromApp:
                 await catalog.set_site_favorite(entity_id, user_id, True)
             if stars is not None:
                 await catalog.set_site_rating(entity_id, user_id, stars)
+        return True
+
+    async def _tag_opinion(
+        self, entity_id: str, user_id: str, *, heart: bool, stars: int | None
+    ) -> bool:
+        viewer = await self._viewer(user_id)
+        if viewer is None:
+            return False
+        tags = wiring.part_of_app(self._app, tags_ratings.SERVICE)
+        if heart:
+            await tags.set_favorite(viewer, entity_id, favorite=True)
+        if stars is not None:
+            await tags.set_rating(viewer, entity_id, rating=stars)
         return True
 
     async def keep_search(self, user_id: str, name: str, query: str) -> bool:

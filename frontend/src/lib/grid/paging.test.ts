@@ -1,13 +1,4 @@
-/*
- * Paging by whole rows: the arithmetic that makes every page the same size.
- *
- * A page holding a fixed number of FILES of mixed proportions makes a different number of ROWS
- * every time, so the page grows or shrinks, the pager slides up and down with it, and the last row
- * is left unstretched so every page ends looking like tiles are missing.
- *
- * A page is a fixed number of rows and holds however many files that takes (one unknown traded
- * for another), and every test here is about that trade being made correctly.
- */
+/* Paging by whole ROWS, so every page is one size and the pager does not slide. */
 
 import { describe, expect, test } from 'vitest';
 
@@ -28,32 +19,22 @@ function item(id: string, width: number | null, height: number | null): Layable 
 	return { id, width, height };
 }
 
-/** A run of items all the same shape, which is what makes a row count predictable to assert on. */
 function run(count: number, width: number, height: number, from = 0): Layable[] {
 	return Array.from({ length: count }, (_, index) => item(`i${from + index}`, width, height));
 }
 
-/*
- * THE GAP THE APPLICATION ACTUALLY DRAWS, not a number picked for this file.
- *
- * Imported rather than copied: the arithmetic takes the gap as an argument and is correct at any
- * number, so a literal here that differed from `GRID_GUTTER` would make every assertion below about
- * a grid Sift does not draw, passing and proving nothing about the one on screen. A change to the
- * gap moves these assertions with it, and one that breaks the paging arithmetic fails here.
- */
+/* The application's own gap, so these assertions are about the grid Sift draws. */
 const GUTTER = GRID_GUTTER;
 
 describe('how many rows fit', () => {
 	test('counts the gaps between rows, not one per row', () => {
-		// Three 200px rows need two 8px gaps: 616. A fourth would need 824.
 		expect(rowsThatFit(616, 200, GUTTER)).toBe(3);
 		expect(rowsThatFit(823, 200, GUTTER)).toBe(3);
 		expect(rowsThatFit(824, 200, GUTTER)).toBe(4);
 	});
 
 	test('a row that would be cut off is not counted', () => {
-		// One pixel short of four rows is three rows. Half a row at the bottom of a page reads as
-		// "scroll for more" on a screen whose whole point is that this is the page.
+		// One pixel short of four rows is three: half a row reads as "scroll for more".
 		expect(rowsThatFit(823, 200, GUTTER)).toBe(3);
 	});
 
@@ -66,10 +47,7 @@ describe('how many rows fit', () => {
 
 describe('snapping the row height', () => {
 	test('rows of the snapped height fill the space exactly, WHEN it snaps at all', () => {
-		/* The second half of that sentence is the contract. Snapping is an adjustment and not an
-		   override: where no row count comes within `SNAP_LIMIT` of the size somebody chose, the
-		   chosen size is used as it stands and the bottom row is cut by the fold. So this asserts the
-		   exact fill only for the heights that were actually moved. */
+		/* Snapping adjusts, never overrules: the exact fill is asserted only where it moved. */
 		let snapped = 0;
 		for (const available of [640, 700, 800, 900, 1080, 1440]) {
 			for (const target of SIZE_STEPS) {
@@ -78,8 +56,6 @@ describe('snapping the row height', () => {
 				snapped += 1;
 				const rows = rowsThatFit(available, height, GUTTER);
 				const used = rows * height + GUTTER * (rows - 1);
-				// Within a pixel per row of exact: the height is rounded to whole pixels, and a
-				// browser cannot draw a third of one.
 				expect(Math.abs(available - used)).toBeLessThanOrEqual(rows);
 			}
 		}
@@ -88,9 +64,7 @@ describe('snapping the row height', () => {
 	});
 
 	test('it takes the nearer of the two row counts, not simply the one that fits', () => {
-		// 800 of space at a target of 220 fits three rows, but stretching them to fit is 261, a
-		// 19% jump. Four rows of 194 is closer to what was asked for, and that is the answer: four
-		// of them and the three 8px gaps between them come to exactly 800.
+		// Four rows of 194 is closer to 220 than three stretched to 261.
 		const height = snapRowHeight(220, 800, GUTTER);
 		expect(height).toBe(194);
 		expect(rowsThatFit(800, height, GUTTER)).toBe(4);
@@ -98,21 +72,8 @@ describe('snapping the row height', () => {
 
 	test('every notch on the ladder draws a DIFFERENT size, on every window worth using', () => {
 		/*
-		 * The top two notches must never draw identical tiles.
-		 *
-		 * It is a property of the LADDER rather than of the snapping. Rows snap to a height that
-		 * divides the screen into whole rows, so the reachable heights are `available/n`; two
-		 * targets only land on different n once `available >= t1*t2/(t2-t1)`. For 260 and 340 that
-		 * is 1105px, which is taller than the grid on most screens.
-		 *
-		 * There is no floor on the range here, and that is the point. A wider ladder alone leaves a
-		 * ceiling under which notches still collide, and the grid on an 860px window is about
-		 * 608px, right where people actually work. What holds the notches apart at EVERY size is
-		 * `SNAP_LIMIT`: each one can only be drawn inside a band of its own, and the bands do not
-		 * touch.
-		 *
-		 * `GRID_GUTTER` written out rather than this file's `GUTTER`, which is the same number:
-		 * this assertion names the application's own constant.
+		 * The top two notches must never draw identical tiles at any height: `SNAP_LIMIT` keeps
+		 * each in its own band.
 		 */
 		for (let available = 200; available <= 1400; available++) {
 			const heights = SIZE_STEPS.map((target) => snapRowHeight(target, available, GRID_GUTTER));
@@ -126,8 +87,7 @@ describe('snapping the row height', () => {
 	});
 
 	test('it never snaps below the size a thumbnail stops being recognisable at', () => {
-		// A very short window would otherwise be "solved" by a wall of stamps, which is worse than
-		// the strip of dead space it was avoiding.
+		// Not a wall of stamps.
 		expect(snapRowHeight(120, 200, GUTTER)).toBeGreaterThanOrEqual(80);
 	});
 
@@ -135,8 +95,6 @@ describe('snapping the row height', () => {
 		for (const available of [700, 820, 950, 1100, 1300]) {
 			for (const target of SIZE_STEPS) {
 				const height = snapRowHeight(target, available, GUTTER);
-				// A quarter is generous, and it is the point: the slider chooses roughly this big,
-				// and snapping is allowed to adjust rather than to overrule.
 				expect(Math.abs(height - target) / target).toBeLessThan(0.25);
 			}
 		}
@@ -147,7 +105,6 @@ describe('filling a page with whole rows', () => {
 	const options = { containerWidth: 1000, targetHeight: 200, gutter: GUTTER };
 
 	test('it keeps exactly the rows asked for and says how many files that took', () => {
-		// 16:9 at 200px is ~356 wide, so about three fit a 1000px row.
 		const items = run(40, 1600, 900);
 		const filled = fillRows(items, { ...options, rows: 3 });
 
@@ -158,8 +115,7 @@ describe('filling a page with whole rows', () => {
 	});
 
 	test('the surplus is discarded, and `used` is what the next page starts after', () => {
-		// The trap this is here for: treating everything fetched as shown skips whatever did not
-		// fit onto the next page, and those files are then never seen by anybody.
+		// Everything fetched is not everything shown, or the rest would never be seen.
 		const items = run(40, 1600, 900);
 		const first = fillRows(items, { ...options, rows: 2 });
 		const rest = fillRows(items.slice(first.used), { ...options, rows: 2 });
@@ -185,8 +141,7 @@ describe('filling a page with whole rows', () => {
 	});
 
 	test('an exact fit with nothing left over is still full', () => {
-		// The edge that would be wrong if `full` were "there was surplus": a page filled to the
-		// pixel by the last file in the library is a full page.
+		// A page filled to the pixel by the last file is full.
 		const items = run(40, 1600, 900);
 		const three = fillRows(items, { ...options, rows: 3 });
 		const exact = fillRows(items.slice(0, three.used), { ...options, rows: 3 });
@@ -196,8 +151,7 @@ describe('filling a page with whole rows', () => {
 	});
 
 	test('mixed proportions change how many files a page holds, not how many rows', () => {
-		// This is the whole point, in one assertion. Portrait clips pack far more into a row than
-		// widescreen ones, and a page counted in files would let that decide the page's height.
+		// Portrait clips pack more into a row; a page counted in files would vary in height.
 		const wide = fillRows(run(200, 1920, 1080), { ...options, rows: 4 });
 		const tall = fillRows(run(200, 1080, 1920), { ...options, rows: 4 });
 
@@ -207,15 +161,7 @@ describe('filling a page with whole rows', () => {
 	});
 
 	test('and the page height barely moves, though it is not identical to the pixel', () => {
-		/*
-		 * The honest version of the promise, and worth stating rather than asserting equality and
-		 * quietly loosening it later.
-		 *
-		 * A row's height is what makes its items span the container at their true proportions, so
-		 * it depends on what closed the row. Across a whole page of the two most extreme shapes a
-		 * library holds, that is a couple of percent, against the whole ROWS a page counted in
-		 * files would move by.
-		 */
+		/* Rows differ in height by a couple of percent, not by whole rows. */
 		const height = (filled: ReturnType<typeof fillRows>) =>
 			filled.rows.reduce((total, row) => total + row.height, 0) + GUTTER * (filled.rows.length - 1);
 
@@ -249,8 +195,6 @@ describe('how many files to ask for', () => {
 	});
 
 	test('it reads the shapes on screen rather than assuming them', () => {
-		// A library of vertical clips is wrong about the default in the same direction every time,
-		// so the estimate is measured from what is already there.
 		const geometry = { containerWidth: 1600, rowHeight: 200 };
 		const forTall = itemsToFill(4, { ...geometry, averageAspect: 9 / 16 });
 		const forWide = itemsToFill(4, { ...geometry, averageAspect: 16 / 9 });
@@ -264,8 +208,7 @@ describe('how many files to ask for', () => {
 	});
 
 	test('a nonsense average does not produce a nonsense request', () => {
-		// The average comes off real rows, and a file with no probed size contributes a
-		// placeholder, so a library mid-import can hand this something extreme.
+		// A library mid-import can hand this something extreme.
 		const geometry = { containerWidth: 1600, rowHeight: 200 };
 		expect(itemsToFill(4, { ...geometry, averageAspect: 0 })).toBeLessThan(1000);
 		expect(itemsToFill(4, { ...geometry, averageAspect: 0.001 })).toBeLessThan(1000);
@@ -279,7 +222,6 @@ describe('the average shape on screen', () => {
 	});
 
 	test('a file not yet measured counts as the placeholder rather than as nothing', () => {
-		// It is drawn at that shape, so the estimate has to agree with what the layout will do.
 		expect(averageAspect([item('unmeasured', null, null)])).toBe(UNKNOWN_ASPECT);
 	});
 
@@ -290,8 +232,6 @@ describe('the average shape on screen', () => {
 
 describe('what a filled row promises', () => {
 	test('a full row still spans the container to the pixel', () => {
-		// The property a filled row must keep: it is scaled to the exact width, so the right-hand
-		// margin does not wobble down the page.
 		const filled = fillRows(run(40, 1600, 900), {
 			containerWidth: 1000,
 			targetHeight: 200,

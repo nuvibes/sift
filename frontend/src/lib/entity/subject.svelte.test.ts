@@ -1,15 +1,4 @@
-/* The one rule that makes an entity page stop looking like it reloaded itself.
- *
- * Every write on a person (a heart, a cover, a rename) announces that the library moved, so
- * the page re-reads. Putting the word "Loading..." over the whole screen while that happens is
- * indistinguishable from somebody pressing F5. Nothing about the row on screen has stopped being
- * true while a fresher copy is on its way.
- *
- * What must NOT follow from that is a stale row under a new address: stepping from one person to
- * another has to clear the screen, or the first one's name and picture sit under the second one's
- * heading and everything pressed acts on the wrong thing. The two cases are one line apart in the
- * code and opposite on the screen, which is why they are tested rather than reasoned about.
- */
+/* The one rule that makes an entity page stop looking like it reloaded itself. */
 
 import { flushSync } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -131,8 +120,7 @@ describe('what a failure says', () => {
 
 	it('stops saying it could not be read once it can be', async () => {
 		// Cleared on success: a page that failed once and then read perfectly well must not go on
-		// saying so. And with a re-read arriving on every library change, that would be a
-		// sentence somebody sat looking at.
+		// saying so.
 		const { fetch, waiting } = pending();
 		const subject = new EntitySubject<Row>(fetch);
 

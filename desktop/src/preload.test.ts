@@ -1,20 +1,10 @@
-/* What the page can reach, asserted as a list.
- *
- * This file's value is that it is SHORT. The preload is the whole security boundary: anything on it
- * is reachable by anything running on the page, so the test that matters is not "does isDesktop
- * work" but "is there nothing else on here". A verb added without a decision fails this.
- */
+/* What the page can reach, asserted as a list. This file's value is that it is SHORT. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as channels from './channels';
 
-/* The stub is re-imported INSIDE the reset, not at the top of the file.
- *
- * `resetModules` throws away every loaded module, the stub included, so a stub imported up here
- * would be a DIFFERENT object from the one the freshly loaded preload writes into, and every
- * assertion below would read an empty bridge and fail for a reason that has nothing to do with the
- * preload. */
+/* The stub is re-imported INSIDE the reset, not at the top of the file. */
 let exposed: Record<string, unknown>;
 let stub: typeof import('../test/electron-stub');
 
@@ -56,9 +46,8 @@ describe('the preload', () => {
 		expect((exposed.sift as { isDesktop: boolean }).isDesktop).toBe(true);
 	});
 
-	/* The list, not the presence. Each capability arrives as it is actually built,
-	 * and this is the record of what has. If it fails, something was added to the security boundary:
-	 * add it here deliberately, with the same care the ones already on it got. */
+	/* The list, not the presence. Each capability arrives as it is actually built, and this is
+	 * the record of what has. */
 	it('carries exactly the verbs that have been built', () => {
 		expect(Object.keys(exposed.sift as object)).toEqual([
 			'isDesktop',
@@ -68,8 +57,7 @@ describe('the preload', () => {
 			'startDrag',
 			'onDragProgress',
 			'readClipboard',
-			/* A picture of the window or one area of it, for the player's screenshot. The area is
-			   four numbers; the picture comes back as bytes and the page saves it itself. */
+			/* A picture of the window or one area of it, for the player's screenshot. */
 			'captureWindow',
 			'saveServer',
 			'lastServer',
@@ -79,7 +67,7 @@ describe('the preload', () => {
 			'suggestedLibrary',
 			'chooseLibrary',
 			/* Each step of taking the library folder, pushed while it runs: the screen says what
-			   the wait is instead of one sentence for all of it. It carries a step's name only. */
+			   the wait is instead of one sentence for all of it. */
 			'onSetupProgress',
 			'setupBack',
 			'applyUpdate',
@@ -95,32 +83,21 @@ describe('the preload', () => {
 			'openFirewall',
 			'listBrowsers',
 			'setBrowser',
-			/* Where a saved file lands, read and chosen. Two verbs and not one: the page draws what
-			   the folder currently is on every visit to the setting, and only asks for the picker
-			   when somebody presses Change, so a read that opened a dialog would be a dialog
-			   nobody asked for. */
+			/* Where a saved file lands, read and chosen. */
 			'downloadFolder',
 			'chooseDownloadFolder',
-			/* A backup Sift saved on this computer, shown in its folder. A path crosses, and the
-			   shell shows only a Sift backup on its own disk; a page from another computer never
-			   gets it, since that backup is on another computer. */
+			/* A backup Sift saved on this computer, shown in its folder. */
 			'showInFolder',
 			'storage',
 			'moveStorage',
 			'onStorageProgress',
 			'forgetMode',
-			/* Close Sift and open it again, for the settings screen's Restart. It takes nothing, and
-			   a page from another computer never gets it: that page has no business closing this
-			   machine's application. */
+			/* Close Sift and open it again, for the settings screen's Restart. */
 			'restartApp',
-			/* What the close button does, and which library this copy is looking at. Two shell
-			   settings rather than the library's, because both are about THIS machine: one decides
-			   what one press of the window's close button means, and the other is a list of folders
-			   on this disk that the process starting a backend is the only thing able to act on. */
+			/* What the close button does, and which library this copy is looking at. */
 			'keepRunningWhenClosed',
 			'keepRunning',
-			/* Whether Sift starts when this person signs in to Windows, read and written. A plain
-			   boolean each way: the shell registers its own executable and nothing a page names. */
+			/* Whether Sift starts when this person signs in to Windows, read and written. */
 			'startsWithWindows',
 			'startWithWindows',
 			'libraries',
@@ -194,9 +171,7 @@ describe('the preload', () => {
 		expect(Object.keys(stub.contextBridge.exposed.sift as object)).toEqual(['isDesktop']);
 	});
 
-	/* It takes nothing. A folder dialog that accepted a starting path would let a page steer
-	 * somebody towards a folder, and one that accepted a filter would let it learn about the disk
-	 * by asking narrower and narrower questions. */
+	/* It takes nothing. */
 	it('asks for a folder with no arguments at all', () => {
 		const verbs = exposed.sift as {
 			chooseFolder: (...args: unknown[]) => unknown;
@@ -214,10 +189,7 @@ describe('the preload', () => {
 });
 
 /* Each verb is a channel name and the payload it forwards, and nothing else crosses: no event
- * object, no extra argument, no path where an id was meant. The channel names are declared twice
- * on purpose (an isolated preload cannot import `./channels`), and this is where the two
- * declarations are checked against each other, one verb at a time.
- */
+ * object, no extra argument, no path where an id was meant. */
 describe('what each verb sends across', () => {
 	type Verbs = Record<string, (...args: unknown[]) => Promise<unknown>>;
 

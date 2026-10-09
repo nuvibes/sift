@@ -1,16 +1,4 @@
-/* A Site's saved cookies, and how the screens that show them ask the server.
- *
- * A cookie travels one way. Nothing here holds one after it is sent and no response carries one,
- * so the only honest feedback is a description of what the server read, and that description is
- * given BEFORE Save, in the sheet's own words, from the read-back route. A second description
- * written afterwards would be a second wording of a fact somebody has already been shown.
- *
- * The other half is the refusal. It is SET as well as returned: returned alone, it would be
- * handed to a caller with nowhere to put it, and the screen would simply do nothing.
- *
- * The word is cookies throughout, and never the vocabulary of accounts: nobody gives Sift an
- * account here.
- */
+/* A Site's saved cookies, and how the screens that show them ask the server. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UNREACHABLE } from '$lib/shell/unreachable';
@@ -28,11 +16,7 @@ vi.mock('$lib/api/client', async (importOriginal) => ({
 import { ApiError } from '$lib/api/client';
 import { Connections, nameOf } from './connections-state.svelte';
 
-/* A fixed moment, because the description counts DAYS from now.
- *
- * Not a nicety: a wall clock can step backwards, so a test that reads it twice can get two
- * answers and an "in 7 days" can come back as 6.
- */
+/* A fixed moment, because the description counts DAYS from now. */
 const NOW = Date.UTC(2026, 7, 22, 12, 0, 0);
 const IN_DAYS = (days: number) => (NOW + days * 86400000) / 1000;
 
@@ -105,8 +89,7 @@ it('reads the list and says nothing is wrong', async () => {
 });
 
 it('gives every supported Site a row, whether or not anything is saved for it', async () => {
-	// The Site somebody opens the sheet FOR is by definition the one with nothing saved. A list of
-	// only what is already there cannot show it, and an absence is not an answer.
+	// The Site somebody opens the sheet FOR is by definition the one with nothing saved.
 	const store = new Connections();
 	const other = { ...A_SITE, key: 'coomer', name: 'Coomer' };
 	mocks.get.mockImplementation((path: string) =>
@@ -122,8 +105,7 @@ it('gives every supported Site a row, whether or not anything is saved for it', 
 });
 
 /* The saved row names its Site as the library files it, with capitals; the supported list keys
-   it in lower case. The server finds one from the other without case, and the sheet has to as
-   well, or it draws the Site twice, once "expired" and once "Add cookies". */
+   it in lower case. */
 it('draws a Site whose saved name differs from its key only in case once, as the saved row', async () => {
 	const store = new Connections();
 	const capitals = { ...A_SITE, key: 'tidewater', name: 'TideWater' };
@@ -162,8 +144,7 @@ it('hands back what the server read, and keeps none of it', async () => {
 });
 
 it('says nothing at all when the read-back could not be taken', async () => {
-	// A read-back that failed is not a refusal of the file. Reporting one would be a lie about the
-	// single thing this screen exists to be honest about.
+	// A read-back that failed is not a refusal of the file.
 	const store = new Connections();
 	mocks.post.mockRejectedValue(new Error('the network went'));
 

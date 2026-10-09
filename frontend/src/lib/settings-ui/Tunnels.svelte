@@ -28,16 +28,7 @@
 
 	const COPY = PANE.tunnels;
 
-	/* Ways out: the tunnels a download can take, and which sites take which.
-	 *
-	 * A configuration is write-only here, exactly as saved cookies are. It is chosen or pasted and sent,
-	 * and it never comes back: it carries a private key, so there is nothing to show of it.
-	 *
-	 * The state a tunnel shows is what it is DOING, not what was asked for. A tunnel can be switched
-	 * on and still not be carrying anything (a configuration that expired, a port something else is
-	 * holding), and that gap is the whole reason both are shown: a site routed through a tunnel that
-	 * is not up does not download at all.
-	 */
+	/* Ways out: the tunnels a download can take, and which sites take which. */
 
 	let { tunnels = new Tunnels() }: { tunnels?: Tunnels } = $props();
 	// svelte-ignore state_referenced_locally
@@ -54,14 +45,12 @@
 	onMount(() => {
 		void tunnels.load();
 		// A tunnel takes seconds to hand-shake, and after an unlock the server starts one with no
-		// request from here to answer. Both leave this list out of date until something looks again.
+		// request from here to answer.
 		return tunnels.watch();
 	});
 
 	function label(tunnel: Tunnel): string {
-		// Locked first, because it explains every other state below it. A configuration is encrypted
-		// with the password, so after a restart a tunnel that is switched on is switched on and
-		// unstartable, and "Not connecting" reads as a broken tunnel rather than a missing key.
+		// Locked first, because it explains every other state below it.
 		if (session.secretsLocked) return COPY.states.locked;
 		if (tunnel.draining) return COPY.states.finishing;
 		if (tunnel.up) return COPY.states.connected;
@@ -70,33 +59,21 @@
 	}
 
 	/* Amber for switched on and not connecting, and it is the same amber a download waiting for
-	   cookies gets: both are asking for a person and neither is a failure. Red is reserved for
-	   something having actually gone wrong. */
-	/* The mark, where the state's own is wrong for what this row means.
-	 *
-	 * Locked borrows the `queued` colour because it is a grey "nothing is wrong, something is
-	 * waiting", but `queued`'s glyph is a list with a tick, which says a queue rather than a key.
-	 * Handed rather than filled: `Badge` draws a handed icon outlined, and a solid padlock reads as
-	 * a warning next to the amber row under it.
-	 *
-	 * Every other row keeps the mark its state gives it, which is the whole reason the states have
-	 * marks. */
+	   cookies gets: both are asking for a person and neither is a failure. */
+	/* The mark, where the state's own is wrong for what this row means. */
 	function mark(tunnel: Tunnel): 'lock' | undefined {
 		return session.secretsLocked ? 'lock' : undefined;
 	}
 
-	/* Whether a swap can be hosted on this tunnel, as the last try found. Read from the list, never
-	   worked out here: only a try to host tells whether the provider hands the tunnel a port, and a
-	   tunnel nobody has tried is said to be untried rather than guessed either way. */
+	/* Whether a swap can be hosted on this tunnel, as the last try found. */
 	function hosting(tunnel: Tunnel): string {
 		if (tunnel.can_host === true) return COPY.hosting.can;
 		if (tunnel.can_host === false) return COPY.hosting.cannot;
 		return COPY.hosting.untried;
 	}
 
-	/* A tunnel that is simply switched off wears no pill: the switch beside it already says Off, and
-	   a second Off beside it is the same fact twice. Every other state is something the switch
-	   cannot say (connected, not connecting, finishing, locked), so it keeps its pill. */
+	/* A tunnel that is simply switched off wears no pill: the switch beside it already says Off,
+	   and a second Off beside it is the same fact twice. */
 	function saysMore(tunnel: Tunnel): boolean {
 		return label(tunnel) !== COPY.states.off;
 	}
@@ -130,18 +107,14 @@
 		await report(on ? tunnels.start(tunnel) : tunnels.stop(tunnel));
 	}
 
-	/** A provider reissues a configuration when it expires. Taking the file rather than asking
-	 *  somebody to open it, delete the tunnel and import it again, which would lose which sites
-	 *  were routed through it. */
+	/** A provider reissues a configuration when it expires. */
 	async function replace(tunnel: Tunnel, files: FileList | null): Promise<void> {
 		const file = files?.[0];
 		if (!file) return;
 		await report(tunnels.replaceConfig(tunnel, await file.text()));
 	}
 
-	/** Reading a file rather than making somebody open it and copy what is inside. The contents go
-	 *  the same way a pasted one does, and nothing keeps the file. The name is taken from the file
-	 *  when nobody has typed one: providers name these after the country, which is the answer. */
+	/** Reading a file rather than making somebody open it and copy what is inside. */
 	async function chosen(file: File | null | undefined): Promise<void> {
 		if (!file) return;
 		config = await file.text();
@@ -259,10 +232,7 @@
 		<div class="drop">
 			<Icon name="upload" size={20} />
 			<p class="headline">{COPY.drop}</p>
-			<!-- The shared chooser. Hand-hidden file inputs of this file's own would need a
-			     clipping rule that loses to `app.css` (a logical `inline-size` and a physical
-			     `width` cascade as one property), so the input nobody can see would be drawn
-			     full width. -->
+			<!-- The shared chooser. -->
 			<ChooseFile accept=".conf,text/plain" label={COPY.chooseLabel} onchoose={chosen}>
 				{COPY.choose}
 			</ChooseFile>
@@ -415,14 +385,8 @@
 		color: var(--sift-ink-3);
 	}
 
-	/*
-	 * The one thing this paste box wants that no other box does: the tabular face, because what
-	 * goes in it is a WireGuard configuration rather than a sentence.
-	 *
-	 * The width, the room to grow, the padding and the vertical resize are not restated here: the
-	 * first is `TextArea`'s and the rest are app.css's. `:global`, because the box is
-	 * `TextArea`'s own element, compiled in that file's scope.
-	 */
+	/* The one thing this paste box wants that no other box does: the tabular face, because what
+	 * goes in it is a WireGuard configuration rather than a sentence. */
 	.paste :global(.text-area) {
 		font: var(--text-data);
 	}

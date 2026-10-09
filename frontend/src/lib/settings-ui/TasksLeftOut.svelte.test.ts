@@ -1,7 +1,5 @@
-/*
- * The page of files several products gave up on names the product on each file's line, so a file
- * left out twice reads as two reasons rather than one said twice.
- */
+/* The page of files several products gave up on names the product on each file's line, so a file
+ * left out twice reads as two reasons rather than one said twice. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { createRawSnippet, flushSync, mount, unmount } from 'svelte';
 

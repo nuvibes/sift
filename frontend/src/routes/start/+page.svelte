@@ -1,26 +1,6 @@
 <script lang="ts">
-	/*
-	 * The first question a new copy of Sift asks: does this computer hold the library, or look at
-	 * one somebody else is holding?
-	 *
-	 * ## It is a Sift screen, not an operating-system message box
-	 *
-	 * `/connect` is a real Sift route with no server behind it, served out of the application's own
-	 * bundle under a scheme of the shell's, so this is the same mechanism, with the same
-	 * `DoorCard`, `ChoiceCard` and `Note` the rest of the application is made of, rather than three
-	 * paragraphs crammed into a message box's `detail` string.
-	 *
-	 * ## Two cards rather than a radio group and a Continue
-	 *
-	 * There is nothing to review: each card IS the answer, so pressing one moves on. A Continue
-	 * button here would be a second press for a decision already made, on the first screen somebody
-	 * ever sees.
-	 *
-	 * ## In a browser it says so rather than drawing dead buttons
-	 *
-	 * The address is reachable, there is no shell to answer, and a card that silently does nothing
-	 * is worse than a sentence saying where the question belongs. The same shape `/connect` uses.
-	 */
+	/* The first question a new copy of Sift asks: does this computer hold the library, or look
+	 * at one somebody else is holding? */
 	import { DoorCard, Note, Problem } from '$lib/components/common';
 	import ChoiceCard from '$lib/components/common/ChoiceCard.svelte';
 	import { bridge } from '$lib/bridge';

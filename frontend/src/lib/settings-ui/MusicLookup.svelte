@@ -1,35 +1,5 @@
 <script lang="ts">
-	/*
-	 * Settings > Music > Name songs: whether Sift may ask AcoustID which song a file uses.
-	 *
-	 * It has the four parts a stash-box has (a switch, a key, a way out and a test), drawn in the
-	 * order every settings pane keeps: the switch with where it stands in the shaded box under it, then
-	 * how it behaves (the key, the test), then when it runs (the `when` snippet the pane hands in:
-	 * the lookup task's row and the fingerprint task's), and last the More settings page, which holds
-	 * the way out. Asking AcoustID about the library is the lookup task's press, on Settings > Tasks,
-	 * and nothing on this block starts it.
-	 *
-	 * ## The disclosure is in the status box, and it is never folded away
-	 *
-	 * Everywhere else a setting's disclosure is folded under "More about", because it is reference
-	 * material read once. This one is what the switch sends off this device, and it is the reason
-	 * the switch is off: it is the status box's second line, in the server's own words, and the
-	 * switch's row does not repeat it.
-	 *
-	 * ## The key
-	 *
-	 * Typed into a password box, sent, and never shown again: the server has no answer that carries
-	 * it back, so there is nothing to fill a box with. Once one is set the block says so (Key saved,
-	 * or Key locked after a restart, the three states a stash-box's key has), with Delete, and the
-	 * box to type one comes back only after that.
-	 *
-	 * ## The route
-	 *
-	 * On the More settings page: it is set once, if ever. Drawn exactly as a stash-box's: the same
-	 * row, the same menu, the same list of ways out (this device's own connection, then every
-	 * tunnel), read from the same tunnel store the Sites pane uses so the two cannot offer
-	 * different lists.
-	 */
+	/* Settings > Music > Name songs: whether Sift may ask AcoustID which song a file uses. */
 	import { onMount, type Snippet } from 'svelte';
 	import {
 		Badge,
@@ -57,9 +27,8 @@
 	import { DIRECT, Tunnels } from './tunnels-state.svelte';
 	import { COPY, LOOKUP_KEY, LOOKUP_ROUTE_KEY, MusicLookup } from './music-lookup.svelte';
 
-	/* Handed in rather than made here, so the Unlock panel at the top of the section can re-read it:
-	   unlocking is what turns Key locked back into Key saved. Defaulted, because the block is legible
-	   on its own. */
+	/* Handed in rather than made here, so the Unlock panel at the top of the section can re-read
+	   it: unlocking is what turns Key locked back into Key saved. */
 	let { lookup = new MusicLookup(), when }: { lookup?: MusicLookup; when?: Snippet } = $props();
 
 	/* Only to name the ways out. A failure leaves the list at Direct, which is honest. */
@@ -101,12 +70,11 @@
 	});
 
 	/* The switch and the route are settings: moved in another window, or by another admin, this
-	   block follows. Nothing on it holds an unsent edit but the key box, which a re-read leaves
-	   alone. */
+	   block follows. */
 	whenChanged(settingChanges, () => void lookup.load());
-	/* And the counts beside the lookup task follow the work as it happens: every answer kept rings
-	   the work's bell (a lookup settling, a walk ending) and a song named on a file rings the
-	   library's. Without these the count would stand still through a whole run until a reload. */
+	/* And the counts beside the lookup task follow the work as it happens: every answer kept
+	   rings the work's bell (a lookup settling, a walk ending) and a song named on a file rings
+	   the library's. */
 	whenChanged(jobChanges, () => void lookup.load());
 	whenChanged(libraryChanges, () => void lookup.load());
 

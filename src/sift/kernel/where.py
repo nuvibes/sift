@@ -1,12 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Where a file sits, said to one viewer. Every screen that names a file's place reads it here.
-
-An admin is told the full path on this machine, the path they can paste into a file manager,
-with their profile folder's name replaced by `REDACTED` when they ask for that. Anyone else is
-never told an absolute path: they get the library folder's name where they may see that folder,
-and "..." for every run of folders they may not. A Hidden folder is "..." while Hidden is shut,
-for an admin too, because it is not a folder anybody may see then.
-"""
+"""Where a file sits, said to one viewer: a full path for an admin, names or "..." for others."""
 
 from __future__ import annotations
 
@@ -19,26 +12,21 @@ from typing import TYPE_CHECKING
 from sift.kernel.content import ROOT_REL_PATH
 
 if TYPE_CHECKING:
-    # Types only: History reads this module while the access package is still being imported.
+    # Types only: History reads this module while the access package is being imported.
     from sift.kernel.access import Folder, Repository, Viewer
     from sift.kernel.content import LibraryStore
     from sift.kernel.seams import SettingsSeam
 
 #: A folder, or a run of folders, the viewer may not see.
 UNSEEN = "..."
-#: What the profile folder's name becomes when the viewer asks for it to be hidden. Always a whole
-#: segment of the path, which is how the page finds it and draws it covered, a filled box over a
-#: stand-in word (`PathText.svelte` holds the same string). Replaced here rather than covered on
-#: the page, so the name itself never leaves the server; the word reads plainly wherever a path is
-#: copied or put into a sentence.
+#: The profile folder's name when hidden, replaced on the server so the name never leaves it;
+#: a whole segment, which is how the page finds it and draws it covered (`PathText.svelte`).
 REDACTED = "[redacted]"
-#: The per-user setting that asks for it.
 HIDE_ACCOUNT_NAME_KEY = "paths.hide_account_name"
 
 
 def profile_folder() -> PurePath | None:
-    """The folder of the account Sift runs as (the one whose name a path gives away) or None
-    where the machine cannot say."""
+    """The folder of the account Sift runs as, whose name a path gives away, or None."""
     try:
         return Path.home()
     except RuntimeError:
@@ -64,12 +52,7 @@ def said(
     profile: PurePath | None = None,
     sep: str = os.sep,
 ) -> str:
-    """One file's place: `top`, then each folder of `rel_path` the viewer may see, then its name.
-
-    `seen` is the relative paths of the folders in this library the viewer may see now,
-    `ROOT_REL_PATH` standing for the library folder itself. `top` is what the library folder is
-    said as: the absolute path for an admin, its name for anyone else.
-    """
+    """One file's place: `top`, each folder of `rel_path` the viewer may see, then its name."""
     visible = set(seen)
     *folders, name = rel_path.split("/")
     parts = [
@@ -86,14 +69,12 @@ def said(
 
 
 def folder_said(rel_folder: str, *, seen: Iterable[str]) -> str:
-    """A folder inside its library, by its relative path, as the viewer may be told it: each folder
-    of it they may not see is `UNSEEN`, and a run of them is one."""
+    """A folder's relative path as the viewer may be told it; unseen runs are one `UNSEEN`."""
     return "/".join(_folders_said(rel_folder.split("/"), set(seen)))
 
 
 def _folders_said(folders: Sequence[str], visible: Collection[str]) -> list[str]:
-    """Each folder of a path, top first: its name where it is in `visible`, else `UNSEEN`, with a
-    run of unseen folders said once."""
+    """Each folder of a path, top first, a run of unseen ones said once."""
     parts: list[str] = []
     for depth, folder in enumerate(folders):
         part = folder if "/".join(folders[: depth + 1]) in visible else UNSEEN
@@ -107,10 +88,8 @@ def _folders_said(folders: Sequence[str], visible: Collection[str]) -> list[str]
 class Whereabouts:
     """What one viewer may be told about where files sit, read once for a page."""
 
-    #: The library folder of each library, by root id, as it is said: its absolute path for an
-    #: admin, its name for anyone else. Absent where the viewer may not see it.
+    #: Each library's folder as it is said, by root id; absent where the viewer may not see it.
     tops: Mapping[str, str] = field(default_factory=dict)
-    #: The folders the viewer may see, by root id, as relative paths.
     seen: Mapping[str, frozenset[str]] = field(default_factory=dict)
     profile: PurePath | None = None
 
@@ -130,13 +109,7 @@ def whereabouts_from(
     root_paths: Mapping[str, str],
     profile: PurePath | None,
 ) -> Whereabouts:
-    """The answer for these folders, which are the ones `viewer` may see. A concealed folder is not
-    seen while Hidden is shut; an absolute path is used only for an admin.
-
-    `concealed` is where a folder sits, not whether this viewer is being kept from it: the access
-    layer hands a concealed folder back both to a viewer with Hidden open and to one whose mode
-    keeps a locked placeholder, and only the second is kept from its name.
-    """
+    """The answer for folders `viewer` may see; concealed ones count only with Hidden open."""
     seen: dict[str, set[str]] = {}
     tops: dict[str, str] = {}
     for folder in folders:
@@ -155,8 +128,7 @@ def whereabouts_from(
 
 
 async def profile_to_blur(viewer: Viewer, settings: SettingsSeam) -> PurePath | None:
-    """The profile folder whose name `blurred` takes out of this viewer's paths, or None. Only an
-    admin is ever told an absolute path, so only an admin's setting is read."""
+    """The profile folder to take out of an admin's paths, or None; admins only."""
     if viewer.is_admin and await settings.get_user(viewer.id, HIDE_ACCOUNT_NAME_KEY):
         return profile_folder()
     return None

@@ -33,6 +33,10 @@ CLIENT = REPO / "frontend" / "src"
 NOT_CALLED_FROM_THE_CLIENT: dict[tuple[str, str], str] = {
     ("GET", "/health"): "a container probe and an uptime monitor, deliberately outside the API",
     ("GET", "/{path:path}"): "the client itself, and the pages of it: this is what serves them",
+    ("GET", "/api/loops/{loop_id}/thumb"): (
+        "a Loop's own picture on its wall. `rowStillUrl` (entity/art.ts) builds it from the wall's "
+        "path, so no literal in the client spells it"
+    ),
     # --- The player's addresses, consumed but never written by the client: `/playback` answers
     # with the address to use, and every later one comes out of the playlist it points at.
     ("GET", "/api/assets/{asset_id}/hls/master.m3u8"): (

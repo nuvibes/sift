@@ -56,7 +56,7 @@ from sift.kernel.access.catalog import (
     seed_site_username_on,
     site_home,
 )
-from sift.kernel.db import Connection, Database
+from sift.kernel.db import Connection, Database, Row
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor, Object, Reversal, record_event
 from sift.kernel.log import get_logger
@@ -462,6 +462,46 @@ async def _site_as_it_was(
     }
 
 
+async def _username_at_home(
+    connection: Connection, home: Home, made: Made
+) -> tuple[Row | None, Row | None, str, str]:
+    """The host Site and her username on it, each made where missing."""
+    host_was = await (await connection.execute(_SITE_NAMED, (home.site,))).fetchone()
+    held = (
+        None
+        if host_was is None
+        else await (
+            await connection.execute(_USERNAME_FOLDED, (str(host_was["id"]), home.handle))
+        ).fetchone()
+    )
+    host_id, username_id = await seed_site_username_on(
+        connection,
+        site=home.site,
+        name=str(held["name"]) if held is not None else home.handle,
+        made=made,
+    )
+    await connection.execute(_SET_URL, (home.url, username_id))
+    address = site_home(home.url)
+    if host_was is None and address is not None:
+        await connection.execute(_ADD_HOME, (new_id(), host_id, address, int(time.time())))
+    return host_was, held, host_id, username_id
+
+
+async def _move_filings(connection: Connection, filings: list[Row], username_id: str) -> list[str]:
+    moved: list[str] = []
+    for row in filings:
+        # The box that filed it moves with the filing, so its lines still name the box.
+        if await link_username_to_asset_on(
+            connection,
+            asset_id=str(row["asset_id"]),
+            username_id=username_id,
+            source=BOX_FILING,
+            box_id=None if row["box_id"] is None else str(row["box_id"]),
+        ):
+            moved.append(str(row["asset_id"]))
+    return moved
+
+
 async def turn_into_username(
     connection: Connection, signs: Signs, *, made: Made, actor: Actor
 ) -> Turned | None:
@@ -481,35 +521,8 @@ async def turn_into_username(
     if not filings:
         return None
     site_row = await (await connection.execute(_SITE_ROW, (signs.site_id,))).fetchone()
-    host_was = await (await connection.execute(_SITE_NAMED, (home.site,))).fetchone()
-    held = (
-        None
-        if host_was is None
-        else await (
-            await connection.execute(_USERNAME_FOLDED, (str(host_was["id"]), home.handle))
-        ).fetchone()
-    )
-    host_id, username_id = await seed_site_username_on(
-        connection,
-        site=home.site,
-        name=str(held["name"]) if held is not None else home.handle,
-        made=made,
-    )
-    await connection.execute(_SET_URL, (home.url, username_id))
-    address = site_home(home.url)
-    if host_was is None and address is not None:
-        await connection.execute(_ADD_HOME, (new_id(), host_id, address, int(time.time())))
-    moved: list[str] = []
-    for row in filings:
-        # The box that filed it moves with the filing, so its lines still name the box.
-        if await link_username_to_asset_on(
-            connection,
-            asset_id=str(row["asset_id"]),
-            username_id=username_id,
-            source=BOX_FILING,
-            box_id=None if row["box_id"] is None else str(row["box_id"]),
-        ):
-            moved.append(str(row["asset_id"]))
+    host_was, held, host_id, username_id = await _username_at_home(connection, home, made)
+    moved = await _move_filings(connection, filings, username_id)
     await connection.execute(_TAKE_BOX_FILINGS, (nameless_id,))
     person = list(await connection.execute_fetchall(_PERSON_NAMED, (signs.name,)))
     linked = None
@@ -615,16 +628,7 @@ async def put_back(connection: Connection, payload: str) -> bool:
     if again is None:
         return False
     site_id = str(again["id"])
-    for row in recorded.get("aliases") or []:
-        await connection.execute(_PUT_ALIAS_BACK, (row[0], site_id, row[1], row[2], row[3]))
-    for row in recorded.get("links") or []:
-        await connection.execute(_PUT_LINK_BACK, (row[0], site_id, row[1], row[2], row[3]))
-    for row in recorded.get("box_links") or []:
-        await connection.execute(_PUT_BOX_LINK_BACK, (site_id, row[0], row[1], row[2], row[3]))
-    if isinstance(site, list) and len(site) == len(_SITE_COLUMNS) and str(site[0]) == site_id:
-        # Its names and links coming back are not an edit of it: the moment it was last edited is
-        # the one it had, which the triggers on those rows have just moved.
-        await connection.execute(_KEEP_EDITED_AT, (site[_SITE_COLUMNS.index("edited_at")], site_id))
+    await _site_put_back(connection, recorded, site, site_id)
     nameless_id = str(recorded.get("nameless_id") or "")
     created = recorded.get("nameless_created_at") or int(time.time())
     await connection.execute(_PUT_NAMELESS_BACK, (nameless_id, site_id, created))
@@ -641,6 +645,28 @@ async def put_back(connection: Connection, payload: str) -> bool:
         await connection.execute(_TAKE_FILING, (asset_id, username_id))
     if recorded.get("person_linked"):
         await connection.execute(_UNLINK_PERSON, (username_id, recorded["person_linked"]))
+    await _let_go_of_what_the_move_made(connection, recorded, username_id)
+    return True
+
+
+async def _site_put_back(
+    connection: Connection, recorded: dict[str, Any], site: object, site_id: str
+) -> None:
+    for row in recorded.get("aliases") or []:
+        await connection.execute(_PUT_ALIAS_BACK, (row[0], site_id, row[1], row[2], row[3]))
+    for row in recorded.get("links") or []:
+        await connection.execute(_PUT_LINK_BACK, (row[0], site_id, row[1], row[2], row[3]))
+    for row in recorded.get("box_links") or []:
+        await connection.execute(_PUT_BOX_LINK_BACK, (site_id, row[0], row[1], row[2], row[3]))
+    if isinstance(site, list) and len(site) == len(_SITE_COLUMNS) and str(site[0]) == site_id:
+        # Its names and links coming back are not an edit of it: the moment it was last edited is
+        # the one it had, which the triggers on those rows have just moved.
+        await connection.execute(_KEEP_EDITED_AT, (site[_SITE_COLUMNS.index("edited_at")], site_id))
+
+
+async def _let_go_of_what_the_move_made(
+    connection: Connection, recorded: dict[str, Any], username_id: str
+) -> None:
     if (
         recorded.get("username_made")
         and await (await connection.execute(_HOLDS_FILES, (username_id,))).fetchone() is None
@@ -652,7 +678,6 @@ async def put_back(connection: Connection, payload: str) -> bool:
             and await (await connection.execute(_HOLDS_USERNAMES, (host_id,))).fetchone() is None
         ):
             await connection.execute(_DELETE_SITE, (host_id,))
-    return True
 
 
 # --- What a lookup files a studio's next scene under --------------------------------------------

@@ -1,16 +1,8 @@
 <script lang="ts">
 	/*
-	 * The sheets the entity verbs open, for any wall of named things.
-	 *
-	 * The drawing half of `wall-verbs.svelte.ts`: that file decides what each verb DOES and holds
-	 * what is open, this puts the sheets on the screen. They are split because the handlers
-	 * have to exist before a menu is built and a component's exports do not exist until it has
-	 * mounted, so a wall makes the class during setup and draws this beside its cards.
-	 *
-	 * Every sheet here is the one the rest of the application already uses. Nothing is a second
-	 * copy: a share from a tag's People tab opens the same panel a share from the People wall does,
-	 * so the two cannot come to describe a share differently.
-	 *
+	 * The sheets the entity verbs open, the drawing half of wall-verbs.svelte.ts; each is the one
+	 * the
+	 * rest of the application uses.
 	 * NOT ON THE GALLERY: it draws nothing at all until a verb opens something, and each of the
 	 * sheets it draws has its own entry.
 	 */
@@ -30,13 +22,8 @@
 	let { verbs }: Props = $props();
 </script>
 
-<!--
-	Renaming, as a confirmation with a box in it rather than a sheet of its own.
+<!-- Renaming as a confirmation with a box: a name is shared vocabulary. -->
 
-	A name here is shared vocabulary (it changes what everybody's screens and searches say) so
-	the sentence that says so is the same thing `ConfirmDialog` exists to make unskippable. Every
-	wall renames here, so a wall on a tab renames exactly as the wall a thing lives on does.
--->
 <RenameDialog
 	bind:open={verbs.renameOpen}
 	named={verbs.renaming?.name ?? ''}
@@ -52,8 +39,7 @@
 	onapplied={() => verbs.applied()}
 />
 <VisibilityDialog bind:open={verbs.reachOpen} target={verbs.reaching} />
-<!-- Why this is hidden, a different question from who it is shared with, opened from the card's
-     own Hidden mark. Offered to everybody: hiding is personal, so a guest has their own vault. -->
+<!-- Why this is hidden, from the card's own Hidden mark, for everybody: hiding is personal. -->
 <HiddenDialog bind:open={verbs.hiddenOpen} target={verbs.hiddenAbout} />
 
 <ConfirmDialog
@@ -64,20 +50,9 @@
 	onconfirm={() => void verbs.remove()}
 />
 
-<!-- No button of its own: the wall opens it from the menu and the bar. The same sheet a person's
-     own page draws, so a merge is weighed the same way wherever it is asked for.
+<!-- The person page's merge sheet. No count is handed over (see `WallRow.count`); the sheet
+settles its keeper untracked, as this array is rebuilt on every redraw. -->
 
-     Each row carries its optional `picture`, filled by `RelatedWall` through the same builders
-     every other picker uses; a wall whose rows have no cover columns hands nothing over and its
-     cards fall back to a letter.
-
-     The count is deliberately withheld (see `WallRow.count`): a picture in a filtered context is
-     the same picture, but a count in a filtered context is a different number.
-
-     The array is rebuilt on every redraw of the wall behind the sheet, because it is `.map`ped
-     here. The sheet makes that safe by settling its keeper and its count untracked, so a repaint
-     cannot throw away a choice just made. Said here as well because this line produces the
-     condition. -->
 {#if verbs.facts.mergeable}
 	<MergeEntities
 		people={verbs.merging.map((row) => ({

@@ -1,10 +1,4 @@
-/* Whether somebody has just pressed a key or clicked in a window.
- *
- * Seen by the main process from the input the operating system delivers, never reported by the
- * page: a script can dispatch a click event, and none of those pass through here. A page served by
- * another computer may read the clipboard only just after a real press, which is what the Paste
- * button is.
- */
+/* Whether somebody has just pressed a key or clicked in a window. */
 
 /** How long a press stays good for. The browser's own user-activation window is about this long. */
 export const GESTURE_WINDOW_MS = 5000;
@@ -33,12 +27,7 @@ export function watchGestures(contents: InputSource & object): void {
 	});
 }
 
-/**
- * Whether a press happened recently enough, and if so, use it up.
- *
- * Used up so one press buys one read, as a browser's own activation does. A window nobody watched
- * has no presses at all, so a wiring mistake refuses rather than allows.
- */
+/** Whether a press happened recently enough, and if so, use it up. */
 export function takeGesture(contents: object, now: number = performance.now()): boolean {
 	const at = lastPress.get(contents);
 	if (at === undefined || now - at > GESTURE_WINDOW_MS || now < at) return false;

@@ -13,22 +13,11 @@
 	import { counted as grouped } from '$lib/entity/entity-counts';
 	import type { components } from '$lib/api/schema';
 	/* NOT ON THE GALLERY: this draws no element of its own. It owns the actions and the sheets that
-	   ask before they write, and hands them to a snippet, so there is nothing to look at here that
-	   is not already on the gallery as `VerbButtons` and `VerbMenuItems`, which are what it produces. */
+	ask before they write; VerbButtons and VerbMenuItems, which it feeds, are there. */
 	/* WHY NOT BITS-UI: not a control. This is the wiring behind the verbs (the actions and the sheets that ask
-	   before they write) and it renders no interface of its own. */
-	/*
-	 * Everything that can be done to a file, wired once, for any surface that shows files.
-	 *
-	 * The verb LIST lives in one place (`$lib/grid/verbs`), and that is what stops a bar and a menu
-	 * offering different things. Everything behind it lives here: the actions, the four sheets that
-	 * ask before they write, and the handlers tying the two together. Inside one screen, a second
-	 * surface showing files could only duplicate the lot or write its own button (a rail offering
-	 * Share and nothing else beside a grid offering ten verbs).
-	 *
-	 * So this owns the sheets and hands its children the finished verbs. A surface says what it is
-	 * showing and what it can do about it; it does not get to decide which verbs exist.
-	 */
+	before they write) and it renders no interface of its own. */
+	/* Everything that can be done to a file, wired once: the list is `$lib/grid/verbs`'s, the actions,
+	 * sheets and handlers are here, and children get the finished verbs. */
 	import { goto } from '$app/navigation';
 	import { likeWall } from '$lib/search/like';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -102,30 +91,10 @@
 		around: Omit<Surroundings<Item>, 'lookup'> & { lookup?: (id: string) => Item | undefined };
 		/** Whether this surface is the one that shows hidden files. Flips what Hide means. */
 		showingHidden?: boolean;
-		/**
-		 * Whether files on this surface can be kept at the top of it.
-		 *
-		 * Off unless a surface says otherwise, and the default is the point. A pin belongs to a wall
-		 * somebody curates (a person's files, a collection's, Favorites, Hidden), not the whole
-		 * library or the log of what has been watched. Neither of those is curated, and a verb on a
-		 * wall where it means nothing is a verb somebody has to learn to ignore.
-		 */
+		/** Whether files can be pinned here: only on a curated wall. */
 		pinnable?: boolean;
-		/**
-		 * Drawn with the verbs ready to render.
-		 *
-		 * `bar` is the declaration a bar reads and `menu` is the one a right-click menu reads. They
-		 * differ in one thing only: `menu` takes the file it was opened on, so it can word the heart
-		 * for that one file, and a bar never addresses one file in particular. Both keep the groups
-		 * and both carry the lists: what a bar leaves out is `barShape`'s to decide, so a wall can
-		 * append its own verbs before anything is pruned or split.
-		 *
-		 * `named` is for a surface that draws ONE verb as a control of its own rather than as a row
-		 * in a list: the sharing mark on a tile, and the file's own screen, which draws Save, Edit
-		 * and Compress as named buttons in its own layout. It answers with the declared verb or with
-		 * nothing, so whether the control appears at all is decided in the same place as everything
-		 * else rather than by a second copy of the rule written beside the button.
-		 */
+		/** Drawn with the verbs: `bar` and `menu` (which words the heart for the file it was opened on),
+		 * and `named` for a surface drawing one verb as its own control. */
 		children: Snippet<
 			[
 				{
@@ -147,8 +116,7 @@
 	}: Props<Actionable> = $props();
 
 	const lookup = (id: string) => around.lookup?.(id) ?? items.find((one) => one.id === id);
-	/* Built once, and every member reads through a function so it follows the surface rather than
-	   freezing whatever the props held on the first render. */
+	/* Built once, every member read through a function so it follows the surface. */
 	const actions = new AssetActions<Actionable>({
 		lookup,
 		get selection() {
@@ -161,94 +129,44 @@
 		showingHidden: () => around.showingHidden?.() ?? false
 	});
 
-	/* Whether Move can be offered at all: it needs somewhere to move to, which most libraries
-	   deliberately do not have. Asked once, and only by an admin, who is the only account it is
-	   offered to. */
+	/* Whether Move can be offered (somewhere to move to), asked once, by an admin. */
 	$effect(() => {
 		if (session.isAdmin) void movable.ensure();
 	});
 
-	/*
-	 * Move and Compress: two verbs that need an answer first, in a sheet of their own.
-	 *
-	 * The same shape each time: remember what is being acted on, then open the sheet. The five
-	 * places a file can be put are not here: each is a list that opens out of its row (see
-	 * `places`), on every surface that draws the row.
-	 */
+	/* Move and Compress, each answered in a sheet first. */
 	let acting = $state<string[]>([]);
 	let moveOpen = $state(false);
 	let renameOpen = $state(false);
 	let renaming = $state<string[]>([]);
 	let compressOpen = $state(false);
 	let editOpen = $state(false);
-	/*
-	 * Which way the editor opens: Trim on the clip, or straight into making a GIF from its own row.
-	 * The dialog takes it as `mode`; this remembers which row was pressed.
-	 */
+	/* Which way the editor opens: Trim or a GIF. */
 	let editMode = $state<'trim' | 'gif'>('trim');
-	/* The one file the editor is open on, fetched rather than taken off the tile.
-	 *
-	 * A tile carries what a grid needs to draw it, and the editor needs what the file IS: how big
-	 * the picture is, how long the video runs, and whether a scrub strip has been built for it.
-	 * Reading those off a tile would work on the screens whose tiles happen to carry them and fail
-	 * quietly on the ones that do not. */
+	/* The file the editor is open on, fetched, since a tile lacks what the editor needs. */
 	let editing = $state<EditableAsset | null>(null);
 	let deleting = $state<string[]>([]);
 	let deleteOpen = $state(false);
 	let sharing = $state<ShareTarget[]>([]);
 	let shareOpen = $state(false);
-	/* What the visibility report is open on. ONE file: forty have forty different answers to
-	   "who can see this and how", so the verb is `singleOnly` and this is not a list. */
+	/* The visibility report, on one file only. */
 	let reaching = $state<ShareTarget | null>(null);
 	let reachOpen = $state(false);
 
-	/*
-	 * Every list here is drawn by `pickRow`, the one rule for the picture a thing is drawn by
-	 * (`$lib/entity/entity-picture`), so a row wears what its card and its page wear: a tag and a
-	 * collection their covers as much as a person their face.
-	 */
+	/* Every list's rows by `pickRow`, so a row wears its card's picture. */
 	const tagRow = (tag: Drawable) => pickRow('tag', tag);
 	const collectionRow = (one: Drawable) => pickRow('collection', one);
 	const photoSetRow = (set: Drawable) => pickRow('photo_set', set);
 	const songRow = (one: Drawable) => pickRow('song', one);
 
-	/*
-	 * The five lists a file can be put on, each the row itself under Add to.
-	 *
-	 * Written here and handed to `$lib/grid/verbs` as its handlers, because everything a pick needs
-	 * (the store, the choices, the write and the making) lives in this file, while the verb list
-	 * knows ids, words and icons so a verb can be read without its wiring. Typed by the handler
-	 * list, so a sixth place declared there and not written here is refused by the compiler rather
-	 * than drawn as a row that opens onto nothing.
-	 *
-	 * ONE LIST FOR EVERY DOOR. The right-click menu, a file's own Add to and the selection bar's
-	 * Add to all draw these rows, because the declaration carries them. No sheet stands beside
-	 * them for a set: a flyout over a set marks what some or all of it is on, stays open for the
-	 * next pick, and writes to every file, so a sheet would be a second Add to menu saying the same
-	 * thing differently.
-	 *
-	 * The row somebody picked, whole. A remembered row is drawn from the account's own record and
-	 * is often not on the current page of the list, so looking a name up by id would come back
-	 * empty; the declaration takes the choice itself, which already carries its name.
-	 *
-	 * What the files are already on, asked once for all five lists. A menu has five pickers asking
-	 * about the same files, and five requests would be five readings of a selection that can change
-	 * between them. The server answers all five kinds plus the heart in one reply (`POST
-	 * /assets/memberships`), and each picker reads its part out of the shared promise.
-	 *
-	 * Held under the ids it was asked about, so opening Person then Collection over one selection
-	 * reads the first answer. Dropped the moment anything is written, because a write is what makes
-	 * it wrong: the picker moves its own row (see `PickMenu.choose`), and the next open must show
-	 * the new state.
-	 *
-	 * The reply, as the server publishes it. `favorite` is a bare string on the wire and is
-	 * narrowed where it is read (`onAlready`); the five lists are the server's own `Membership`.
-	 */
+	/* The five lists a file can be put on, each a row under Add to on every door, typed by the
+	 * handler list. What the files are already on is asked once for all five
+	 * (`/assets/memberships`),
+	 * held per id set and dropped on any write. */
 	type MembershipsAnswer = components['schemas']['Memberships'];
 	type MembershipList = components['schemas']['Membership'];
 
-	/** The most ids one question may name. The server's own cap, and the same 500 every bulk write
-	 *  is split by, so a selection bigger than one request is split rather than refused. */
+	/** The most ids one question may name: the server's cap, so a big selection is split. */
 	const MOST_PER_ASK = 500;
 
 	const NOTHING_ON: MembershipsAnswer = {
@@ -261,8 +179,7 @@
 		favorite: 'none'
 	};
 
-	/** Which files the held answer is about, and the answer itself. Both, because the answer is only
-	 *  reusable for exactly the set it was asked about. */
+	/** The ids the held answer is about, and the answer. */
 	let askedAbout = '';
 	let asked: Promise<MembershipsAnswer> | null = null;
 
@@ -293,19 +210,12 @@
 			}
 			return pages.length === 1 ? pages[0] : joinAnswers(pages);
 		} catch {
-			// No marks rather than wrong ones, and the flyout is fully usable without them. A guest
-			// is refused this outright, which is the ordinary case here rather than a failure.
+			// No marks rather than wrong ones; a guest is refused this outright.
 			return NOTHING_ON;
 		}
 	}
 
-	/*
-	 * Several chunks of one selection, read as one answer.
-	 *
-	 * "All of them" is the only part that cannot simply be added up: a tag on every file of the
-	 * first five hundred and on none of the next is on SOME of the selection, not all, so `all`
-	 * is what every chunk agreed was all, and everything else anybody saw at all is `some`.
-	 */
+	/* Chunks of one selection joined: `all` only where every chunk said all, else `some`. */
 	function joinAnswers(pages: MembershipsAnswer[]): MembershipsAnswer {
 		const join = (of: (page: MembershipsAnswer) => MembershipList): MembershipList => {
 			const all = pages
@@ -339,18 +249,7 @@
 		return marks;
 	}
 
-	/*
-	 * Taking files back off.
-	 *
-	 * The adds are `AssetActions`, one method each, with the sentence they announce in a table at
-	 * the top of that file. These removals are written here in the same shape as those, beside
-	 * `LANDED` in `$lib/grid/actions`, so moving them there is a copy rather than a rewrite; this is
-	 * a second place the five kinds are worded.
-	 *
-	 * Each takes the whole set and one thing to come off it, which is what a picker row hands over.
-	 * The route is the same one the add uses in every case, told to remove, so there is no second
-	 * address to keep in step.
-	 */
+	/* Taking files back off, in the same shape as `AssetActions`' adds, through the same routes. */
 	const TAKEN_OFF: Record<
 		string,
 		{ wall: string; lead: (files: string, single: boolean) => string }
@@ -381,8 +280,7 @@
 		}
 	};
 
-	/** Say what came off, naming the one thing it came off. The same shape `AssetActions.#landed`
-	 *  uses, down to the link being handed over rather than written into the sentence. */
+	/** Say what came off, as `AssetActions.#landed` does. */
 	function cameOff(ids: string[], choice: PickChoice, kind: string, done: BulkWriteDone): void {
 		membershipsMoved();
 		libraryChanges.changed();
@@ -398,9 +296,7 @@
 		announceSkipped(done, kind === 'photo_set' ? 'picture' : 'file');
 	}
 
-	/** One removal, with the one message every failure of one gets. Written once because five
-	 *  copies of a try/catch is five chances for one of them to say nothing at all. Answers with
-	 *  what landed, which is what puts the picker's tick back on a refusal (`PickLanded`). */
+	/** One removal with its one failure message, answering what landed. */
 	async function takeOff(
 		ids: string[],
 		choice: PickChoice,
@@ -418,16 +314,8 @@
 		}
 	}
 
-	/**
-	 * Put files on from the menu's picker, and say what landed.
-	 *
-	 * What was held about where the files already were is forgotten on both sides of the write:
-	 * before, so nothing reads the old answer while the write is out; after, so a picker told
-	 * `partly` and asking again gets the server's answer rather than the one from before the press.
-	 *
-	 * The selection is kept (`keepSelection`): a right press keeps the flyout up for the next pick,
-	 * over the same files, from whichever door it was opened.
-	 */
+	/** Put files on from the picker and say what landed; the held answer is forgotten either side of
+	 * the write, and the selection kept for the next pick. */
 	async function wentOn(
 		ids: string[],
 		run: (how: PutOnHow) => Promise<BulkWriteDone | null>
@@ -476,10 +364,7 @@
 			ask: async (typed) => pageOf(await siteStore.choices(typed), siteRow),
 			already: async (ids) => onAlready((await membershipsOf(ids)).sites),
 			pick: (ids, choice) => wentOn(ids, (how) => actions.site(ids, [choice], how)),
-			/*
-			 * Bulk removal of a site filing: the file's own record can only undo per file, so `POST
-			 * /assets/sites` takes `add` like the tag and person writes beside it.
-			 */
+			/* Bulk removal of a Site filing, by `add`, as the tag and person writes. */
 			unpick: (ids, choice) =>
 				takeOff(ids, choice, 'site', () => peopleStore.filedUnder(ids, [choice.id], false)),
 			create: (name: string) => siteStore.create(name)
@@ -504,8 +389,7 @@
 				takeOff(ids, choice, 'photo_set', () => photoSetStore.remove(choice.id, ids)),
 			create: (name: string) => photoSetStore.create(name)
 		},
-		/* A file carries one song: picking another moves the files to it, and the tick moves with
-		   them once the answer is asked again. Made by name where none carries the name typed. */
+		/* A file carries one song: picking another moves it. */
 		song: {
 			kind: 'song',
 			plural: 'songs',
@@ -520,12 +404,7 @@
 		}
 	};
 
-	/**
-	 * Make a person out of the name that was typed, and hand them back, with no toast here: the
-	 * flyout picks the one it made and then writes what it was for, so what happened is reported
-	 * once, by the write. A person made here has a name and nothing else, and their
-	 * page is one press away from wherever they are next drawn.
-	 */
+	/** Create a person from the typed name, without a toast: the write reports once. */
 	async function makePerson(name: string): Promise<Choice> {
 		const made = await peopleStore.create(name);
 		return { id: made.id, name: made.name };
@@ -540,8 +419,7 @@
 			return;
 		}
 		if (!movable.possible) {
-			// Said rather than shown as an empty chooser: the reason is a setting, and naming it is
-			// the only thing that turns a dead end into something somebody can fix.
+			// Said, since the reason is a setting somebody can change.
 			toasts.show(
 				"Sift can't move files: every library folder is read-only to it. Give Sift write access to one first.",
 				{
@@ -556,8 +434,7 @@
 	function askToCompress(ids: string[]) {
 		if (ids.length === 0) return;
 		acting = ids;
-		// No preflight here, deliberately: the panel asks, because it has to ask again every time
-		// the target changes and a second copy of that call would be a second answer to keep true.
+		// No preflight here: the panel asks each time the target changes.
 		compressOpen = true;
 	}
 
@@ -594,8 +471,7 @@
 		if (sharing.length > 0) shareOpen = true;
 	}
 
-	/* The report, off the same target the sharing panel is built from: one call, so the two panels
-	   cannot come to disagree about what the thing is called or which id it is. */
+	/* The report off the sharing panel's own target. */
 	function askAboutReach(ids: string[]) {
 		reaching = actions.shareTargets(ids.slice(0, 1))[0] ?? null;
 		if (reaching) reachOpen = true;
@@ -611,26 +487,9 @@
 	let matching = $state('');
 	let matchesOpen = $state(false);
 
-	/*
-	 * WHERE THE FILE THE MENU IS OPEN ON STANDS with enrichment from outside this machine.
-	 *
-	 * Asked when the menu is built for ONE file and never for a selection, which is not thrift: it
-	 * is a fact about one row, and a menu over forty has forty answers that no single row could
-	 * draw. So a selection gets the verb with no line under it and the plain wording, which is the
-	 * honest reading of "these forty are not all the same".
-	 *
-	 * Remembered by the id it was asked about so one render does not ask again. A menu is opened,
-	 * read and closed; holding it past that would mean drawing a decision somebody may have just
-	 * changed from the row underneath.
-	 */
-	/*
-	 * Keyed by the file, and WRITTEN ONLY WHEN THE SERVER ANSWERS. Resetting state on every ask,
-	 * synchronously, would fail: `built` is called from template expressions (a `{@const}` in the
-	 * theater's cell menu), where Svelte refuses a state write
-	 * outright (`state_unsafe_mutation`). A map keyed by id needs no reset: a menu over another
-	 * file reads that file's own answer or none, and an answer arriving late lands under its own
-	 * key and redraws nothing else.
-	 */
+	/* Where the menu's one file stands with enrichment, asked per file, never for a selection; keyed
+	 * by file and written only on the answer, as a template may call this
+	 * (`state_unsafe_mutation`). */
 	let enrichment = $state<
 		Record<
 			string,
@@ -652,8 +511,7 @@
 				note: lastEnriched(state) ?? undefined
 			};
 		});
-		/* And where it stands with swaps, for the Don't swap row beside Don't enrich: an admin's
-		   question, as the row is an admin's. Its own key, so the two answers land independently. */
+		/* And with swaps, for the admin's Don't swap row, on its own key. */
 		if (session.isAdmin)
 			void keptFromSwaps('asset', id)
 				.then((state) => (enrichment[id] = { ...enrichment[id], keptOut: state.kept_out_here }))
@@ -674,8 +532,7 @@
 		compress: (ids: string[]) => askToCompress(ids),
 		edit: (ids: string[]) => void askToEdit(ids),
 		gif: (ids: string[]) => void askToEdit(ids, 'gif'),
-		/* The wall of files similar to this one. The chip there names the file by asking it, so a
-		   press here and a pasted link read the same. See `likeWall`. */
+		/* The similar-files wall (`likeWall`). */
 		similar: (ids: string[]) => void goto(likeWall(ids[0])),
 		share: (ids: string[]) => askToShare(ids),
 		visibility: (ids: string[]) => askAboutReach(ids),
@@ -684,36 +541,22 @@
 		save: (ids: string[]) => void actions.save(ids),
 		link: (ids: string[]) => void actions.copyLink(ids[0]),
 		/*
-		 * Auto-enrich: ask, and accept what is certain; the press is the consent.
-		 *
-		 * One file or forty, the same act: each file is one queued question, an exact match lands
-		 * the moment it comes back, and anything less certain waits in the pile under Organize. The
-		 * box is the flyout's row, handed straight on; dropping it would ask every box whatever was
-		 * pressed.
+		 * Auto-enrich: the press is the consent; exact matches land, the rest wait under Organize.
 		 */
 		autoEnrich: (ids: string[], box?: string) => {
-			/* REFUSED BEFORE ANYTHING IS SENT where the menu already knows the answer. Over a
-			   selection the menu has no one answer, so the server says which were kept local. */
+			/*
+			 * Refused before sending where the menu knows the answer; over a selection the server
+			 * says.
+			 */
 			if (ids.length === 1 && enrichment[ids[0]]?.refused) {
 				sayKeptLocal();
 				return;
 			}
 			void enrichFiles(ids, { box: box ?? '', auto: true });
 		},
-		/* ENRICH: ask and let a person choose. One file opens the chooser; several queue the batch.
-		 *
-		 * The same split every verb on this menu makes between a row and a selection, and here it is
-		 * the difference between a conversation and a job. A sheet showing twenty candidates for each
-		 * of forty files is not a screen anybody can use, so a selection goes to the pile under
-		 * Organize where a page is settled in one press: every answer waits there, exact or not,
-		 * because this is the verb that decides nothing. One file is somebody asking about THAT
-		 * file, and it gets an answer. */
+		/* Enrich: one file opens the chooser, several queue to the pile under Organize. */
 		enrich: (ids: string[]) => {
-			/*
-			 * Refused before the sheet opens, never inside it: a chooser opened on a file nothing
-			 * may be asked about would report the refusal and also "no stash-box recognized this
-			 * file", two answers to one press, one of them untrue.
-			 */
+			/* Refused before the sheet opens, so it never gives two answers. */
 			if (ids.length === 1 && enrichment[ids[0]]?.refused) {
 				sayKeptLocal();
 				return;
@@ -725,21 +568,17 @@
 			}
 			void enrichFiles(ids);
 		},
-		/* ACOUSTID: which song each of these is, asked by the sound. The server refuses a file kept
-		   local or in a shut Hidden and says so, so nothing is decided here. */
+		/* AcoustID, by the sound; the server refuses kept-local or shut Hidden files. */
 		lookUpSongs: (ids: string[]) => void lookUpSongs(ids),
 		/* And again, for a file AcoustID did not know: the server says when it knew it. */
 		lookUpSongsAgain: (ids: string[]) => void lookUpSongs(ids, true),
-		/* KEPT LOCAL, one press for the whole selection. The state comes back from the server and
-		   is put where the verb reads it, so the row reverses without the menu being re-opened:
-		   the same shape the hide and pin handlers beside it take. */
+		/* Kept local, for the whole selection; the answer reverses the row in place. */
 		keepLocal: (ids: string[], kept: boolean) => {
 			void Promise.all(ids.map((id) => setKeptLocal('asset', id, kept))).then(() => {
 				for (const id of ids) enrichment[id] = { ...enrichment[id], keptLocal: kept };
 			});
 		},
-		/* KEPT OUT OF SWAPS, the Visibility panel's switch as a row, for the whole selection. The
-		   answer is put where the row reads it, as `keepLocal` does. */
+		/* Kept out of swaps, as `keepLocal`. */
 		keepFromSwaps: (ids: string[], kept: boolean) => {
 			void Promise.all(ids.map((id) => setKeptFromSwaps('asset', id, kept))).then(
 				(answers) => {
@@ -750,26 +589,19 @@
 				() => toasts.show("That couldn't be changed", { tone: 'error' })
 			);
 		},
-		/* RUN NOW: the pass the flyout row named, for these files. The server says what it did or
-		   why it would not, and that sentence is the toast. See `$lib/jobs/run-now`. */
+		/* Run the named pass on these files; the server's sentence is the toast. */
 		runNow: (ids: string[], run: string) => void runNow(ids, run),
 		remove: (ids: string[]) => askToDelete(ids)
 	};
 
-	/* Handed over only where this surface pins, which is what decides whether the verb exists at
-	   all. See `pinnable`, and `fileVerbs`, which offers it only when it is given one. Spread in
-	   rather than set to `undefined`, so the handler list carries no key nobody can call. */
+	/* Spread in only where this surface pins, so no uncallable key exists. */
 	const pinHandler = $derived(
 		pinnable ? { pin: (ids: string[], pinned: boolean) => void actions.pin(ids, pinned) } : {}
 	);
 
 	const saving = { label: saveActionLabel, icon: saveActionIcon };
 
-	/** Whether pressing Hide over these would UNhide them.
-	 *
-	 *  Off the files, not the screen: with the vault open, hidden files sit on the ordinary walls
-	 *  beside everything else, so the screen cannot answer it, and a wrong answer points the
-	 *  action the wrong way rather than merely mislabelling the button. */
+	/** Whether Hide would unhide these, read off the files, not the screen. */
 	function unhides(ids: string[]): boolean {
 		return showingHidden || (ids.length > 0 && ids.every((id) => lookup(id)?.hidden));
 	}
@@ -799,8 +631,7 @@
 		const subject = subjectId ? lookup(subjectId) : null;
 		askAboutEnrichment(ids.length === 1 ? ids[0] : undefined);
 		const known = ids.length === 1 ? enrichment[ids[0]] : undefined;
-		// The boxes, once, and only for an admin: the list is an admin's route, and a guest asking
-		// for it would be one 403 per menu.
+		// The boxes, once, for an admin only.
 		if (session.isAdmin) loadEnrichBoxes();
 		// And the song lookup's name and state, for its row beside the boxes: an admin's route too.
 		if (session.isAdmin) loadSongLookup();
@@ -834,9 +665,7 @@
 				allFavorite: allFavorited(ids),
 				allPinned: allArePinned(ids),
 				canMove: movable.possible,
-				// The same answer, asked as a different question. Compressing writes a new file into
-				// a library folder, so it needs one Sift may write to, which is what having
-				// somewhere to move to also proves, today.
+				// Compressing needs a folder Sift may write to, which Move proves too.
 				canCompress: movable.possible,
 				handlers: { ...handlers, ...pinHandler }
 			},
@@ -872,17 +701,14 @@
 
 <BatchRename bind:open={renameOpen} assetIds={renaming} />
 
-<!-- Compressing is the one verb here whose sheet asks the SERVER a question before it offers a
-     button, because whether a target can be met is arithmetic over a file's running time and
-     picture size and the browser holds neither. -->
+<!-- Compress asks the server first: the browser cannot do that arithmetic. -->
 <CompressDialog
 	bind:open={compressOpen}
 	assetIds={acting}
 	onqueued={() => around.selection.clear()}
 />
 
-<!-- The editor, on the one file a menu was opened over. Mounted only once there is a file for it,
-     because what it draws is that file's own picture and it has nothing to show without one. -->
+<!-- The editor, mounted once there is a file. -->
 {#if editing}
 	<EditDialog
 		bind:open={editOpen}
@@ -892,10 +718,7 @@
 	/>
 {/if}
 
-<!-- `canDeleteFromDisk` is the half only an admin has and nothing else, because nothing else can
-     be known here (`DeleteDialog`'s head says why). Defence in depth: the Delete verb is only pushed for an admin
-     (`grid/verbs.ts`, held by `verbs.test.ts`), so the reason below appears only if that stops
-     being true. -->
+<!-- `canDeleteFromDisk` is the admin's half; the verb is admin only (verbs.test.ts). -->
 <DeleteDialog
 	bind:open={deleteOpen}
 	count={deleting.length}
@@ -908,8 +731,7 @@
 <ShareDialog bind:open={shareOpen} targets={sharing} onapplied={() => around.selection.clear()} />
 <VisibilityDialog bind:open={reachOpen} target={reaching} />
 
-<!-- What the stash-boxes make of ONE file. Mounted only once a file has been chosen, because what
-     it asks about is that file and it has nothing to ask without one. -->
+<!-- What the stash-boxes make of one file, mounted once chosen. -->
 {#if matching}
 	<FileMatches
 		bind:open={matchesOpen}

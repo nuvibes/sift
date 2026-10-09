@@ -11,13 +11,8 @@
 	} satisfies DesignEntry;
 
 	/**
-	 * Everything the pager needs, as one shape a screen can hand up.
-	 *
-	 * The pager belongs in the FRAME's foot (the same place on every screen, whether the wall
-	 * fills the window or holds four rows) and on the Organize screens the frame is the route's
-	 * while the paging is the panel's. So a panel that pages describes its pager with this and
-	 * reports it through `onpaging`, and the route draws it in the foot. A panel drawing its own
-	 * pager under its last row would move the band from screen to screen.
+	 * Everything a pager needs, as one shape a panel reports through `onpaging` to the frame's
+	 * foot.
 	 */
 	export interface PagerProps {
 		/** Where the page starts, counting from zero. */
@@ -26,18 +21,11 @@
 		shown: number;
 		/** How many there are in all. */
 		total: number;
-		/**
-		 * What the rows are, plural, as the screen names them: "files", "people", "Sites". The
-		 * readout says it after the total, so a count says what it counts ("1-16 of 246 Sites").
-		 */
+		/** What the rows are, plural ("files"), said after the total. */
 		noun?: string;
 		/** The same word for one row, where dropping the plural's last "s" would not make it. */
 		one?: string;
-		/**
-		 * The first page is still on its way, so there is no count to say. The readout says nothing
-		 * rather than "No files": a wall whose files have not arrived yet is not an empty wall, and
-		 * the skeleton above is already saying so.
-		 */
+		/** The first page is coming: the readout says nothing, not "No files". */
 		loading?: boolean;
 		onfirst: () => void;
 		onprevious: () => void;
@@ -46,10 +34,8 @@
 		/** Take me to the nth one, counting from one the way the readout does. */
 		onjump: (position: number) => void;
 		/**
-		 * The page size, for a list whose pages are FIXED: numbered pages then stand between the
-		 * arrows, and the box takes a page number. Only where a page is the same rows on every
-		 * screen (the queue, History: a set number of lines a read, newest first); a wall that
-		 * fits its page to the window keeps positions, for the reason at the head of the pager.
+		 * A fixed page size, for numbered pages (the queue, History); a fitted wall keeps
+		 * positions.
 		 */
 		perPage?: number;
 	}
@@ -57,11 +43,7 @@
 	/** One press of a numbered pager: a page, or a gap standing for the pages between two. */
 	export type PageMark = { page: number } | { gap: string };
 
-	/**
-	 * The page numbers a pager shows: the first and the last, the current one and one either side
-	 * of it, and a gap where pages are left out. A gap standing for ONE page is that page instead:
-	 * an ellipsis hiding a single number is longer to read than the number.
-	 */
+	/** First, last, current and either side, with gaps; a gap of one page is that page. */
 	export function pageMarks(current: number, pages: number): PageMark[] {
 		if (pages <= 0) return [];
 		const wanted = new Set([1, pages, current - 1, current, current + 1]);
@@ -84,23 +66,8 @@
 <script lang="ts">
 	/*
 	 * WHY NOT BITS-UI: bits-ui's Pagination is built around page numbers, and a wall's pager
-	 * deliberately has none; a page holds as many rows as fit the window, so a numbered page is a
-	 * different set of files on each screen. The numbered variant (`perPage`) is the same bar with
-	 * the numbers added, so a list with fixed pages is not a second pager.
-	 *
-	 * Where you are in a long list, and how to move through it.
-	 *
-	 * No page numbers: "page 3" names a different set of files on a laptop than on a monitor, so a
-	 * bookmark or shared link would open somewhere else. This says where you are ("1,240-1,287 of
-	 * 9,000") and moves by pages without naming them. The jump box takes a position, which is a
-	 * fact about the library: the 5,000th file is the 5,000th on any screen.
-	 *
-	 * At the end of the content, inside the scrolling area, directly under the last row. Pinned in
-	 * the frame's footer it would leave a band of empty ground on every page whose rows do not fill
-	 * the window, and that band cannot be closed by shrinking the frame: the wall measures the
-	 * scrolling body to decide how many files to ask for, so a body sized to its content makes the
-	 * page size a function of its own result (see `PageFrame`). The accepted cost is scrolling to
-	 * the bottom of a long wall to reach it.
+	 * deliberately has none: a page holds what fits the window, so it says positions ("1,240-1,287
+	 * of 9,000") and the jump box takes one. The numbered variant (`perPage`) is the same bar.
 	 */
 	import Button from '$lib/components/common/Button.svelte';
 	import NumberInput from '$lib/components/common/NumberInput.svelte';
@@ -136,11 +103,7 @@
 		pageScroll.toTop();
 	}
 
-	/*
-	 * Every turn lands at the top of the new page: the pager sits at the foot, and the box would
-	 * otherwise stay at the bottom with the new page's first rows off the top. The pager owns the
-	 * press, not the scroll box; `pageScroll` knows which box is scrolling.
-	 */
+	/* Every turn lands at the top of the new page; `pageScroll` knows which box scrolls. */
 	function turning(turn: () => void): () => void {
 		return () => {
 			turn();
@@ -148,12 +111,10 @@
 		};
 	}
 
-	/* Grouped thousands, because the readout is a number somebody reads rather than a number
-	   somebody computes with, and "9000" scans as four digits of something. */
+	/* Grouped thousands: a number read, not computed. */
 	const count = (value: number) => value.toLocaleString();
 
-	/* "of 1 file", not "of 1 files". People is the one plural in use that is not the word plus an
-	   "s"; any other caller with an irregular plural names its singular through `one`. */
+	/* "of 1 file"; an irregular plural names its singular through `one`. */
 	const said = $derived(
 		total !== 1 ? noun : (one ?? (noun === 'people' ? 'person' : noun.replace(/s$/, '')))
 	);
@@ -166,13 +127,11 @@
 
 	let jumping = $state(false);
 
-	/* The box opens on the position you are already at, which is what a jump box should say: it is a
-	   number you are changing rather than a blank somebody has to work out the units of. */
+	/* The box opens on the current position. */
 	const typed = $derived(Math.min(total, offset + 1));
 
 	function jump(wanted: number) {
-		// The box clamps to `min` and `max` itself, and an empty or unreadable one never reaches
-		// here: it commits nothing and puts the position back. So there is one thing left to do.
+		// The box clamps and never commits an unreadable value.
 		if (perPage) toPage(wanted);
 		else {
 			onjump(Math.min(Math.max(1, wanted), total));
@@ -182,10 +141,7 @@
 	}
 </script>
 
-<!--
-	A nav rather than a toolbar: it moves between views of the same thing, which is what a browser,
-	a screen reader and a keyboard user all already understand a nav to be.
--->
+<!-- A nav: it moves between views of one thing. -->
 <nav class="pager" aria-label="Pages">
 	<div class="steps">
 		<Tooltip label="First">
@@ -211,12 +167,10 @@
 	</div>
 
 	{#if perPage && pages > 1 && !phoneWidth.yes}
-		<!-- The pages by number: the first, the last, and the ones around this one. The one being
-		     read is marked for a screen reader as well as drawn in the accent.
+		<!--
+		The page numbers, the current one marked; not on a phone, which has no room for them.
+		-->
 
-		     Not on a phone. Up to seven numbers a finger apart do not fit beside the four steps on a
-		     phone's width, and a finger apart is the only width at which each is its own press. The
-		     phone keeps the steps and the position, which is "Choose a page" and takes any number. -->
 		<ol class="numbers">
 			{#each marks as mark ('page' in mark ? mark.page : mark.gap)}
 				<li>
@@ -238,14 +192,8 @@
 	{/if}
 
 	{#if jumping}
-		<!--
-			`NumberInput`, not a bare `type="number"`.
+		<!-- NumberInput, never a native number box with the OS's arrows (a gate refuses one). -->
 
-			A native one draws the operating system's own stepper arrows: a pair of grey chevrons in
-			the site's look, at a size the page has no say over, in the middle of the app's own
-			chrome. That is the fault `NumberInput` exists to fix. A gate refuses a raw number input
-			anywhere but inside that component, because nothing else would catch it.
-		-->
 		<div class="jump">
 			<NumberInput
 				value={perPage ? page : typed}
@@ -260,13 +208,8 @@
 			/>
 		</div>
 	{:else}
-		<!--
-			The position, and a way to change it by typing.
+		<!-- The position as a button: the number is the thing changed. -->
 
-			A button rather than a label with a control beside it: the number IS the thing being
-			changed, so making it the target is one fewer thing on the bar and says what it does
-			without a word of explanation.
-		-->
 		<Tooltip label={perPage ? 'Choose a page' : 'Go to a position'}>
 			<button
 				type="button"
@@ -275,8 +218,7 @@
 				aria-label={perPage ? 'Choose a page' : 'Go to a position'}
 			>
 				{#if total === 0 && loading}
-					<!-- Nothing to say yet: the box keeps its width so the band does not change shape
-					     when the count lands. -->
+					<!-- Nothing yet; the box keeps its width. -->
 				{:else if total === 0}
 					No {noun}
 				{:else}
@@ -313,16 +255,7 @@
 
 <style>
 	/*
-	 * A row of controls at the end of the content, and NOT a bar.
-	 *
-	 * It sits in the frame's footer track with no rule along its top and no ground of its own, by
-	 * choice. A full-width line under a wall of tiles reads as the page ending twice;
-	 * the row of controls is legible against the screen without one, and the gap the track gives it
-	 * is the separation.
-	 *
-	 * THIS HEIGHT IS THE WHOLE BAND. The track around it carries inline padding and no block padding
-	 * at all, because the space inside this box is the space under the last row. See `PageFrame`:
-	 * padding the track as well would make a band far taller than the pager.
+	 * A row of controls, not a bar: no rule or ground. Its height is the whole band (`PageFrame`).
 	 */
 	.pager {
 		display: flex;
@@ -366,19 +299,8 @@
 	}
 
 	/*
-	 * Tabular figures, so the numbers do not shuffle sideways as they change width. Without it the
-	 * readout jitters on every page turn.
-	 *
-	 * CENTRED, not baseline-aligned, so the numbers do not sit high above the arrows.
-	 * `align-items: baseline` in a box with a fixed height puts the text's baseline where the font
-	 * wants it and leaves the slack underneath, so the readout would ride above the middle of its
-	 * own box while the icon buttons beside it are centred in theirs, and the row would read as
-	 * tilted. The two spans in here are the same size in the same face, so there is no baseline to
-	 * protect: centring them is the same alignment with the box's own slack shared evenly.
-	 *
-	 * `line-height: 1` after the font shorthand, for the same reason the tile's clock needs it: the
-	 * shorthand carries the token's 1.5, which makes the text box half again as tall as the letters
-	 * and puts the spare room under the baseline where these digits have nothing.
+	 * Tabular figures, centred rather than baseline-aligned so the readout sits level with the
+	 * arrows.
 	 */
 	.where {
 		display: inline-flex;
@@ -395,8 +317,7 @@
 		font: var(--text-data);
 		/* AFTER the shorthand, which would otherwise reset it to the token's 1.5. */
 		line-height: 1;
-		/* One line. On a phone, where every press beside it is a finger's width, the readout would
-		   otherwise be squeezed until "1-24" broke into two lines of its own. */
+		/* One line, even on a phone. */
 		white-space: nowrap;
 		cursor: pointer;
 		transition:
@@ -404,11 +325,9 @@
 			color var(--dur-instant) var(--ease);
 	}
 
-	/* A finger's reach on a phone, the readout keeping the pager's own height: the ring `Pressable`
-	   draws, for the reason given there. */
+	/* A finger's reach on a phone through Pressable's ring. */
 	@media (max-width: 767px) {
-		/* The presses a finger's width apart, centre to centre: their reach is a ring round each,
-		   and two rings closer than that share the space between them. */
+		/* The presses a finger apart, so their rings do not overlap. */
 		.steps {
 			gap: calc(var(--touch-target) - var(--control-height-sm));
 		}
@@ -448,10 +367,10 @@
 		align-items: center;
 	}
 
-	/* The box brings its own look from `NumberInput`; what is set here is the ring that says it is
-	   the thing that just opened, and the height that keeps the bar from changing shape when it
-	   does. Reaching into it with `:global` is the point: the input is rendered by the component,
-	   so it carries no scoping class of this file's and an unscoped rule would match nothing. */
+	/*
+	 * The ring that says the box just opened, and the bar's height; global, as NumberInput renders
+	 * it.
+	 */
 	.jump :global(input) {
 		block-size: var(--control-height-sm);
 		border-color: var(--sift-accent);

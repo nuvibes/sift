@@ -1,7 +1,5 @@
-/*
- * Before its row and its files have answered, a collection's header says nothing it would take back:
- * no stand-in name, no letter for that name and no "0 files".
- */
+/* Before its row and its files have answered, a collection's header says nothing it would take
+ * back: no stand-in name, no letter for that name and no "0 files". */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

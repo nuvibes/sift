@@ -1,10 +1,4 @@
-/*
- * A folder's who-sees-it rows: one declaration, drawn by every folder menu.
- *
- * The rows are proved here; that every folder menu draws them through `folderVerbs` rather than
- * writing its own Hide, Share or Visibility is read from the source, as the walls' registry test
- * does, because what is held is a property of the files.
- */
+/* A folder's who-sees-it rows: one declaration, drawn by every folder menu. */
 
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

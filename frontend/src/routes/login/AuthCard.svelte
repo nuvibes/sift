@@ -1,19 +1,5 @@
 <script lang="ts">
-	/*
-	 * The signed-out screen: one card, centred, on an empty page.
-	 *
-	 * Sign-in and first-run setup are the same three fields and differ only in what the server does
-	 * with them, so they are one component with different words rather than two screens that drift.
-	 *
-	 * No step counter: first run is an account and an installation method and nothing else, so a
-	 * counter would be one of one, and a progress bar that can only ever be full says nothing.
-	 * Everything else is answered in Settings, or stays at the default it ships with.
-	 *
-	 * Two things it must not do. It must not say whether a username exists: the server already
-	 * answers "Incorrect username or password." to both, and a screen that said "no such user"
-	 * would undo that. And it must not validate the password as you type: telling somebody their
-	 * password is too short while they are still typing it is both wrong and irritating.
-	 */
+	/* The signed-out screen: one card, centred, on an empty page. */
 	import { goto } from '$app/navigation';
 	import {
 		BackButton,
@@ -37,14 +23,7 @@
 
 	let { mode }: Props = $props();
 
-	/*
-	 * Whether there is a question BEHIND this one.
-	 *
-	 * Only in the desktop app, and only while creating the account: the step before it is the shell
-	 * asking where the library is kept, and going back means unsaying that. In a browser there is
-	 * nothing behind this screen at all (the shell questions were answered on another computer),
-	 * so no button is drawn rather than one that would refuse.
-	 */
+	/* Whether there is a question BEHIND this one. */
 	const canGoBack = $derived(mode === 'setup' && bridge.canSetUp());
 
 	let username = $state('');
@@ -90,25 +69,12 @@
 			} else if (caught instanceof ApiError && caught.status === 409) {
 				error = 'This instance already has an admin. Sign in instead.';
 			} else if (caught instanceof ApiError && caught.status === 429 && mode === 'login') {
-				// Not a refusal: another sign-in for this name is still being checked. Said in the
-				// server's words, which are the same whether or not the name exists.
+				// Not a refusal: another sign-in for this name is still being checked.
 				error =
 					caught.detail ??
 					'A sign-in for that username is already being checked. Try again in a moment.';
 			} else if (caught instanceof ApiError && mode === 'login') {
-				/*
-				 * One sentence for every way a sign-in can fail, and it is deliberately vague.
-				 *
-				 * Leaving something out is a 422 and the shared message for that is "some of those
-				 * details were not valid", which reads as a form complaining about its own
-				 * formatting, when what happened is that the sign-in did not work. A wrong password
-				 * is a 401 and would say something different again, so the screen would have two
-				 * voices for one outcome.
-				 *
-				 * It does not say WHICH was wrong, and that is the point rather than an omission: an
-				 * error naming the username as the valid half is a way to work out which accounts
-				 * exist, one guess at a time.
-				 */
+				/* One sentence for every way a sign-in can fail, and it is deliberately vague. */
 				error = 'Incorrect username or password.';
 			} else if (caught instanceof ApiError) {
 				error = caught.message;
@@ -118,16 +84,7 @@
 		} finally {
 			busy = false;
 		}
-		/* WHAT WAS TYPED IS KEPT WHEN THE ATTEMPT FAILED.
-		 *
-		 * Clearing the password boxes on every refusal (a policy the password missed by one
-		 * character, a server that was not there) would make somebody retype a long password
-		 * AND its confirmation before they could try again, with a rule list on screen telling
-		 * them what to change about a password that is not in front of them any more.
-		 *
-		 * There is nothing to clear on the way out on success: the window has already left for
-		 * the library, and this component goes with it.
-		 */
+		/* WHAT WAS TYPED IS KEPT WHEN THE ATTEMPT FAILED. */
 	}
 </script>
 
@@ -183,10 +140,6 @@
 
 		<!--
 			Under the password it is about, where it is read while the password is being chosen.
-
-			It is the ONLY user and it is an admin, so a password handed to somebody else is the
-			whole library handed to them, and a guest gets an account of their own instead. A
-			caution rather than a plain aside for that reason.
 		-->
 		<Note tone="caution">
 			Keep this username and password to yourself. This account can see and change everything in
@@ -205,9 +158,7 @@
 	<Button tone="primary" type="submit" full {busy}>{action}</Button>
 
 	{#if canGoBack}
-		<!-- Step one of five, with a way back to the two questions before it. Through the shell
-		     rather than through history: the answers that led here are saved, so a history step would
-		     redraw a question that has already been answered and pressing it again would do nothing. -->
+		<!-- Step one of five, with a way back to the two questions before it. -->
 		<BackButton label="Where Sift keeps your data" onback={() => void goBack()} />
 	{/if}
 </DoorCard>

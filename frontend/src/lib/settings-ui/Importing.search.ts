@@ -1,19 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* Import tasks' words, and what somebody can type to find them.
- *
- * ONE COPY MODULE PER PANE. `Importing.svelte` draws every word it adds from `COPY`, and the search
- * entries are built from the same objects. The switches on each stage's Edit page are registered
- * settings, which feed the search by themselves. What is declared here is the three stages, so a
- * search for what a stage DOES ("rescan", "thumbnails", "faces") lands on the stage's row, and each
- * stage's Edit. */
+/* Import tasks' words, and what somebody can type to find them. */
 import { counted } from '$lib/entity/entity-counts';
 import { COPY as PERFORMANCE, MEASURE_ANCHOR } from './Performance.search';
 import type { Searchable } from './search';
 
 export const COPY = {
 	/* The benchmark not run yet, and the row it runs from, drawn as a settings link after the
-	   sentence. The breadcrumb is built from the Performance
-	   pane's own words, so a renamed row renames the link. */
+	   sentence. */
 	notMeasured: {
 		said: "This device hasn't been benchmarked yet. Adding your first folder benchmarks it, and so does the first run if it still hasn't been. It takes up to 5 minutes, so Sift can make the best use of this device. You can run it from",
 		link: `Settings > Performance > ${PERFORMANCE.measure.row}`,
@@ -29,11 +22,8 @@ export const COPY = {
 		nothingWaiting: 'Nothing waiting to be scanned',
 		waiting: (n: string) => `${n} waiting to be scanned`
 	},
-	/**
-	 * The head of a line of files a product gave up on: "24 files", the press that lists them, each
-	 * with why. The rest of the sentence is the stage's `cannot`, so the two read as one: "24 files
-	 * couldn't have thumbnails generated and are left out."
-	 */
+	/** The head of a line of files a product gave up on: "24 files", the press that lists them,
+	 * each with why. */
 	leftOut: (n: number, one: boolean) => `${counted(n)} ${one ? 'file' : 'files'}`,
 	generate: {
 		heading: 'Generate',

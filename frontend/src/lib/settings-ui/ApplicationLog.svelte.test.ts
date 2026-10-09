@@ -1,6 +1,5 @@
 /* The Logs tab's level filter: the choices are the log's own levels, and each one is what the
- * server is asked for. Python's names rather than words of the screen's own, so a line that says
- * "warning" is found by choosing Warning. */
+ * server is asked for. */
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';

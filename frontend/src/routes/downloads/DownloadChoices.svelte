@@ -1,20 +1,5 @@
 <script lang="ts">
-	/*
-	 * Which way the next thing pasted goes out, as one line under the paste box.
-	 *
-	 * The switch and Download folder are rows of the page's Options menu
-	 * (`DownloadOptions`), with the page's doors: the line that stays is the one fact worth reading
-	 * while pasting, not a choice.
-	 *
-	 * ## Which way out: one line, for the Site the paste is from
-	 *
-	 * What is worth knowing while pasting is whether THIS link goes out through a tunnel, which
-	 * one, and whether it is up. It is not a second copy of Settings, Sites. So a paste from a Site
-	 * Sift recognizes gets one line for that Site. With nothing pasted, the line is the glance at
-	 * what is being tunnelled: each tunnel in use, whether it is connected, and the Sites on it,
-	 * or, where nothing is tunnelled, that every Site uses your own connection. The rule for which
-	 * way a Site goes is `Tunnels`', the reader Settings uses, so the two cannot disagree.
-	 */
+	/* Which way the next thing pasted goes out, as one line under the paste box. */
 	import { onMount } from 'svelte';
 	import { Badge, Button } from '$lib/components/common';
 	import { session } from '$lib/shell/session.svelte';
@@ -92,10 +77,10 @@
 
 {#snippet through(tunnel: Tunnel)}
 	{@const address = addressOf(tunnel)}
-	<!-- The server beside the name, covered as Settings covers it: the same rule and the same
-	     control, so the two screens cannot disagree about one tunnel. LABELLED "Tunnel server",
-	     because that is what it is: the address the tunnel connects to, which a provider may send
-	     out of a different machine entirely. -->
+	<!--
+		The server beside the name, covered as Settings covers it: the same rule and the same control,
+		so the two screens cannot disagree about one tunnel.
+	-->
 	<span class="tunnel">
 		{tunnel.name}
 		{#if address}
@@ -214,8 +199,8 @@
 		color: var(--sift-ink-2);
 	}
 
-	/* The label and the address it names stay on one line, so a wrap never leaves "Tunnel server"
-	   at the end of one line and the number it labels at the start of the next. */
+	/* The label and the address it names stay on one line, so a wrap never leaves "Tunnel
+	   server" at the end of one line and the number it labels at the start of the next. */
 	.server {
 		display: inline-flex;
 		align-items: center;

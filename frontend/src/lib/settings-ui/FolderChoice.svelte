@@ -1,18 +1,5 @@
 <script lang="ts">
-	/*
-	 * A setting that holds a folder, chosen by pointing at it rather than typed.
-	 *
-	 * The row shows the folder chosen and a Choose press. In the desktop application the press is
-	 * the operating system's own folder dialog (`bridge.chooseFolder`), as adding a library folder
-	 * is; in a browser it is the same folder picker Add a folder opens, over the folders Sift has
-	 * been given, which is where the server allows such a folder anyway. A free text box would
-	 * accept a half-typed path, a path on another machine and a typo alike, refused only on save.
-	 *
-	 * Empty is an answer of its own for a setting that has a default place ("beside Sift's own
-	 * data"), so the row says what empty means and offers the way back to it.
-	 *
-	 * Saving is the caller's, as for every settings row: this reports the folder chosen.
-	 */
+	/* A setting that holds a folder, chosen by pointing at it rather than typed. */
 	import { Button } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
@@ -152,9 +139,7 @@
 		color: var(--sift-warn);
 	}
 
-	/* The way out, then the act, at the sheet's far edge, as every sheet's foot. Pushed there by its
-	   first press rather than packed: a settings row publishes how a pane packs its parts, and a
-	   sheet's foot is not a row. */
+	/* The way out, then the act, at the sheet's far edge, as every sheet's foot. */
 	.dialog-actions {
 		display: flex;
 		gap: var(--space-2);

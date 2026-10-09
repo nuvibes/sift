@@ -1,31 +1,6 @@
 <script lang="ts">
 	import { Problem } from '$lib/components/common';
-	/* How downloading behaves, set once: the registered rows of Settings, Downloads.
-	 *
-	 * THE PAGE DECIDES FOR THIS DOWNLOAD; THIS PANE DECIDES THE DEFAULT FOR EVERY DOWNLOAD. The
-	 * Downloads page's switch starts from `download.remember` here and is sent with one paste; it
-	 * never writes it. This is the only place it is changed.
-	 *
-	 * Grouped by what somebody comes for, in the order they reach for it: what gets downloaded,
-	 * the limits that stop a download, what a finish says and sounds like, then where a download
-	 * lands and what it is called (`NamingTemplate`, which owns the per-Site list). The knobs
-	 * somebody should be able to reach and not be invited to turn (how many at the same time, the
-	 * speed limit, the pacing, the timeout, the retries and the wait after a rate limit) are one
-	 * row at the foot, "More settings", which
-	 * opens a page of their own: the sub-page Importing uses for its groups (`drilldown`), so a deep
-	 * link to one of them opens the page first and rings the row.
-	 *
-	 * What is NOT on this pane, and where it is: the tunnels (Settings, Sites shows the tunnels
-	 * and which Site takes which), the list of Sites Sift knows (Sites), where a file SAVED OUT of
-	 * Sift goes (Folders, a folder on this device rather than a library folder), the download tools
-	 * and the yt-dlp check (Updates), and the detailed download log (the log's own tab, since it
-	 * changes what the log records and nothing about a download).
-	 *
-	 * Every control is drawn from what the server declared about the setting, so a setting added
-	 * later appears here, with the right control and the right words, without this file being
-	 * touched. The groups below name their members by key; anything the server declares that is
-	 * not named lands on the More settings page rather than vanishing.
-	 */
+	/* How downloading behaves, set once: the registered rows of Settings, Downloads. */
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client';
 	import type { components } from '$lib/api/schema';
@@ -45,12 +20,7 @@
 	/** The one setting whose automatic answer is a number worth showing. */
 	const AT_ONCE = 'download.at_once';
 
-	/* Which settings sit in which group, and in what order within it.
-	 *
-	 * Written out rather than derived from the key's prefix: `download.at_once` and
-	 * `download.skip_smaller_mb` share a prefix and answer different questions: one is how hard
-	 * downloading leans on the connection, the other is what is worth fetching at all.
-	 */
+	/* Which settings sit in which group, and in what order within it. */
 	const GROUPS: { id: string; heading: string; keys: string[] }[] = [
 		{
 			id: 'downloading',
@@ -79,21 +49,9 @@
 		'download.backoff_seconds'
 	];
 
-	/*
-	 * Settings this pane deliberately does not draw, because something else does.
-	 *
-	 * WITHOUT THIS LIST, LEAVING A KEY OUT OF `GROUPS` DRAWS IT ANYWAY. The catch-all below puts
-	 * anything no group claims on the More settings page, so "removed from this pane" and
-	 * "forgotten by whoever wrote a group" look identical to the code, and a key drawn on another
-	 * screen would be drawn here too: two controls for one setting, on two screens.
-	 *
-	 * Saying it out loud is what separates the two cases. A key here is a decision; a key in
-	 * neither this nor `GROUPS` is still an oversight, and still lands where somebody will see it.
-	 */
+	/* Settings this pane deliberately does not draw, because something else does. */
 	const DRAWN_ELSEWHERE = [
-		/* A Chip beside the queue it holds back, on the Downloads SCREEN. It is an action taken
-		   because of what the queue is doing, not a preference set in advance, and this pane is not
-		   where somebody is standing when they want it. */
+		/* A Chip beside the queue it holds back, on the Downloads SCREEN. */
 		'download.paused'
 	];
 
@@ -109,13 +67,7 @@
 	);
 	let problem = $state<string | null>(null);
 
-	/* How many downloads "Default" actually means.
-	 *
-	 * Left at nothing, downloads share the machine's worker count, and that number is worked out
-	 * from the hardware at run time, so the setting's own registration cannot know it and the box
-	 * could only say "Default", which is a word somebody has to go and look up. It is asked for
-	 * separately and folded into the label below; failing to get it leaves the plain word, which is
-	 * what the server already sent. */
+	/* How many downloads "Default" actually means. */
 	let workers = $state<number | null>(null);
 
 	async function load() {
@@ -138,13 +90,7 @@
 	onMount(() => void load());
 
 	/* And again when a setting moves somewhere else: this account in a browser, a second window,
-	 * or another admin changing one the installation shares. Every control on this pane writes on
-	 * the press and holds nothing unsaved, so a re-read can only put the same value back; see
-	 * `scripts/check_settings_followed.js`, which holds every pane to this.
-	 *
-	 * The worker count is re-read with them rather than left alone: "Default" means the number the
-	 * machine worked out, and that number follows the performance settings, so a label saying it
-	 * would otherwise go on quoting the figure from before the change. */
+	 * or another admin changing one the installation shares. */
 	whenChanged(settingChanges, () => void load());
 
 	/** The settings as drawn, which is the settings as declared plus the one number the server
@@ -166,13 +112,7 @@
 			.filter((entry): entry is SettingEntry => entry !== undefined);
 	}
 
-	/**
-	 * Anything the server declared that nothing here claims.
-	 *
-	 * It goes on the More settings page rather than nowhere. A setting registered later and
-	 * forgotten here would otherwise exist, be read, take effect, and appear on no screen, so its
-	 * default would be the whole of the decision.
-	 */
+	/** Anything the server declared that nothing here claims. */
 	const unclaimed = $derived.by(() => {
 		const named = new Set([...GROUPS.flatMap((group) => group.keys), ...MORE, ...DRAWN_ELSEWHERE]);
 		return shown.filter((entry) => !named.has(entry.key));
@@ -184,13 +124,11 @@
 		drilldown.open(COPY.more.title, morePage, COPY.more.open);
 	}
 
-	/* Claimed in an effect, not once at setup: the unclaimed keys arrive with the settings, and a
-	   deep link to one of them has to find the page that draws it. The teardown releases the claim
-	   when the list changes and when the pane goes away. */
+	/* Claimed in an effect, not once at setup: the unclaimed keys arrive with the settings, and
+	   a deep link to one of them has to find the page that draws it. */
 	$effect(() => drilldown.own([...MORE, ...unclaimed.map((entry) => entry.key)], openMore));
 
-	/* One optimistic write, put back if the server refuses it. A control that shows a state the
-	   server does not hold is worse than one that flickers. */
+	/* One optimistic write, put back if the server refuses it. */
 	async function save(key: string, value: unknown) {
 		const before = entries;
 		entries = entries.map((one) => (one.key === key ? { ...one, value } : one));

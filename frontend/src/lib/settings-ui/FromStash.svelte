@@ -1,39 +1,6 @@
 <script lang="ts">
-	/*
-	 * Migrate from Stash: name Stash's database file, read what is in it, and bring it into
-	 * this library as a task.
-	 *
-	 * READ changes nothing here: the server copies the file into its own data folder (Stash may be
-	 * running, so it is copied the safe way) and answers every count, which is drawn before anything
-	 * is pressed. IMPORT is a task, followed here as a duplicate is, and it only ever fills what
-	 * is empty and adds to lists: nothing this library already says is overwritten, and no file is
-	 * made. What it will do is said beside the press, because it changes this library.
-	 *
-	 * The file is CHOSEN, never typed: in the desktop application the operating system's own file
-	 * dialog (`bridge.chooseFile`); in a browser, which can pick only folders, the same folder picker
-	 * Add a folder opens, over the folders Sift has been given, and the server finds Stash's
-	 * database in the folder by name. A free text box would accept a half-typed path, a path on
-	 * another machine and a typo alike. Either is confined by the server to the folders Sift has been
-	 * given, the rule the folder picker follows. Choosing reads: the read changes nothing here.
-	 *
-	 * INTO A NEW LIBRARY is the first offer: the server makes a library beside this one with the
-	 * folders the read matched, queues the run there, and opens it; the run waits for that
-	 * library's first scan. The page follows the switch the way the libraries list does.
-	 *
-	 * WHAT WAITS is listed under a fold once a run has left anything waiting: every file and
-	 * picture this library does not hold yet, by name and by the path Stash had it at, with what
-	 * waits on it. It is read from the server a page at a time, because a Stash library can leave
-	 * thousands, and it shrinks on its own as those files arrive.
-	 *
-	 * THE PICTURES are a choice made with the press: Stash's pictures of People, Sites and Tags
-	 * become their covers where they have none. Stash keeps them in its database or, set another
-	 * way, as files in its blobs folder; only then is the folder asked for, offered as the one
-	 * beside the database.
-	 *
-	 * ATTACHED TO NOTHING: once a run has finished, the People, Sites and Tags Stash had on no file
-	 * are counted, still here, and each kind links to its own wall filtered to exactly those
-	 * (`created=stash_unattached`), so looking them over and deleting the clutter is one list each.
-	 */
+	/* Migrate from Stash: name Stash's database file, read what is in it, and bring it into this
+	 * library as a task. */
 	import type { components } from '$lib/api/schema';
 	import { onMount } from 'svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
@@ -57,11 +24,8 @@
 
 	const COPY = PANE.switcher.stash;
 
-	/*
-	 * The words for the pictures choice, the two counts it adds to the read, and the line that
-	 * links to what Stash attached to nothing. Here rather than in the pane's copy module only
-	 * until that module takes them in; the strings are the screen's either way.
-	 */
+	/* The words for the pictures choice, the two counts it adds to the read, and the line that
+	 * links to what Stash attached to nothing. */
 	const MORE = {
 		pictures: 'Bring their pictures',
 		picturesHelp: (list: string) =>
@@ -134,8 +98,8 @@
 		return { pictures: on, blobs: on && read?.blobs ? blobs.trim() || null : null };
 	}
 
-	/* The run's own words are the record's: when it ends the read is asked again, and the line under
-	   it then says what came across. The watch's word is left for a run that did not finish. */
+	/* The run's own words are the record's: when it ends the read is asked again, and the line
+	   under it then says what came across. */
 	const importing = new DownloadWatch(
 		STASH_JOB,
 		async () => {
@@ -237,8 +201,8 @@
 		if (chosen === '') return;
 		reading = true;
 		problem = null;
-		/* A new read replaces the copy the last one left, so what it found is gone with it: offering
-		   to bring it in while this runs would ask for a file that is being written. */
+		/* A new read replaces the copy the last one left, so what it found is gone with it:
+		   offering to bring it in while this runs would ask for a file that is being written. */
 		read = null;
 		asking = false;
 		naming = false;
@@ -611,8 +575,8 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The name field is as wide as a library's name, not the column: it sits on the line with its
-	   label and its two presses. Scoped under this row, since the class travels into TextInput. */
+	/* The name field is as wide as a library's name, not the column: it sits on the line with
+	   its label and its two presses. */
 	.from-stash :global(.stash-new-name) {
 		inline-size: var(--name-field-width);
 		flex: 0 1 18rem;

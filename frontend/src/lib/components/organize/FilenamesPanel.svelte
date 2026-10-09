@@ -1,11 +1,7 @@
 <script lang="ts" module>
 	import type { Column } from '$lib/components/common/DataRows.svelte';
 
-	/*
-	 * A username's row, in columns declared once so every row's name, count and answers line up
-	 * whether or not it has a still: the still (the size `Thumb` draws), the username, how many files
-	 * went under it, and its answers. The arrow that opens a row stands in the list's fold track.
-	 */
+	/* A username's row in declared columns: the still, the name, the count, its answers. */
 	const FILENAME_COLUMNS: readonly Column[] = [
 		{ id: 'still', width: '44px' },
 		{ id: 'who', width: 'minmax(0, 1fr)' },
@@ -13,12 +9,7 @@
 		{ id: 'answers', width: '14rem', align: 'end' }
 	];
 
-	/*
-	 * The same row at a phone's width: the still and the username, with the count and the answers on
-	 * a line of their own under the name. The four tracks above need about 400 px before the name has
-	 * any, so on a 393 px phone the name would be squeezed to one character per line and Open would
-	 * run off the right edge.
-	 */
+	/* At a phone's width, the count and answers on a line under the name. */
 	const PHONE_COLUMNS: readonly Column[] = [
 		{ id: 'still', width: '44px' },
 		{ id: 'who', width: 'minmax(0, 1fr)' }
@@ -33,27 +24,10 @@
 
 <script lang="ts">
 	import { filesSaid } from '$lib/entity/entity-counts';
-	/*
-	 * What a file's own name said about where it came from, grouped by the username it named.
-	 *
-	 * A page rather than the browse wall: the pass decides a username once and applies it to
-	 * everything matching, so a flat wall of files would repeat one conclusion thousands of times,
-	 * and a misreading is visible in the group it made and invisible in a list.
-	 * (`FiledFromFilenamesQueue` on the server records the other view.)
-	 *
-	 * So a row is a username: a still of it, the name the pass read, how many files went under it,
-	 * and the way to them, at a list row's height. The row opens to a few stills and the files by
-	 * name, to check the reading by eye. A group's files are one press further: the person behind
-	 * the username where there is one, the username's own files where there is not (see
-	 * `usernameHref`). The username is the same address, so a name here is a link like anywhere
-	 * else in Sift.
-	 *
-	 * The pass applies itself and says so on every file it touched, so a row asks one thing only:
-	 * whether the username was read right. Yes is Open (a filing already made needs no yes), and
-	 * No, behind its chevron, takes every file the name filed there back as ONE decision with its
-	 * own Undo. The group is named and its files are a press away, so the No is not a bulk undo over
-	 * a count nobody can see. One file at a time is still the opened row's Undo.
-	 */
+	/* What a file's own name said about where it came from, grouped by the username it named: a row
+	 * opens to stills and the files by name. Yes is Open; No takes every file the name filed back
+	 * as
+	 * one decision with its own Undo. */
 	import { goto } from '$app/navigation';
 	import { page as address } from '$app/state';
 	import { onDestroy, untrack } from 'svelte';
@@ -87,22 +61,15 @@
 	let total = $state(0);
 	let loading = $state(true);
 	let failed = $state(false);
-	/*
-	 * Which page: the same paging every list in Organize has (`CardPaging`), a dozen cards at a
-	 * time, with the username the page starts at written into the address as `from` (and where it
-	 * was, `near`), so Back from a person or a file lands on this page again. See
-	 * `DuplicatesPanel`.
-	 */
+	/* Paged as every Organize list, the page in the address (`from`, `near`). */
 	const paging = new CardPaging(PER_PAGE);
 	const path = address.url.pathname;
 	let arriving = true;
-	/** The file whose undo is in flight, by its own id. One at a time, and named rather than a
-	 *  flag, because a spinner on every row would say the whole group is being taken back. */
+	/** The file whose undo is in flight, so only its row spins. */
 	let undoing = $state<string | null>(null);
 	/** The username whose No is on its way. */
 	let declining = $state<string | null>(null);
-	/** The files whose still could not be drawn, by id: the opened strip leaves them out, as the
-	 *  board does with its own. A row's one picture keeps its place (`Thumb` draws the glyph). */
+	/** Files whose still could not be drawn, left out of the strip. */
 	let blank = $state<Record<string, boolean>>({});
 
 	async function load() {
@@ -143,9 +110,7 @@
 		untrack(() => void load());
 	});
 
-	/* Read again, at the same place, whenever the library moves under it and whenever anything is
-	   decided: taking one filing back is a decision, and without this the row it came off stays on
-	   screen. A page it emptied steps back to where the list now ends (`CardPaging.fill`). */
+	/* Read again at the same place on any library change or decision. */
 	whenChanged(libraryChanges, () => void load());
 	let seen = untrack(() => answered.stamp);
 	$effect(() => {
@@ -160,36 +125,18 @@
 	});
 	onDestroy(() => onpaging?.(null));
 
-	/**
-	 * Where one group's files live.
-	 *
-	 * A username with somebody behind it opens that person: every file under the username counts
-	 * under them, and their page is where the username is drawn (under the Site's card on their
-	 * Sites tab). A username nobody has claimed opens the Files wall filtered with `?username=`,
-	 * which is the set the server filed these under (`query={{ username: id }}`), passed as a
-	 * parameter so nothing is typed into the search box and no chip appears.
-	 *
-	 * Not a typed text query: `file_name:` matches text, so another username whose files carry the
-	 * same word would be included and a renamed file excluded, which is not the set the pass drew
-	 * its conclusion from. Nor the facet parameters alone: `?sites=...&enriched=filename` is every
-	 * username the pass filed on that Site, not this one.
-	 *
-	 * One function for the button and for the username beside it, deliberately: two ways into the
-	 * same place on one card must not be two answers to one question.
-	 */
+	/** Where a group's files live: the person behind the username, else the Files wall filtered by
+	 * `?username=`, exactly the set the pass filed. One function for the button and the name. */
 	function usernameHref(group: FilenameGroup): string {
 		return group.person_id
 			? `/people/${encodeURIComponent(group.person_id)}`
 			: `/browse?username=${encodeURIComponent(group.username_id)}`;
 	}
 
-	/** Which rows somebody opened BY HAND, by username id. Held here and not remembered: this is
-	 *  one screen's arrangement while it is being worked through, not a preference. */
+	/** Rows opened by hand, not remembered. */
 	let unfolded = $state<Record<string, boolean>>({});
 
-	/** Whether this row's files are showing. Every row arrives folded, at a row's height: the
-	 *  server sends up to two dozen files per username, and a page of open rows would be hundreds
-	 *  of filenames deep. */
+	/** Whether a row's files show; every row arrives folded. */
 	function listOpen(group: FilenameGroup): boolean {
 		return unfolded[group.username_id] ?? false;
 	}
@@ -216,10 +163,7 @@
 		return { text: nameOf(group), kind: 'username', id: group.username_id, href };
 	}
 
-	/*
-	 * No: the name was misread for this whole username. Every file it filed there comes off as one
-	 * decision, and the toast carries that decision's Undo, which puts each back as it was.
-	 */
+	/* No: every file the misread name filed comes off as one decision, with an Undo. */
 	async function decline(group: FilenameGroup) {
 		if (declining || undoing) return;
 		declining = group.username_id;
@@ -246,9 +190,7 @@
 		undoing = file.asset_id;
 		try {
 			await undo(file.decision_id);
-			/* Announced rather than re-read here. Taking one filing back changes this list, the
-			   count on the card behind it and the queue's own tab, and the effect above is already
-			   listening for exactly that. */
+			/* Announced; the effect above re-reads. */
 			answered.changed();
 			toasts.show(['Removed from ', usernameOf(group)]);
 		} catch {
@@ -291,9 +233,7 @@
 						{#snippet expansion()}
 							{#if listOpen(group)}
 								<div class="opened" id={listId(group)} transition:reveal>
-									<!-- A few of them, to check the reading by eye. Each carries the token its
-								     still is addressed by, so the row costs the browser nothing on a
-								     second visit (see `thumbUrl`). -->
+									<!-- A few stills, to check the reading by eye. -->
 									<div class="stills">
 										{#each group.shown.filter((one) => !blank[one.asset_id]) as file (file.asset_id)}
 											<Thumb
@@ -313,12 +253,10 @@
 										{#snippet row(one: FiledFromName)}
 											<DataRow compact cells={{ file: fileName, undo: undoOne }} />
 											{#snippet fileName()}
-												<!-- The popout, over this page, rather than the `/asset/[id]`
-											     route: an anchor alone runs that route, which tears this
-											     screen down and lands on the library when the panel is
-											     closed. No `among`: a row here carries a name, a still and
-											     a decision, not what kind of file it is, so there is
-											     honestly no next and previous. -->
+												<!--
+												The popout over this page, not the /asset route; no
+												`among`, so no next and previous.
+												-->
 												<a
 													class="file"
 													href="/asset/{one.asset_id}"
@@ -327,8 +265,9 @@
 												>
 											{/snippet}
 											{#snippet undoOne()}
-												<!-- No control at all where the record cannot offer one. An
-											     Undo the server would refuse is worse than none. -->
+												<!--
+												No control where the server would refuse an Undo.
+												-->
 												{#if one.decision_id}
 													<Button
 														icon="undo"
@@ -347,29 +286,24 @@
 							{/if}
 						{/snippet}
 					</DataRow>
-					<!-- The row's cells, in the columns `FILENAME_COLUMNS` declares. A row with no still
-				     keeps its empty cell, so its name, count and answers stand where every other
-				     row's do. -->
+					<!-- The row's cells; a row with no still keeps its empty cell. -->
 					{#snippet still()}
 						{#if group.shown[0]}
-							<!-- One of the files, to know the username by. Decoration: the row names it
-						     in words. -->
+							<!-- One of the files, decoration. -->
 							<Thumb kind="asset" id={group.shown[0].asset_id} art={group.shown[0].art} />
 						{/if}
 					{/snippet}
 					{#snippet who()}
-						<!-- The username is the link and the site beside it is not, because only the
-					     username has an address here. A plain anchor, so every modifier works.
-					     `{' '}` and not a newline between the two: Svelte trims the whitespace at the
-					     front of a block's contents, so a newline would render "quillmosson Instagram". -->
+						<!--
+						The username is the link; `{' '}`, since Svelte trims a newline here.
+						-->
 						<span class="username"
 							><a href={usernameHref(group)}>{group.username}</a>{#if group.site}{' '}<span
 									class="on">on {group.site}</span
 								>{/if}</span
 						>
 						{#if phoneWidth.yes}
-							<!-- A phone's row has no track for these two: the count starts where the name
-						     starts and the answers end at the row's end, as the desktop's columns do. -->
+							<!-- On a phone, the count and answers under the name. -->
 							<span class="under">{@render count()}{@render answers()}</span>
 						{/if}
 					{/snippet}
@@ -377,9 +311,7 @@
 						<span class="count">{filesSaid(group.files)}</span>
 					{/snippet}
 					{#snippet answers()}
-						<!-- The row's answers: Yes is Open, which goes where the username goes (both read
-					     `usernameHref`, so they cannot drift), and No takes the whole username back. A
-					     button and not a link: Sift's buttons are never links. -->
+						<!-- Open goes where the username goes; No takes it all back. -->
 						<Answers
 							yes={{ label: 'Open these files', run: () => void goto(usernameHref(group)) }}
 							rest={[
@@ -420,14 +352,12 @@
 		margin-block-start: var(--space-2);
 	}
 
-	/* The site is quieter than the username it follows: "on Instagram" is context FOR the name rather
-	   than part of it, and drawn at the same weight the two read as one long proper noun. */
+	/* The Site quieter than the username. */
 	.on {
 		color: var(--sift-ink-3);
 	}
 
-	/* What an opened row shows under it: the stills, then the files by name. Across every column
-	   of the row, whose tracks it stands in. */
+	/* An opened row: stills, then files, across every column. */
 	.opened {
 		grid-column: 1 / -1;
 		display: flex;
@@ -437,8 +367,7 @@
 		padding-inline-start: var(--space-3);
 	}
 
-	/* A strip that wraps rather than a scroller: there are at most a couple of dozen, and a row that
-	   scrolls sideways is a second scroll direction on a page that already has one. */
+	/* Wrapping, never a second scroll direction. */
 	.stills {
 		display: flex;
 		flex-wrap: wrap;

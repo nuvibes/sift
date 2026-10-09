@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The answers over one person's whole run of faces: agreeing with or refusing every proposal or
-every match that stands for her, and taking such an answer back, each with the receipt for it.
-"""
+match standing for her, and taking such an answer back, each with its receipt."""
 
 from __future__ import annotations
 
@@ -29,16 +28,9 @@ log = get_logger(__name__)
 
 
 def _narrowed(theirs: list[Sighting], only: Collection[str] | None) -> list[Sighting]:
-    """One person's faces of one kind, cut down to the ones a press named, or all of them.
+    """One person's faces of one kind, narrowed to the ones a press named, or all for `None`.
 
-    The press names faces (a page, or a pick) and the SERVER decides which of those are still
-    standing: an id is acted on only if it is in the set just read for this person and this state.
-    So an id answered since the page was drawn, an id of somebody else's face, and an id that never
-    existed are one case (not part of this press), and none of them can widen it.
-
-    `None` is the whole tab. An empty collection is NOT: it narrows to nothing, which is what a
-    press naming no faces means. The route refuses that request before it gets here (see
-    `RunWrite`), and this keeps the two meanings apart underneath it too.
+    The server decides which named ids still stand, so no id can widen the press.
     """
     if only is None:
         return theirs
@@ -55,35 +47,9 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         """Agree with every proposal standing for one person: how many were named, how many more
         were offered, and the receipt.
 
-        **Both halves of naming a face by hand, and neither is `name_with_their_group` itself.**
-        That call cannot be reused here and the reason is worth stating, because it is the obvious
-        shape and it is wrong: `confirm_many` underneath it skips every face that ALREADY carries a
-        person (deliberately, so naming a pile never overwrites a decision that has been made),
-        and a proposal carries one by definition. Handed a page of proposals it writes nothing at
-        all and answers zero, which reads exactly like a permission refusing them.
-
-        So the two halves are called by name. `accept_suggestions` is the act for agreeing with
-        what Sift proposed: each face confirmed as the person already on its row, which is the
-        only place that answer can come from. `_offer_their_groups` is the other half, shared with
-        naming by hand rather than copied: a face that sits in a group of look-alikes carries that
-        group's claim with it, so the faces it was grouped with become proposals of their own,
-        exactly as they do when somebody names one face in the player. Confirming one at a time
-        would drop that silently, on the surface built to clear the backlog fastest.
-
-        The piles are read BEFORE anything is confirmed, for the reason naming by hand reads them
-        first: confirming empties a pile and an empty pile is dropped, so a pile read afterwards is
-        one that may no longer exist, and the faces this is for are the ones left behind in it.
-
-        **Asked of the PERSON rather than of the card's own page**, and that is not a second way of
-        reading the same thing. The card is ranked by confidence and pages, so a press can arrive
-        from any row of it: answering from the page it was drawn on would confirm whatever
-        happened to be on the first page instead of what the button says. `_sightings_for` is the
-        one read that narrows to one person, and it is what that person's own screen reads too, so
-        the two surfaces cannot come to disagree about what is standing.
-
-        Only what this user may act on: `touchable_faces` is asked again rather than trusted
-        from the gather, so a proposal on a file that moved into the vault between the card being
-        drawn and the button being pressed is skipped rather than confirmed.
+        `accept_suggestions` names them, as `confirm_many` skips faces carrying a person, then
+        `_offer_their_groups`; piles are read first. Asked of the person, never the card's page,
+        and only faces this user may still act on.
         """
         await self._require_enabled()
         theirs = await self._standing_to_agree(viewer, person_id, only)
@@ -91,9 +57,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         if not actionable.allowed:
             return RunAnswered(changed=0)
         named = list(actionable.allowed)
-        # How sure Sift was of each, read BEFORE anything is written, for the reason
-        # `confirm_matches` reads it: confirming writes certainty over the comparison's own number,
-        # so the receipt is the only place it could come back from.
+        # How sure Sift was of each, read before confirming writes certainty over it.
         agreeing = [face for face in theirs if face.track_id in actionable.allowed]
         sure = {face.track_id: face.confidence for face in agreeing}
         piles = {
@@ -105,16 +69,10 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         taught = Taught()
         agreed = await self.accept_suggestions(named, taught=taught)
         if not agreed:
-            # Nothing was agreed to, so nothing was decided, so there is nothing to extend:
-            # the same guard naming by hand makes, and for the same reason: offering a person to
-            # twenty faces off the back of a call that wrote nothing is a decision nobody took.
+            # Nothing was agreed to, so there is nothing to extend.
             return RunAnswered(changed=0)
-        # Offered BEFORE the receipt is written, so the receipt can name the faces it offered: the
-        # rest of each group now asked about as her. Its undo sends them back to nobody, which is
-        # where each was before the press (`IdentifiedRecords.reverse`).
+        # Offered before the receipt, so it can name the faces offered.
         offered = await self._offer_their_groups(piles, person_id)
-        # A receipt: naming a face again undoes one face and says nothing about a press that
-        # settles two thousand, and every other press here writes one.
         receipt = await self._record_agreement(
             viewer,
             person_id,
@@ -133,9 +91,8 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
     async def look_alikes_to_agree(
         self, viewer: Viewer, person_id: str, *, only: Collection[str] | None = None
     ) -> list[str]:
-        """The faces `confirm_look_alikes` would agree to for this viewer now, by id: what a press
-        that is answered before the work is done hands the work, so the work keeps the press's
-        reach (its vault, its page) however much later it runs."""
+        """The faces `confirm_look_alikes` would agree to for this viewer now, by id, so later
+        work keeps the press's reach."""
         await self._require_enabled()
         theirs = await self._standing_to_agree(viewer, person_id, only)
         touchable = await self.touchable_faces(viewer, [face.track_id for face in theirs])
@@ -156,42 +113,14 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
     ) -> RunAnswered:
         """Refuse every proposal standing for one person: how many were written, and the receipt.
 
-        **The mirror of `confirm_look_alikes` above, and it is deliberately the same shape.** The
-        card asks one question (do these faces look like her), and both answers are one press
-        where it is asked. The row that opens the faces one at a time stays beside it for somebody
-        who wants to look rather than already knows.
-
-        Asked of the PERSON rather than of the card's page, for the reason agreeing is: the card is
-        ranked and pages, so answering from the page it was drawn on would refuse whatever happened
-        to be on the first page rather than what the button says.
-
-        `reject` one face at a time underneath, which is the same door the review screen presses.
-        One loop rather than a statement over the set, because rejecting is four acts (forgetting
-        an earlier confirmation, withdrawing the pictures that face taught, writing the refusal, and
-        settling the file it is on), and a second path through them is a second place for any of
-        the four to be missed.
-
-        It writes a receipt, as agreeing does: naming a face again is an undo for one face, which
-        is no undo at all for a press that refuses two thousand of them.
-
-        A person this user may not be told about answers "nothing changed" rather than refusing,
-        exactly as agreeing does, so the route cannot be used to ask whether somebody exists.
+        Asked of the person, through `reject`; a withheld person answers "nothing changed".
         """
         return await self._refuse_run(viewer, person_id, Attribution.SUGGESTED, only)
 
     async def reject_matches(
         self, viewer: Viewer, person_id: str, *, only: Collection[str] | None = None
     ) -> RunAnswered:
-        """Refuse every match Sift made for one person: how many were written, and the receipt.
-
-        **The no beside the card's yes**: a card on People Sift can recognize offers a yes to what Sift
-        decided on its own, and the opposite in the same press. The refusal has to reach the same
-        set the yes confirms, or the two rows on one control answer two different questions.
-
-        Not the same act as taking a re-match back (`unmatch`), and the difference is recorded
-        there: an undo says "do not decide this for me", while this says "this is not them" and
-        teaches the next pass. Somebody pressing No on a card is making the second claim.
-        """
+        """Refuse every match Sift made for one person: how many were written, and the receipt."""
         return await self._refuse_run(viewer, person_id, Attribution.MATCHED, only)
 
     async def _refuse_run(
@@ -201,31 +130,14 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         attribution: Attribution,
         only: Collection[str] | None = None,
     ) -> RunAnswered:
-        """Refuse every face of one kind standing for one person, with a way back.
-
-        One body for the two bulk refusals, because they differ in exactly one value (which state
-        the faces were in), and two copies of four steps is two places for one of the four to be
-        missed. It is the same argument `reject` makes for being one door.
-
-        Asked of the PERSON rather than of the card's page, for the reason agreeing is: the card is
-        ranked and pages, so answering from the page it was drawn on would refuse whatever happened
-        to be on the first page rather than what the button says.
-
-        `reject` one face at a time underneath, which is the same door the review screen presses.
-        One loop rather than a statement over the set, because rejecting is four acts (forgetting
-        an earlier confirmation, withdrawing the pictures that face taught, writing the refusal, and
-        settling the file it is on), and a second path through them is a second place for any of
-        the four to be missed.
-        """
+        """Refuse every face of one kind standing for one person, through `reject`."""
         await self._require_enabled()
         if not await self.may_see_person(viewer, person_id):
             return RunAnswered(changed=0)
         theirs = _narrowed(
             await self._sightings_for(viewer, person_id, attribution=attribution), only
         )
-        # Asked again rather than trusted from the gather, as agreeing does: a proposal on a file
-        # that moved into the vault between the card being drawn and the button being pressed is
-        # skipped rather than refused.
+        # Asked again: a file that moved into the vault since is skipped.
         actionable = await self.touchable_faces(viewer, [face.track_id for face in theirs])
         refusing = [face for face in theirs if face.track_id in actionable.allowed]
         refused = 0
@@ -250,17 +162,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         refusing: Sequence[Sighting],
         attribution: Attribution,
     ) -> str:
-        """Write down that somebody refused a run of faces, with a way to take it back.
-
-        Under the same name the agreements are written under, because it is the same question
-        (what has been decided about who this is), and a pile of its own for one button would be a
-        screen nobody asked for. The payload's `act` is what tells the four apart.
-
-        The state each face was in is written PER FACE rather than once for the run. The run is
-        narrowed to one state today, so one word would be true; it would stop being true the first
-        time a screen offers a No over a mixture, and a payload is read back months later by code
-        that cannot ask what the press meant.
-        """
+        """Write down that somebody refused a run of faces, each face's state per face."""
         if self._recorder is None:
             return ""
         name = await self.name_of(viewer, person_id)
@@ -268,22 +170,19 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
             return ""
         one = len(refusing) == 1
         many = "1 face" if one else f"{len(refusing)} faces"
-        # The state each face was in, in the state's own words (the three on every faces screen).
         was = (
             "waiting under Needs your input"
             if attribution is Attribution.SUGGESTED
             else "Recognized by Sift"
         )
-        # The verb and the pronouns agree with the count: one face is the commonest No there is.
-        # `worded.identified_said` words older receipts.
+        # The verb and pronouns agree with the count (`worded.identified_said` words older ones).
         subjects: list[Subject] = [Subject(kind="person", id=person_id)]
         subjects += [
             Subject(kind="asset", id=asset_id)
             for asset_id in dict.fromkeys(face.asset_id for face in refusing)
         ]
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it, never one receipt short.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             return await self._recorder.record_on(
                 connection,
@@ -321,36 +220,8 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
     ) -> tuple[int, int]:
         """Agree with every match Sift made for one person. Returns `(confirmed, references)`.
 
-        **The deliberate exception to the rule `confirm_many` keeps**, and it is worth stating
-        outright rather than leaving somebody to find it: that call skips every face that already
-        carries a person, so that naming a pile can never overwrite a decision already made. A
-        match IS a face carrying a person (it is the decision Sift took on its own), and this is
-        the one press whose whole meaning is "those were right". Nothing else about who may be
-        confirmed changes: the faces are this person's, on files this user may act on, and one
-        somebody has already agreed to is left exactly where it is.
-
-        Whatever the confidence. The bar Sift attaches at is a guess about where somebody would
-        have agreed anyway; this is that person saying where they agree, and a face at 0.61 is no
-        more theirs to keep than a face at 0.99.
-
-        `accept_suggestions` does the writing, which is the same path the board's Confirm all goes
-        through and the reason there is no loop here: each face is confirmed as the person already
-        on its row, one settle per file afterwards, and a face becomes a reference by exactly one
-        route. What this adds is the narrowing (to one person, to their MATCHED faces) and the
-        receipt, because a press that files hundreds of reference pictures owes a way back.
-
-        The faces are chosen BEFORE anything is written and the list is what the receipt carries.
-        An undo that read the state afterwards could not tell a face this press confirmed from one
-        somebody had agreed to last week, and taking back the second is not this decision's to do.
-
-        Asked of the person rather than of a page, exactly as agreeing with every proposal is: what
-        the button says is "these matches are right", and answering from whichever page the press
-        came from would confirm the first fifty of them.
-
-        The reference count is read on either side and the DIFFERENCE is reported. It is not the
-        same as the number of faces: one appearance files one picture at most, a picture already
-        held is refused by its own identity, and a crop that cannot be read files none. So counting
-        the presses and calling them pictures would be a number nobody measured.
+        The one press that confirms faces already carrying a person, whatever their confidence.
+        Faces are chosen before writing, for the receipt; references are counted as a difference.
         """
         await self._require_enabled()
         if not await self.may_see_person(viewer, person_id):
@@ -359,9 +230,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
             await self._sightings_for(viewer, person_id, attribution=Attribution.MATCHED), only
         )
         actionable = await self.touchable_faces(viewer, [face.track_id for face in theirs])
-        # How sure Sift was of each, kept because confirming overwrites it: a confirmation is
-        # certain by definition, so the number the match produced is gone the moment it is written
-        # and the receipt is the only place it could come back from.
+        # How sure Sift was of each, kept because confirming overwrites it.
         agreeing = [face for face in theirs if face.track_id in actionable.allowed]
         sure = {face.track_id: face.confidence for face in agreeing}
         if not sure:
@@ -376,9 +245,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
             viewer,
             person_id,
             sure,
-            # The files those faces are on, off the appearances already read rather than asked for
-            # again: every sighting carries the file it was found in, and a second statement over
-            # the same rows would be a second answer to a question already answered.
+            # The files, off the appearances already read.
             assets=[face.asset_id for face in agreeing],
             pictures=pictures,
             taught=taught,
@@ -400,21 +267,8 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
     ) -> str:
         """Write down that somebody agreed with a run of faces, with a way to take it back.
 
-        `offered` is the rest of their groups, asked about as the same person because of the
-        agreement; written down so the undo can take those questions back as well. `taught` is
-        what the agreement filed, gave and retired (`Taught`), so the undo takes back that and no
-        more.
-
-        Under the same name the matches themselves were recorded under, because it is the same
-        question (what has been decided about who this is), and a fifth pile on the board for
-        one button would be a screen nobody asked for. What tells them apart is the ACT written
-        into the payload: a match Sift made comes off entirely, an agreement with one goes back to
-        being a match, and an agreement with a PROPOSAL goes back to being a proposal, because
-        that is where each of the three was before the press. See `IdentifiedQueue.reverse`.
-
-        The user is named here where a scan's record names nobody: a scan is not a person and
-        saying it was one would put a name against a decision nobody made, and this is the opposite
-        case: somebody pressed a button.
+        The payload's act says where each face goes back to; `offered` and `taught` let the undo
+        take back exactly what the press did.
         """
         if self._recorder is None:
             return ""
@@ -435,8 +289,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         subjects: list[Subject] = [Subject(kind="person", id=person_id)]
         subjects += [Subject(kind="asset", id=asset_id) for asset_id in dict.fromkeys(assets)]
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it, never one receipt short.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             return await self._recorder.record_on(
                 connection,
@@ -470,37 +323,10 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
         back_to: Attribution = Attribution.MATCHED,
         made: Mapping[str, Sequence[str]] | None = None,
     ) -> int:
-        """Put agreed-with faces back to what they were. Returns how many went back.
+        """Put agreed-with faces back to what they were (`back_to`). Returns how many went back.
 
-        `back_to` is where they came FROM, which the receipt's own act says: a run of matches
-        somebody agreed with goes back to being matched, and a run of proposals goes back to being
-        a proposal. It defaults to matched because an older receipt carries no other word and that
-        was its only act, so an old payload keeps its old meaning.
-
-        **Never detached**, and that is the whole difference from `unmatch` next door. What is being
-        taken back is the agreement, not the match: Sift still says those appearances are this
-        person, exactly as it did before the button was pressed, and a face that fell all the way
-        to nobody would make an undo of "I agree" into a decision that Sift was wrong.
-
-        So each goes back to where it was, carrying the confidence the receipt kept for it: the
-        comparison's own number, which confirming overwrote with certainty. Missing from an older
-        receipt it comes back as nothing, which is what the column already says for an offer made
-        from a group rather than from a match.
-
-        The reference pictures it filed are removed, because leaving them would make the undo a
-        half-measure: the whole cost of agreeing is that those faces become what the person is
-        recognized by from then on. `made` is the rows the press created, per face, as its receipt
-        kept them, and those are the ones removed (`_take_references_back`): a picture the person
-        had filed by hand before is the same row as this face's and stays.
-        `remove_references_from_track` finds that hand-filed row too, so it is only the fallback
-        for a receipt that kept no ids.
-
-        The confirmation is forgotten as well. Left behind, the next scan of the file would put the
-        agreement back on its own: the trap `reject` records, met again here.
-
-        From what the decision wrote down and never from the state: a face somebody has since moved
-        to somebody else belongs to that decision, and one already back to matched is not this
-        undo's to write over.
+        Never detached: they keep the person, with the confidence the receipt kept. The pictures
+        filed (`made`) and the remembered confirmation go, from the receipt, never the state.
         """
         await self._require_enabled()
         taken: list[str] = []
@@ -534,21 +360,7 @@ class RunsMixin(DecisionsMixin, IdentifiedMixin):
     ) -> int:
         """Put a refused run of faces back where it was. Returns how many went back.
 
-        The mirror of `unconfirm_matches` above and deliberately the same shape: the faces the
-        RECEIPT names, each back to the state the receipt recorded for it, carrying the confidence
-        the comparison gave it.
-
-        The refusal is forgotten as well, and that is the half that is easy to miss: left behind,
-        the name would go back on and the next pass would take it straight off again: the trap
-        `reject` records, met here from the other side.
-
-        Nothing is re-filed as a reference. Only a confirmation files pictures, and none of these
-        faces was confirmed: a refused proposal goes back to being a proposal, so it teaches Sift
-        nothing until somebody agrees with it.
-
-        From what the decision wrote down and never from the state: a face somebody has since named
-        as anybody at all carries a decision that is newer than this one, and taking it back is not
-        this undo's to do.
+        Each to its recorded state and confidence; the refusal is forgotten, nothing re-filed.
         """
         await self._require_enabled()
         taken: list[str] = []

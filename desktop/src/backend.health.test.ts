@@ -1,6 +1,5 @@
 /* Waiting for the backend to be ready by polling `/health`, and a start that never comes good
- * ending with why: the exit code and the end of its own log. `fetch` and the log read are stood in
- * for here, so the port check beside it keeps real sockets. */
+ * ending with why: the exit code and the end of its own log. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,9 +9,7 @@ vi.mock('node:child_process', () => ({
 	spawn: vi.fn()
 }));
 
-/* Only the log read is stood in for. The rest of `fs` is real, and `backendLogFile` still decides
-   which file is meant: what is under test is what the shell SAYS when a start fails, and that
-   sentence is the end of that file. */
+/* Only the log read is stood in for. */
 const logText = { value: null as string | null };
 vi.mock('node:fs', async (original) => {
 	const real = await original<typeof import('node:fs')>();
@@ -59,8 +56,8 @@ beforeEach(() => {
 	vi.stubGlobal('fetch', async (url: string) => {
 		asked.push(url);
 		/* The last answer repeats rather than running out: a test says what the backend keeps
-		   answering, and a queue that emptied would put a failure of the test's own making at the
-		   end of the shell's sentence. */
+		   answering, and a queue that emptied would put a failure of the test's own making at
+		   the end of the shell's sentence. */
 		const next = answers.length > 1 ? answers.shift() : answers[0];
 		if (next instanceof Error) throw next;
 		if (next === undefined) throw new Error('nothing is listening yet');
@@ -88,9 +85,7 @@ describe('waiting for the backend to be ready', () => {
 		expect(asked).toEqual(['http://127.0.0.1:5171/health']);
 	});
 
-	/* The whole reason it polls. A refused connection while the interpreter is still importing, and
-	   a 503 from a backend that is up but not ready, are both ordinary states on the way to ready,
-	   and neither is a failure to report. */
+	/* The whole reason it polls. */
 	it('keeps asking through a refusal and a not-ready answer', async () => {
 		vi.useFakeTimers();
 		const { wait } = waiting();
@@ -103,8 +98,8 @@ describe('waiting for the backend to be ready', () => {
 		expect(asked).toHaveLength(3);
 	});
 
-	/* A backend that died while starting is the case where waiting for the deadline would be ninety
-	   seconds of a window with nothing in it, for an answer that is already known. */
+	/* A backend that died while starting is the case where waiting for the deadline would be
+	   ninety seconds of a window with nothing in it, for an answer that is already known. */
 	it('stops waiting immediately when the backend has gone, and says its last words', async () => {
 		logText.value = 'sift.main: the port was taken\n';
 		const { backend, wait } = waiting();
@@ -159,9 +154,7 @@ describe('the end of the backend own log', () => {
 		expect(failure.detail).toContain('the last line');
 	});
 
-	/* A start that failed before the backend wrote anything at all. Naming the file is the whole of
-	   what can be said, and it is worth saying: the alternative is a failure with no detail under
-	   it, which reads as the shell having nothing to report rather than the log being empty. */
+	/* A start that failed before the backend wrote anything at all. */
 	it('names the file it looked in when there is nothing in it', async () => {
 		logText.value = null;
 		const { backend, wait } = waiting();

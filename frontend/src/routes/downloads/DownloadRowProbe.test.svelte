@@ -1,6 +1,6 @@
 <script lang="ts">
-	/* A harness for the row: a download row lays its cells into the columns its list declares, so it
-	   is drawn inside the list, the one arrangement the screen draws it in. */
+	/* A harness for the row: a download row lays its cells into the columns its list declares,
+	   so it is drawn inside the list, the one arrangement the screen draws it in. */
 	import type { ComponentProps } from 'svelte';
 	import DataRows from '$lib/components/common/DataRows.svelte';
 	import DownloadRow, { DOWNLOAD_ACTIONS, downloadColumns } from './DownloadRow.svelte';

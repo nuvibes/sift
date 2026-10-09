@@ -1,9 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
-/* The count sentence under an entity's name, in the one place it is written.
- *
- * The separator is the half worth a test: a number written without one is the failure that looks
- * exactly like a number written with one until somebody has eight thousand files.
- */
+/* The count sentence under an entity's name, in the one place it is written. */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -51,10 +47,7 @@ it('joins counts on one line with an em dash, the mark the server writes for the
 	expect(peopleSaid(1397)).toBe(`${(1397).toLocaleString()} people`);
 });
 
-/* No line on screen joins two values with a spaced hyphen. Read off the source, because the walls,
-   the site page and the Organize cards each build their line in their own file, and the one that
-   drifts back is the one nobody opens. A file NAME template is not a line on screen, and keeps
-   its hyphen: it is what somebody chose their files to be called. */
+/* No line on screen joins two values with a spaced hyphen. */
 it('leaves no spaced hyphen between two interpolated values in the client', () => {
 	const root = join(__dirname, '..', '..');
 	const offenders: string[] = [];

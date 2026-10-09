@@ -1,32 +1,8 @@
 /*
- * The pages somebody had in front of them, reported to the server for Insights to add up later.
- *
- * WHAT IS A VISIT. A page about a thing or a place: a person's, a tag's, a Site's, a Collection's,
- * a Photo Set's, a song's, a folder, one of the walls, a section of Settings, Organize, Insights
- * (`placeOf`). A file opened over a wall is not a visit: it is a sitting, which the player reports,
- * so the wall underneath stops counting time while the file is open.
- *
- * HOW LONG IT WAS IN FRONT. Counted on the page's own monotonic clock, and only while the tab is
- * showing: a tab behind another one, a minimised window and a locked phone add nothing. The server
- * is told how long AGO each visit opened and was last in front, never a time of day, because this
- * device's clock is not the server's.
- *
- * CHEAP. One small write a visit, batched: a visit is handed over when it ends, a page still open
- * is reported again every `EVERY_MS` under the same id (the server keeps one row and moves it on),
- * and everything waiting goes when the tab is hidden or closed, on a request the browser finishes
- * after the page has gone. Nothing here is on the path of drawing a wall, and a report that fails
- * is let go: a page somebody looked at is not worth an error message.
- *
- * ONE VISIT UNTIL THE PAGE IS LEFT. A tab the browser put to sleep and brought back, a reload, or
- * a fresh copy of this module starts a new record of visits with nothing in it, and the page still
- * on screen would begin a second visit beside the first. So the visit open is written into the
- * tab's own storage as it goes (`Kept`), and the next record takes it up again when it opens the
- * same page for the same person within `RESUME_MS`: the same id, its time in front carried on.
- *
- * WHOSE. Each visit remembers who was signed in when it began, and is only ever sent while that
- * same person is signed in: a visit from before a sign-out is dropped, never sent as the next
- * person's. The server writes nothing while their history is paused, and nothing for a page the
- * vault keeps from them.
+ * The pages somebody had in front of them, for Insights: a page about a thing or a place (a file
+ * opened over a wall is a sitting instead). Time counts only while the tab shows; batched, reported
+ * again every `EVERY_MS` under one id, sent on hide and close. A page resumed after a reload is the
+ * same visit (`Kept`). Each visit belongs to who was signed in when it began.
  */
 
 import { api } from '$lib/api/client';
@@ -36,31 +12,22 @@ import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 import { kindOf, setClientKind } from '$lib/shell/client-kind';
 import { session } from '$lib/shell/session.svelte';
 
-/** The kinds of page a visit can be to, as the server spells them. */
 type VisitPlace = VisitReport['place'];
 
-/** Which page: the kind, and which one (an id, or a wall's, section's or queue's own word). */
 export interface Place {
 	place: VisitPlace;
 	ref: string;
 }
 
-/** A visit as it crosses the wire. */
 export type VisitReport = components['schemas']['VisitReport'];
 
-/** How often a page still open is reported again. */
 const EVERY_MS = 60_000;
 
-/**
- * How long a page out of sight can stay one visit when the tab comes back to it as a new document:
- * the gap after which the server starts a new sitting of the app, so a visit never spans two.
- */
+/** The server's gap for a new sitting, so a visit never spans two. */
 export const RESUME_MS = 30 * 60_000;
 
-/** The most visits one report carries: the server's own ceiling. */
 const MOST = 240;
 
-/** The pages about one thing, by route. */
 const THINGS: Readonly<Record<string, VisitPlace>> = {
 	'/people/[id]': 'person',
 	'/tags/[id]': 'tag',
@@ -70,7 +37,6 @@ const THINGS: Readonly<Record<string, VisitPlace>> = {
 	'/songs/[id]': 'song'
 };
 
-/** The walls, by route, with the word each is recorded under. */
 const WALLS: Readonly<Record<string, string>> = {
 	'/browse': 'library',
 	'/favorites': 'favorites',
@@ -88,7 +54,6 @@ const WALLS: Readonly<Record<string, string>> = {
 	'/songs': 'songs'
 };
 
-/** The Organize screens, by route, with the queue each is about (null: the route's own). */
 const ORGANIZE: Readonly<Record<string, string | null>> = {
 	'/organize': '',
 	'/organize/[queue]': null,
@@ -96,35 +61,26 @@ const ORGANIZE: Readonly<Record<string, string | null>> = {
 	'/organize/may-be/[person]/[pile]': 'may-be'
 };
 
-/** The Insights screens, by route. */
 const INSIGHTS: Readonly<Record<string, string>> = {
 	'/insights': '',
 	'/insights/recaps': 'recaps',
 	'/insights/recaps/[id]': 'recap'
 };
 
-/** An id as the server mints them, and nothing a path or a name could be. */
 const AN_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
-/** A word the server keeps as a place's `ref`. */
 const A_WORD = /^[A-Za-z0-9_.-]{0,64}$/;
 
-/** What a route's parameters and query say, for `placeOf`. */
 export interface Where {
 	route: string | null;
 	params: Readonly<Record<string, string | undefined>>;
 	search: URLSearchParams;
-	/** The Settings section open over the page, from the address's state, if one is. */
 	settings?: string | null;
 }
 
 /**
- * Which page this is, or null for one that is not a visit (signing in, the phone's lists, a file's
- * own address, the Remote).
- *
- * Settings is a visit wherever it is open: on its own address, or over another page. The library
- * wall is a folder when it is narrowed to one by its id, and the wall of a search when words were
- * typed into it.
+ * Null for what is not a visit (signing in, a file's own address, the Remote). Settings counts
+ * wherever it is open.
  */
 export function placeOf(where: Where): Place | null {
 	const { route, params, search } = where;
@@ -148,8 +104,7 @@ function word(place: VisitPlace, ref: string): Place | null {
 	return A_WORD.test(ref) ? { place, ref } : null;
 }
 
-/** A visit's id: random, the same each time it is reported. Not `randomUUID`, which a browser
- *  withholds from a page served over plain http on the network. */
+/** Not `randomUUID`, which plain http withholds. */
 function newVisitId(): string {
 	const bytes = new Uint8Array(16);
 	crypto.getRandomValues(bytes);
@@ -159,24 +114,15 @@ function newVisitId(): string {
 interface Open {
 	id: string;
 	place: Place;
-	/** Who was signed in when it began. */
 	user: string;
 	openedAt: number;
-	/** Time in front before the current stretch. */
 	frontMs: number;
-	/** When the current stretch in front began, or null while it is not in front. */
 	since: number | null;
-	/** When it was last in front. */
 	lastAt: number;
-	/** The time in front and the last moment in front as last handed over, or null before. */
 	sent: { front: number; last: number; at: number } | null;
 }
 
-/**
- * The open visit as the tab's storage keeps it, so a new record can take it up (see the head of
- * this file). Durations only, and the device's wall clock only to measure how long the tab was
- * away between two documents, whose own clocks do not share a zero.
- */
+/** Durations only; the wall clock measures the time away between two documents. */
 export interface Kept {
 	id: string;
 	place: VisitPlace;
@@ -193,13 +139,11 @@ interface Waiting {
 	report: VisitReport;
 }
 
-/** What `Visits` needs from the world, handed in so a test can stand in for each. */
+/** Handed in so a test can stand in for each. */
 export interface Surroundings {
 	now: () => number;
-	/** Who is signed in now, or null. */
 	who: () => string | null;
 	send: (visits: VisitReport[], leaving: boolean) => Promise<void>;
-	/** The tab's own storage for the visit open, and the wall clock it is timed by. */
 	keep?: { read: () => Kept | null; write: (kept: Kept | null) => void; wall: () => number };
 }
 
@@ -214,7 +158,6 @@ export class Visits {
 		this.#world = world;
 	}
 
-	/** The page now on screen, by who is looking at it. A new page ends the visit before it. */
 	show(place: Place | null, user: string | null): void {
 		const open = this.#open;
 		if (
@@ -243,13 +186,12 @@ export class Visits {
 		this.#save();
 	}
 
-	/** The visit the tab's storage holds, when it is this page for this person and recent enough. */
 	#takeUp(place: Place, user: string, now: number, showing: boolean): Open | null {
 		const keep = this.#world.keep;
 		const kept = keep?.read();
 		if (!keep || !kept) return null;
 		if (kept.place !== place.place || kept.ref !== place.ref || kept.user !== user) return null;
-		// A clock stepped back reads as no time away rather than as time before the visit began.
+		// A clock stepped back reads as no time away.
 		const away = Math.max(0, keep.wall() - kept.savedAt);
 		if (away > RESUME_MS) return null;
 		return {
@@ -264,7 +206,6 @@ export class Visits {
 		};
 	}
 
-	/** Write the open visit as it stands into the tab's storage, or clear it when none is open. */
 	#save(): void {
 		const keep = this.#world.keep;
 		if (!keep) return;
@@ -286,20 +227,18 @@ export class Visits {
 		});
 	}
 
-	/** Whether the tab is showing. Hidden, the visit stops counting and everything waiting goes. */
 	tab(showing: boolean): void {
 		this.#inFront = showing;
 		this.#settle();
 		if (!showing) void this.flush(true);
 	}
 
-	/** Whether a file is open over the page, which is a sitting and not time on the page. */
+	/** A file over the page is a sitting, not time on the page. */
 	cover(covered: boolean): void {
 		this.#covered = covered;
 		this.#settle();
 	}
 
-	/** Report everything waiting, and the page still open as it stands. */
 	async flush(leaving = false): Promise<void> {
 		if (this.#open) this.#keep(this.#open, false, leaving);
 		const who = this.#world.who();
@@ -312,12 +251,10 @@ export class Visits {
 		try {
 			await this.#world.send(mine.slice(-MOST), leaving);
 		} catch {
-			// Let go. A page somebody looked at is not worth an error message, and a report kept
-			// back to try again is one more thing to send as the wrong person after a sign-out.
+			// Let go: a report kept back could go as the wrong person after a sign-out.
 		}
 	}
 
-	/** Stop or start counting the open visit's time in front, as the tab and the panel say. */
 	#settle(): void {
 		const open = this.#open;
 		if (!open) return;
@@ -342,19 +279,7 @@ export class Visits {
 	}
 
 	/**
-	 * Put the visit's report as it stands among those waiting, replacing an earlier one, unless it
-	 * says nothing the last report of it did not.
-	 *
-	 * ONE REQUEST A VISIT UNTIL ITS MINUTE. Closing a tab hides it and then leaves the page, and each
-	 * of the two hands over what is waiting, about a second and a half apart (the hidden tab's
-	 * report, then the page's leaving): handing the open visit over on both would cost every page
-	 * somebody closed on two requests with one id. A visit whose time
-	 * in front and last moment in front have not moved since it was handed over is not handed
-	 * over again; the minute's re-send of a page in front always has moved.
-	 *
-	 * And a re-send that is not a leaving waits its minute: two tickers (a layout mounted twice, a
-	 * module swapped in development) would otherwise each hand the page in front over, a moment
-	 * apart, with one id.
+	 * Not handed over again unless it moved, so closing a tab (hide, then leave) is one request.
 	 */
 	#keep(open: Open, ended: boolean, leaving: boolean): void {
 		const now = this.#world.now();
@@ -377,14 +302,11 @@ export class Visits {
 	}
 }
 
-/** Where the tab keeps the visit open. Per tab, gone when the tab is closed. */
 const KEPT_KEY = 'sift.visit.open';
 
-/** The one record of this page's visits. */
 export const visits = new Visits({
 	now: () => performance.now(),
-	// Nobody while Sift is locked: a report then would only be refused, and the lock screen is not a
-	// page anybody visited.
+	// Nobody while Sift is locked.
 	who: () => (session.viewer && !session.viewer.locked ? session.viewer.id : null),
 	send: async (reports, leaving) => {
 		await api.post('/insights/visits', { body: { visits: reports }, keepalive: leaving });
@@ -410,10 +332,7 @@ export const visits = new Visits({
 	}
 });
 
-/**
- * Where the layout is now: the page, who is looking, and whether a file is open over it. Also says
- * which kind of window this is, for every request after it (`client-kind.ts`).
- */
+/** Also says which kind of window this is (`client-kind.ts`). */
 export function noteWhere(where: Where & { covered: boolean }): void {
 	setClientKind(
 		kindOf({
@@ -430,21 +349,13 @@ export function noteWhere(where: Where & { covered: boolean }): void {
 	visits.show(placeOf(where), session.viewer?.id ?? null);
 }
 
-/** The one watcher's undo, while it watches. */
 let watching: (() => void) | null = null;
 
-/**
- * Watch the tab: hidden or closed, the visit stops counting and what is waiting is sent; and every
- * `EVERY_MS` while it is open, the page in front is reported as it stands. Answers the undo.
- */
 export function watchVisits(): () => void {
-	// One watcher whoever asks: a second mount answers the first one's undo rather than starting a
-	// second minute's ticker.
+	// One watcher whoever asks.
 	if (watching) return watching;
 	const tab = () => visits.tab(document.visibilityState === 'visible');
-	// Leaving hides the page as well: a browser can fire the leaving before the hiding (Chrome
-	// does), and a leave that kept the page in front would make the hiding that follows a moment
-	// later a second report of it with one id.
+	// Leaving hides too: Chrome can fire the leaving first.
 	const leave = () => visits.tab(false);
 	const every = setInterval(() => void visits.flush(), EVERY_MS);
 	document.addEventListener('visibilitychange', tab);
@@ -458,10 +369,7 @@ export function watchVisits(): () => void {
 	return watching;
 }
 
-/**
- * A file opened from the wall a typed search narrowed: which file, from which search. Only the
- * library's wall with words in it is such a wall. Fire and forget, for the reason a visit is.
- */
+/** A file opened from the library's wall with words typed in. */
 export function noteSearchOpen(route: string | null, search: URLSearchParams, id: string): void {
 	const query = route === '/browse' ? (search.get('q') ?? '').trim() : '';
 	if (!query || !session.viewer) return;

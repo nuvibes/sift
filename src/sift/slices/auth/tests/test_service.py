@@ -16,15 +16,14 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.slices.auth import Hasher
 from sift.slices.auth.crypto import resolve_argon2_params
-from sift.slices.auth.service import (
-    AuthService,
+from sift.slices.auth.errors import (
     InvalidCredentials,
     LockedOut,
-    LockOutcome,
     MasterKeyCorrupted,
     SetupAlreadyDone,
     SignInBusy,
 )
+from sift.slices.auth.service import AuthService, LockOutcome
 from sift.slices.auth.tests.conftest import PASSWORD, PASSWORD_TWO
 from sift.slices.auth.throttle import Tarpit, Throttle
 from sift.testing.auth import user_of_session

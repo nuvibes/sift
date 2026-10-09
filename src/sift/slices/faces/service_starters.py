@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Starter pictures: a stash-box's photos of somebody Sift has no reference for, checked and filed
-so that Sift may ask about her, and never name her on their strength alone.
-"""
+"""Starter pictures: a stash-box's photos of somebody Sift has no reference for, filed so Sift
+may ask about her, never name her on their strength alone."""
 
 from __future__ import annotations
 
@@ -33,9 +32,7 @@ if TYPE_CHECKING:  # numpy is only needed for a signature
 
 log = get_logger(__name__)
 
-#: How many of a box's pictures of one person are looked at, at most. Five because the pictures
-#: come largest first, a box rarely holds more than a handful of any one performer, and the
-#: odd-one-out check (`mark_odd_ones_out`) needs four to say anything at all.
+#: A box's pictures of one person looked at, at most; the odd-one-out check needs four.
 STARTERS_PER_PERSON = 5
 
 
@@ -43,33 +40,17 @@ class StartersMixin(WeightsMixin):
     """Choosing, filing, recording and retiring starter pictures."""
 
     async def wants_starters(self, person_ids: Sequence[str]) -> list[str]:
-        """Of these People, the ones starter pictures are for: nobody with any reference row at all.
-
-        Not her own pictures, not starters already filed, and not starters already retired: a
-        starter retired for a "no" is the memory of that answer, and filing the box's pictures again
-        would ask the same wrong questions. See `Store.without_references`.
-        """
+        """Of these People, those with no reference row at all, retired starters included."""
         await self._require_enabled()
         return await self._store.without_references(person_ids)
 
     async def starters_count(self, door: BoxPicturesSeam) -> list[str]:
-        """Everybody the press "Use stash-box pictures as starters" would act on, in link order.
-
-        Linked to a stash-box and holding no reference of any kind. Counted before anything is
-        asked of a box: the count is what the press shows first, and a count
-        that cost a request per person would be the request it asks permission for.
-        """
+        """Everybody "Use stash-box pictures as starters" acts on, counted before any request."""
         await self._require_enabled()
         return await self.starters_wanted(await door.linked_people())
 
     async def starters_wanted(self, person_ids: Sequence[str]) -> list[str]:
-        """Of these People, the ones a press of "Use stash-box pictures as starters" is for.
-
-        `wants_starters`, less everybody every one of whose box pictures this model already refused
-        (`schema._CREATE_STARTER_REFUSALS`): asking again would fetch the same pictures and refuse
-        them the same way, and the row would offer a Run for them for ever. What the count shows and
-        what the press then runs over, so the two cannot disagree.
-        """
+        """`wants_starters`, less those whose every box picture this model already refused."""
         wanted = await self.wants_starters(person_ids)
         if not wanted:
             return []
@@ -80,45 +61,18 @@ class StartersMixin(WeightsMixin):
     async def file_starters(
         self, person_id: str, pictures: Sequence[tuple[str, bytes]]
     ) -> list[str]:
-        """File a stash-box's pictures of somebody as STARTER references. Hands back their ids.
+        """File a stash-box's pictures of somebody as starter references. Hands back their ids.
 
-        ## What a starter is, and the rule that makes one safe
-
-        Sift can recognize nobody it has no reference for, and most People in a library that links
-        a stash-box arrive that way: a name, the box's photo as a cover, nothing to compare a face
-        with. A starter is one of that box's photos, checked exactly as a picture in an imported
-        folder is (`Auditor`: one face, big enough, sharp, not running off the edge; then the
-        near-copy and odd-one-out checks over the set) and filed with `Origin.SEED`.
-
-        **A starter may only make Sift ASK.** Somebody known by starters alone is judged at
-        `ALWAYS_ASK` (`_attach_bar`), so every face that resembles her waits under Needs your input
-        and none is named on its own. The reason is the link: a box is linked on a NAME, so a
-        same-name stranger's photos arrive here exactly as hers would, and asking costs a press
-        where a wrong name written on files costs a library.
-
-        **A starter is retired** the moment she has a reference of her own (the first face of hers
-        somebody confirms, a folder, a pack: `Store.add_reference`), and at the first "no" said
-        about her while starters were all Sift had (`Store.reject`). Retired, not deleted: the row
-        is what stops the same picture being filed again. Nor do starters count towards anything
-        that measures what Sift knows: the bar, Strength, the People Sift can recognize, the list of files
-        filed under somebody whose one face did not match (`Store.filed_but_unrecognised`).
-
-        ## Refusals
-
-        A group photo is refused (more than one face and no way to say which is her), and so is
-        every other picture the checks refuse, each logged with its reason. Nothing is filed for
-        somebody who has any reference row by the time the pictures arrive; `wants_starters` asked
-        before they were fetched, and this asks again because a confirmation can land in between.
+        Checked as an imported folder's pictures are (`Auditor`), filed as `Origin.SEED`. A starter
+        only ever makes Sift ask, since a box is linked on a name a stranger may share; it retires
+        when she has a reference of her own or at the first "no" about her.
         """
         await self._require_enabled()
         if not await self._store.without_references([person_id]):
             return []
         configured = await self.configuration()
         if not pictures:
-            # No picture at all, which reaches here only as every box she is linked to answering
-            # with none: a box that could not be asked hands the job None, and the job does not
-            # call this for her (`BoxPicturesSeam`). Remembered as a refusal of nothing, so she
-            # leaves "starters for N people" rather than staying on it after every Run.
+            # Remembered as a refusal of nothing, so she leaves the count after a Run.
             await self._store.remember_starters_refused(
                 person_id, recognizer=configured.recognizer, pictures=0
             )
@@ -128,7 +82,7 @@ class StartersMixin(WeightsMixin):
         report = PersonReport(name=person_id, person_id=person_id)
         sources: list[str] = []
         for index, (source, blob) in enumerate(pictures[:STARTERS_PER_PERSON]):
-            # Named for the log a lost device leaves (`runner.IN_FLIGHT`), and only while it reads.
+            # Named for the log a lost device leaves (`runner.IN_FLIGHT`).
             checking = IN_FLIGHT.set(
                 f"starter picture {index + 1} of {person_id} from {source}, {len(blob)} bytes"
             )
@@ -142,28 +96,9 @@ class StartersMixin(WeightsMixin):
         mark_near_duplicates(report)
         mark_odd_ones_out(report)
         filed: list[str] = []
-        kept: list[tuple[int, np.ndarray, Vector]] = []
-        for index, candidate in enumerate(report.candidates):
-            if candidate.findings:
-                # A near-copy is usable and adds nothing; every other finding is a refusal. Logged
-                # either way, with the box, so "why did she get no starters" has an answer.
-                log.info(
-                    "faces.starter.refused",
-                    person_id=person_id,
-                    source=sources[index],
-                    picture=index + 1,
-                    findings=[finding.value for finding in candidate.findings],
-                    detail=candidate.detail,
-                )
-                continue
-            # A picture with no finding is always described (`Auditor._judge` builds it with its
-            # square and its numbers together), so this narrows the types and refuses nothing.
-            if candidate.vector is not None and candidate.chip is not None:  # pragma: no branch
-                kept.append((index, candidate.chip, candidate.vector))
+        kept = _kept_starters(person_id, report, sources)
         if not kept:
-            # EVERY PICTURE REFUSED, kept where the count reads it, so she leaves "starters for N
-            # people" instead of being fetched and refused again on every Run. Somebody with no
-            # picture at all is remembered above, before any check is run.
+            # Every picture refused, remembered so she is not fetched and refused on every Run.
             await self._store.remember_starters_refused(
                 person_id, recognizer=configured.recognizer, pictures=len(report.candidates)
             )
@@ -181,9 +116,7 @@ class StartersMixin(WeightsMixin):
                 pixels=candidate.pixels,
                 source=sources[index],
             )
-            # None only where this person already holds this very picture, and `without_references`
-            # above found her holding none: a second run filing the same picture at the same moment
-            # is the one way here, and it has filed it already.
+            # None only where a concurrent run filed this very picture already.
             if reference_id is not None:  # pragma: no branch
                 filed.append(reference_id)
         await self._store.forget_starters_refused(person_id)
@@ -198,11 +131,7 @@ class StartersMixin(WeightsMixin):
     async def record_starters(
         self, filed: Mapping[str, Sequence[str]], sources: Sequence[str]
     ) -> None:
-        """Write one run's starters into History, with the People as its subjects and an Undo.
-
-        The Undo retires what the run filed (`retire_starters`), exactly as a "no" does:
-        Sift stops asking from those pictures and does not file them again.
-        """
+        """Write one run's starters into History, with an Undo that retires them."""
         if self._recorder is None:
             return
         pictures = sum(len(ids) for ids in filed.values())
@@ -215,8 +144,7 @@ class StartersMixin(WeightsMixin):
             f"for {people_counted(len(people))}"
         )
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it, never one receipt short.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             await self._recorder.record_on(
                 connection,
@@ -229,8 +157,7 @@ class StartersMixin(WeightsMixin):
                     "under Needs your input. Sift never names it without you. The starters step "
                     "aside once you confirm one of the person's faces, or answer No about one."
                 ),
-                # The boxes too, so the line is worded from the record rather than read back out
-                # of the title (`jobs.StarterRecords.worded`).
+                # The boxes too, so the line is worded from the record (`StarterRecords.worded`).
                 payload=json.dumps(
                     {
                         "references": {p: list(filed[p]) for p in sorted(people)},
@@ -246,3 +173,26 @@ class StartersMixin(WeightsMixin):
         if retired:
             log.info("faces.starter.retired", pictures=retired)
         return retired
+
+
+def _kept_starters(
+    person_id: str, report: PersonReport, sources: Sequence[str]
+) -> list[tuple[int, np.ndarray, Vector]]:
+    """The pictures no check refused, each with its index, square and description."""
+    kept: list[tuple[int, np.ndarray, Vector]] = []
+    for index, candidate in enumerate(report.candidates):
+        if candidate.findings:
+            # A near-copy adds nothing; every finding is logged with the box.
+            log.info(
+                "faces.starter.refused",
+                person_id=person_id,
+                source=sources[index],
+                picture=index + 1,
+                findings=[finding.value for finding in candidate.findings],
+                detail=candidate.detail,
+            )
+            continue
+        # Always true without a finding; narrows the types.
+        if candidate.vector is not None and candidate.chip is not None:  # pragma: no branch
+            kept.append((index, candidate.chip, candidate.vector))
+    return kept

@@ -10,23 +10,8 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * The three Recognition switches in one place: recognizing faces, describing files for Smart
-	 * Search, and reading watermarks, each with where it stands in the shaded box under it.
-	 *
-	 * The switches are the features' own settings, written through the ordinary settings write, and
-	 * this is their ONE door: the Faces, Smart Search and Watermarks sections draw a row saying
-	 * whether each is on and linking here (`SwitchPointer`), never a second switch. The line under
-	 * each is built by the words those sections use (`facesStatus` and its two siblings), so the
-	 * two panes cannot say two things about one feature. Everything else about a feature (its models, its
-	 * device, how thorough) stays on its own section, and where a switch cannot run until something
-	 * there is done, the box says where, with the way there.
-	 *
-	 * Turning one on writes the switch and nothing else. When the work then runs is its task's When,
-	 * which reads "As files arrive" until somebody chooses otherwise, so a switch never moves a When
-	 * somebody set. The switch is not the When: off is a refusal that stops a press too, which no
-	 * When can say.
-	 */
+	/* The three Recognition switches in one place: recognizing faces, describing files for Smart
+	 * Search, and reading watermarks, each with where it stands in the shaded box under it. */
 	import { onMount } from 'svelte';
 	import { Problem, SettingLink } from '$lib/components/common';
 	import {
@@ -97,66 +82,73 @@
 
 	const on = (key: string): boolean => Boolean(entries.get(key)?.value);
 
-	const said = $derived.by((): Said[] => {
+	const said = $derived.by((): Said[] => [facesSaid(), semanticSaid(), watermarksSaid()]);
+
+	/** What the faces row says. */
+	function facesSaid(): Said {
 		const facesOn = on(FACES_ENABLED_KEY);
-		const semanticOn = on(SEMANTIC_ENABLED_KEY);
-		const watermarksOn = on(WATERMARKS_ENABLED_KEY);
 		const facesReady = facesOn && faces?.ready === true && !faces.device_problem;
+		return {
+			key: FACES_ENABLED_KEY,
+			status: facesStatus(
+				faces,
+				facesOn,
+				faces ? deviceWords(entries.get(FACES_DEVICE_KEY), faces.device) : ''
+			),
+			offered: true,
+			ready: facesReady,
+			caution: facesOn && faces !== null && !facesReady,
+			missing:
+				facesOn && faces?.device_problem
+					? 'device'
+					: facesOn && faces !== null && !faces.ready
+						? 'models'
+						: null
+		};
+	}
+
+	/** What the Search by meaning row says. */
+	function semanticSaid(): Said {
+		const semanticOn = on(SEMANTIC_ENABLED_KEY);
 		const semanticReady = semanticOn && semantic?.ready === true;
+		return {
+			key: SEMANTIC_ENABLED_KEY,
+			status: semanticStatusLine(
+				semantic,
+				semanticOn,
+				semantic ? deviceWords(entries.get(SEMANTIC_DEVICE_KEY), semantic.device) : ''
+			),
+			offered: semantic?.supported !== false,
+			ready: semanticReady,
+			caution: semantic?.supported === false || (semanticOn && semantic !== null && !semanticReady),
+			missing: semanticOn && semantic?.supported && !semantic.ready ? 'models' : null
+		};
+	}
+
+	/** What the watermarks row says. */
+	function watermarksSaid(): Said {
+		const watermarksOn = on(WATERMARKS_ENABLED_KEY);
 		const watermarksReady = watermarksOn && watermarks?.ready === true;
-		return [
-			{
-				key: FACES_ENABLED_KEY,
-				status: facesStatus(
-					faces,
-					facesOn,
-					faces ? deviceWords(entries.get(FACES_DEVICE_KEY), faces.device) : ''
-				),
-				offered: true,
-				ready: facesReady,
-				caution: facesOn && faces !== null && !facesReady,
-				missing:
-					facesOn && faces?.device_problem
-						? 'device'
-						: facesOn && faces !== null && !faces.ready
-							? 'models'
-							: null
-			},
-			{
-				key: SEMANTIC_ENABLED_KEY,
-				status: semanticStatusLine(
-					semantic,
-					semanticOn,
-					semantic ? deviceWords(entries.get(SEMANTIC_DEVICE_KEY), semantic.device) : ''
-				),
-				offered: semantic?.supported !== false,
-				ready: semanticReady,
-				caution:
-					semantic?.supported === false || (semanticOn && semantic !== null && !semanticReady),
-				missing: semanticOn && semantic?.supported && !semantic.ready ? 'models' : null
-			},
-			{
-				key: WATERMARKS_ENABLED_KEY,
-				status: watermarksStatusLine(
-					watermarks,
-					watermarksOn,
-					watermarks ? deviceWords(entries.get(WATERMARKS_DEVICE_KEY), watermarks.device) : ''
-				),
-				offered: true,
-				ready: watermarksReady,
-				caution: watermarksOn && watermarks !== null && !watermarksReady,
-				missing: watermarksOn && watermarks !== null && !watermarks.ready ? 'models' : null
-			}
-		];
-	});
+		return {
+			key: WATERMARKS_ENABLED_KEY,
+			status: watermarksStatusLine(
+				watermarks,
+				watermarksOn,
+				watermarks ? deviceWords(entries.get(WATERMARKS_DEVICE_KEY), watermarks.device) : ''
+			),
+			offered: true,
+			ready: watermarksReady,
+			caution: watermarksOn && watermarks !== null && !watermarksReady,
+			missing: watermarksOn && watermarks !== null && !watermarks.ready ? 'models' : null
+		};
+	}
 
 	onMount(() => {
 		void load();
 	});
 
-	/* And again when a setting moves somewhere else: the same switch pressed on its own section, in
-	   a second window, or by another admin. Every switch here writes on the press and holds nothing
-	   unsaved, so a re-read can only put the same value back. */
+	/* And again when a setting moves somewhere else: the same switch pressed on its own section,
+	   in a second window, or by another admin. */
 	whenChanged(settingChanges, () => void load());
 
 	async function load() {
@@ -164,8 +156,7 @@
 		try {
 			const sections = await fetchSettings();
 			const all = sections.flatMap((section) => section.settings ?? []);
-			// Each feature's own answer, read side by side. One that fails leaves its line unsaid
-			// rather than the whole block unloaded: the switch still works without it.
+			// Each feature's own answer, read side by side.
 			const [face, meaning, marks] = await Promise.all([
 				faceSettings().catch(() => null),
 				semanticStatus().catch(() => null),
@@ -181,8 +172,8 @@
 		}
 	}
 
-	/* The feature's own answer again, after its switch moved: turning one on does not make it ready,
-	   so the line is re-read rather than guessed at. */
+	/* The feature's own answer again, after its switch moved: turning one on does not make it
+	   ready, so the line is re-read rather than guessed at. */
 	async function reread(key: string) {
 		if (key === FACES_ENABLED_KEY) faces = await faceSettings().catch(() => faces);
 		if (key === SEMANTIC_ENABLED_KEY) {

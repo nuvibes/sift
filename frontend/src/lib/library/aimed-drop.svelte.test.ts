@@ -1,9 +1,4 @@
-/* A link dropped ON something: fetch it, and file what comes back under that thing.
- *
- * A download rather than the ordinary import, because the ordinary path cannot carry an AIM: the
- * filing happens minutes later, when there is a file to file, by which time the page that took the
- * drop may be closed. So the target is written onto the download's own row when it is queued.
- */
+/* A link dropped ON something: fetch it, and file what comes back under that thing. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,8 +29,7 @@ describe('a link dropped on something', () => {
 	});
 
 	it('names the thing it is being filed under, because that is the only acknowledgement there is', async () => {
-		/* The fetch takes as long as it takes and nothing on the card can show that. So without
-		   the name in it, a drop on the wrong card looks exactly like a drop on the right one. */
+		/* The fetch takes as long as it takes and nothing on the card can show that. */
 		mocked.post.mockResolvedValue({});
 
 		await fetchOnto('https://example.test/clip', 'collection', 'c1', 'Best of');
@@ -45,8 +39,8 @@ describe('a link dropped on something', () => {
 	});
 
 	it('sends no id for Favorites, which is a place rather than a row', async () => {
-		/* The server refuses an id with it, and refuses a missing one for every other kind, so the
-		   two halves cannot be mixed up silently here or there. */
+		/* The server refuses an id with it, and refuses a missing one for every other kind, so
+		   the two halves cannot be mixed up silently here or there. */
 		mocked.post.mockResolvedValue({});
 
 		await fetchOnto('https://example.test/clip', 'favorite', null, 'Favorites');
@@ -77,8 +71,7 @@ describe('what the offer promises while something is held over a target', () => 
 
 	it('promises a Site drop keeps the one the link came from', () => {
 		/* A drop ADDS on every kind, and a Site is the one aim that answers a question the link
-		   also answers, so it is the one that reads as "instead". The promise is made at the
-		   moment of the gesture, which is the only moment it can change what somebody does. */
+		   also answers, so it is the one that reads as "instead". */
 		expect(dropOffer('site')).toBe('Drop to add \u2014 its own Site is kept too');
 		expect(dropOffer('site', 'QuillMoss')).toBe(
 			'Drop to add \u2014 it goes to QuillMoss, and the Site the link came from is kept too'

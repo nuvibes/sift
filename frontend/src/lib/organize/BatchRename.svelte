@@ -13,18 +13,7 @@
 <script lang="ts">
 	/* WHY NOT BITS-UI: not a control. It is a form on the one dialog (`Modal`, which is bits-ui),
 	   built from the shared field, box, chip and select. */
-	/*
-	 * Renaming a batch of files from one template.
-	 *
-	 * The words are pressed in as chips, the way a Site's naming rule is written, and every new name
-	 * is shown before anything moves: the server plans the whole batch against what each folder
-	 * already holds, marks every name that clashes, and the sheet draws that plan and the count. What
-	 * a clash does is the person's choice: the next number, or leave that file alone.
-	 *
-	 * Nothing is renamed until Rename is pressed, and then the batch is ONE thing in the record,
-	 * with one Undo that puts every file back. A large batch runs as a task, and the toast says
-	 * where to follow it.
-	 */
+	/* Renaming a batch of files from one template. */
 	import { Button, Chip, Field, Modal, Select, TextInput } from '$lib/components/common';
 	import Icon from '$lib/components/Icon.svelte';
 	import { ApiError } from '$lib/api/client';
@@ -99,13 +88,12 @@
 			}
 		} else gathered = assetIds.slice(0, MOST_FILES);
 		files = gathered;
-		// One file starts from its own name: "{n}" would give it a " 1" nobody asked for. Written
-		// and never read here, since this runs inside the effect that opens the sheet.
+		// One file starts from its own name: "{n}" would give it a " 1" nobody asked for.
 		template = startingTemplate(gathered.length);
 	}
 
-	/* Which plan was asked for last. The box asks on every pause in typing and the answers are not
-	   bound to come back in order: only the newest question's answer may reach the screen. */
+	/* Which plan was asked for last. The box asks on every pause in typing and the answers are
+	   not bound to come back in order: only the newest question's answer may reach the screen. */
 	let asked = 0;
 	let waiting: ReturnType<typeof setTimeout> | undefined;
 

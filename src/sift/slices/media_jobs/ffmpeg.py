@@ -1,17 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Every ffmpeg and ffprobe command Sift runs, and the one place they are built.
+"""Every ffmpeg and ffprobe command this slice runs, built as argument lists in one place.
 
-Two rules hold this module together.
-
-The first is that ffmpeg is always a subprocess with an argument list, never a shell string and
-never a Python binding. A shell string means quoting a filename that came from somewhere else,
-and a filename is exactly the thing that will one day contain a quote; a binding means the whole
-decoder shares this process, and a decoder handed a malformed file is the last thing that should
-be able to take the server down with it.
-
-The second is that the arguments are built by functions that return a list and touch nothing, so
-what Sift asks ffmpeg to do can be read in a test rather than inferred from a log. That matters
-most for the hardware paths, which are the ones nobody can check on a machine that has no GPU.
+A subprocess with a list, never a shell string or a binding, and builders that touch nothing.
 """
 
 from __future__ import annotations
@@ -27,9 +17,7 @@ from sift.kernel import media
 from sift.kernel.config import Settings
 from sift.kernel.log import get_logger
 
-# The shared half lives in the kernel, because `player` needs the same encoder choice and the same
-# runner and a slice may not import another slice. What stays here is what only this slice builds:
-# thumbnails, previews, sprite tiles and the perceptual-hash frame.
+# The shared half is the kernel's, since `player` needs it too; this slice's own builders stay here.
 from sift.kernel.media import (
     Encoder,
     FFmpegError,
@@ -80,18 +68,7 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class Probed:
-    """What ffprobe said a file is.
-
-    Every field is optional because ffprobe reports what it can and a file is under no obligation
-    to be well-formed. A missing duration is a real answer for a stream with no timeline in it,
-    not a failure (see the sampler, which treats it as such).
-
-    The container is deliberately absent. ffprobe cannot answer that question: it reports every
-    format that *could* demux the file ("mov,mp4,m4a,3gp,3g2,mj2" for anything ISO-based), so
-    reading a container out of it means picking one arbitrarily, and picking the first labels every
-    MP4 in the library "mov". The ingress gate has already identified the container structurally,
-    and it is the one allowlist that says which containers exist. That answer is used instead.
-    """
+    """What ffprobe said a file is; every field optional, and no container (the ingress gate's)."""
 
     width: int | None
     height: int | None
@@ -159,26 +136,9 @@ class Probed:
     the cover: a hover clip of one frame held for a second."""
 
 
-# --- Probing ------------------------------------------------------------------------------
-
-
 def probe_args(path: Path, *, settings: Settings, still: bool = False) -> list[str]:
-    """Ask ffprobe what a file is.
-
-    `-count_frames` is deliberately not here. It is the honest way to learn how many frames a file
-    has, and it costs a full decode of the whole file to do it: minutes, on a long video, for a
-    number nothing reads.
-
-    No `-show_entries` either: `-show_format` already returns the container's own tags in the JSON
-    (title, encoder, and the place a camera wrote). The whole answer is kept per file, so what this
-    asks for is what a later question will have to work from.
-
-    A `still` is also asked for its first frame. A photograph's note saying which way up it goes
-    (its EXIF orientation) is read by the decoder rather than the demuxer, so it is on the frame and
-    absent from the stream, and the size recorded has to be the size every picture is drawn at
-    (see `_quarter_turned`). One frame of one picture: a few milliseconds more, even on a large
-    JPEG. A moving file's turn is on its stream and costs nothing extra to read.
-    """
+    """Ask ffprobe what a file is, without a frame count (a full decode); a still is also asked its
+    first frame, where its EXIF turn is."""
     return [
         settings.ffprobe_path,
         "-hide_banner",
@@ -189,18 +149,13 @@ def probe_args(path: Path, *, settings: Settings, still: bool = False) -> list[s
         "-show_streams",
         "-show_format",
         *(("-show_frames", "-read_intervals", "%+#1") if still else ()),
-        # Absolute, so a filename beginning `-` is a path and not an ffprobe option, the same
-        # reason verify_decodable resolves before it probes.
+        # Absolute, so a name beginning `-` is a path, not an option.
         str(path.resolve()),
     ]
 
 
 def parse_probe(payload: dict[str, Any]) -> Probed:
-    """Read ffprobe's JSON. Returns what it could work out and does not raise on a gap.
-
-    Whether the file is usable at all is not decided here: the ingress gate has already asked
-    that question and answered it. This only reports.
-    """
+    """Read ffprobe's JSON. Returns what it could work out and does not raise on a gap."""
     streams = payload.get("streams")
     streams = [s for s in streams if isinstance(s, dict)] if isinstance(streams, list) else []
     video = media.the_moving_picture(streams)
@@ -216,9 +171,7 @@ def parse_probe(payload: dict[str, Any]) -> Probed:
     picture = _duration_seconds(video.get("duration")) if video else None
     seconds = _duration_seconds(container.get("duration"))
     if seconds is None:
-        # A Matroska stream often carries no duration at container level. The video stream's own
-        # is less reliable but it is an answer, and the alternative is calling a file that plays
-        # perfectly well duration-less.
+        # A Matroska stream often has no container duration; the video stream's will do.
         seconds = picture
 
     return Probed(
@@ -230,9 +183,7 @@ def parse_probe(payload: dict[str, Any]) -> Probed:
         acodec=audio.get("codec_name") if audio else None,
         bit_depth=_bit_depth(video) if video else None,
         color_transfer=_transfer(video) if video else None,
-        # The first audio track's shape. The first and not a survey of all of them: a file with
-        # two languages has two tracks of the same shape, and the question every reader asks is
-        # what this file sounds like rather than what each track is.
+        # The first audio track's shape: what the file sounds like.
         audio_channels=_int(audio.get("channels")) if audio else None,
         audio_sample_rate=_int(audio.get("sample_rate")) if audio else None,
         video_duration_ms=None if picture is None else round(picture * 1000),
@@ -241,32 +192,17 @@ def parse_probe(payload: dict[str, Any]) -> Probed:
     )
 
 
-# `strip_places` is the kernel's (`sift.kernel.places`): the one list of the words that make a key
-# a place, shared with the door every copy Sift makes or sends goes through, so the answer kept per
-# file and the file handed out can never come to disagree about what a place is. Named in this
-# module's exports as well, where every reader of a stored answer already looks for it.
+# `strip_places` is the kernel's (`sift.kernel.places`), re-exported for readers of a stored answer.
 
 
 def probe_body(payload: dict[str, Any]) -> bytes:
-    """The tool's whole answer, stripped of places and compressed, ready to be stored.
-
-    Compressed because it is kept per file and a library is hundreds of thousands of them: the
-    answer is repetitive JSON, which is the case this compresses best.
-
-    Sorted keys, so the same reading of the same file produces the same bytes: a row that is
-    rewritten on every probe with a differently-ordered but identical answer is a row that looks
-    like it changed.
-    """
+    """The tool's whole answer, stripped of places and compressed, keys sorted for stable bytes."""
     text = json.dumps(strip_places(payload), sort_keys=True, separators=(",", ":"))
     return zlib.compress(text.encode("utf-8"))
 
 
 def read_kept_probe(body: bytes) -> dict[str, Any]:
-    """A kept answer, back as it was stored. The other half of `probe_body`, so nothing anywhere
-    else has to know what the compression was.
-
-    A body that will not decompress raises `ValueError`, like one that will not parse, so a caller
-    catches one thing and never has to name the compression to do it."""
+    """A kept answer, back as it was stored; anything unreadable raises `ValueError`."""
     try:
         text = zlib.decompress(body)
     except zlib.error as exc:
@@ -276,20 +212,11 @@ def read_kept_probe(body: bytes) -> dict[str, Any]:
 
 
 #: What the tool says it is, once per process per path.
-#:
-#: Which build read a file is part of what the answer means (ffprobe's fields come and go
-#: between versions), and it is the same string for every file, so asking per file would be a
-#: subprocess launch per file to learn something that cannot have changed.
 _TOOL_VERSIONS: dict[str, str] = {}
 
 
 async def probe_tool(*, settings: Settings) -> str:
-    """The version line of the ffprobe that is about to read a file.
-
-    Its own words, not a parsed number: what is wanted is something a person can compare against
-    a build they have, and every attempt to normalise it is a chance to lose the part that
-    mattered. Empty when the tool will not say, which is not worth failing a probe over.
-    """
+    """The version line of the ffprobe about to read a file, in its own words; empty if unsaid."""
     cached = _TOOL_VERSIONS.get(settings.ffprobe_path)
     if cached is not None:
         return cached
@@ -305,11 +232,7 @@ async def probe_tool(*, settings: Settings) -> str:
 
 
 def _first_frame_of(payload: dict[str, Any], video: dict[str, Any]) -> dict[str, Any] | None:
-    """The first frame ffprobe decoded from this stream, when it was asked for one (a still).
-
-    Matched by stream, because a HEIF can carry a thumbnail or a depth map beside the photograph
-    and each of them answers with a first frame of its own.
-    """
+    """The first frame ffprobe decoded from this stream when asked for one (a still), by stream."""
     frames = payload.get("frames")
     if not isinstance(frames, list):
         return None
@@ -320,15 +243,7 @@ def _first_frame_of(payload: dict[str, Any], video: dict[str, Any]) -> dict[str,
 
 
 def _quarter_turned(video: dict[str, Any], frame: dict[str, Any] | None) -> bool:
-    """Whether the picture is drawn a quarter turn from how it is stored, so its width is its height.
-
-    Read off the turn ffmpeg itself applies, because ffmpeg draws every picture Sift makes (the
-    thumbnail, the cover, the frames recognition reads) and turns each one by it unasked: a
-    photograph's is on its decoded frame, a phone's video and an AVIF carry theirs on the stream.
-    The tag itself is not read: where ffmpeg finds a note it does not act on (the note on a PNG),
-    reading it would record a size no picture Sift makes is drawn at. A mirror alone changes nothing
-    here; a mirror with a quarter turn reports that turn.
-    """
+    """Whether the picture is drawn a quarter turn from how it is stored, by ffmpeg's own turn."""
     for holder in (frame, video):
         for side in (holder or {}).get("side_data_list") or []:
             angle = side.get("rotation") if isinstance(side, dict) else None
@@ -338,12 +253,7 @@ def _quarter_turned(video: dict[str, Any], frame: dict[str, Any] | None) -> bool
 
 
 def _transfer(video: dict[str, Any]) -> str | None:
-    """The transfer characteristics, lowercased, or None where the stream does not state them.
-
-    The name matters more than the depth: a ten-bit file is not HDR because it is ten-bit, and an
-    encode that forces 8-bit 4:2:0 onto a PQ or HLG picture without mapping it is a grey, washed
-    picture with no sentence. This is the fact the tone map keys on.
-    """
+    """The transfer characteristics, lowercased, or None where the stream does not state them."""
     value = video.get("color_transfer")
     if not isinstance(value, str) or not value.strip():
         return None
@@ -351,13 +261,7 @@ def _transfer(video: dict[str, Any]) -> str | None:
 
 
 def _bit_depth(video: dict[str, Any]) -> int | None:
-    """Bits per colour sample, from whichever of the two places states it.
-
-    `bits_per_raw_sample` is the direct answer and is often simply absent. The pixel format is
-    always there and names its own depth (`yuv420p10le` is ten, `yuv444p12le` is twelve), and a
-    format with no number in it is eight, which is what the ordinary ones are. Anything that answers
-    neither is left unknown rather than guessed at.
-    """
+    """Bits per colour sample, from `bits_per_raw_sample` or the pixel format's name."""
     stated = _int(video.get("bits_per_raw_sample"))
     if stated and 1 <= stated <= 64:
         return stated
@@ -366,32 +270,20 @@ def _bit_depth(video: dict[str, Any]) -> int | None:
     if not isinstance(pixels, str) or not pixels:
         return None
     digits = "".join(ch for ch in pixels if ch.isdigit())
-    # The leading digits belong to the subsampling (the 420 of yuv420p10le), so the depth is
-    # whatever follows them, and a format with nothing after them carries eight.
+    # The leading digits are the subsampling; any digits after them are the depth.
     for known in ("400", "410", "411", "420", "422", "440", "444"):
         if digits.startswith(known):
             rest = digits[len(known) :]
             if not rest:
                 return 8
-            # Converted rather than trusted to be convertible: the characters were kept by
-            # `isdigit()`, which admits digits `int()` refuses, and a probe reporting an unusual
-            # pixel format should leave the depth unknown rather than raise inside a scan.
+            # `isdigit()` admits digits `int()` refuses: unknown rather than a raise inside a scan.
             depth = as_int(rest)
             return depth if depth is not None and 1 <= depth <= 64 else None
     return 8 if digits == "" else None
 
 
 def _frame_rate(video: dict[str, Any]) -> float | None:
-    """Frames per second, from ffprobe's two rational strings.
-
-    `avg_frame_rate` first, because it is the file's real average and that is what a transcode
-    actually has to keep up with. `r_frame_rate` is the nominal base rate: for a variable-rate
-    file it reports the highest rate the timebase can express, which on some phone recordings is
-    wildly above anything the file contains, and projecting cost from it would call a perfectly
-    ordinary clip unplayable.
-
-    Both arrive as `numerator/denominator`, and both report an unknown rate as `0/0`.
-    """
+    """Frames per second, `avg_frame_rate` first (`r_frame_rate` can be high); `0/0` is none."""
     for key in ("avg_frame_rate", "r_frame_rate"):
         raw = video.get(key)
         if not isinstance(raw, str) or "/" not in raw:
@@ -413,7 +305,7 @@ def _duration_seconds(raw: object) -> float | None:
         seconds = float(raw)
     except (TypeError, ValueError):
         return None
-    # ffprobe reports N/A as the string, and a live stream as a negative. Neither is a duration.
+    # N/A arrives as a string and a live stream as a negative.
     return seconds if seconds > 0 else None
 
 
@@ -426,28 +318,8 @@ def _int(raw: object) -> int | None:
         return None
 
 
-# --- Frames -------------------------------------------------------------------------------
-
-
 def _seek(timestamp_ms: int) -> list[str]:
-    """An input seek, or nothing at all when the moment asked for is the beginning.
-
-    `-ss 0` is not the no-op it reads as. A photograph is decoded through the image2 demuxer,
-    which presents it as a video one frame long: 0.04 s at the assumed 25 fps. An input seek to 0
-    on that lands ON the only frame's
-    timestamp rather than before it, the frame is discarded as already passed, and ffmpeg exits 0
-    having written nothing:
-
-        Output file is empty, nothing was encoded (check -ss / -t / -frames parameters if used)
-
-    Zero exit, no output. So the thumbnail job would fail on the missing file rather than on
-    ffmpeg, and the perceptual hash (which reads frame zero for a still) would silently come back
-    empty, leaving every photograph with no fingerprint and therefore no duplicate detection. One
-    cause, two symptoms, neither of which points at a seek.
-
-    Asking for the beginning is asking for no seek, so that is what this sends. Every other moment
-    keeps the input seek, which is what makes sampling a two-hour video affordable (see the callers).
-    """
+    """An input seek, or nothing at the beginning: `-ss 0` on a still discards its only frame."""
     return [] if timestamp_ms <= 0 else ["-ss", seconds(timestamp_ms)]
 
 
@@ -458,25 +330,7 @@ def frame_args(
     size: int,
     settings: Settings,
 ) -> list[str]:
-    """One frame, at one moment, as a raw grayscale square on stdout.
-
-    This is what the perceptual hash reads, so the picture is deliberately destroyed on the way
-    out: colour dropped, aspect ratio ignored, squashed to a small square. That is the hash's
-    first step and ffmpeg does it far faster than anything reading pixels in Python could.
-
-    `-ss` before `-i` is what makes this affordable on a long file. After `-i`, ffmpeg decodes
-    from the start and throws away everything before the timestamp: thirty of those on a two
-    hour video is thirty full decodes. Before `-i`, it seeks, and it is still exact: it lands on
-    the preceding keyframe and decodes forward to the frame asked for.
-
-    Except at zero, where there is nothing to seek to and asking anyway loses the frame (see
-    `_seek`).
-
-    Composed from `hash_frame_moment` and `hash_frame_filter`, which are what the fingerprint
-    really reads through: thirty moments of one file go to the kernel as one process, and this is
-    the one-moment form of the same command (the same seek, the same filter, the same output),
-    kept so the two cannot be built from different pieces.
-    """
+    """One frame at one moment, a raw grayscale square on stdout: what the perceptual hash reads."""
     return media.raw_frame_args(
         path,
         hash_frame_moment(timestamp_ms),
@@ -496,8 +350,7 @@ def hash_frame_moment(timestamp_ms: int) -> media.Moment:
 
 
 def hash_frame_filter(size: int) -> str:
-    """How a fingerprint frame is shaped: squashed to a small square, bilinear. The hash's first
-    step, done by ffmpeg because it has to touch the pixels anyway."""
+    """How a fingerprint frame is shaped: squashed to a small square, bilinear."""
     return f"scale={size}:{size}:flags=bilinear"
 
 
@@ -510,25 +363,8 @@ def stash_box_still_args(
 ) -> list[str]:
     """One still for the fingerprint the public stash-boxes share, as an uncompressed bitmap.
 
-    Every part of this is fixed by having to agree with software Sift did not write, and none of it
-    may be tidied:
-
-    * `-ss` always goes BEFORE `-i`, including at zero. That is the opposite of `frame_args` next
-      door, which drops the seek at zero because a photograph read through the image demuxer loses
-      its only frame that way. A video does not have that problem, and moving the seek would change
-      which frame comes back on a file whose first keyframe is not at zero.
-    * The width is fixed and the height follows, rounded to an even number.
-    * The scaler's flags are left unstated, so it uses its own default. Naming one here (even the
-      one that looks obviously better) produces different pixels and therefore a different
-      fingerprint from everybody else's.
-    * Uncompressed, so the answer does not depend on which JPEG encoder happens to be installed.
-
-    The moment arrives in SECONDS, as a fraction, which is the one place in Sift that does not
-    take milliseconds, and the exception is deliberate. The twenty-five moments are worked out by
-    dividing the running time, so they land on values like 18.060000000000002, and rounding that to
-    the nearest millisecond writes a different number on the command line. It would almost always
-    be the same frame. "Almost always" is not what a fingerprint that has to match other people's
-    exactly can be built on.
+    Every part must agree with other software: always seek first, even at zero; even height; the
+    scaler's default flags; and the moment in seconds, since milliseconds would round differently.
     """
     return [
         settings.ffmpeg_path,
@@ -547,15 +383,12 @@ def stash_box_still_args(
     ]
 
 
-#: How a stash-box still is encoded: an uncompressed bitmap, so the bytes do not depend on which
-#: JPEG encoder happens to be installed. The twenty-five stills of one video are written as files
-#: from one process; this is the same encoder the one-still command above names.
+#: How a stash-box still is encoded: uncompressed, so no JPEG encoder changes the bytes.
 STASH_BOX_OUTPUT: tuple[str, ...] = ("-c:v", "bmp")
 
 
 def stash_box_moment(at_seconds: float) -> media.Moment:
-    """Where a stash-box still is taken from. Always a seek, even at zero (see the command above
-    for why that is the opposite of the fingerprint's rule)."""
+    """Where a stash-box still is taken from: always a seek, even at zero."""
     return media.Moment(seek=("-ss", stash_box_seconds(at_seconds)))
 
 
@@ -565,12 +398,7 @@ def stash_box_filter(width: int) -> str:
 
 
 def stash_box_seconds(value: float) -> str:
-    """A moment as the seconds string the other implementations print.
-
-    The shortest decimal that reads back as exactly the same number, with a whole number carrying
-    no decimal point. `seconds()` next door is not reused: that one formats for a person reading a
-    log, and this one formats for two programs agreeing.
-    """
+    """A moment as the seconds string the other implementations print: shortest exact decimal."""
     if value == int(value):
         return str(int(value))
     return repr(value)
@@ -579,19 +407,7 @@ def stash_box_seconds(value: float) -> str:
 def all_frames_args(path: Path, *, size: int, settings: Settings, stream: int = 0) -> list[str]:
     """Every frame of a file, each a raw grayscale square on stdout, in a single decode.
 
-    The fingerprint reads thirty frames. Taken as thirty separate `-ss` seeks that is thirty decodes
-    for a format that cannot seek cheaply: a GIF is delta-coded and has no keyframes, so each seek
-    re-decodes from the very start, and thirty of those over a slow mount take a GIF's fingerprint
-    from seconds to minutes. This reads the whole thing once instead; the caller picks its thirty
-    frames out of the stream. Every frame comes out at `size`x`size` bytes, in play order, so the
-    stream splits cleanly into frames with no per-frame markers to parse.
-
-    Only worth it for a short, all-intra file. A feature-length video has hundreds of thousands of
-    frames and seeks cheaply between its keyframes, so it keeps the per-frame seek (see the caller).
-
-    `stream` is which video stream moves (`media.moving_stream_of`): an animated AVIF holds a still
-    cover first and its frames second, and ffmpeg's own choice is the cover, one frame. The first
-    stream is named by nothing, so a GIF's command names no stream.
+    For a short all-intra file such as a GIF, where every seek re-decodes from the start.
     """
     return [
         settings.ffmpeg_path,
@@ -609,9 +425,6 @@ def all_frames_args(path: Path, *, size: int, settings: Settings, stream: int = 
     ]
 
 
-# --- Derivatives --------------------------------------------------------------------------
-
-
 def still_args(
     source: Path,
     destination: Path,
@@ -622,17 +435,9 @@ def still_args(
     quality: int,
     settings: Settings,
 ) -> list[str]:
-    """One frame, written to an image file. What both a thumbnail and a sprite tile are.
+    """One frame, written to an image file: a thumbnail or a sprite tile.
 
-    One function for both, because they are the same command with different numbers, and two
-    copies of it would be two places for the seek to be got wrong. Exactly one of `height` and
-    `width` is given: the other follows from the source's shape.
-
-    `-2` rather than `-1` on the free axis keeps the aspect ratio and rounds to an even number.
-    An odd dimension is something several encoders refuse outright.
-
-    `min(N,ih)` never scales a small picture up. A 100px source made into a 480px thumbnail is a
-    bigger file that looks worse than the original, which is the opposite of the job.
+    Exactly one of `height` and `width` is given; `-2` keeps it even, `min(N,ih)` never upscales.
     """
     return [
         settings.ffmpeg_path,
@@ -650,8 +455,7 @@ def still_args(
 
 
 def still_filter(*, height: int | None = None, width: int | None = None) -> str:
-    """How a still is shaped. Exactly one of `height` and `width` is given; the other follows from
-    the source's shape. See `still_args` for why `-2` and why `min(N, i?)`."""
+    """How a still is shaped; exactly one of `height` and `width` is given (see `still_args`)."""
     if (height is None) == (width is None):
         raise ValueError("a still is sized by height or by width, not both and not neither")
     return f"scale=-2:min({height}\\,ih)" if height else f"scale=min({width}\\,iw):-2"
@@ -670,12 +474,7 @@ def all_tiles_args(
     quality: int,
     settings: Settings,
 ) -> list[str]:
-    """Every frame of a file, each a JPEG at `width`, written to the numbered `pattern`, in one
-    decode. The GIF twin of `still_args`: a GIF re-decodes from the start on every seek, so reading
-    its sprite tiles as one seek per tile is a decode per tile; this reads them all in one go and
-    the caller keeps the ones it wants. Same width and quality a tile would get from `still_args`,
-    so a frame it writes is the tile a seek to that frame would have written.
-    """
+    """Every frame of a GIF as numbered JPEG tiles in one decode: the twin of `still_args`."""
     return [
         settings.ffmpeg_path,
         *background_flags(settings),
@@ -720,19 +519,8 @@ def preview_args(
 ) -> list[str]:
     """The hover clip: moments from across the file, joined into one small silent loop.
 
-    `pieces` says which moments and how long each runs (`kernel.sampling.preview_segments`
-    decides); one piece is the plain one-input command.
-
-    **One process, not one per piece.** Each moment is its own input with its own seek before its
-    `-i`, so ffmpeg jumps to each moment rather than decoding everything in front of it, and the
-    filter graph joins them: one decode pipeline, one encode, no temporary files. `-an` drops the
-    audio, which nothing plays on a hover; `+faststart` puts the index first so a browser can play
-    the clip before it has all of it.
-
-    `decode` puts the DECODING on the graphics card; it is an input option, so it goes before
-    every `-i` (`kernel.media.decode_flags` decides what it holds). `stream` is which video stream
-    moves (`Probed.picture_stream`): in a filter graph `[0:v]` is the FIRST video stream, which
-    for an animated AVIF is its still cover. Zero leaves the ordinary command as it is.
+    Each piece is its own seeked input and the filter graph joins them; `stream` picks the moving
+    video stream (an animated AVIF's first is its cover).
     """
     if not pieces:
         raise ValueError("a preview needs at least one moment to be cut from")
@@ -753,8 +541,7 @@ def preview_args(
         last,
         "-an",
         *video,
-        # In the output position, which is the one that reaches the encoder; before -i it caps
-        # only the decoder. Both together hold an encode to its share of the machine.
+        # Output position, which reaches the encoder.
         "-threads",
         str(background_threads(settings)),
         "-movflags",
@@ -765,16 +552,12 @@ def preview_args(
 
 def _preview_shape(encoder: Encoder) -> str:
     """The filters every piece passes through: its rate, its size, its pixel aspect and format."""
-    # Both axes forced even: `-2` rounds the free width, and the height (the ceiling or the
-    # source's own, whichever is smaller) is rounded by hand, because x264 refuses an odd one.
+    # Both axes even, which x264 requires.
     height = f"trunc(min({tuning.PREVIEW_HEIGHT}\\,ih)/2)*2"
 
-    # 4:2:0 eight-bit, forced in the graph, for every encoder that takes an ordinary frame:
-    # H.264 in anything else will not play in Safari, and `h264_nvenc` refuses a 10-bit input.
-    # In the graph because it is the half both paths share; `format` converts only when needed.
-    # VAAPI's frames become nv12 on the way to the card, which is already eight-bit 4:2:0.
+    # 4:2:0 eight-bit for every encoder taking an ordinary frame (Safari, NVENC); VAAPI's nv12 is.
     pixels_stage = "" if encoder is Encoder.VAAPI else ",format=yuv420p"
-    # `setsar` because concat refuses inputs whose pixel aspect disagrees, and a file can change it.
+    # `setsar` because concat refuses inputs whose pixel aspect disagrees.
     return f"fps={tuning.PREVIEW_FPS},scale=-2:{height},setsar=1{pixels_stage}"
 
 
@@ -801,8 +584,7 @@ def _preview_inputs(source: Path, pieces: Sequence[Piece], decode: Sequence[str]
     """One seeked input per piece."""
     inputs: list[str] = []
     for piece in pieces:
-        # `-ss` before `-i` seeks; `-t` after it bounds what is read. `_seek` sends nothing at all
-        # for the beginning, because `-ss 0` is not the no-op it reads as (see its own note).
+        # `-ss` before `-i` seeks; `-t` after it bounds what is read.
         inputs += [
             *decode,
             *_seek(piece.start_ms),
@@ -827,8 +609,7 @@ def _preview_graph(
         last = joined
 
     if encoder is Encoder.VAAPI:
-        # VAAPI encodes from a frame on the GPU, so the graph uploads it: once, at the very end,
-        # so concat never joins frames from several hardware contexts.
+        # VAAPI uploads once, at the end, so concat never joins frames across hardware contexts.
         graph += f";{last}format=nv12,hwupload[out]"
         last = "[out]"
     return graph, last
@@ -842,13 +623,7 @@ def tile_args(
     rows: int,
     settings: Settings,
 ) -> list[str]:
-    """Stitch a numbered run of stills into one sheet.
-
-    The sprite is built in two passes (seek out each frame, then tile the results) rather than
-    in one pass with a select filter over the whole file. The one-pass version reads every frame
-    of the source to keep thirty of them, which on a feature-length video is minutes of decoding to
-    build a scrubber strip. Seeking costs thirty seeks.
-    """
+    """Stitch a numbered run of stills into one sheet: thirty seeks, not a decode of the file."""
     return [
         settings.ffmpeg_path,
         *background_flags(settings),
@@ -873,27 +648,10 @@ def sprite_grid(frame_count: int) -> tuple[int, int]:
     return columns, rows
 
 
-# --- Running ------------------------------------------------------------------------------
-
-
 async def run(argv: list[str], *, capture: bool = False, reads: Path | None = None) -> bytes:
-    """Run a tool with this slice's time limit and below everything else on the machine.
+    """Run a tool with this slice's ten-minute limit and the low priority of background work.
 
-    `reads` is the library file the tool opens, when it opens one: the read takes a place in that
-    storage's lane first, so a network share is never asked to serve more seeking readers than it
-    can. See `kernel.lanes`.
-
-    Two things are decided here rather than at each call, and they are the same decision seen twice.
-
-    The limit is ten minutes, because these are background jobs: a sprite sheet for a three-hour
-    video is slow and is supposed to be. The player passes its own, far tighter, because somebody is
-    watching a spinner while it runs.
-
-    And the priority is the low one, for the same reason: everything this slice spawns is generated
-    work nobody has asked for yet. A thumbnail arriving a minute later costs nothing; the same
-    minute of processor and disk taken away from playback is a stutter somebody sees. It is set
-    once, at the slice's only runner, rather than at each of the four argument builders: one of
-    those would eventually be added without it, and the omission would look like nothing at all.
+    `reads` is the library file it opens, which takes a place in that storage's lane first.
     """
     return await _run(
         argv,
@@ -905,11 +663,7 @@ async def run(argv: list[str], *, capture: bool = False, reads: Path | None = No
 
 
 async def run_json(argv: list[str], *, reads: Path | None = None) -> dict[str, Any]:
-    """The inspection pass, at the same limit and the same low priority as everything else here.
-
-    It is short and it is still background: nothing is on screen waiting for a file's dimensions,
-    and the pass runs over every file in a library in one go when one is first pointed at Sift.
-    """
+    """The inspection pass, at the same limit and the same low priority as everything else here."""
     return await _run_json(
         argv,
         time_limit=tuning.SUBPROCESS_TIMEOUT_SECONDS,
@@ -921,21 +675,7 @@ async def run_json(argv: list[str], *, reads: Path | None = None) -> dict[str, A
 def remux_args(source: Path, destination: Path, *, settings: Settings) -> list[str]:
     """Copy every stream into a new container so the audio sits beside the video again.
 
-    A stream copy: no decoder, no encoder, nothing re-compressed, nothing lost. What changes is
-    where the packets sit: ffmpeg interleaves as it writes, which is the whole repair.
-
-    `-map 0` is load-bearing. Without it ffmpeg keeps one stream per type and silently drops extra
-    audio tracks, subtitles and chapters; the output would play and the loss would not be visible
-    until somebody went looking for a track that used to be there.
-
-    `+faststart` moves the index to the front as well. It does not fix this fault (moving the
-    index on its own makes it about three times worse), but it costs a second pass over a file
-    that has just been written and saves a round trip when playback starts.
-
-    Built from `background_flags` like every other job-driven launch here, so it carries the
-    `-max_alloc` ceiling: a repair reads a file whose container is already known to be odd, the
-    worst place to let ffmpeg size a buffer from what the header claims. The thread cap that comes
-    with it is near-free, since a stream copy decodes and encodes nothing.
+    `-map 0` keeps every track; `background_flags` carries the `-max_alloc` ceiling.
     """
     return [
         settings.ffmpeg_path,

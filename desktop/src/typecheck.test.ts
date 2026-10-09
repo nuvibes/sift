@@ -1,13 +1,4 @@
-/* The test config type-checks the tests.
- *
- * `tsconfig.test.json` extends the build config, and `extends` hands a config its parent's
- * `exclude` whenever it names none of its own, so without its own `exclude` the build's
- * exclusion of every test file comes along, an exclude beats an include, and `npm run typecheck`
- * checks no test at all while it says it passed.
- *
- * Asked of TypeScript's own reading of the config rather than of the JSON, because the fault is
- * in how the two files combine, which reading one of them cannot see.
- */
+/* The test config type-checks the tests. */
 
 import * as path from 'node:path';
 

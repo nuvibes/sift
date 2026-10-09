@@ -1,11 +1,5 @@
-/*
- * Settings > Tasks and Activity opens on Tasks: the section's first tab is the one a person sets,
- * with Activity, the queue, drawn under the tasks and read there.
- *
- * A link to a task's row is followed from any tab: the row is one per task, from the server, so no
- * table can list it ahead of time, and the section's own claim (`drilldown.ownSection`) turns the
- * screen back to Tasks before the hunt looks for the row.
- */
+/* Settings > Tasks and Activity opens on Tasks: the section's first tab is the one a person
+ * sets, with Activity, the queue, drawn under the tasks and read there. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { drilldown } from '$lib/settings-ui/drilldown.svelte';

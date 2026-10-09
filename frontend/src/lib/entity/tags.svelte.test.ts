@@ -1,14 +1,4 @@
-/* The tag store: the parts that decide what the wall shows.
- *
- * The API is stubbed. What is under test is the store's own reasoning, and most of it is paging:
- * that a page is asked of the SERVER in a chosen order rather than fetched whole and sorted here,
- * that the total beside it is kept, that a slow answer cannot overwrite a newer one, and that a
- * heart written on one row settles from the server's reply without touching any other row.
- *
- * The ordering half is worth saying out loud. Comparisons held and applied here work only while
- * the whole list arrives in one answer. Once there is a second page a comparison here sorts the
- * rows in hand and calls it the order of the library.
- */
+/* The tag store: the parts that decide what the wall shows. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,8 +19,7 @@ vi.mock('$lib/api/client', () => ({
 
 const mocked = vi.mocked(api);
 
-/* The list route answers a page rather than an array, and the shape lives here once. A stub written
- * out at each call site is how a fixture comes to describe a reply the server stopped sending. */
+/* The list route answers a page rather than an array, and the shape lives here once. */
 function page(items: Tag[], total = items.length, offset = 0) {
 	return { items, total, limit: 60, offset };
 }
@@ -59,8 +48,7 @@ function tag(overrides: Partial<Tag> = {}): Tag {
 		cover_frame: null,
 		art: null,
 		record: null,
-		// Off, which is what everything not deliberately kept local is. It is the card's mark, so
-		// the row carries it rather than a menu asking about it one card at a time.
+		// Off, which is what everything not deliberately kept local is.
 		keep_local: false,
 		keep_from_swaps: false,
 		...overrides
@@ -82,8 +70,7 @@ describe('one page of tags', () => {
 			query: { prefix: 'be', limit: 60, offset: 60, sort: 'name_az' }
 		});
 		expect(store.items).toEqual([tag()]);
-		// The total is the whole scoped list, not the row in hand. A store that reported
-		// `items.length` would agree with the rows and be wrong about every page.
+		// The total is the whole scoped list, not the row in hand.
 		expect(store.total).toBe(97);
 		expect(store.loaded).toBe(true);
 	});
@@ -102,8 +89,8 @@ describe('one page of tags', () => {
 	});
 
 	it('says so rather than showing a stale list when the load fails', async () => {
-		// Loaded once first, on purpose: without that the claim in the name is not exercised at all,
-		// because an empty list is what a store that never loaded already holds.
+		// Loaded once first, on purpose: without that the claim in the name is not exercised at
+		// all, because an empty list is what a store that never loaded already holds.
 		mocked.get.mockResolvedValueOnce(page([tag()]));
 		const store = new Tags();
 		await store.load();
@@ -178,8 +165,7 @@ describe('the heart and the stars', () => {
 	});
 
 	it('leave the rest of the row alone', async () => {
-		// The reply carries two fields and the row carries nine. Merged rather than replaced, or a
-		// hearted tag loses its name, its colour and its count the moment anybody presses the glyph.
+		// The reply carries two fields and the row carries nine.
 		mocked.get.mockResolvedValue(page([tag({ asset_count: 12 })]));
 		const store = new Tags();
 		await store.load();
@@ -224,17 +210,15 @@ describe('the orders this wall offers', () => {
 	});
 
 	it('carry no comparison, because the server does the ordering', () => {
-		// A comparison here would sort the rows in hand and call it the order of the library. The
-		// shape of the entry is the guard: a value and a label, and nothing to apply.
+		// A comparison here would sort the rows in hand and call it the order of the library.
 		for (const order of TAG_ORDERS) expect(Object.keys(order).sort()).toEqual(['label', 'value']);
 	});
 });
 
 describe('making and unmaking', () => {
 	it('puts a new tag on the page AND moves the total with it', async () => {
-		/* The pager is drawn from the total and so is whether the wall believes it has anything on
-		   it at all. A store that added the row and left the total alone would draw "No tags yet" over
-		   the tag somebody had just made: a row in the store, an empty screen. */
+		/* The pager is drawn from the total and so is whether the wall believes it has anything
+		   on it at all. */
 		mocked.get.mockResolvedValue(page([], 0));
 		const store = new Tags();
 		await store.load();
@@ -260,8 +244,7 @@ describe('making and unmaking', () => {
 	});
 
 	it('and leaves the total alone for a row this page never held', async () => {
-		// Deleting from a menu over a row on another page. Taking one off here would be counting a
-		// row out of a page it was never in.
+		// Deleting from a menu over a row on another page.
 		mocked.get.mockResolvedValue(page([tag()], 41));
 		const store = new Tags();
 		await store.load();
@@ -275,8 +258,8 @@ describe('making and unmaking', () => {
 
 describe('a rename', () => {
 	it('sends the name alone, and reads nothing first', async () => {
-		/* A tag has no colour to carry, so a rename is one write with the name in it and nothing is
-		   read back first. */
+		/* A tag has no colour to carry, so a rename is one write with the name in it and nothing
+		   is read back first. */
 		mocked.get.mockResolvedValueOnce(page([tag({ id: 't1' })]));
 		const store = new Tags();
 		await store.load();
@@ -306,9 +289,9 @@ describe('a rename', () => {
 
 describe('a write while a page is still in the air', () => {
 	it('keeps the new tag rather than letting the older answer land on top of it', async () => {
-		/* The race that would lose the thing somebody had just made, and only ever under load: the
-		   page is asked for, the create lands first, and the page's own answer arrives afterwards and
-		   replaces the rows, including the one that had just been added. */
+		/* The race that would lose the thing somebody had just made, and only ever under load:
+		   the page is asked for, the create lands first, and the page's own answer arrives
+		   afterwards and replaces the rows, including the one that had just been added. */
 		let release: (value: unknown) => void = () => {};
 		const inFlight = new Promise((resolve) => {
 			release = resolve;

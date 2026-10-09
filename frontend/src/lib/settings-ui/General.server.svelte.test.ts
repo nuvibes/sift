@@ -1,8 +1,5 @@
 /* General from ANOTHER computer: the app in client mode (or a browser) draws a group about the
- * computer running Sift, and every press in it asks the SERVER, never this window's bridge.
- *
- * The server is stubbed at `server-shell`, the one module that asks it, so what is proved here is
- * what the pane draws from the server's answer and which door each press goes through. */
+ * computer running Sift, and every press in it asks the SERVER, never this window's bridge. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -21,9 +18,8 @@ const openServerFirewall = vi.hoisted(() => vi.fn());
 const setServerSharing = vi.hoisted(() => vi.fn());
 const followSwitch = vi.hoisted(() => vi.fn());
 
-/* The app in client mode: the verbs a window onto another computer has, and none of the local ones.
-   How THIS window behaves (links, the close button, starting with Windows) is among them: those are
-   this computer's own. */
+/* The app in client mode: the verbs a window onto another computer has, and none of the local
+   ones. */
 vi.mock('$lib/bridge', () => ({
 	bridge: {
 		canChooseBrowser: () => true,
@@ -245,9 +241,7 @@ it('puts the sharing switch back on when the question is closed without stopping
 	expect(sharingSwitch().getAttribute('aria-checked')).toBe('true');
 });
 
-/* A setting about how a window behaves changes the app on the computer the window is on. In
-   client mode that is this computer, named above its rows, and its switch is this shell's;
-   the server's own switch stays in the server's group, asked of the server. */
+/* A setting about how a window behaves changes the app on the computer the window is on. */
 it('names this computer above its own rows, and its switch changes this computer only', async () => {
 	await draw();
 

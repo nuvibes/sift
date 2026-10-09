@@ -29,12 +29,12 @@ from sift.slices.stash_boxes.adapter import (
     StashBoxRefused,
     StashBoxUnreachable,
     _picture,
-    _site,
     as_json,
     from_json,
     network_name,
     ranked,
 )
+from sift.slices.stash_boxes.reading import _site
 
 A_BOX = Box(id="box-1", name="StashDB", endpoint="https://stashdb.example/graphql", api_key="k")
 

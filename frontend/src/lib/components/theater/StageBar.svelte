@@ -1,49 +1,21 @@
 <script lang="ts">
 	/*
-	 * The one bar of a screen showing several things together, for whichever is selected. Beside its
-	 * one user rather than in `common/`, which refuses a single consumer; it knows nothing of Theater.
-	 * The shape is the selection bar's (a floating pill that rises), the surface the facts panel's.
+	 * The one bar of a screen showing several things, for whichever is selected; it knows nothing
+	 * of Theater.
 	 */
 	import type { Snippet } from 'svelte';
 	import { arrive } from '$lib/shell/motion.svelte';
 
 	interface Props {
-		/** Whether it is up. Absent is down; the bar draws nothing at all rather than an empty strip. */
 		open: boolean;
-		/** What a screen reader calls the region. */
 		label: string;
-		/**
-		 * Gone quiet with the rest of the chrome: faded out, and not reachable while it is.
-		 *
-		 * A filled screen puts its chrome on an idle clock and brings it back on the next thing
-		 * anybody does. This bar is part of that chrome and has to go and come back WITH it: one
-		 * gesture, one answer, rather than a screen where the top strip has gone and a bar is still
-		 * sitting over the picture.
-		 *
-		 * Faded rather than unmounted, which is the difference between this and `open`. The bar is
-		 * floating over the screen and takes no space, so there is nothing to give back by removing
-		 * it, and unmounting would replay its arrival every time a pointer moved, which is a bar
-		 * that leaps up from the edge every few seconds.
-		 */
+		/** Faded with the rest of the chrome, never unmounted, which would replay its arrival. */
 		quiet?: boolean;
-		/** How tall it has come out, hairlines included, so what must stay clear of it can. */
 		tall?: number;
-		/** The widest its contents can grow: the bar sizes to them, so it cannot be read off it. */
 		room?: number;
-		/**
-		 * The picker, at the leading edge: which of the several things the controls act on.
-		 *
-		 * Separated from the controls rather than left to the caller to lay out, because the two are
-		 * read in that order and a bar that put them the other way round would be answering "do this"
-		 * before "to what".
-		 */
+		/** The picker first: "to what" before "do this". */
 		lead?: Snippet;
-		/**
-		 * A mark standing over the picker, on the timeline's row: the leading column is empty
-		 * there, so a mark about the whole bar sits in it without making the bar any taller.
-		 */
 		overLead?: Snippet;
-		/** The controls, for whichever one is selected. */
 		children: Snippet;
 	}
 
@@ -74,9 +46,7 @@
 
 {#if open}
 	<div class="widest" aria-hidden="true" bind:clientWidth={widest}></div>
-	<!-- A region rather than a dialog: nothing is trapped and nothing behind it is blocked. What is
-	     on the screen is still playing, and a bar that took the keyboard to announce itself would be
-	     in the way of exactly the thing somebody is watching. -->
+	<!-- A region, not a dialog: nothing is trapped. -->
 	<div
 		bind:this={bar}
 		class="stage-bar"
@@ -100,26 +70,13 @@
 {/if}
 
 <style>
-	/*
-	 * Centred on THE SCREEN, not on the window, and absolute rather than fixed.
-	 *
-	 * The same decision the selection bar records, for the same reason and with the same consequence
-	 * if it is got wrong: `fixed` at `inset-inline-start: 50%` centres on the browser window, which is
-	 * not where the app is. Its container IS the box, so it follows the rail, the top bar and the
-	 * frame with nothing to remember and no width to keep in step.
-	 */
+	/* Absolute in its container, so it centres on the screen, not the window. */
 	.stage-bar {
 		position: absolute;
 		inset-block-end: var(--space-4);
 		inset-inline-start: 50%;
 		translate: -50% 0;
 		z-index: var(--z-bar);
-		/*
-		 * The picker in one column and the controls in the other, on rows the controls share (see
-		 * `.controls`): the picker stands in the row named `transport`, level with Play whatever
-		 * opens under that row. Its width is its contents, up to the ceiling; the controls' column
-		 * is what gives way below that.
-		 */
 		display: grid;
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: [scrubber] auto [transport] auto;
@@ -129,21 +86,14 @@
 		padding: var(--space-2) var(--space-3);
 		border: 1px solid var(--sift-line);
 		border-radius: var(--radius-xl);
-		/* The facts panel's surface: a scrim and a blur, which is what stays legible over a bright
-		   frame. A flat ground does not, and this sits over moving pictures by definition. */
+		/* A scrim and a blur: legible over moving pictures. */
 		background: var(--sift-scrim);
 		backdrop-filter: blur(var(--blur-glass));
-		/*
-		 * No shadow: the hairline and the blur separate a pane from the picture under it. It slides
-		 * on the top bar's token, one gesture from two edges, and is visible immediately on the way
-		 * up, so the Tab that raises it can enter it.
-		 */
 		transition:
 			translate var(--dur-slow) var(--ease),
 			opacity var(--dur-slow) var(--ease);
 	}
 
-	/* Where the bar's widest edges would fall, from the same token as its ceiling. */
 	.widest {
 		position: absolute;
 		inset-inline: calc(var(--space-8) / 2);
@@ -153,17 +103,8 @@
 		pointer-events: none;
 	}
 
-	/*
-	 * Faded out with the rest of the chrome.
-	 *
-	 * `visibility` alongside the opacity, and it is not decoration: an element at zero opacity is
-	 * still hit by the pointer, so a bar nobody can see would go on swallowing clicks aimed at the
-	 * picture underneath it. The transition on `visibility` is what lets the fade play out before it
-	 * is taken away: a plain `hidden` would cut the fade off at the first frame.
-	 */
+	/* `visibility` too, or an invisible bar swallows clicks. */
 	.stage-bar.quiet {
-		/* Down past its own bottom edge. The bar is already offset from the edge by `--space-4`, so
-		   its own height alone leaves a sliver showing; the step clears that too. */
 		translate: -50% calc(100% + var(--space-4));
 		opacity: 0;
 		visibility: hidden;
@@ -173,19 +114,7 @@
 			visibility var(--dur-slow) var(--ease-in);
 	}
 
-	/*
-	 * WHATEVER IS PUT IN THIS BAR DOES NOT BRING ITS OWN GROUND.
-	 *
-	 * The player's bar carries a scrim gradient and a blur of its own, because it is normally drawn
-	 * straight over a picture and has to make itself legible there. Inside this bar that is a second
-	 * dark pane inside a dark pill: a black rectangle with rounded corners floating in the middle
-	 * of the control.
-	 *
-	 * THIS is the surface. Anything dropped into it sits on it, so its own scrim, its own blur and
-	 * its own corner all come off. `:global` because what is inside arrives through a snippet and is
-	 * compiled in the caller's file; anchored to this component's own box, so the rule can only ever
-	 * reach what is actually in the bar.
-	 */
+	/* This bar is the surface: what is put in it brings no scrim, blur or corner. */
 	.stage-bar :global(.player-bar) {
 		padding: 0;
 		border-radius: 0;
@@ -193,13 +122,11 @@
 		backdrop-filter: none;
 	}
 
-	/* Each group as wide as itself and one gap either side of the transport; the ends give way first. */
 	.stage-bar :global(.player-bar > .row:not(.phone)) {
 		grid-template-columns: minmax(0, max-content) auto minmax(0, max-content);
 		column-gap: var(--space-8);
 	}
 
-	/* The numbers after the transport: they fold, so they give way and the transport does not. */
 	.stage-bar :global(.player-bar > .row.follows:not(.phone)) {
 		grid-template-columns: auto minmax(0, max-content) minmax(0, max-content);
 	}
@@ -208,8 +135,6 @@
 		grid-template-columns: auto minmax(0, 1fr);
 	}
 
-	/* A third row only while something is open under the transport (the timer, the sizes), so a
-	   bar with nothing open has no empty row and no gap for it. */
 	.stage-bar:has(:global(.player-bar > :nth-child(3))) {
 		grid-template-rows: [scrubber] auto [transport] auto [below] auto;
 	}
@@ -223,7 +148,6 @@
 		gap: var(--space-1);
 	}
 
-	/* Over the picker, on the timeline's row, and centred on the same column. */
 	.over-lead {
 		grid-column: 1;
 		grid-row: scrubber;
@@ -233,15 +157,7 @@
 		justify-content: center;
 	}
 
-	/*
-	 * The controls: their natural width where there is room, and down to whatever the wall gives
-	 * where there is not (`minmax(0, 1fr)` above, and `min-inline-size: 0` here, which a grid item
-	 * needs to go below its contents).
-	 *
-	 * The bar does not change width under the hand using it: the picker's numbers are fixed
-	 * squares, and the player's clock keeps its room with or without a clock in it. Only the wall's
-	 * shape grows the bar, and that changes when somebody changes it.
-	 */
+	/* Down to whatever the wall gives (`min-inline-size: 0`). */
 	.controls {
 		grid-column: -2;
 		grid-row: 1 / -1;
@@ -250,8 +166,6 @@
 		min-inline-size: 0;
 	}
 
-	/* The player's bar lays its timeline, its transport row and whatever opens under it on the
-	   bar's own rows, which is what puts the transport where the picker is. */
 	.controls > :global(.player-bar) {
 		grid-row: 1 / -1;
 		grid-template-rows: subgrid;

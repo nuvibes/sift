@@ -1,19 +1,4 @@
-/* Asking the stash-boxes about a selection, and the three questions that are not one question.
- *
- * What is held here is what a person is TOLD, because that is all this module produces. Three
- * things in particular.
- *
- * The count comes from the server, not from the length of what was sent: an id that has gone since
- * the wall drew it, or one this account may not be shown, is dropped there, and "asking about 14"
- * over a job that asks about 12 is a small lie that makes the job list look wrong.
- *
- * A refusal is repeated rather than replaced. The one refusal that actually happens is that
- * matching is switched OFF in Settings, and the server says so in a sentence somebody can act on.
- * A generic message over that turns a setting into a feature that looks broken.
- *
- * And `enrichFiles` ANSWERS with the refusal instead of only showing one, because the sheet on a
- * single file has a better place to put it than a toast sliding over the top of it.
- */
+/* Asking the stash-boxes about a selection, and the three questions that are not one question. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -36,9 +21,7 @@ function said(): [string, { tone: string }] {
 	return [wordsOf(call[0]), call[1]];
 }
 
-/** A refusal the server wrote a sentence for. `detail` is the third argument, not the second:
- *  `message` is the flat one-liner every screen gets by default, and `detail` is the opt-in half
- *  this module reaches for. Passing the sentence as the message is how a test proves nothing. */
+/** A refusal the server wrote a sentence for. */
 function refused(detail: string): ApiError {
 	return new ApiError(409, 'That request was not valid.', detail);
 }
@@ -53,8 +36,7 @@ afterEach(() => {
 });
 
 it('asks about nothing rather than posting an empty selection', async () => {
-	// A wall with nothing ticked still has the verb on it. Posting an empty list would queue a job
-	// that does nothing and put a toast over a screen where nobody pressed anything meaningful.
+	// A wall with nothing ticked still has the verb on it.
 	await enrichMany('person', []);
 
 	expect(mocks.post).not.toHaveBeenCalled();
@@ -72,8 +54,7 @@ it('sends the subject and the ids together, because the server names all three',
 });
 
 it('says the number the SERVER asked about, not the number that were sent', async () => {
-	// Two of the fourteen had gone since the wall drew them. Saying fourteen makes the job list
-	// look wrong to the one person who would notice.
+	// Two of the fourteen had gone since the wall drew them.
 	mocks.post.mockResolvedValue({ asked: 12 });
 
 	await enrichMany(
@@ -86,8 +67,7 @@ it('says the number the SERVER asked about, not the number that were sent', asyn
 });
 
 it('falls back to the number sent when the server does not say', async () => {
-	// An older server, or one that answers without the count. Saying nothing at all about how many
-	// is worse than saying the number that went.
+	// An older server, or one that answers without the count.
 	mocks.post.mockResolvedValue({});
 
 	await enrichMany('site', ['s-1', 's-2', 's-3']);
@@ -104,8 +84,7 @@ it('says it in the singular for one, which is the ordinary case from a record pa
 });
 
 it('repeats the refusal the server gave rather than a sentence nobody can act on', async () => {
-	// The one refusal that really happens: enriching is turned off under Stash-boxes. A generic message
-	// over it turns a setting somebody has to change into a feature that looks broken.
+	// The one refusal that really happens: enriching is turned off under Stash-boxes.
 	mocks.post.mockRejectedValue(
 		refused('Enriching with stash-boxes is turned off. Turn it on under Stash-boxes.')
 	);
@@ -126,8 +105,7 @@ it('has something to say when the failure carries no sentence of its own', async
 });
 
 it('asks about a folder through the sweep, not through the by-name route', async () => {
-	// A different question: that one asks what a NAME is, this asks what each FILE is. One word
-	// for both would make a menu item and a settings button mean different things.
+	// A different question: that one asks what a NAME is, this asks what each FILE is.
 	await enrichFolder('f-1', 'Holiday');
 
 	// Auto-enrich, so the press carries its yes to an exact match.
@@ -168,8 +146,7 @@ it('answers with the refusal as well as showing it, so a caller can put it somew
 });
 
 it('stays quiet when asked to, and still answers with what went wrong', async () => {
-	// The sheet on one file has a whole panel to say this in. A toast sliding over the top of it,
-	// saying the same thing and then taking it away, is the worst of both.
+	// The sheet on one file has a whole panel to say this in.
 	mocks.post.mockRejectedValue(
 		refused('Enriching with stash-boxes is turned off. Turn it on under Stash-boxes.')
 	);
@@ -225,7 +202,6 @@ it('says a kept-local file was held back as a decision honoured, not as a file S
 
 it('writes a thousand as the selection bar does, never as a bare 1000', async () => {
 	// A press of Select all is 1,000 files, and the bar over the wall says "1,000 files selected".
-	// A toast saying "Asking about 996 of 1000" would be one number written two ways on one screen.
 	const thousand = Array.from({ length: 1000 }, (_, index) => `a-${index}`);
 	mocks.post.mockResolvedValue({
 		asked: 996,

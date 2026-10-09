@@ -1,10 +1,4 @@
-/* Starting Sift at sign-in: the switch over Windows' Run key, and how that start appears.
- *
- * Windows is stood in for by a small model of the two registry keys Electron's login-item calls
- * touch (the Run value and the Task Manager switch beside it), so each test can say what Windows
- * holds and read back what the verb answers. What the model cannot prove is that real Electron
- * writes the value it documents; that is walked on the installed application.
- */
+/* Starting Sift at sign-in: the switch over Windows' Run key, and how that start appears. */
 
 import type { LoginItemSettings, Settings } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,15 +99,15 @@ describe('the switch', () => {
 	});
 
 	/* The rule the verb is built on: what comes back is a fresh read of Windows, never the value
-	   that was asked for. A write Windows did not keep answers off. */
+	   that was asked for. */
 	it('answers what Windows holds after the write, not the word that was sent', () => {
 		const lying: LoginItemApi = { ...windows.api, setLoginItemSettings: () => {} };
 
 		expect(startWithWindows(lying, EXE, 'win32').write(true)).toBe(false);
 	});
 
-	/* The one case this setting really has: somebody turned Sift off in Task Manager, and the switch
-	   must follow Windows rather than the "on" it last wrote. */
+	/* The one case this setting really has: somebody turned Sift off in Task Manager, and the
+	   switch must follow Windows rather than the "on" it last wrote. */
 	it('reads off when Task Manager has the entry turned off', () => {
 		const startup = startWithWindows(windows.api, EXE, 'win32');
 		startup.write(true);
@@ -137,9 +131,7 @@ describe('the switch', () => {
 		expect(windows.run.size).toBe(0);
 	});
 
-	/* A switch that springs back on the moment it is turned off. Any value in the person's own Run
-	   key that starts this executable makes the read say yes, so off removes every one of them
-	   and leaves another program's value, and the machine-wide key, alone. */
+	/* A switch that springs back on the moment it is turned off. */
 	it('turns off every entry of the person\'s that starts Sift, and nothing else', () => {
 		const quoted = `"${EXE.toUpperCase()}"`;
 		windows.run.set('electron.app.Sift', { path: quoted, args: [], enabled: true, scope: 'user' });
@@ -158,8 +150,7 @@ describe('the switch', () => {
 });
 
 /* The rule every shell-only control keeps: an unpackaged shell never answers a confident wrong
-   value. In a checkout the executable is Electron's own, which would start Electron's default
-   page at every sign-in. */
+   value. */
 describe('where it cannot answer', () => {
 	it('registers nothing from a checkout, and answers null both ways', () => {
 		const checkout = aWindows(false);
@@ -197,8 +188,8 @@ describe('how a start appears', () => {
 		expect(howToAppear(true, true)).toBe('tray');
 	});
 
-	/* With close-to-tray off there is no icon, and a hidden window with no icon is an application
-	   nobody can find. */
+	/* With close-to-tray off there is no icon, and a hidden window with no icon is an
+	   application nobody can find. */
 	it('a sign-in start with no icon to go to waits on the taskbar instead', () => {
 		expect(howToAppear(true, false)).toBe('taskbar');
 	});

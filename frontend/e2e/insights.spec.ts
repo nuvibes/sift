@@ -251,7 +251,7 @@ test('a chart is read from the keyboard, bar by bar, and Escape lets go', async 
 	page: browser
 }) => {
 	await browser.goto('/insights?period=week');
-	const plot = browser.getByRole('group', { name: /^Overview/ });
+	const plot = browser.locator('li.tile[data-slot="viewed"]').getByRole('group');
 	await plot.focus();
 	await browser.keyboard.press('ArrowRight');
 	await expect(browser.getByRole('tooltip')).toContainText('Tue');
@@ -259,10 +259,10 @@ test('a chart is read from the keyboard, bar by bar, and Escape lets go', async 
 	await expect(browser.getByRole('tooltip')).toHaveCount(0);
 });
 
-test("the hour ring's End lands on the last hour", async ({ page: browser }) => {
+test("the hours' skyline's End lands on the last hour", async ({ page: browser }) => {
 	await browser.goto('/insights?period=week');
-	const ring = browser.getByRole('group', { name: /^When/ });
-	await ring.focus();
+	const hours = browser.locator('li.tile[data-slot="when"]').getByRole('group');
+	await hours.focus();
 	await browser.keyboard.press('End');
 	await expect(browser.getByRole('tooltip')).toContainText('11');
 });
@@ -293,9 +293,13 @@ test('a figure says what it counts on a hover, and Alongside under its floor say
 	await browser.goto('/insights?period=week');
 	await browser.getByRole('button', { name: 'What counts' }).nth(1).hover();
 	await expect(browser.getByRole('tooltip')).toContainText('What sessions counts.');
-	await expect(browser.locator('[data-block="alongside"]')).toContainText('Not enough yet to say.');
-	await browser.goto('/insights?period=day');
-	await expect(browser.locator('[data-block="alongside"]')).toHaveCount(0);
+	// A press holds it, and it is the mark's own: the tile does not open Stats.
+	await browser.getByRole('button', { name: 'What counts' }).nth(1).click();
+	await expect(browser.getByRole('tooltip')).toContainText('What sessions counts.');
+	await expect(browser).toHaveURL(/\/insights\?period=week/);
+	await expect(browser.locator('li.tile[data-slot="alongside"]')).toContainText(
+		'Not enough yet to say.'
+	);
 });
 
 test("See this week's recap says when no recap exists yet", async ({ page: browser }) => {

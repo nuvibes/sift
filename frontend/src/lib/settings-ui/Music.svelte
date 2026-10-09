@@ -1,21 +1,5 @@
 <script lang="ts">
-	/*
-	 * Settings > Music: which song a file uses.
-	 *
-	 * Two halves of one feature behind one door. The fingerprint is read from a file's own sound on
-	 * this device and is what lets Sift match files that share a song; the lookup sends a
-	 * fingerprint to AcoustID to learn the song's name, only when it is switched on. The lookup's
-	 * switch comes first because it is the one decision here about what leaves this device.
-	 *
-	 * Two tasks, two rows: making the fingerprints, and asking AcoustID about them. They are two
-	 * decisions (one reads files on this device, the other sends something about them away), so
-	 * each has its own When, and neither ever runs the other. The lookup's row is drawn while the
-	 * lookup is on, with how many files are waiting for it; its presses are on Tasks.
-	 *
-	 * Beside the lookup's row, Ask again: the files AcoustID did not know, last asked long enough
-	 * ago to be worth asking again, counted before the press. It is the lookup task pressed for
-	 * those files, so Activity shows it as one press with a lookup per file under it.
-	 */
+	/* Settings > Music: which song a file uses. Two halves of one feature behind one door. */
 	import MusicLookupSection from './MusicLookup.svelte';
 	import { COPY as POINTER } from './SwitchPointer.svelte';
 	import { LOOKUP_KEY } from './music-lookup.svelte';
@@ -30,8 +14,8 @@
 	import ActionRow from './ActionRow.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 
-	/* One reader, shared with Unlock: the AcoustID key is sealed like a stash-box's key and locked
-	   by the same restart, so unlocking re-reads it. */
+	/* One reader, shared with Unlock: the AcoustID key is sealed like a stash-box's key and
+	   locked by the same restart, so unlocking re-reads it. */
 	const lookup = new MusicLookup();
 
 	/* The lookup task's row, on Tasks, where its presses are. */
@@ -41,8 +25,8 @@
 	const again = $derived(lookup.state?.ask_again ?? 0);
 	const againAfter = $derived(lookup.state?.ask_again_after_days ?? 30);
 
-	/* When lookups run, and Ask again, are drawn only while they are on: a link landing on either
-	   while they are off rings the switch and says so. */
+	/* When lookups run, and Ask again, are drawn only while they are on: a link landing on
+	   either while they are off rings the switch and says so. */
 	$effect(() =>
 		explainAbsentRows((key) => {
 			const state = lookup.state;

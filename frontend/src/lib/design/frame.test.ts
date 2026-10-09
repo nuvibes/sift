@@ -1,21 +1,4 @@
-/*
- * A screen that lays itself out gets the whole box, and the layout knows which those are.
- *
- * `PageFrame` owns a screen's padding and its one scrolling region. The shell's `main` ALSO pads and
- * scrolls, for the screens that do not lay themselves out, so a framed screen inside a padded
- * `main` gets both: the content starts twice as far in, and there are two scrollbars, one inside the
- * other. The wall then measures the wrong box to size a page, which is worth more than it sounds:
- * the inner one has no height of its own to be bounded by, so a screenful measures whatever the
- * content came to.
- *
- * Which screens are which is a LIST in the layout, and a list beside the thing it describes is the
- * shape that fails silently: a page converted to a frame and not added reads as "slightly too far
- * in", which nobody reports, and a page taken off the list and not removed loses its padding
- * entirely on one route while every other route is fine.
- *
- * So it is checked. Both directions, because both are real: a hand-written list sitting beside the
- * thing it mirrors is where only one of the two gets edited.
- */
+/* A screen that lays itself out gets the whole box, and the layout knows which those are. */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -26,12 +9,7 @@ import { describe, expect, it } from 'vitest';
 const ROUTES = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'routes');
 const LAYOUT = join(ROUTES, '+layout.svelte');
 
-/**
- * Components that ARE a frame with something particular in them.
- *
- * A screen opening with one of these is as framed as one opening with `PageFrame` itself, and the
- * layout cannot tell the difference by looking at the route.
- */
+/** Components that ARE a frame with something particular in them. */
 const FRAMES = ['PageFrame', 'AssetGrid', 'EntityGrid'];
 
 /** Every `+page.svelte`, as the route id SvelteKit gives it. */
@@ -54,15 +32,7 @@ function routes(): { id: string; body: string }[] {
 	return found;
 }
 
-/**
- * The one place a screen is chosen at RUNTIME rather than written into the route.
- *
- * The review queues render `<Panel />` and `<Detail />`, picked from the address out of this
- * registry, so those two routes hold no frame of their own to read: the frame is in whichever
- * panel got chosen. Following the registry is the only way to answer the question honestly, and it
- * is worth following rather than special-casing: a panel added later that forgets its frame should
- * fail here, not go quiet.
- */
+/** The one place a screen is chosen at RUNTIME rather than written into the route. */
 const PANEL_REGISTRY = resolve(
 	dirname(fileURLToPath(import.meta.url)),
 	'..',
@@ -70,14 +40,7 @@ const PANEL_REGISTRY = resolve(
 	'panels.ts'
 );
 
-/**
- * The components one of the registry's two maps can hand a route, as paths on disk.
- *
- * Two maps and not one: `PANELS` draws a whole queue and `DETAILS` draws one item of it, and they
- * are drawn by different routes with different arrangements. The queue page carries its own frame
- * and its panels sit inside it; the item page carries none, so its details are frames themselves.
- * Reading both together would ask every panel to be something only half of them should be.
- */
+/** The components one of the registry's two maps can hand a route, as paths on disk. */
 function registered(map: 'PANELS' | 'DETAILS'): string[] {
 	const body = readFileSync(PANEL_REGISTRY, 'utf8');
 	const lib = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -103,34 +66,15 @@ function holdsAFrame(body: string): boolean {
 	return FRAMES.some((name) => markup.includes(`<${name}`));
 }
 
-/**
- * The written judgement for a screen that fills the box WITHOUT a frame.
- *
- * One line, one fixed spelling, in the route's own file: the same shape as every other written
- * exception in this repository, and for the same reason: a judgement nobody can see is
- * indistinguishable from not having made one.
- *
- * There is one, and it is the Theater. Its wall is a flex column that has to fill the window, has no
- * card and no padding, and cannot be a frame: everything on that screen is inside one element on
- * purpose, because filling the window draws that element's subtree and nothing else.
- */
+/** The written judgement for a screen that fills the box WITHOUT a frame. */
 const LAYS_ITSELF_OUT = 'LAYS ITSELF OUT:';
 
-/*
- * The component gallery's screens belong to its own repository, nested at `routes/design/` and
- * absent from a clone. The layout lists them for the tree that has them; only that tree is asked.
- */
+/* The component gallery's screens belong to its own repository, nested at `routes/design/` and
+ * absent from a clone. */
 const GALLERY = '/design';
 const inGallery = (id: string) => id === GALLERY || id.startsWith(`${GALLERY}/`);
 
-/**
- * The library components a route draws, as paths on disk.
- *
- * A screen whose body is one component holds its frame in that component (the may-be review route
- * draws `MayBeReview` and nothing else). Read as the route alone it would look unframed, and a
- * screen left off the list for that reason is padded twice. One level is followed, the same depth
- * the panel registry is.
- */
+/** The library components a route draws, as paths on disk. */
 function drawn(body: string): string[] {
 	const lib = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 	const markup = markupOf(body);
@@ -139,19 +83,8 @@ function drawn(body: string): string[] {
 		.map((match) => join(lib, match[2]));
 }
 
-/**
- * Whether this route draws a frame at all.
- *
- * Deliberately "contains one" rather than "opens with one". Three of these screens are a heading
- * band with a grid under it, and the grid is still what fills the window and owns the scroll, so
- * the layout has to stand back for those exactly as it does for a bare frame. Reading the first
- * element instead would call those unframed, which is the wrong answer twice: they would keep the
- * layout's padding on top of their own, and the grid inside them would have no box to fill.
- *
- * A route that renders a panel from the registry is framed when every panel it could be handed is.
- * Not "any": a queue whose panel forgot its frame would then be padded by nothing at all, and it
- * would be the one route out of six that looked wrong.
- */
+/** Whether this route draws a frame at all. Deliberately "contains one" rather than "opens with
+ * one". */
 function drawsAFrame(body: string): boolean {
 	if (holdsAFrame(body)) return true;
 	if (drawn(body).some((path) => holdsAFrame(readFileSync(path, 'utf8')))) return true;
@@ -170,13 +103,10 @@ function drawsAFrame(body: string): boolean {
 function declared(): Set<string> {
 	const body = readFileSync(LAYOUT, 'utf8');
 	const block = body.slice(body.indexOf('const FULL_BLEED_ROUTES'));
-	// To `]);` and not to the first `]`. Half these ids hold one (`/organize/[queue]`), so
-	// stopping at the first `]` would read the list only as far as the third entry.
+	// To `]);` and not to the first `]`. Half these ids hold one (`/organize/[queue]`), so stopping
+	// at the first `]` would read the list only as far as the third entry.
 	const list = block.slice(block.indexOf('['), block.indexOf(']);') + 1);
-	/* Comments stripped first. The entries are read as the text between apostrophes, and an
-	   apostrophe inside a note beside one of them (an ordinary English possessive) turns the rest
-	   of that note into a route id, which would read as a screen on the list that draws no frame: a
-	   failure this gate reports, and not a real one. */
+	/* Comments stripped first. */
 	const written = list.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
 	return new Set([...written.matchAll(/'([^']+)'/g)].map((match) => match[1]));
 }

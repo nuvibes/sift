@@ -1,10 +1,4 @@
-/*
- * The usernames on a Site's People tab, filed two ways. See `usernames-here.ts`.
- *
- * The case that matters: a person on the wall only because of a username with nothing filed under
- * it. Without the second filing their card would say "0 files" with nothing beside it to say why
- * they were there at all.
- */
+/* The usernames on a Site's People tab, filed two ways. */
 import { describe, expect, it } from 'vitest';
 
 import type { Username } from '$lib/people/usernames.svelte';

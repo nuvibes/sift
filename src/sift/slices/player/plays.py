@@ -1,13 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Writing a sitting down, and reading back what a file has been watched.
-
-The table and the argument for it are in `schema.py`. This is the two statements over it.
-
-Plain functions rather than a store class, and that is the whole of it: there is one insert and one
-aggregate, neither holds anything between calls, and a class here would be a part to register in
-the composition root for no state at all. The handle is passed in, as it is to every read in the
-kernel.
-"""
+"""Writing a sitting down, and reading back what a file has been watched."""
 
 from __future__ import annotations
 
@@ -16,25 +8,15 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
-from sift.kernel.db import Connection, Database
+from sift.kernel.db import Connection, Database, Row
 from sift.kernel.ids import new_id
 from sift.kernel.use_history import register_clearing
 
-#: WHICH SCREEN a sitting happened on. Declared once, here; the column's CHECK in `schema.py`
-#: spells the same list and a test holds the two equal, because a migration step has to mean for
-#: ever what it meant when it shipped and so cannot be built from a list that may grow.
-#:
-#: Three, because there are three places a file is actually on screen. `panel` is the file opened
-#: over a screen, which is also what a file's own address opens, since there is no page form of
-#: a file. `corner` is the small player that carries a clip on while somebody moves elsewhere.
-#: `theater` is a cell of a wall. WHERE the panel was opened from is a separate question with a
-#: separate column (`OpenedFrom`), because folding the two into one list would make "a Theater
-#: cell playing a Loop" and "a Loop opened from its wall" the same answer.
+#: Which screen a sitting happened on; `schema.py`'s CHECK spells the same list, held by a test.
+#: Where the panel was opened from is `OpenedFrom`.
 Screen = Literal["panel", "corner", "theater"]
 
-#: The screen a panel was opened OVER, when it was opened over one. `link` is an address arrived at
-#: with nothing behind it; `other` is a screen this list does not name yet, which the client's own
-#: test refuses for any screen that can open a file, so it is a gap somebody sees, not a guess.
+#: The screen a panel was opened over; `link` is an address with nothing behind it.
 OpenedFrom = Literal[
     "library",
     "search",
@@ -57,75 +39,48 @@ OpenedFrom = Literal[
     "other",
 ]
 
-#: What the file WAS when it was watched: the library's own three media types, taken from the file
-#: at the moment the sitting began rather than looked up later, because a sitting outlives its file
-#: and a file can be converted from one kind into another.
+#: What the file was when watched, taken then, since a sitting outlives its file.
 Kind = Literal["video", "image", "gif"]
 
 
 @dataclass(frozen=True, slots=True)
 class Place:
-    """Where one sitting happened, as facts written once with its first piece.
-
-    Every field is nullable, and NULL is the honest answer for every row written before these
-    existed and for a client that has not been rebuilt: none of it can be worked out afterwards.
-    """
+    """Where one sitting happened, written once with its first piece; NULL where never reported."""
 
     screen: Screen | None = None
     opened_from: OpenedFrom | None = None
     kind: Kind | None = None
-    #: The saved Loop the file was opened from. An id no key reaches, like `asset_id`: the sitting
-    #: outlives the Loop, and a reader joins it scoped to the user or not at all.
+    #: The saved Loop it was opened from: an id no key reaches, since the sitting outlives the Loop.
     loop_id: str | None = None
-    #: The kept filter (a saved search) the screen behind the panel was showing, if exactly one.
     kept_filter_id: str | None = None
-    #: The Theater session a cell's sitting belongs to: the client's name for it, which is the
-    #: `session` column of `theater_sessions` for the same user.
+    #: The Theater session, the `session` column of `theater_sessions`.
     theater_session: str | None = None
-    #: Which one thing the screen behind the file was about: the person, tag, Site, Collection,
-    #: Photo Set, song or folder `opened_from` names, or the record of the search. An id no key
-    #: reaches, like `loop_id`.
+    #: The one thing the screen behind the file was about, as `opened_from` names it.
     opened_from_id: str | None = None
-    #: The client the sitting happened on (`kernel/client.py`): the device's id, None before the
-    #: browser has one, and the kind of window.
+    #: The client the sitting happened on (`kernel/client.py`).
     device_id: str | None = None
     client_kind: str | None = None
 
 
 NOWHERE = Place()
 
-#: The most seeks one sitting keeps as a pair of positions. A sitting scrubbed back and forth for
-#: an hour is still one row: past this the pairs are let go and `seeks` goes on counting them, so
-#: a reader knows how many there were. Sixty-four is several times what a person does with a film
-#: (a dozen is a lot) and about a kilobyte at most.
+#: The most seeks one sitting keeps as pairs; `seeks` goes on counting past it.
 MOST_SEEKS = 64
 
-#: The most speeds one sitting keeps. A player offers a handful; this bounds what a browser can
-#: send, not what a person does.
+#: The most speeds one sitting keeps: a bound on what a browser can send.
 MOST_SPEEDS = 16
 
 
 @dataclass(frozen=True, slots=True)
 class Inside:
-    """What happened inside one piece of a sitting, as the client measured it.
+    """What happened inside one piece of a sitting; None where the client did not say."""
 
-    Every field None where the client did not say, which is what a client that has not been rebuilt
-    sends and what a screen that does not measure one of them sends: an unrecorded fact is NULL,
-    never zero. Each piece carries its own and the server adds a later piece to the first, exactly
-    as the time and the replay map are added.
-    """
-
-    #: Where the playhead was when the sitting began. Written by the first piece only.
+    #: Written by the first piece only.
     start_ms: int | None = None
-    #: Each move of the playhead by hand during this piece, as (from, to) in milliseconds.
     seek_log: tuple[tuple[int, int], ...] | None = None
-    #: How long this piece played at each speed, keyed by the rate.
     speeds: dict[float, int] | None = None
-    #: How long this piece filled the screen.
     fullscreen_ms: int | None = None
-    #: How many times the file played through to its end during this piece.
     completions: int | None = None
-    #: Whether a picture was magnified during this piece.
     magnified: bool | None = None
 
 
@@ -178,27 +133,16 @@ _RECORD = (
     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
-#: The piece of this sitting that is already here, if any. One row by construction (see the
-#: partial unique index in `schema.py`).
+#: One row by construction (the partial unique index in `schema.py`).
 _SITTING_SO_FAR = (
     "SELECT id, duration_ms, heat, seeks, seek_log, speeds FROM plays"
     " WHERE user_id = ? AND asset_id = ? AND sitting = ?"
 )
 
-#: Whether a sitting already has its first piece here: what decides, before the write, whether the
-#: route has to read what the file carries.
+#: Whether the route has to read what the file carries before the write.
 _SITTING_EXISTS = "SELECT 1 FROM plays WHERE user_id = ? AND asset_id = ? AND sitting = ?"
 
-#: One more piece of a sitting already written down.
-#:
-#: The time ADDS, because each piece carries its own and never a running total. The position
-#: REPLACES, because where the sitting ended is wherever the last piece says. `started_at` is not
-#: touched at all: the sitting began when its first piece said it did, and the derivation that
-#: works that out is right for the first piece and wrong for every one after it.
-#:
-#: What happened inside it adds the same way, and a piece that did not say leaves the column as it
-#: was: a NULL stays NULL until some piece says, and then counts from that piece. Magnified is an
-#: OR: once a picture has been magnified in a sitting it was.
+#: One more piece: time and inside counts add, position replaces, `started_at` stays, magnified ORs.
 _EXTEND = (
     "UPDATE plays"
     " SET duration_ms = duration_ms + :watch_ms, ended_at_ms = :position_ms, heat = :heat,"
@@ -212,8 +156,7 @@ _EXTEND = (
     " WHERE id = :id"
 )
 
-#: A thing's name, written for this User when it is not already the latest name they have for it.
-#: One statement, so a name seen at every sitting costs one indexed read and no row.
+#: A thing's name for this User, written only when not already their latest for it.
 _NOTE_NAME = (
     "INSERT INTO play_names (user_id, kind, ref, name, since)"
     " SELECT :user_id, :kind, :ref, :name, :since"
@@ -222,18 +165,13 @@ _NOTE_NAME = (
     "   ORDER BY since DESC, rowid DESC LIMIT 1), '') <> :name"
 )
 
-#: A User's part of their history, cleared on the Privacy pane's Clear. The names go with the
-#: sittings: they are kept only because a sitting needed them. Their Theater sessions go too: a
-#: session is the wall a Theater cell's sittings were part of (`Place.theater_session`), so it is
-#: what they watched as much as the sittings are, and clearing one without the other would leave
-#: "you sat in front of a wall for two hours on Sunday" behind a Clear that said it took it.
+#: A User's part of their history, cleared on Privacy's Clear: sittings, names and Theater sessions.
 _CLEAR = (
     "DELETE FROM plays WHERE user_id = ?",
     "DELETE FROM play_names WHERE user_id = ?",
     "DELETE FROM theater_sessions WHERE user_id = ?",
 )
 
-#: What one file has been watched, by one user. See `plays_of_asset`.
 _OF_ASSET = (
     "SELECT COUNT(*) AS sittings, COALESCE(SUM(duration_ms), 0) AS watched_ms,"
     " MAX(started_at) AS last_at"
@@ -245,40 +183,20 @@ _MS_PER_SECOND = 1000
 
 @dataclass(frozen=True, slots=True)
 class Watched:
-    """How much of one file's viewing this user has behind it.
-
-    Three numbers rather than the rows, because the one line History will draw from this is three
-    numbers: how many times, how long altogether, and when last. Handing back the sittings would
-    be handing back a table so that the caller could count it.
-    """
+    """How much of one file's viewing this user has behind it."""
 
     sittings: int
     watched_ms: int
-    #: When the most recent sitting began, or None where there has never been one.
     last_at: int | None
 
 
 def _heat_json(heat: dict[int, int]) -> str | None:
-    """The replay map as it is stored: sparse, keyed by slice index, NULL where there was none.
-
-    Sparse, so a glance at a long film is one entry rather than a hundred zeroes. NULL rather than
-    `{}` where there was none, so "nothing was played" and "no map was sent" are not the same bytes.
-    """
+    """The replay map as stored: sparse by slice index, NULL where there was none."""
     return json.dumps({str(index): ms for index, ms in sorted(heat.items())}) if heat else None
 
 
 def _merged_heat(stored: str | None, arriving: dict[int, int]) -> dict[int, int]:
-    """One sitting's replay map so far, plus the piece that has just arrived.
-
-    ADDED slice by slice rather than replaced, and that is the whole of why the merge is done here
-    in Python rather than in the statement: a sitting's second piece carries the slices IT played,
-    so keeping the later map would throw away the first ten minutes of a film and keeping the
-    earlier one would throw away the last.
-
-    An unreadable stored map is treated as none. It cannot happen (this module is the only thing
-    that writes the column), and if it ever did, losing the map of one sitting is better than
-    losing the sitting.
-    """
+    """One sitting's replay map so far plus the arriving piece, added slice by slice."""
     merged: dict[int, int] = {}
     if stored:
         try:
@@ -297,12 +215,7 @@ def _rate_key(rate: float) -> str:
 
 
 def _merged_seeks(stored: str | None, arriving: tuple[tuple[int, int], ...] | None) -> str | None:
-    """The sitting's seeks so far, with this piece's added at the end, up to `MOST_SEEKS`.
-
-    NULL stays NULL until a piece says something, so a sitting from a client that does not measure
-    seeks reads as "not recorded" rather than "none". An unreadable stored list is started again
-    from this piece, for the reason an unreadable replay map is (see `_merged_heat`).
-    """
+    """The sitting's seeks so far plus this piece's, up to `MOST_SEEKS`; NULL until a piece says."""
     if arriving is None:
         return stored
     kept: list[list[int]] = []
@@ -368,83 +281,24 @@ async def record_play(
     inside: Inside = NOTHING_INSIDE,
     about: About | None = None,
 ) -> None:
-    """Write down one sitting, exactly as it was reported.
+    """Write down one sitting, exactly as it was reported: facts only, the route draws conclusions.
 
-    Facts only, like the report it comes from. Nothing here decides whether the sitting was a view,
-    whether it finished, or whether it was worth keeping: those are conclusions and the route
-    beside this draws them, because three screens send the same report and a rule enforced in one
-    of them is not a rule.
-
-    `length_ms` is the file's length at the moment of the sitting, written with it for the reason
-    `Place.kind` is: the view rule judges a sitting by its kind, its length and its time, and a
-    sitting outlives its file. Anything that reads a sitting later reads these two from the
-    sitting, never from the file, which may be gone, converted, or out of that reader's reach.
-
-    `started_at` is DERIVED and is the one number here that was not reported: the client sends how
-    long the sitting was and not when it began, so it is the moment this report landed less the
-    whole sitting's time. The error is the flight of one request, which is nothing beside a sitting,
-    and the alternative, storing no start at all, makes every question this table exists for
-    ("what did I watch on Sunday", "when do I use this") unanswerable.
-
-    **A sitting delivered in several reports is one row.** The player sends one report the moment
-    a sitting has earned a view and another with the remainder on the way out, and a photograph
-    sends an empty piece when it is opened and the time when it is left. `sitting` is minted when
-    the player opens a file and repeated on every piece of it; a piece that finds its sitting
-    already here adds to it, so one sitting is one row however many pieces it arrived in.
-
-    **A report with no sitting id writes its own row.** Not every screen that sends one has a
-    sitting to speak of, and a client that has not been rebuilt is not a client whose watching
-    should be dropped.
-
-    `started_at` is only ever set by the FIRST piece. The derivation above is right for a whole
-    sitting and for the first piece of one, and wrong for every piece after it: the second piece
-    arrives minutes later and knows only its own share of the time.
-
-    Read then written, inside one transaction. Sift has one writer, so nothing can slip between the
-    two (the same property the settings hub's own read-before-write rests on), and the
-    alternative, an upsert, cannot add two replay maps together in SQL without reading one of them
-    anyway.
-
-    **`place` is written by the FIRST piece and never by a later one**, exactly as `started_at` is.
-    Where a sitting happened and what the file was are facts about its beginning; a later piece
-    repeats them, and a client that changed its mind half-way would be rewriting a fact rather than
-    adding to one.
-
-    **What happened inside it** (`inside`) is added piece by piece like the time; its start
-    position is the first piece's, as `started_at` is. **What it was about** (`about`) is the first
-    piece's too: the route reads it only when it is about to write one (`sitting_is_here`), and a
-    later piece's would be what the file carried minutes later rather than when it began. Its names
-    go to `play_names` in the same write, only where they are not already the latest kept.
+    A sitting in several pieces is one row; `started_at`, `place` and `about` come from the first.
     """
     made_at = int(time.time())
     whole_ms = (already_reported_ms or 0) + watch_ms
     async with database.write() as connection:
-        so_far = (
-            None
-            if sitting is None
-            else next(
-                iter(
-                    await connection.execute_fetchall(_SITTING_SO_FAR, (user_id, asset_id, sitting))
-                ),
-                None,
-            )
-        )
+        so_far = await _so_far(connection, user_id, asset_id, sitting)
         if so_far is not None:
-            await connection.execute(
-                _EXTEND,
-                {
-                    "watch_ms": watch_ms,
-                    "position_ms": position_ms,
-                    "heat": _heat_json(_merged_heat(so_far["heat"], heat)),
-                    "seeks": max(0, seeks),
-                    "made_at": made_at,
-                    "seek_log": _merged_seeks(so_far["seek_log"], inside.seek_log),
-                    "speeds": _merged_speeds(so_far["speeds"], inside.speeds),
-                    "fullscreen_ms": inside.fullscreen_ms,
-                    "completions": inside.completions,
-                    "magnified": _flag(inside.magnified),
-                    "id": so_far["id"],
-                },
+            await _extend(
+                connection,
+                so_far,
+                watch_ms=watch_ms,
+                position_ms=position_ms,
+                heat=heat,
+                seeks=seeks,
+                made_at=made_at,
+                inside=inside,
             )
             return
         await connection.execute(
@@ -479,17 +333,65 @@ async def record_play(
                 None if about is None else about.packed(),
             ),
         )
-        for kind, named in [] if about is None else about.names():
-            await connection.execute(
-                _NOTE_NAME,
-                {
-                    "user_id": user_id,
-                    "kind": kind,
-                    "ref": named.id,
-                    "name": named.name,
-                    "since": made_at - whole_ms // _MS_PER_SECOND,
-                },
-            )
+        await _note_names(connection, user_id, about, made_at, whole_ms)
+
+
+async def _so_far(
+    connection: Connection, user_id: str, asset_id: str, sitting: str | None
+) -> Row | None:
+    return (
+        None
+        if sitting is None
+        else next(
+            iter(await connection.execute_fetchall(_SITTING_SO_FAR, (user_id, asset_id, sitting))),
+            None,
+        )
+    )
+
+
+async def _note_names(
+    connection: Connection, user_id: str, about: About | None, made_at: int, whole_ms: int
+) -> None:
+    for kind, named in [] if about is None else about.names():
+        await connection.execute(
+            _NOTE_NAME,
+            {
+                "user_id": user_id,
+                "kind": kind,
+                "ref": named.id,
+                "name": named.name,
+                "since": made_at - whole_ms // _MS_PER_SECOND,
+            },
+        )
+
+
+async def _extend(
+    connection: Connection,
+    so_far: Row,
+    *,
+    watch_ms: int,
+    position_ms: int | None,
+    heat: dict[int, int],
+    seeks: int,
+    made_at: int,
+    inside: Inside,
+) -> None:
+    await connection.execute(
+        _EXTEND,
+        {
+            "watch_ms": watch_ms,
+            "position_ms": position_ms,
+            "heat": _heat_json(_merged_heat(so_far["heat"], heat)),
+            "seeks": max(0, seeks),
+            "made_at": made_at,
+            "seek_log": _merged_seeks(so_far["seek_log"], inside.seek_log),
+            "speeds": _merged_speeds(so_far["speeds"], inside.speeds),
+            "fullscreen_ms": inside.fullscreen_ms,
+            "completions": inside.completions,
+            "magnified": _flag(inside.magnified),
+            "id": so_far["id"],
+        },
+    )
 
 
 async def plays_of_asset(database: Database, user_id: str, asset_id: str) -> Watched:

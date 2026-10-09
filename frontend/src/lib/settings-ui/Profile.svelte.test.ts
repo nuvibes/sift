@@ -1,7 +1,5 @@
-/*
- * The PIN form on Profile: exactly six digits, and the vault's one PIN write, the same one the
- * create-a-PIN dialog on Hidden uses, so the two forms cannot disagree about what a PIN is.
- */
+/* The PIN form on Profile: exactly six digits, and the vault's one PIN write, the same one the
+ * create-a-PIN dialog on Hidden uses, so the two forms cannot disagree about what a PIN is. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

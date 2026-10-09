@@ -368,6 +368,7 @@
 		--card-face-small: var(--story-face-small);
 		position: relative;
 		display: grid;
+		grid-template-rows: minmax(0, 1fr);
 		isolation: isolate;
 		overflow: hidden;
 		outline: 1px solid var(--sift-line);
@@ -462,8 +463,11 @@
 
 	/* Stood up the way a phone is held: as wide as its holder, 9:16. A container, so what is
 	   inside is counted in its width. */
+	/* Its size is never its content's (`contain: size`): the ratio alone sets the height, so the deck's
+	   presses under it stand still whatever a card holds or however its beats land. */
 	.story {
 		container-type: inline-size;
+		contain: size;
 		inline-size: 100%;
 		aspect-ratio: 9 / 16;
 	}
@@ -473,6 +477,7 @@
 		container-type: inline-size;
 		/* The stage it stands on gives the room, up to the saved picture's own width. */
 		inline-size: min(100%, calc(var(--story-width) * 3));
+		contain: size;
 		aspect-ratio: 9 / 16;
 		margin-inline: auto;
 	}

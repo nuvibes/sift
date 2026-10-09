@@ -8,7 +8,7 @@ import pytest
 from sift.kernel.access import Repository
 from sift.kernel.access.history import history_of_asset
 from sift.kernel.db import Database
-from sift.kernel.tests.test_history import ASSET, ROOT, make_file, move_it
+from sift.kernel.tests.history_helpers import ASSET, ROOT, make_file, move_it
 from sift.testing.fixtures import Actors
 
 pytestmark = pytest.mark.anyio

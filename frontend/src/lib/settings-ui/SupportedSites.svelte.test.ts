@@ -1,9 +1,4 @@
-/* The supported list's Cookies column: the cookies sheet's own badge and sentence, per Site.
- *
- * One answer, two screens. The sheet and this list both draw a Site's need from `NEED_BADGE`, and
- * what is pinned here is that this list says the same word, in the same colour, with the Site's
- * own sentence under it, so "Partial" on one screen cannot be "Works without" on the other.
- */
+/* The supported list's Cookies column: the cookies sheet's own badge and sentence, per Site. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -101,8 +96,8 @@ describe('the Cookies column', () => {
 	});
 });
 
-/* The table is folded under words that say how many Sites are behind them, in the pane's one fold
-   shape, and the legend's sentences start in one column. */
+/* The table is folded under words that say how many Sites are behind them, in the pane's one
+   fold shape, and the legend's sentences start in one column. */
 it('folds the table under a count of Sites, as the one fold shape', async () => {
 	await render();
 

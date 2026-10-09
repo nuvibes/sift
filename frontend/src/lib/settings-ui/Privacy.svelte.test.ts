@@ -1,9 +1,5 @@
-/* Privacy, and what is not on it: who can reach the library over the network is on General, and the
- * clean-up that deletes old searches runs in the background with no row to set.
- *
- * Read from the pane's markup rather than a rendered pane: its blocks are drawn behind loads and an
- * admin check, so a rendered test sees only what the mocks let through, and what is pinned here is
- * what the pane DECLARES. */
+/* Privacy, and what is not on it: who can reach the library over the network is on General, and
+ * the clean-up that deletes old searches runs in the background with no row to set. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { COPY } from './Privacy.search';

@@ -1,24 +1,4 @@
-/** Every face Sift offers can actually draw a column of numbers that does not move.
- *
- * Machine facts (durations, sizes, counts, ids) are set with `font-variant-numeric: tabular-nums`
- * so a column of them does not shift sideways as the values tick. THAT PROPERTY DOES NOTHING AT ALL
- * ON A FACE WITH NO TABULAR FIGURE SET, and nothing anywhere says so: there is no error, no warning
- * and no fallback. The columns simply start jittering, on one theme, for whoever chose it.
- *
- * So the faces are checked rather than trusted, against the font files that actually ship. A face
- * qualifies in one of three ways, and each is genuinely enough:
- *
- *   - it carries the OpenType `tnum` feature, which is what `tabular-nums` switches on; or
- *   - its ten digits already have identical advance widths, so there is nothing to switch on. Every
- *     monospace satisfies this by construction, and a few proportional faces do too; or
- *   - it is a TEXT face whose stack names the Main face's figures first (`var(--font-figures)`), so
- *     its numerals are never drawn from it at all. The Main face is the face for numbers already,
- *     every one of them passes one of the first two ways, and the alias each declares is checked
- *     here to cover the ten digits and nothing else, from that face's own file.
- *
- * A face that can prove none of the three is not offered. This is the same shape of protection as the contrast
- * gate: the stylesheet says what is on offer, and the gate goes and looks.
- */
+/** Every face Sift offers can actually draw a column of numbers that does not move. */
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -38,13 +18,8 @@ const FIGURES_FIRST = /^var\(--font-figures\)\s*,/;
 
 type Offered = { family: string; stack: string; role: 'display' | 'sans' };
 
-/** Every face a `--font-display` or `--font-sans` anywhere in the stylesheet offers, with its stack.
- *
- * Read out of the file rather than listed here, so a face added to `app.css` is checked without
- * anybody remembering to add it. The face is the first QUOTED family in its stack, after the Main
- * face's figures where the stack starts with those: the rest are the fallbacks a browser reaches
- * for when the real one has not arrived, and Sift serves its own. A stack with no quoted family
- * at all is refused rather than skipped, since a skipped face is a face nobody measured. */
+/** Every face a `--font-display` or `--font-sans` anywhere in the stylesheet offers, with its
+ * stack. */
 function offeredFaces(): Offered[] {
 	const css = readFileSync(APP_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ');
 	const found = new Map<string, Offered>();
@@ -73,10 +48,7 @@ function figuresAliases(): { display: string; alias: string }[] {
 	return found;
 }
 
-/** The file a family is served from. `Space Grotesk Variable` -> `space-grotesk-latin-wght-...`.
- *
- * The naming is the font packages', reproduced by `scripts/prepare_fonts.js`; deriving it here
- * rather than keeping a second table is what stops the two drifting apart. */
+/** The file a family is served from. `Space Grotesk Variable` -> `space-grotesk-latin-wght-...`. */
 function fileFor(family: string): string {
 	const prefix = family
 		.replace(/ Variable$/, '')
@@ -145,10 +117,7 @@ describe('the faces Sift offers', () => {
 	}
 
 	it('gives every Main face a figures alias of its own digits, from its own file', () => {
-		/* The third way above is only as good as the alias. An alias that named another face, missed
-		   a digit, or covered letters as well would put the wrong face, a jittering digit or the
-		   Main face's letters into the body text. So each one is read out of the generated
-		   declarations and held to the digits alone, from the file its Main face is served from. */
+		/* The third way above is only as good as the alias. */
 		const generated = readFileSync(GENERATED_CSS, 'utf8');
 		const faces = new Map<string, { url: string; range: string }>();
 		for (const block of generated.split('@font-face').slice(1)) {
@@ -179,8 +148,7 @@ describe('the faces Sift offers', () => {
 
 	it('still refuses a text face with no figures that names no alias first', () => {
 		// The negative of the third way: DM Sans as it ships, measured, and given a stack that does
-		// not put the Main face's figures first. And a stack that names the alias SECOND, where the
-		// face's own digits would be drawn before the alias was ever reached.
+		// not put the Main face's figures first.
 		const measured = figuresOf('DM Sans Variable');
 		expect(measured.tabular, 'DM Sans now carries tabular figures: drop its alias').toBe(false);
 		for (const stack of [
@@ -200,9 +168,7 @@ describe('the faces Sift offers', () => {
 	});
 
 	it('would notice a face that could not do it', () => {
-		// The check above passing on eight faces says nothing about whether it can fail. The icon
-		// font is on the same shelf, is not a text face, and has no figures at all, so it is the
-		// honest negative: the same question, asked of something that should answer no.
+		// The check above passing on eight faces says nothing about whether it can fail.
 		const icons = fontkit.create(
 			readFileSync(join(FONT_DIR, 'material-symbols-rounded-subset.woff2'))
 		) as fontkit.Font;

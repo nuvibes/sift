@@ -1,11 +1,4 @@
-/* The stash-box block on the Stash-boxes section.
- *
- * Two things are worth a test here and the rest is layout. The first is the key: it is typed into
- * a box that is never re-filled from anything, and no part of what this screen holds may carry one
- * afterwards. The second is the look-up, which is the surface somebody uses to find out whether a
- * key works, so what it does with a box that could not be reached, and with a box that answered
- * with nothing, have to read as two different sentences rather than as the same blank.
- */
+/* The stash-box block on the Stash-boxes section. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
@@ -14,13 +7,7 @@ import { compile } from 'svelte/compiler';
 import StashBoxes from './StashBoxes.svelte';
 import source from './StashBoxes.svelte?raw';
 
-/* The whole wire shape, not the half this file happens to read.
- *
- * `key_ready` above all. A box with a key that cannot be OPENED is a different state from a box
- * with no key, and the pane has a third sentence for it, so a fixture that leaves the field out is
- * a box whose key is sealed, and a test asking whether a saved key is announced would be reading
- * the sentence about a locked one. A partial fixture is a fixture that answers a
- * question nobody asked. */
+/* The whole wire shape, not the half this file happens to read. */
 const A_BOX = {
 	id: 'b1',
 	name: 'StashDB',
@@ -37,12 +24,7 @@ let host: HTMLElement;
 let drawn: Record<string, unknown> | null = null;
 
 async function shown(boxes: unknown[] = [A_BOX]): Promise<HTMLElement> {
-	/* Answered per route rather than with one shape for everything.
-	 *
-	 * This pane reads the TUNNELS too, to name the ways out of the machine. A catch-all that
-	 * handed `{ boxes }` to that request as well would put an object where a list goes, and the
-	 * screen would throw while mapping it: unhandled errors in a run whose own assertions all
-	 * pass, because the throw happens inside an effect rather than inside a test. */
+	/* Answered per route rather than with one shape for everything. */
 	vi.spyOn(api, 'get').mockImplementation(async (path: string) => {
 		if (path.startsWith('/tunnels')) return [] as never;
 		if (path.startsWith('/download-routes'))
@@ -76,9 +58,7 @@ it('offers the key as a password box, so it is never on screen as it is typed', 
 
 	const key = screen.querySelector('input[type="password"]');
 	expect(key).not.toBeNull();
-	// And it starts empty rather than pre-filled from anything. There is nothing to pre-fill it
-	// from (the server has no shape that carries a key outward), and a box that looked filled
-	// would say otherwise.
+	// And it starts empty rather than pre-filled from anything.
 	expect((key as HTMLInputElement).value).toBe('');
 });
 
@@ -90,9 +70,7 @@ it('says a box has a key rather than showing one', async () => {
 });
 
 it('tells a key that cannot be opened from a box that has none', async () => {
-	// Three states, not two. A restart leaves every saved key sealed and nothing else wrong, and
-	// "No key" there sends somebody to type in one they already have, while "Key saved" beside a
-	// box that answers nothing is a screen saying it is healthy while it refuses every question.
+	// Three states, not two.
 	const screen = await shown([{ ...A_BOX, has_key: true, key_ready: false }]);
 
 	expect(screen.textContent).toContain('Key locked');
@@ -109,8 +87,8 @@ it('says so plainly when a box has no key, because an unkeyed box is simply not 
 it('says a switched-off box by its switch, because off is a state and not a failure', async () => {
 	const screen = await shown([{ ...A_BOX, enabled: false }]);
 
-	// The switch is the state and the way back, as on a tunnel's row: no pill beside it saying
-	// the same thing again.
+	// The switch is the state and the way back, as on a tunnel's row: no pill beside it saying the
+	// same thing again.
 	const use = screen.querySelector('[role="switch"][aria-label="Use StashDB"]');
 	expect(use?.getAttribute('aria-checked')).toBe('false');
 	expect(screen.textContent).not.toContain('Turned off');

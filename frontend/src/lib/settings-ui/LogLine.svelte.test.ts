@@ -1,11 +1,5 @@
-/*
- * A log line is read whole: cut at its column's end with an ellipsis, nothing past
- * `route=/downloads/glanc...` could be read. The line wraps instead, and a value too long for the
- * column breaks at any character.
- *
- * Two halves, because the unit environment lays nothing out: the WHOLE text is in the document
- * (mounted), and nothing in the line's stylesheet can cut it off again (compiled).
- */
+/* A log line is read whole: cut at its column's end with an ellipsis, nothing past
+ * `route=/downloads/glanc...` could be read. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { compile } from 'svelte/compiler';

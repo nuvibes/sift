@@ -1,16 +1,5 @@
-/* Which browser a link out of Sift opens in.
- *
- * Two of the three claims here are decided in the markup, where no server test can see them. A
- * browser already IS the answer to this question, so the whole block has to be ABSENT there rather
- * than drawn and disabled, and it has to be absent again when the shell can answer but found
- * nothing to offer, which is a machine with one browser on it and no choice to make.
- *
- * The third (that choosing "Default browser" sends `null` rather than the word this file
- * invented for it) is not driven here, and the reason is the environment rather than an omission:
- * `bits-ui`'s Select cannot be opened or chosen from in jsdom (opening it needs a synthetic keydown
- * and `.click()` on an item fires no `onValueChange`). It is one of twelve Selects no unit test
- * here can press, and the end-to-end layer is where it belongs.
- */
+/* Which browser a link out of Sift opens in. Two of the three claims here are decided in the
+ * markup, where no server test can see them. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount } from 'svelte';

@@ -1,27 +1,9 @@
 <script lang="ts">
 	/*
-	 * Who a song credits, in credit order: one line, each artist a press that opens the Music wall
-	 * filtered to that artist.
-	 *
-	 * The same line under a song's card on the Music wall, under a song's card on a Music tab and
-	 * under the name on a song's own page, so an artist is reached the same way wherever a song is
-	 * drawn. The filter is the wall's own `artists=` parameter (the Artists column of its filter
-	 * panel), so the press lands as a chip that can be taken off, added to or turned into "not this
-	 * artist", rather than a page of its own: an artist is a field of a song, not a thing in the
-	 * sidebar.
-	 *
-	 * The parameter is the artist's id, which is the one value naming exactly one artist; the chip
-	 * draws a name rather than the id because the press hands the name to the bar's memory of what
-	 * each filter value is called (`rememberFacetNames`), the memory the filter panel fills when it
-	 * counts the column.
-	 *
-	 * Under a card, a song that credits nobody still draws its (empty) line, so its card is as tall
-	 * as its neighbours and a wall of songs stays a grid of equal cards. On a song's page nothing is
-	 * drawn for nobody: there is no row of neighbours to keep in step with.
-	 *
+	 * Who a song credits, in order, each a press opening the Music wall filtered by `artists=` (the
+	 * id; the name goes to `rememberFacetNames` for the chip). A card keeps its empty line.
 	 * NOT ON THE GALLERY: it draws only inside a song's card (`EntityCard`'s `byline`) and a song's
-	 * header, and the gallery's cards and headers draw no song; an entry of its own would be the
-	 * line without the card that gives it its place.
+	 * header.
 	 */
 	import { rememberFacetNames } from '$lib/components/shell/facet-labels';
 	import { ContextMenu, VerbMenuItems } from '$lib/components/common';
@@ -53,9 +35,7 @@
 	>
 {/snippet}
 
-<!-- An artist with verbs (an admin's Rename) answers a right-click with the app's menu. The press
-     sits inside a song's card, which has a menu of its own: the right-click is the artist's and
-     goes no further, so the card's menu does not open over it. -->
+<!-- An artist's right-click is its own and stops there, not opening the card's menu. -->
 {#if artists.length > 0}
 	<div class="artists {size}">
 		{#each artists as one, at (one.id)}{@const verbs = artistVerbs(
@@ -85,8 +65,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* Under a card: one line, cut with an ellipsis where the card is narrower than the names, as
-	   the card's own name above it is. The whole list is on the song's page, a press away. */
+	/* Under a card: one line, cut with an ellipsis. */
 	.card {
 		font: var(--text-body-sm);
 		white-space: nowrap;
@@ -98,8 +77,7 @@
 		font: var(--text-body);
 	}
 
-	/* The menu's trigger wraps a press in a block of its own; here it stays in the line. A flex box
-	   inside the line, so the trigger's own whitespace is not drawn as a space before the comma. */
+	/* The trigger stays in the line, its whitespace no space before a comma. */
 	.artists :global(.song-artist-door),
 	.door {
 		display: inline-flex;

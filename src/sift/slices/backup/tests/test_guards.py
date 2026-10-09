@@ -22,6 +22,7 @@ from sift.kernel.jobs import JobQueue, JobState
 from sift.kernel.jobs.schedules import when_key
 from sift.slices.backup import service as service_module
 from sift.slices.backup.jobs import BACKUP_RUN, BUSY_RETRY_SECONDS, register_handlers, run_backup
+from sift.slices.backup.naming import filename_for, is_backup_filename
 from sift.slices.backup.router import _schedule_view
 from sift.slices.backup.service import (
     BACKING_UP,
@@ -30,8 +31,6 @@ from sift.slices.backup.service import (
     KEEP_KEY,
     BackupService,
     Busy,
-    filename_for,
-    is_backup_filename,
 )
 from sift.slices.settings_hub import SettingsService
 from sift.testing.fixtures import Actors, FakeClock

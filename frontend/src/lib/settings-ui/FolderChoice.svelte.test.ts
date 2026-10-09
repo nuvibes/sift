@@ -1,7 +1,5 @@
-/*
- * A folder setting is chosen by pointing at it: the operating system's folder dialog where the
- * application offers one, never a box to type a path into.
- */
+/* A folder setting is chosen by pointing at it: the operating system's folder dialog where the
+ * application offers one, never a box to type a path into. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 

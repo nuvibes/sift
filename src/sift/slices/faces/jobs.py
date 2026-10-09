@@ -1,28 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The face work, as background jobs.
-
-Four of them, and they are separate because they cost wildly different amounts and are triggered
-by different things.
-
-**Scanning one file** is the expensive one: it reads the file. It runs at background priority, so
-whoever is watching something right now always wins.
-
-**Matching again** costs nothing by comparison (no file is opened, only stored numbers are
-compared), and it runs whenever the reference gallery changes. That is the whole point of storing
-the numbers: adding a person is seconds, not another pass over the library.
-
-**Grouping** the faces nobody has claimed is a whole-library operation, so it runs once after a
-batch settles rather than once per file. Running it per file would rebuild the same grouping a
-thousand times during an import.
-
-**Fetching the models** is the odd one out: it is the only job here that touches the network, and
-it is the one thing that has to happen before any of the others can do anything at all. It is a job
-rather than a request because it takes minutes, because the dashboard already draws a bar for every
-job, and because cancelling a job is already a thing somebody can do.
-
-Every one of them checks the switch first and does nothing at all when it is off. A job that was
-queued before somebody turned the feature off finds it off and stops, rather than doing the work
-its payload describes.
+"""The face work as background jobs: scanning a file, matching again, grouping, fetching models
+and the passes over the library. Every job checks the switch first and does nothing when it is off.
 """
 
 from __future__ import annotations
@@ -80,67 +58,28 @@ FACE_SWEEP = "face_sweep"
 #: Delete face data, a batch per write (`forget_all`).
 FACE_FORGET = "face_forget"
 FACE_REMEASURE = "face_remeasure"
-#: The floor pass: the files whose scan refused a face for size that the size floor set now would
-#: accept, looked at again. Asked for by a start while any wait (`FaceService.floor_pass_owed`).
+#: The floor pass: files whose scan refused a face for size that today's floor would accept.
 FACE_FLOOR = "face_floor"
-#: The tile pass: every HEIF still whose faces were read from one tile of it, looked at again from
-#: the whole picture. Asked for by a start while any wait (`FaceService.tile_pass_owed`).
+#: The tile pass: every HEIF still whose faces were read from one tile of it.
 FACE_WHOLE_PICTURE = "face_whole_picture"
-#: The pass over facial fingerprints: every held entry the library's faces match placed by face
-#: (`FaceService.recognize_from_fingerprints`). Asked for by an import, by a scan whose faces match
-#: an entry, and the moment `Create people from these fingerprints as their faces are recognized`
-#: is turned on (`wiring/reactions.py`). The stored word is older than the pass and kept, since a
-#: job row on disk names it.
+#: The pass over facial fingerprints (`FaceService.recognize_from_fingerprints`); the stored word
+#: is older than the pass and kept, since a job row on disk names it.
 FACE_PEOPLE_FROM_FILES = "face_people_from_files"
-#: The box's questions: every face in a file a stash-box put somebody on that the box's answer is a
-#: claim about, asked about them (`FaceService.ask_for_the_boxes`). Asked for when a box files
-#: people (the enrichment's write) and by a start while any wait (`box_questions_owed`).
+#: The box's questions: faces in files a stash-box filed somebody under (`ask_for_the_boxes`).
 FACE_BOX_QUESTIONS = "face_box_questions"
 
-#: How much of the library one sweep job looks at.
-#:
-#: The sweep scans nothing itself (it enqueues one scan per file and stops), so this bounds the
-#: number of rows one job writes, not the work. A library of a hundred thousand files would
-#: otherwise put a hundred thousand jobs in the queue in a single write, which is a queue nobody
-#: can read and a progress bar that means nothing. It re-queues itself while there is more, so the
-#: whole library is still covered; it arrives in readable pieces.
-#: How many rows one page of a sweep walks.
-#:
-#: **Taken from the cap rather than chosen, because the cap wins and a second number here only
-#: disagrees with it.** `visible_assets` clamps every page to `MAX_PAGE_SIZE`, so a larger number
-#: here would never be meant. The walk steps by what came back, so a clamp cannot skip rows, but
-#: the number is read as fact elsewhere: the screen that watches a sweep works out from it how
-#: many pages a library will take, and a number larger than the clamp would undercount the pages
-#: and stop that screen counting a total altogether.
+#: How many rows one page of a sweep walks: the access layer's cap, since it clamps every page.
 SWEEP_PAGE = MAX_PAGE_SIZE
 
-#: How long a change to the reference gallery waits before everything is matched against it again.
-#:
-#: **Two seconds.** Naming six people in a row should be one pass over the library rather than six,
-#: but the pass is cheap: at a couple of thousand unclaimed faces the matching is about 30 ms and
-#: the regrouping that follows about 115 ms, so a longer window would be waited on for a pass
-#: costing a sixth of a second.
-#:
-#: The window is still worth having and is why this is not zero: a burst of naming collapses onto
-#: one request, and two seconds is longer than the gap between two presses. What it must not be is
-#: longer than somebody's patience, because the thing on the other side of it is the faces LIKE the
-#: one they just named, which is the answer they are sitting there waiting for.
-#:
-#: It is a fixed window rather than a restarting debounce: the first request sets the time, and
-#: everything arriving before then collapses onto it. So this is the longest anybody ever waits,
-#: not a countdown that a second press pushes back.
+#: How long a change to the reference gallery waits before everything is matched again: a fixed
+#: window, so a burst of naming is one pass, and short, since the pass costs a sixth of a second.
 GALLERY_SETTLE_SECONDS = 2
 
 
 async def ask_for_grouping(
     queue: JobQueue, *, delay: int = BATCH_SETTLE_SECONDS, full: bool = False
 ) -> None:
-    """Ask for the unclaimed faces to be piled up, once the current batch of scanning has settled.
-
-    Incrementally unless `full`: the faces in no pile are placed and the piles that exist are
-    kept. A full grouping is for the end of a sweep, a model change, and the button. See
-    `FaceService.regroup`.
-    """
+    """Ask for the unclaimed faces to be grouped once scanning settles; `full` starts afresh."""
     await queue.enqueue_when_settled(FACE_REGROUP, {"full": True} if full else None, delay=delay)
 
 
@@ -149,73 +88,40 @@ async def ask_for_rematching(
 ) -> None:
     """Ask for every unclaimed face to be compared against the gallery again.
 
-    Called wherever the gallery changes: a face confirmed as somebody, a pack imported, a folder
-    of galleries read in. No file is opened by the work this asks for; it is arithmetic over
-    numbers already stored, which is the whole reason adding a person can be seconds rather than
-    another pass over the library.
-
-    `regroup_fully` asks the grouping that follows the re-match to start from scratch: what
-    measuring every face again with a different model needs, because the piles' middles are the
-    previous model's numbers and a new face compared against them would join the wrong pile.
+    `regroup_fully` rebuilds the groups afterwards, as a model change needs.
     """
     await queue.enqueue_when_settled(
         FACE_REMATCH, {"regroup": "full"} if regroup_fully else None, delay=delay
     )
 
 
-#: How often the download's progress is published, in seconds.
-#:
-#: Once a second rather than once a chunk. A chunk is a fraction of a megabyte, so a write per
-#: chunk would hold the write lock for the length of a large model's download, competing with
-#: exactly the work somebody started this to be able to do.
+#: How often the download's progress is published, in seconds: not per chunk, which holds the lock.
 _PROGRESS_TICK = 1.0
 
 
-#: The outcomes that leave a face nobody is attached to, and therefore something to group.
-#:
-#: A file with no faces in it, or one where everybody was recognized, has left nothing unclaimed:
-#: asking for a grouping after those is asking the machine to prove there is no work to do.
+#: The outcomes that leave a face nobody is attached to, and so something to group.
 _LEFT_SOMETHING_UNCLAIMED = frozenset({ScanStatus.NONE_IDENTIFIED, ScanStatus.SOME_IDENTIFIED})
 
 
 async def scan(context: JobContext, *, service: FaceService) -> None:
-    """Find and attribute the faces in one file, and ask for what it could not place to be grouped."""
+    """Find and attribute the faces in one file, and ask for the rest to be grouped."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_SCAN, reason="switched off")
         return
 
     asset_id = str(context.payload["asset_id"])
-    # No depth in the payload means "whatever the settings say", NOT "fast": a fast default would
-    # quietly override the setting on every scan a sweep starts, and the tuning recorded against
-    # each result would say fast while the settings screen said deep, with nothing to report it.
-    #
-    # A depth in the payload is still honoured, because that is a request for ONE file to be looked
-    # at harder than the setting.
+    # No depth means the settings' depth; a depth is a request for one file to be looked at harder.
     requested = context.payload.get("depth")
     depth = Depth(str(requested)) if requested else None
-    # The sweep that queued this file, if one did. Its tuning is used in place of whatever the
-    # settings say now, so a change made halfway through a sweep does not change the rest of it.
+    # The sweep's tuning, if one queued this, so a mid-sweep change does not alter the rest.
     run = context.payload.get("run")
     run_id = str(run) if run else None
-    # Held, not failed, when the models are not on disk yet.
-    #
-    # A model family changed while a sweep is running takes minutes to download, and every scan the
-    # sweep already queued would otherwise fail three times over about files that are perfectly
-    # fine. Three attempts is the right answer to something that might work next time; a file
-    # cannot be read with a model that has not arrived, and no number of attempts
-    # changes that. It is the same shape the stash-box work uses for sealed keys and the download
-    # work for a login it does not have: the job waits, costs no attempt, says what it is waiting
-    # for, and the moment the thing arrives it runs.
-    #
-    # The one that releases it is `fetch_weights`, which is the only thing that can make this
-    # sentence stop being true.
+    # Held, not failed, while the models are not on disk: no attempt makes them arrive.
     waiting = await service.weights_problem(run=run_id)
     if waiting is not None:
         log.info("faces.scan.held", asset_id=asset_id, reason="models not installed")
         raise JobBlocked(waiting)
-    # A PRESS ("Look for faces again" on a file, or its Run task) carries `AGAIN`, and the scan
-    # reads it: a finished pass pressed again starts from the first moment rather than carrying on
-    # from where its last readable moment was. See `FaceService._resume_point`.
+    # A press carries `AGAIN`: a finished pass starts over (`FaceService._resume_point`).
     again = context.payload.get(AGAIN) is True
     try:
         status = await service.scan(asset_id, depth=depth, run=run_id, again=again)
@@ -229,47 +135,20 @@ async def scan(context: JobContext, *, service: FaceService) -> None:
     if status in _LEFT_SOMETHING_UNCLAIMED:
         await ask_for_grouping(context.queue)
     if await service.fingerprints_match_file(asset_id):
-        # A face here matches a held entry of facial fingerprints: the pass places it once the
-        # batch settles, collapsed onto one run however many files of a sweep ask.
+        # A face matching held facial fingerprints: the pass places it once the batch settles.
         await ask_for_fingerprints(context.queue)
     await context.set_progress(1.0)
     if context.job.requested_by is not None:
-        # SOMEBODY PRESSED THIS ONE AND IS LOOKING AT THE FILE ("Look for faces again" on its
-        # page), so every screen drawing its faces is told, once. Without it the strip under the
-        # file stays as it was: a scan that finds nobody new rings nothing, and neither does one
-        # whose faces match nobody.
-        #
-        # Only for a press. A sweep's scans and an import's are queued by the machine and carry no
-        # requester, and ringing the library bell once per file across a sweep would have every
-        # open screen re-reading its lists for the length of it. `announce_now` because the scan's
-        # writes have all landed by here. See `FaceService.rematch`, which rings the same way.
+        # A press: screens drawing this file's faces are told, once; a sweep's scans ring nothing.
         announce_now(EVERY_ADMIN, About.LIBRARY)
     log.info("faces.scan.finished", asset_id=asset_id, status=status.value)
 
 
 async def sweep(context: JobContext, *, service: FaceService) -> None:
-    """Put every file that wants looking at into the queue, a page at a time.
+    """Put every file that wants looking at into the queue, a page at a time, re-queueing itself.
 
-    This is what "scan my library" means for somebody who has just switched the feature on: nothing
-    before this moment was examined, because nothing was allowed to be. Files imported afterwards
-    are scanned as they arrive and never reach this.
-
-    It covers more than that. A file already looked at under *different* settings wants looking
-    at again, and the tuning each result was produced under is stored beside it so that can be told
-    apart, so turning the depth up and sweeping again does what it plainly ought to do. `force`
-    goes further and offers everything, whatever it was scanned under.
-
-    Re-queues itself rather than looping. A job that ran until the library was done would hold a
-    worker for hours, could not report progress anybody could read, and would lose everything it
-    had queued if the machine went down halfway. Each page is a complete, small unit of work.
-
-    It carries the user who asked for it. The work list comes from the access layer, so the
-    sweep covers what that admin can see rather than reaching past them, and a user who has
-    gone since is a sweep that stops rather than one that quietly runs as nobody.
-
-    What it queued is counted across the whole sweep and not just this page, because a page is an
-    implementation detail and "I queued 40" reported four times over is not an answer to how much
-    work was started.
+    Covers files scanned under other settings too, or everything with `force`; runs as the admin
+    who asked, and counts what it queued across the whole sweep.
     """
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_SWEEP, reason="switched off")
@@ -283,9 +162,7 @@ async def sweep(context: JobContext, *, service: FaceService) -> None:
     offset = int(context.payload.get("offset") or 0)
     force = bool(context.payload.get("force"))
     queued_before = int(context.payload.get("queued") or 0)
-    # The first page IS the run, so it is the one that writes down what the run is running under.
-    # Every page after it carries the id rather than asking again: asking again a page later is
-    # the very thing this exists to stop.
+    # The first page is the run and writes down its tuning; later pages carry its id.
     run = str(context.payload.get("run") or context.job.id)
     if context.payload.get("run") is None:
         await service.start_run(run)
@@ -295,28 +172,17 @@ async def sweep(context: JobContext, *, service: FaceService) -> None:
     for asset_id in waiting:
         await context.enqueue_child(FACE_SCAN, {"asset_id": asset_id, "run": run})
 
-    # By what the page WALKED, never by what it was asked for.
-    #
-    # The access layer caps a page, so asking for 500 and stepping on by 500 steps over every file
-    # between the cap and the request: 300 of every 500, never offered, with nothing to see but a
-    # sweep that kept saying it had finished. Stepping by what came back cannot do that whatever the
-    # cap is, or if it changes.
+    # By what the page walked, never by what it asked for: the access layer caps a page.
     reached = offset + walked
     queued = queued_before + len(waiting)
     await context.set_progress(1.0 if total == 0 else min(1.0, reached / total))
 
-    # An empty page also ends it, and that is the guard rather than a tidy-up: a page that walked
-    # nothing advances nothing, so re-queueing on one would be this job asking for itself again at
-    # the same offset, forever.
+    # An empty page also ends it, or the job would ask for itself at the same offset forever.
     done = walked == 0 or reached >= total
     if done:
-        # The one grouping that starts from scratch. Its scans are still running when this is
-        # asked for, so it may run before the last of them; the grouping each of those asks for
-        # places what arrives after it, and the piles it rebuilt keep their identities.
+        # The one grouping that starts from scratch.
         await ask_for_grouping(context.queue, full=True)
-        # And one re-match. References can arrive while recognition is off (a fingerprints file
-        # is taken in then), and the faces already stored from before it was switched off were
-        # never compared with them; each file this pass scans is, but the settled ones are not.
+        # And one re-match, for references taken in while recognition was off.
         await ask_for_rematching(context.queue)
     if not done:
         await context.enqueue_child(
@@ -329,32 +195,15 @@ async def sweep(context: JobContext, *, service: FaceService) -> None:
                 "run": run,
             },
         )
-    # A count only when it is the whole count. Until then it says it is still working it out, which
-    # is a different kind of sentence and cannot be mistaken for the answer.
+    # A running count says it is still working; only the whole count reads as the answer.
     await context.set_note(_swept(queued=queued, done=done))
     log.info("faces.sweep.queued", queued=queued, seen=reached, total=total, force=force)
 
 
 def _swept(*, queued: int, done: bool) -> str:
-    """How many files this run is going to scan, once that is known.
-
-    A button that finishes in ten milliseconds having done nothing is indistinguishable from a
-    broken one. Nothing to do is a perfectly good answer: it just has to be given.
-
-    **One number, and it is the only one worth giving.** How many files the sweep walked past is
-    bookkeeping about the sweep: "200 of 480 checked" beside a job that finished instantly says the
-    machine looked at two hundred files, and it opened none of them. A sweep reads a list, decides
-    what wants a pass, and queues those. Finishing in an instant is what it is supposed to do.
-
-    **The running total is given while the run is still going**, in a sentence that says it is
-    provisional, which a bare count would not. A sweep walks 200 files a page, and each page waits
-    behind the scans the page before it queued, so a large library takes hours; without the running
-    total the screen would say "working out which files need a look" all that while, which reads
-    exactly like a sweep that queued two hundred files and stopped.
-    """
+    """How many files this run is going to scan, said even when none, provisional until done."""
     files = "file" if queued == 1 else "files"
     if not done:
-        # The count is the run's so far, true at any moment, on a row that ends before the last page.
         return f"{queued:,} {files} queued to scan so far."
     if queued == 0:
         return "Everything has already been scanned under these settings."
@@ -364,15 +213,7 @@ def _swept(*, queued: int, done: bool) -> str:
 async def floor_pass(context: JobContext, *, service: FaceService) -> None:
     """Look again at the files a lower size floor can change, and at nothing else.
 
-    A lowered floor (96 on balanced and lenient, where every scan was taken at 112) would make a
-    face refused for size yesterday a face today, and the library is not offered again for it:
-    the tuning's fingerprint holds the floor's slot still (`Configured.shape`), since a file
-    whose scan refused nothing for size, or refused only faces under today's floor, would find
-    exactly what it found before. The scan wrote down its biggest size refusal, so the files that
-    can change are known, and each is scanned again. A file looked at
-    again leaves the list whatever it finds (`Store.under_an_earlier_floor`), so the pass ends.
-    Each is scanned under the settings set now. Sift's own act: nobody pressed it, and its run is
-    Sift's on History.
+    Each leaves the list once looked at, so the pass ends. Sift's own act on History.
     """
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_FLOOR, reason="switched off")
@@ -384,8 +225,7 @@ async def floor_pass(context: JobContext, *, service: FaceService) -> None:
         if not page:
             break
         for asset_id in page:
-            # The file alone, as an arriving file's scan is asked for, so a start that finds the
-            # same files still waiting collapses onto the scans already queued for them.
+            # The file alone, so it collapses onto a scan already queued for it.
             await context.enqueue_child(FACE_SCAN, {"asset_id": asset_id}, dedupe=True)
         queued += len(page)
         after = page[-1]
@@ -400,8 +240,7 @@ async def floor_pass(context: JobContext, *, service: FaceService) -> None:
 
 
 async def box_questions(context: JobContext, *, service: FaceService) -> None:
-    """Ask about the one face in every file a stash-box put somebody on, where nothing has been
-    asked. Sift's own act: nobody pressed it, and each person's record says so on History."""
+    """Ask about the one face in every file a stash-box put somebody on, where nothing was asked."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_BOX_QUESTIONS, reason="switched off")
         return
@@ -418,14 +257,7 @@ async def box_questions(context: JobContext, *, service: FaceService) -> None:
 
 
 async def tile_pass(context: JobContext, *, service: FaceService) -> None:
-    """Look again, from the whole picture, at every HEIF still whose faces came from one tile.
-
-    Each through the path a press of "Look for faces again" takes (`AGAIN`: the pass starts over
-    on a finished file), so the faces found on the tile go and the whole picture's come. A file
-    looked at again is newer than its copy and leaves the list, so the pass ends
-    (`FaceService.read_from_a_tile`). Sift's own act: nobody pressed it, and its run is Sift's on
-    History.
-    """
+    """Look again, from the whole picture, at every HEIF still whose faces came from one tile."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_WHOLE_PICTURE, reason="switched off")
         return
@@ -449,13 +281,7 @@ async def tile_pass(context: JobContext, *, service: FaceService) -> None:
 
 
 async def rematch(context: JobContext, *, service: FaceService) -> None:
-    """Compare every unattributed face against everybody, after the gallery changed.
-
-    A face claimed here has left the unclaimed pool, so the piles are no longer what they were:
-    hence the grouping that follows, and hence why it follows rather than being asked for
-    separately by whoever changed the gallery. Ordering matters: grouping the pool before matching
-    it would pile up faces that were about to find their owner.
-    """
+    """Compare every unattributed face against everybody, then group what is left."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_REMATCH, reason="switched off")
         return
@@ -468,22 +294,12 @@ async def rematch(context: JobContext, *, service: FaceService) -> None:
 
 
 async def remeasure(context: JobContext, *, service: FaceService) -> None:
-    """Describe the library's stored faces again with the model now set, a page at a time.
-
-    Asked for when the model family changes and, at boot, whenever any file is still described
-    by another model (a change made while the models were not yet fetched, or a process that
-    stopped halfway) is finished rather than forgotten. Re-queues itself while any remain, like
-    the sweep and for the same reasons; when none do, what Sift decided by arithmetic is decided
-    again, which is the re-match and the grouping that follows it.
-    """
+    """Describe the stored faces again with the model now set, a page at a time, then re-match."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_REMEASURE, reason="switched off")
         return
     done_before = int(context.payload.get("done") or 0)
-    # The page is sized by the clock of the page before it, carried in the payload the way the
-    # running total is. A fixed page cannot be right: a page of 100 files can take over ten minutes
-    # underneath a concurrent scan and seconds on an idle machine. See `next_remeasure_page` for
-    # the bounds and why only growth is bounded.
+    # The page is sized by the previous page's clock (`next_remeasure_page`).
     size = max(1, int(context.payload.get("page") or REMEASURE_PAGE))
     started = monotonic()
     page = await service.remeasure(limit=size)
@@ -509,12 +325,7 @@ async def remeasure(context: JobContext, *, service: FaceService) -> None:
 
 
 def _remeasured(*, done: int, remaining: int) -> str:
-    """Where the pass has got to, in one sentence.
-
-    It says how many are LEFT as well as how many are done. A count that
-    only ever goes up answers "is it moving" and not "how much longer", and this pass is the one
-    somebody sits through after changing the model family.
-    """
+    """Where the pass has got to: how many done and how many left."""
     if not remaining:
         return f"Measured {done:,} faces again"
     return f"Measured {done:,} faces again, {remaining:,} to go"
@@ -523,13 +334,7 @@ def _remeasured(*, done: int, remaining: int) -> str:
 async def regroup(
     context: JobContext, *, service: FaceService, settles_into: Sequence[str] = ()
 ) -> None:
-    """Pile up the faces nobody has been attached to.
-
-    A full regroup then asks for `settles_into`, the passes that read what the groups are (the
-    folder reader, which proposes a group as somebody): a rebuilt group has a new id, and a
-    proposal about the old one is made again only by a pass that looks. Work somebody switched
-    off is left off.
-    """
+    """Group the faces nobody is attached to; a full regroup then asks for `settles_into`."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_REGROUP, reason="switched off")
         return
@@ -549,13 +354,7 @@ async def ask_for_fingerprints(queue: JobQueue, *, delay: int = BATCH_SETTLE_SEC
 
 
 async def people_from_files(context: JobContext, *, service: FaceService) -> None:
-    """Place every held entry of facial fingerprints the library's faces match, then match again.
-
-    Each person made or given an entry is announced and written to History as it happens
-    (`FaceService.recognize_from_fingerprints`), named on the faces that matched it and holding
-    their files, so People fills in while the run goes. Their new references name any other face
-    that matches them in the one re-match asked for at the end.
-    """
+    """Place every held entry of facial fingerprints the library's faces match, then match again."""
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_PEOPLE_FROM_FILES, reason="switched off")
         return
@@ -588,16 +387,10 @@ def _placed(*, made: int, claimed: int, asked: int) -> str:
 
 
 async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
-    """Download the models this install is set to use.
+    """Download the models this install is set to use, with progress and cancelling.
 
-    A job, because it takes minutes, the dashboard draws its bar, and a job can be cancelled.
-
-    The awkward part is the seam between the two halves and it is worth naming. Reporting progress
-    is asynchronous (it writes to the queue), and the callback the transfer offers is an
-    ordinary function called once per chunk, which cannot wait for anything. So the callback does
-    the only two things it can do without waiting: it writes the latest count into a variable, and
-    it reads a flag saying whether to stop. A ticker beside the transfer is what turns those into a
-    progress row and a cancellation, on its own schedule rather than on the network's.
+    The transfer's callback cannot wait, so it records a count and reads a stop flag; a ticker
+    beside it publishes the count and checks for cancelling.
     """
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_FETCH_WEIGHTS, reason="switched off")
@@ -611,12 +404,7 @@ async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
         return not stop
 
     async def report() -> None:
-        """Publish what the transfer has managed so far, and stop it if it has been cancelled.
-
-        Once a second rather than once a chunk: a chunk is a fraction of a megabyte, and a write to
-        the queue per chunk would put a large model's download on the write lock for its whole
-        length, competing with the very work somebody is waiting for.
-        """
+        """Publish progress once a second, and stop the transfer if it has been cancelled."""
         nonlocal stop
         while True:
             await asyncio.sleep(_PROGRESS_TICK)
@@ -626,10 +414,7 @@ async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
             try:
                 await context.raise_if_canceled()
             except BaseException:
-                # Setting the flag rather than cancelling the transfer: the reader stops asking for
-                # the next chunk and leaves a partial file behind, so the next attempt resumes from
-                # where this one stopped. Tearing the task down mid-write would leave a file whose
-                # length nobody can trust.
+                # A flag rather than a cancel: the partial file stays whole for the next attempt.
                 stop = True
                 raise
 
@@ -647,22 +432,11 @@ async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
     await context.set_progress(1.0)
     log.info("faces.weights.job_finished", installed=len(installed))
     if installed:
-        # THE SCANS PARKED ON THE MISSING MODELS RUN NOW. This is the only thing that can make the
-        # sentence they are waiting on stop being true, so it is the only thing that can release
-        # them: the same reasoning that puts the re-measure below here rather than anywhere else.
-        # Named by type, so a job parked on something quite different (a stash-box key, a site
-        # login) is left where it is.
-        #
-        # It releases EVERY parked scan, including one pinned to a run whose family is still not
-        # here, and that is deliberate rather than overlooked: which family a scan wants is inside
-        # its run's tuning, the queue cannot read it, and a scan released too early parks itself
-        # again for the cost of a claim and no attempt. The alternative is a scan that stays parked
-        # because nobody asked it, which is the expensive mistake of the two.
+        # The scans parked on the missing models run now; any that still lack them park again.
         released = await context.queue.unblock(job_type=FACE_SCAN)
         if released:
             log.info("faces.scans.released", count=len(released))
-        # A family changed before its models were fetched could not be measured against them. Now
-        # it can; nothing else would ask.
+        # A family changed before its models arrived can now be measured.
         if await service.measured_by_another_model():
             await context.queue.enqueue_when_settled(FACE_REMEASURE, delay=0)
 
@@ -670,14 +444,9 @@ async def fetch_weights(context: JobContext, *, service: FaceService) -> None:
 async def starters(
     context: JobContext, *, service: FaceService, door: BoxPicturesSeam | None
 ) -> None:
-    """Fetch each person's stash-box pictures and file what passes as STARTER references.
+    """Fetch each person's stash-box pictures and file what passes as starter references.
 
-    Queued at link time for one person (`Recognition.linked`) and by the press for everybody the
-    count named. HELD, not failed, while the models are not on disk (the checks need them, and no
-    number of attempts makes a model arrive; see `scan` for the measurement behind that rule), and
-    while the stash-box keys are sealed, the way the stash-box work itself waits. Each person is
-    asked again whether she still wants starters when her turn comes, so a face confirmed after the
-    press is not followed by starters that would be retired immediately.
+    Held while the models are missing or the stash-box keys are sealed.
     """
     if not await service.enabled():
         log.info("faces.job.skipped", job=FACE_STARTERS, reason="switched off")
@@ -692,8 +461,7 @@ async def starters(
     key = await context.master_key()
     if key is None:
         raise WaitingForPassword("the stash-box keys")
-    # The press names its People (the count it showed); a link asks for everybody linked since
-    # starters existed who still has no reference row. See `LINKED_SINCE_STARTERS`.
+    # The press names its People; a link asks for everybody linked since (`LINKED_SINCE_STARTERS`).
     named = context.payload.get("people")
     people = (
         [str(one) for one in named]
@@ -707,9 +475,7 @@ async def starters(
         for done, person_id in enumerate(people, start=1):
             if await service.wants_starters([person_id]):
                 pictures = await door.pictures_of(person_id, key, most=STARTERS_PER_PERSON)
-                # None is "could not be asked now" and is left for the next Run; an empty list is
-                # every box answering with nothing, which `file_starters` remembers, so she leaves
-                # the count instead of being offered for ever. See `BoxPicturesSeam`.
+                # None is "could not be asked now"; an empty list is remembered (`BoxPicturesSeam`).
                 filed[person_id] = (
                     [] if pictures is None else await service.file_starters(person_id, pictures)
                 )
@@ -719,16 +485,10 @@ async def starters(
                 await context.set_progress(done / len(people))
                 last = monotonic()
     finally:
-        # What was filed is recorded however the run ends, and that is the whole of this block:
-        # written after the loop, a run stopped part-way (by the graphics card, say) would have
-        # filed its People's starters with no line in History, no Undo and no re-match.
-        # `file_starters` writes a person's pictures only after every check on them has run, so what
-        # `filed` holds is exactly what landed; an attempt after a failure asks `wants_starters`
-        # again, skips those People, and records its own.
+        # Recorded however the run ends, so a part-done run still has History and an Undo.
         await service.record_starters(filed, sorted(sources))
         if any(filed.values()):
-            # Every face nobody is on is compared again, now against the starters too, and a face
-            # that resembles one of them is ASKED about, never named. See `FaceService.file_starters`.
+            # Faces nobody is on are compared again, and asked about, never named.
             await ask_for_rematching(context.queue)
     await context.set_progress(1.0)
     await context.set_note(_started(filed))
@@ -748,11 +508,7 @@ def _started(filed: dict[str, list[str]]) -> str:
 
 
 class StarterRecords:
-    """A run's starter pictures in History, and the Undo that retires them.
-
-    Retired, the same as a "no" retires them: Sift stops asking from those pictures, and the rows
-    stay so the same pictures are not filed again by the next link or press.
-    """
+    """A run's starter pictures in History, and the Undo that retires them."""
 
     name = STARTERS_QUEUE
     reversible = True
@@ -761,7 +517,7 @@ class StarterRecords:
         self._service = service
 
     async def pictures_of(self, viewer: Viewer, payload: str) -> tuple[Preview, ...]:
-        """Nothing: its People are its subjects, and a starter is a stash-box's photo, not a file."""
+        """Nothing: its People are its subjects, and a starter is not a file."""
         return ()
 
     async def reverse(self, viewer: Viewer, receipt_id: str, payload: str) -> bool:
@@ -775,14 +531,7 @@ class StarterRecords:
         return True
 
     def worded(self, recorded: Recorded) -> Worded | None:
-        """This run's line, worded when shown. See `kernel.workbench.Recorded`.
-
-        An older stored title said "Added 300 starter pictures from FansDB and StashDB for 80
-        people", with nobody doing it. So Sift does it, the pictures and the People are counted from
-        the payload, and one person is named: "them" on their own page. The boxes are the
-        payload's, or an older title's, read strictly (`_STARTERS_FROM`); a title that does not
-        match says none.
-        """
+        """This run's line, worded when shown, from the payload or an older title's boxes."""
         held = recorded.held()
         references = held.get("references")
         if not isinstance(references, dict):
@@ -797,9 +546,7 @@ class StarterRecords:
             and recorded.page[0] == "person"
             and recorded.page[1] in counts
         ):
-            # On one of the People's own pages, the part about them: "Sift added 4 starter pictures
-            # from FansDB for them", never the whole run's count. The name is still the reader's to
-            # say, as "them".
+            # On one of the People's own pages, only her part.
             counts = {recorded.page[1]: counts[recorded.page[1]]}
             narrowed = True
         else:
@@ -814,8 +561,7 @@ class StarterRecords:
             shape = _STARTERS_FROM.fullmatch(recorded.title.strip())
             source = shape["boxes"] if shape else None
         if narrowed and source is not None and " and " in source:
-            # The run kept which boxes it used, not which box each person's pictures came from, so
-            # her part names no box rather than one that may not be hers.
+            # The run kept its boxes, not each person's, so her part names none.
             source = None
         who: tuple[Piece, ...] = (
             (Named(kind="person", id=next(iter(counts))),)
@@ -828,26 +574,18 @@ class StarterRecords:
         return Worded(said=(DOER, added, *where, " for ", *who), more=more)
 
 
-#: The boxes an older starters title named: "Added 300 starter pictures from FansDB and StashDB for
-#: 80 people". The shape `FaceService.record_starters` wrote before the payload carried them.
+#: The boxes an older starters title named, before the payload carried them.
 _STARTERS_FROM = re.compile(r"Added [\d,]+ starter pictures? from (?P<boxes>.+?) for .+")
 
 
 class AskedOnlyRecords:
-    """The reconcile's record in History, and the answer that it cannot be taken back.
-
-    A reverser with no card, like `queue.IdentifiedRecords`, registered so History draws the
-    record as final rather than offering an Undo that would refuse: putting a name back on a file
-    Sift only asked about is the fault the reconcile repaired. Answering the question Yes is how a
-    name goes back on, one face at a time, which is the only way it was ever meant to.
-    """
+    """The reconcile's record in History, final: a name goes back on by answering, not by Undo."""
 
     name = ASKED_ONLY_QUEUE
-    #: Final. See the class.
     reversible = False
 
     async def pictures_of(self, viewer: Viewer, payload: str) -> tuple[Preview, ...]:
-        """Nothing: the record is a count over thousands of files, and its People are its subjects."""
+        """Nothing: the record is a count, and its People are its subjects."""
         return ()
 
     async def reverse(self, viewer: Viewer, receipt_id: str, payload: str) -> bool:
@@ -855,12 +593,7 @@ class AskedOnlyRecords:
         return False
 
     def worded(self, recorded: Recorded) -> Worded | None:
-        """This record's line, worded when shown. See `kernel.workbench.Recorded`.
-
-        The stored title said "3,000 files no longer list a person Sift only asked you about":
-        nobody doing it, and the People counted nowhere though the payload keeps each one. So Sift
-        does it, and one person is named. The stored detail stays under it: it is the explanation.
-        """
+        """This record's line, worded when shown. See `kernel.workbench.Recorded`."""
         held = recorded.held()
         count, people = held.get("files"), held.get("people")
         if not isinstance(count, int) or count < 1 or not isinstance(people, dict) or not people:
@@ -921,8 +654,7 @@ def register_handlers(
         FACE_BOX_QUESTIONS,
         lambda context: box_questions(context, service=service),
         name="Asking about faces in files a stash-box filed",
-        # Not a pass over files: it opens none and reads stored rows, so it is counted as one
-        # act, not as Identify's pace (see `FACE_STARTERS` below).
+        # Reads stored rows and opens no file: one act, not Identify's pace.
         family=Family.OTHER,
         # One at a time: two copies would read the same faces before either wrote.
         alone=True,
@@ -943,25 +675,23 @@ def register_handlers(
         FACE_PEOPLE_FROM_FILES,
         lambda context: people_from_files(context, service=service),
         name="Recognizing People from facial fingerprints",
-        # Not a pass over files: counted as Identify, its pace would count names as files read.
+        # Names, not files read; one at a time, or each person is made twice.
         family=Family.OTHER,
-        # One at a time: two runs over the same names would make each person twice.
         alone=True,
     )
     register_handler(
         FACE_STARTERS,
         lambda context: starters(context, service=service, door=door),
         name="Adding starter pictures from stash-boxes",
-        # Not a pass over files: as Identify, its pace would count picture checks as files read.
+        # Picture checks, not files read; one at a time, or pictures are fetched twice.
         family=Family.OTHER,
-        # One at a time: two runs over the same People would fetch the same pictures twice.
         alone=True,
     )
     _register_one_at_a_time(service, left_out)
 
 
 async def _fingerprints_now(queue: JobQueue) -> None:
-    """The pass over facial fingerprints, asked for immediately after a folder import landed faces."""
+    """The pass over facial fingerprints, asked for immediately after a folder import."""
     await ask_for_fingerprints(queue, delay=0)
 
 

@@ -35,7 +35,7 @@ from sift.kernel.access.history import (
 from sift.kernel.access.sentences import RENAMED_FOR_TOOL_ID
 from sift.kernel.db import Database, Row
 from sift.kernel.ids import new_id
-from sift.kernel.tests.test_history import ADDED_AT, ASSET, LIBRARY, make_file
+from sift.kernel.tests.history_helpers import ADDED_AT, ASSET, LIBRARY, make_file
 from sift.testing.fixtures import Actors
 
 pytestmark = pytest.mark.anyio

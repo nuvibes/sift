@@ -1,24 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The `secrets` table: seal a value in, open it back out, forget it.
-
-A secret here is something Sift holds on somebody's behalf and must never be able to read on its
-own: a site login, a key for a stash-box. It is sealed with a master key that only the user's
-password unwraps, and the sealed bytes and the public nonce are all that reach the database. A
-backup of that database is a locked box next to no key.
-
-The sealing and unsealing are not implemented here. There is one authenticated-encryption routine
-in Sift and it lives with the rest of the sign-in crypto, in `kernel/secrets.py`; this calls it.
-
-## Why this is in the kernel
-
-More than one slice needs sealed values, two slices may not import each other, and the honest
-owner of "seal a blob under the master key" is the kernel.
-
-Every method that opens or seals takes the master key as an argument rather than reaching for it.
-Reaching for it is exactly what is impossible: the key belongs to a session, or is handed to a job
-by whoever has one. Getting hold of it with no session to read it from is `AdminMasterKey`, which
-stays in the download slice because it knows about users and the kernel does not.
-"""
+"""The `secrets` table: values sealed under a master key only a password unwraps."""
 
 from __future__ import annotations
 
@@ -36,12 +17,7 @@ _FORGET_SQL = "DELETE FROM secrets WHERE id = ?"
 
 
 class SecretStore:
-    """The `secrets` table: seal a value in, open it back out, forget it.
-
-    Every method that opens or seals takes the master key as an argument rather than reaching for
-    it. Reaching for it is exactly the thing that is impossible here: the key belongs to a session
-    or is handed to a job, so it is always passed in by whoever has it.
-    """
+    """Seal, open and forget secrets; the master key is always passed in, never reached for."""
 
     def __init__(self, database: Database) -> None:
         self._db = database

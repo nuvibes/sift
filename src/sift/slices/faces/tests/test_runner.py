@@ -1,12 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Choosing a device when a model is loaded, and refusing to pretend.
-
-**A device that was asked for and is not there is a failure, not a fallback.** Quietly running on
-the processor instead turns "why is this taking nine hours" into a question with no answer anywhere
-on the machine: the work still happens, the result is still right, and nothing says why it was
-slow. So it stops, names the device, and says which half is missing: the hardware, or the software
-that drives it. Those two fail for different reasons and need different answers.
-"""
+"""Choosing a device when a model is loaded: one asked for and missing is a failure naming the
+missing half (the hardware or its software), never a quiet fallback."""
 
 from __future__ import annotations
 
@@ -51,9 +45,7 @@ def test_a_graphics_card_that_is_present_and_driveable_is_used() -> None:
     resolved = resolve_provider("nvidia", machine(cuda=True), [CUDA, CPU])
 
     assert resolved[0] == CUDA
-    # The processor stays behind it for any single operation the card cannot do. That is not a
-    # silent fallback: the model still runs on the device that was asked for, and if it could not,
-    # loading it fails outright.
+    # The processor backs single operations the card cannot do; the model still runs on the card.
     assert resolved[-1] == CPU
 
 
@@ -63,19 +55,13 @@ def test_asking_for_a_card_this_machine_does_not_have_fails_loudly() -> None:
 
     message = str(failure.value)
     assert "NVIDIA" in message
-    # The card is not there, so there is nothing to fetch and the only way on is to stop asking
-    # for it. The message says that rather than offering an install that would change nothing.
+    # No card: nothing to fetch, so no install is offered.
     assert "Set the device back to the processor" in message
 
 
 def test_a_card_with_no_software_to_drive_it_fails_differently() -> None:
-    """The other half, and it needs a different answer: the card is there and its software is not.
-
-    This is the one refusal that can offer to fix itself, and it does: there IS something that
-    fetches the runtime now, and it says where. The twin above must not: a machine with no card
-    would be offered a download that could not help it, which is the shape of promise this file
-    exists to keep the two apart on.
-    """
+    """The card is there and its software is not: the one refusal that offers a fetch, and says
+    where."""
     with pytest.raises(DeviceUnavailable) as failure:
         resolve_provider("nvidia", machine(cuda=True), [CPU])
 
@@ -83,7 +69,6 @@ def test_a_card_with_no_software_to_drive_it_fails_differently() -> None:
     assert "not installed" in message
     assert "Sift can fetch it for you" in message
     assert "Set the device back to the processor" not in message
-    # And it says WHERE, because an offer with no address is a refusal wearing a promise.
     assert "under GPU in Settings > Performance" in message
 
 
@@ -108,17 +93,8 @@ def test_a_runner_starts_on_the_processor_unless_told_otherwise(settings: Settin
 
 
 def test_the_runner_in_a_process_of_its_own_is_built_the_same_way(settings: Settings) -> None:
-    """The one the SERVICE actually runs on, built here so something does.
-
-    `Runner` above is the same surface in this process, for a test that stands the runtime in,
-    so every other test in this file exercises the stand-in and none touches the real thing. The
-    two take the same arguments and hand the same store and feature down, which is what makes the
-    substitution honest; if they drifted, the suite would still be green and the application would
-    be the only place that found out.
-
-    Constructing it is all that is asked here. It does not start its child until something is
-    loaded, so this costs no process.
-    """
+    """The runner the service actually runs on, built here so something does; it starts no child
+    until a model loads."""
     child = ChildRunner(settings, machine())
     assert child.device == "cpu"
     assert ChildRunner(settings, machine(cuda=True), device="nvidia").device == "nvidia"
@@ -138,9 +114,7 @@ def test_dropping_the_models_gives_the_memory_back(settings: Settings) -> None:
 def test_a_lost_card_leaves_the_model_the_shape_and_the_input_it_was_handed(
     settings: Settings, monkeypatch: pytest.MonkeyPatch, in_a_process_of_its_own: bool
 ) -> None:
-    """The kernel's line says the device and the error. Which picture the models were working on
-    is the face pass's to say, so a fault that recurs on one input can be traced back to it. Said
-    by either runner, since a test that stands the runtime in drives the one in this process."""
+    """The face pass names the picture the models were working on, from either runner."""
     import numpy as np
     from structlog.testing import capture_logs
 

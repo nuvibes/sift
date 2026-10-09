@@ -27,15 +27,7 @@
 </script>
 
 <script lang="ts">
-	/*
-	 * Where a recognition feature's switch is, on the feature's own pane.
-	 *
-	 * Faces, Smart Search and watermark reading are switched on and off in ONE place, Settings >
-	 * Importing > Recognition, where the three stand together beside the work they start. A second
-	 * switch on each feature's pane would be two doors onto one setting; this row says whether it is on
-	 * and takes somebody to the switch, and it carries the setting's own address, so an older link
-	 * naming the switch on this pane still lands on the row that says where it went.
-	 */
+	/* Where a recognition feature's switch is, on the feature's own pane. */
 	import { SettingLink } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
 	import { explainAbsentRows, hiddenWhile } from '$lib/settings-ui/settings-anchor.svelte';

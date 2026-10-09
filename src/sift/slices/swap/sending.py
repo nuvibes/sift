@@ -385,21 +385,8 @@ class _Sending(_Figures):
         done, turned down, or (for a share) its part landed."""
         live = self.live
         index, ready = out.index, out.ready
-        await conn.send(self._header(out, share))
-        reply = await conn.read(live.owner.watchdog_seconds)
-        if isinstance(reply, Chunk):
-            raise ProtocolError("a chunk from the receiver")
-        if reply.get("skip") == index:
-            await self._settle(out, done=False)
+        if await self._opened(conn, out, share):
             return True
-        if reply.get("file_done") == index:
-            await self._settle(out, done=True)
-            return True
-        have = _int_list(reply.get("have"), below=out.count)
-        for chunk in have:
-            self._count(index, chunk)
-            out.landed.add(chunk)
-            out.pool.discard(chunk)
         todo = deque(chunk for chunk in share if chunk not in out.landed)
         in_flight: dict[int, int] = {}
         while todo or in_flight:
@@ -446,6 +433,27 @@ class _Sending(_Figures):
                 return True
             todo.appendleft(chunk_index)
         return await self._hear_the_end(conn, out)
+
+    async def _opened(self, conn: Conn, out: _Outgoing, share: list[int]) -> bool:
+        """Send a share's header and read the first answer; True when it already ended the file."""
+        live = self.live
+        index = out.index
+        await conn.send(self._header(out, share))
+        reply = await conn.read(live.owner.watchdog_seconds)
+        if isinstance(reply, Chunk):
+            raise ProtocolError("a chunk from the receiver")
+        if reply.get("skip") == index:
+            await self._settle(out, done=False)
+            return True
+        if reply.get("file_done") == index:
+            await self._settle(out, done=True)
+            return True
+        have = _int_list(reply.get("have"), below=out.count)
+        for chunk in have:
+            self._count(index, chunk)
+            out.landed.add(chunk)
+            out.pool.discard(chunk)
+        return False
 
     def _header(self, out: _Outgoing, share: list[int]) -> dict[str, Any]:
         """A share's header: the file's size and its whole digest, or for a receiver that checks

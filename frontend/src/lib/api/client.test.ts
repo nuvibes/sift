@@ -4,8 +4,7 @@ import { UNREACHABLE } from '$lib/shell/unreachable';
 import type { components } from '$lib/api/schema';
 
 /* The wrapper every request goes through. Worth testing directly rather than through a screen:
- * these are the rules that hold for all of them, and a screen only ever exercises one.
- */
+ * these are the rules that hold for all of them, and a screen only ever exercises one. */
 
 const originalFetch = globalThis.fetch;
 
@@ -52,8 +51,8 @@ let wentTo: string[] = [];
 function standingOn(path: string) {
 	wentTo = [];
 	// Written out rather than spread from a URL: a URL's properties live on its prototype, so a
-	// spread of one is an empty object and `origin` comes back undefined, which fails every
-	// request in this file with "Invalid URL" and says nothing about why.
+	// spread of one is an empty object and `origin` comes back undefined, which fails every request
+	// in this file with "Invalid URL" and says nothing about why.
 	vi.stubGlobal('location', {
 		origin: 'http://localhost:5171',
 		href: `http://localhost:5171${path}`,
@@ -72,9 +71,7 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-/* A real address, because the client only accepts real ones. Which one is beside the point in
-   the three tests below: they are about what a refusal turns into, and the request never reaches
-   a server. It stays one name so that an endpoint being renamed changes it in one place. */
+/* A real address, because the client only accepts real ones. */
 const ANY_PATH = '/assets';
 
 describe('the CSRF token', () => {
@@ -127,8 +124,8 @@ describe('the session', () => {
 describe('a parameter', () => {
 	it('is escaped here, so no caller has to remember to', async () => {
 		// A name with an ampersand in it is ordinary. Pasted into an address unescaped it ends the
-		// parameter and the rest of the name becomes something else: a request that quietly asks
-		// a different question. Against a folder name, a `#` asks for another folder.
+		// parameter and the rest of the name becomes something else: a request that quietly asks a
+		// different question.
 		const fetched = respondWith(200);
 
 		await api.get('/auth/me', { query: { term: 'Quillhouse & Sons #2' } });
@@ -139,8 +136,7 @@ describe('a parameter', () => {
 	});
 
 	it('is left out when there is nothing to say, rather than sent empty', async () => {
-		// An absent value and an empty one are different questions. A filter nobody set must not
-		// arrive as a filter set to nothing.
+		// An absent value and an empty one are different questions.
 		const fetched = respondWith(200);
 
 		await api.get('/auth/me', { query: { term: undefined, offset: 0 } });
@@ -149,11 +145,7 @@ describe('a parameter', () => {
 	});
 
 	it('sends every value of a list, as a repeated parameter', async () => {
-		/* Which is what every list route reads as a set of values for one filter. With `set` and
-		   a single value, a caller holding two would have to pick one or join them with a
-		   separator this file knows nothing about. And `set` replaces, so a list of three
-		   would arrive as its last member and ask a much wider question with nothing on screen
-		   to reveal it. */
+		/* Which is what every list route reads as a set of values for one filter. */
 		const fetched = respondWith(200);
 
 		await api.get('/auth/me', { query: { hair_color: ['BLONDE', 'RED'], limit: 24 } });
@@ -173,13 +165,8 @@ describe('a parameter', () => {
 });
 
 describe('what a failure says', () => {
-	/* The one that matters.
-	 *
-	 * The server answers an identical 404 whether a thing is missing or is there and not yours, so
-	 * that asking cannot be a way of finding out. The client can give that away without touching the
-	 * server: "you do not have access to this" tells the person exactly what the 404 was refusing to.
-	 * It is a friendlier message and it is the leak.
-	 */
+	/* The one that matters. The server answers an identical 404 whether a thing is missing or is
+	 * there and not yours, so that asking cannot be a way of finding out. */
 	it('says a thing was not found, and never that it was forbidden', async () => {
 		respondWith(404, { detail: 'Not found.' });
 
@@ -194,8 +181,7 @@ describe('what a failure says', () => {
 	});
 
 	it('does not read the server body into the message either', async () => {
-		// A 404 whose body says too much must not reach the screen through this. The message comes
-		// from the status, not from what came back.
+		// A 404 whose body says too much must not reach the screen through this.
 		respondWith(404, { detail: 'asset 01HX exists but belongs to someone else' });
 
 		const error = await failure(api.get('/assets/01HX'));
@@ -223,13 +209,8 @@ function noSession() {
 }
 
 describe('a session that ended underneath somebody', () => {
-	/*
-	 * An account can be blocked, reset or expired while its owner is looking at a page that was
-	 * drawn while it was still theirs. Nothing on that page is wrong (it was true when it loaded),
-	 * and without this, everything they touched would come back "Please sign in" with nothing on
-	 * screen that took them anywhere, which reads as the app being broken rather than as being
-	 * signed out.
-	 */
+	/* An account can be blocked, reset or expired while its owner is looking at a page that was
+	 * drawn while it was still theirs. */
 	it('sends the browser to the sign-in screen', async () => {
 		noSession();
 
@@ -239,10 +220,8 @@ describe('a session that ended underneath somebody', () => {
 	});
 
 	it('leaves a wrong credential alone, wherever it was checked', async () => {
-		/* Signing in with the wrong password is a 401. So is mistyping your current password on the
-		 * change-password form, and so is a wrong PIN. None of them is a session ending, and none of
-		 * them carries the marker, which is why this is the server's call rather than a list of
-		 * addresses kept in step by hand. */
+		/* Signing in with the wrong password is a 401. So is mistyping your current password on
+		 * the change-password form, and so is a wrong PIN. */
 		respondWith(401);
 
 		await failure(api.post('/auth/login', { body: { username: 'kate', password: 'no' } }));
@@ -253,9 +232,7 @@ describe('a session that ended underneath somebody', () => {
 	});
 
 	it('does not do it for a visitor who was never signed in', async () => {
-		// `/auth/me` is asked on every page load, including on the sign-in screen. It answers 401
-		// for everybody who has not signed in yet, and it does carry the marker, so the guard
-		// below is what stops the sign-in screen navigating to itself.
+		// `/auth/me` is asked on every page load, including on the sign-in screen.
 		standingOn('/login');
 		noSession();
 
@@ -264,18 +241,8 @@ describe('a session that ended underneath somebody', () => {
 		expect(wentTo).toEqual([]);
 	});
 
-	/*
-	 * THE SCREEN THAT CREATES THE ACCOUNT.
-	 *
-	 * `/login` and `/setup` are the same case: nobody is signed in on either, and `/auth/me`
-	 * answers 401 with the session marker on both.
-	 *
-	 * It is a loop rather than a stray navigation. The root layout re-reads the session whenever
-	 * the WINDOW takes focus (which in the desktop app includes clicking into a field), so an
-	 * unguarded `/setup` would do a full page load to `/login` on every click on the account form,
-	 * `/login` would send it back to `/setup` because no admin exists yet, and the half-typed form
-	 * would come back empty.
-	 */
+	/* THE SCREEN THAT CREATES THE ACCOUNT. `/login` and `/setup` are the same case: nobody is
+	 * signed in on either, and `/auth/me` answers 401 with the session marker on both. */
 	it('and does not do it on the screen that creates the first account', async () => {
 		standingOn('/setup');
 		noSession();
@@ -305,14 +272,7 @@ describe('a session that ended underneath somebody', () => {
 });
 
 describe("the server's own words", () => {
-	/* Kept, and kept apart.
-	 *
-	 * Some refusals are written for the person reading them and are the whole product of the
-	 * endpoint: "Sift is already watching that folder as part of Videos" says what to change, where
-	 * "That request was not valid" leaves somebody holding a path and no idea what is wrong with it.
-	 * So the words are carried: next to the one-liner, never instead of it, so that a screen has
-	 * to ask for them and the default stays safe.
-	 */
+	/* Kept, and kept apart. */
 	it('are carried alongside the message, not inside it', async () => {
 		respondWith(400, { detail: 'Sift is already watching that folder as part of Videos.' });
 
@@ -331,8 +291,7 @@ describe("the server's own words", () => {
 	});
 
 	it('are absent when the body is not something this app sent', async () => {
-		// A proxy, a load balancer, anything in front of the app that answers in HTML. Reading that
-		// into a sentence somebody is shown is how a stack trace ends up on a screen.
+		// A proxy, a load balancer, anything in front of the app that answers in HTML.
 		globalThis.fetch = vi.fn(
 			async () => new Response('<html>502 Bad Gateway</html>', { status: 502 })
 		) as unknown as typeof fetch;
@@ -344,9 +303,7 @@ describe("the server's own words", () => {
 	});
 
 	it('are not a way around what a 404 refuses to say', async () => {
-		// The detail exists for refusals somebody can act on. A 404's cannot be one: the whole point
-		// of it is that it says nothing. Nothing here makes it say anything: a screen has to reach
-		// for the detail deliberately, and no screen does that for a read.
+		// The detail exists for refusals somebody can act on.
 		respondWith(404, { detail: 'asset 01HX exists but belongs to someone else' });
 
 		const error = await failure(api.get('/assets/01HX'));
@@ -396,8 +353,7 @@ describe('a multipart body', () => {
 
 describe('a request that must outlive the page', () => {
 	it('is marked keepalive when asked, and is not otherwise', async () => {
-		// The player's last view-report fires while the tab is closing. Without this the browser
-		// cancels the in-flight request and the view is never counted.
+		// The player's last view-report fires while the tab is closing.
 		const fetched = respondWith(204);
 
 		await api.post('/assets/a1/view', { body: { watch_ms: 5 }, keepalive: true });

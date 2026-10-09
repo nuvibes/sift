@@ -1,11 +1,5 @@
 <script lang="ts">
-	/*
-	 * One tag: its files, and everything else those files reach.
-	 *
-	 * A tag is a place rather than only a word that writes a filter into the grid, so there is
-	 * somewhere to say who turns up under it, which sites it comes from, or which shoots carry it.
-	 * It is an entity like the other four, with the same frame and the same tabs.
-	 */
+	/* One tag: its files, and everything else those files reach. */
 	import {
 		EntityEnrichment,
 		autoEnrichRows,
@@ -70,41 +64,19 @@
 	const shown = $derived<RelatedKind>(chosenTab('tag', asked));
 	const fileWords = new TabWords();
 
-	/*
-	 * The numbers beside the tab words.
-	 *
-	 * `follow` asks for all of them in one request the moment the page settles on a subject, so the
-	 * strip opens complete rather than filling in as somebody presses each tab. `saw` is what the
-	 * wall on screen actually found, which is the fresher of the two and wins. Both come from the
-	 * same listings, so they are one population and not two.
-	 */
+	/* The numbers beside the tab words. */
 	const counts = new TabCounts();
 	$effect(() => counts.follow('tag', tagId));
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
 	reloadOnLibraryChange(() => counts.refresh());
 
-	/* How many fields a stash-box disagrees with about this record, out of the strip's own numbers.
-	 *
-	 * Off the counts map rather than asked for separately, because it arrives with every other number
-	 * on that strip (one request, one moment), and because the panel on the History tab OVERWRITES
-	 * it through `saw` the moment it has read them itself. Two readers of one number is how a mark
-	 * comes to stand over a panel that has nothing in it.
-	 *
-	 * Undefined until the strip has answered, which draws no mark: a mark that appeared and then went
-	 * again would report a question that was never there. */
+	/* How many fields a stash-box disagrees with about this record, out of the strip's own
+	 * numbers. */
 	const disagreeing = $derived(counts.current.disagreements ?? 0);
 
 	/* Fetched BY ID, never read out of a wall's page: a wall is one capped page in a chosen
 	   order, so anything ranked past the cap would have no page at all, and anything that
-	   replaced the cached page would take the subject out from under an already-open one.
-
-	   The subject, and the three flags that go with fetching it, shared with every other
-	   entity detail page rather than written out here. See `EntitySubject` for what it decides,
-	   which is one thing: a placeholder belongs on a screen with nothing on it, so re-reading
-	   this row leaves this row on screen.
-
-	   `follow` takes both subscriptions, so a name, a heart or a cover that has moved is re-read
-	   rather than left until somebody reloads the page. */
+	   replaced the cached page would take the subject out from under an already-open one. */
 	const subject = new EntitySubject<Tag>((id) => tags.one(id));
 	subject.follow(() => tagId);
 	/* Read through a `const` so the markup keeps its narrowing (see the person page). */
@@ -113,17 +85,15 @@
 	/** The id the header's Save submits. One form is open at a time, so one name is enough. */
 	const RECORD_FORM = 'tag-record-form';
 
-	/* Deleting the tag. The files it was on are untouched: what goes is the tag, its other names,
-	 * and the rows joining it to files, so those files simply stop carrying it.
-	 */
+	/* Deleting the tag. The files it was on are untouched: what goes is the tag, its other
+	 * names, and the rows joining it to files, so those files simply stop carrying it. */
 	async function removeTag() {
 		await tags.remove(tagId);
 		toasts.show('Deleted. The files it was on are still here.', { tone: 'success' });
 		await leaveFor('/tags');
 	}
 
-	/* Set the still this tag is drawn as, from one of its own files. Admin-only, like the server
-	 * behind it: which picture represents a tag is shared vocabulary the same way its name is. */
+	/* Set the still this tag is drawn as, from one of its own files. */
 	async function makeCover(
 		assetId: string,
 		atMs: number | null = null,
@@ -142,16 +112,13 @@
 		toasts.show('Cover set', { tone: 'success' });
 	}
 
-	/* How many files the Files tab holds while picks filter it (null: nothing picked). Asked of
-	   the same listing the tab reads, once per change of the picks, with a sequence number so a
-	   slower answer for picks moved away from cannot land over the current one. */
+	/* How many files the Files tab holds while picks filter it (null: nothing picked). */
 	let narrowedFiles = $state<number | null>(null);
 	/* The files under this tag AND the tags filed under it: the Files wall's own total, from the
-	   strip's one request. The record's count is this tag's own files only, so it is the stand-in
-	   until the strip answers, never the figure beside a wall that shows more. */
+	   strip's one request. */
 	const filesUnder = $derived(counts.current.files ?? tag?.asset_count);
 	/* How big those same files are: off the strip's answer while its number is the one said, and
-	   off the record while the record's is. Never one source's size beside the other's count. */
+	   off the record while the record's is. */
 	const filesUnderBytes = $derived(
 		counts.current.files !== undefined ? counts.current.files_bytes : tag ? sizeOf(tag) : null
 	);
@@ -180,36 +147,26 @@
 					}),
 					/* And it wears its number: the strip is a MAP of what this page can show,
 					   and one bare word on a row of numbered ones reads as a tab nobody has
-					   looked at yet. It is the length of the very thread the pane draws, read
-					   beside the strip (`readThread`). */
+					   looked at yet. */
 					{
 						id: HISTORY,
 						label: 'History',
 						icon: 'history' as const,
 						href: `/tags/${tagId}?show=${HISTORY}`,
 						count: counts.current.history,
-						/* And a mark where a stash-box disagrees with this record. It is on THIS word
-						   because the panel that settles it is at the top of this tab, so the mark is
-						   what says the question is there without anybody opening anything. Absent at
-						   nought and absent for anyone who may not settle them, which is what an absent
-						   count from the strip already means. */
+						/* And a mark where a stash-box disagrees with this record. */
 						attention: disagreeing > 0 ? waitingText(disagreeing, counts.boxes) : undefined
 					}
 				]
 			: []
 	);
 
-	/* A tag has a record.
-	 *
-	 * Beyond its name and colour, what it means, the other words for the same thing and its one
-	 * category are three facts worth writing down: a tag whose meaning is recorded once is a tag two people use the same way.
-	 */
+	/* A tag has a record. */
 	let editing = $state(false);
 
 	/* What this page can do to this tag, behind the one door every entity page wears. */
 	/* WHERE THIS ROW STANDS WITH ENRICHMENT, so the two rows that send its name outside are
-	   drawn refused rather than refused on the press. See `EntityEnrichment`: one route answers
-	   it, and pressing the row below writes the reply back. */
+	   drawn refused rather than refused on the press. */
 	const enrichment = new EntityEnrichment('tag');
 	enrichment.follow();
 	const enrichState = $derived(enrichment.of(tag?.id));
@@ -224,8 +181,7 @@
 		if (session.isAdmin) loadEnrichBoxes();
 	});
 	/* AUTO-ENRICH, THE SAME ROWS EVERY SURFACE DRAWS: every box, then each box by name, and the
-	   box handed on. With no list it is a plain press, which asks what Settings says. See
-	   `autoEnrichRows`, which also says why there is no "Sift's own" row. */
+	   box handed on. */
 	function autoEnrichThis(id: string, box: string = ''): void {
 		if (enrichRefused) return void sayKeptLocal();
 		void enrichMany('tag', [id], box);
@@ -281,22 +237,12 @@
 	/** Whether the picture chooser is open. Opened by the pencil on the cover. */
 	let pickingPicture = $state(false);
 	let sources = $state<StashBoxLink[]>([]);
-	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`).
-	   Null for everything nothing recorded, which is most of a library. */
+	/* Which box MADE this thing, read in the same answer the links come in (see `sourcesOf`). */
 	let madeBy = $state<Maker | null>(null);
 	let sourcesFor = $state('');
 	let lookUpOpen = $state(false);
 
-	/*
-	 * Opened by the address, so the wall's Enrich verb can hand a tag straight to the chooser.
-	 *
-	 * The other two record pages answer `?enrich=1` the same way, so the Tags wall can offer the
-	 * chooser beside Auto-enrich as the other walls do.
-	 *
-	 * Once, on arrival, and not as a `$derived`: this is a door being opened, not a fact about the
-	 * page. Left reactive, closing the sheet with the parameter still in the address would
-	 * immediately re-open it. The same shape, and the same note, as the Sites page.
-	 */
+	/* Opened by the address, so the wall's Enrich verb can hand a tag straight to the chooser. */
 	$effect(() => {
 		if (untrack(() => lookUpOpen)) return;
 		// Refused before the sheet opens, even where the address asked for it. See the Site page.
@@ -344,13 +290,8 @@
 		madeBy = held.madeBy;
 	}
 
-	/* The one save, for the whole record.
-	 *
-	 * Everything a tag holds is on its own row, so this is a single write rather than the diff a
-	 * person's page has to do across three tables. The name rides with it because the route that
-	 * takes the record is the route that renames, and the reply carries the record back, so what
-	 * is on screen after a save is what was STORED rather than what was typed.
-	 */
+	/* The one save, for the whole record. Everything a tag holds is on its own row, so this is a
+	 * single write rather than the diff a person's page has to do across three tables. */
 	async function saveRecord(draft: Record<string, unknown>) {
 		if (!tag) return;
 		/* A tag filed under its own branch is refused in a sentence the form shows as it came. */
@@ -491,15 +432,7 @@
 			{/snippet}
 		</PageFrame>
 	{:else if showingHistory}
-		<!--
-			The thread, in the frame every other screen uses. Not a wall: nothing to select, nothing
-			to page and nothing to count, so the grid's furniture would be furniture with no work
-			behind it. The identity band stays: this is a different view OF the thing, not a
-			different page.
-
-			WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at the
-			page's own left edge where the tabs and the title are.
-		-->
+		<!-- The thread, in the frame every other screen uses. -->
 		<!-- History draws the identity and the tab strip in the shape every other tab does
 		     (`PageAbove`, then the strip as the heading row), so the strip stands at one height
 		     on every tab. -->
@@ -511,11 +444,10 @@
 			{#snippet children()}
 				<EntityHistory subject="tag" id={tagId} name={tag.name}>
 					{#snippet waiting()}
-						<!-- Where a stash-box disagrees with THIS record, at the top of the thread rather
-						     than in the header. Draws nothing at all when nothing does, which is the
-						     ordinary case. Admin-only: what a box wrote is shared vocabulary, like every
-						     other stash-box control, and the strip answers None rather than a number for
-						     anybody else, so the mark and the panel appear and disappear together. -->
+						<!--
+							Where a stash-box disagrees with THIS record, at the top of the thread
+							rather than in the header.
+						-->
 						{#if session.isAdmin}
 							<Disagreements
 								subject="tag"
@@ -556,9 +488,9 @@
 						{/snippet}
 						{#snippet menuExtra(item)}
 							{#if session.isAdmin}
-								<!-- The same verb, in the same place, as a person's and a site's. A tag has a
-							     picture like every entity with a page, and a wall of tags is where a picture helps
-							     most: a tag's name says less about what is under it than a person's does. -->
+								<!--
+									The same verb, in the same place, as a person's and a site's.
+								-->
 								<ContextMenuItem
 									label={tag?.cover_asset_id === item.id ? 'This is the cover' : 'Use as the cover'}
 									icon="star"

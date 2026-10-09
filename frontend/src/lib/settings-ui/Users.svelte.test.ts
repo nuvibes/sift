@@ -1,11 +1,4 @@
-/* The screen that makes a guest, and the promises its words make.
- *
- * The wording is asserted as hard as the behaviour here, and deliberately. This is the only place
- * a user is created in the whole application, and what it says decides what an admin believes
- * about the password they are about to choose for somebody else: whether it will be forced to
- * change, whether an email is going anywhere, what blocking somebody actually does to a browser
- * they left open. Every one of those is a sentence, and every one of them can be wrong.
- */
+/* The screen that makes a guest, and the promises its words make. */
 
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,9 +61,8 @@ async function openMenu(): Promise<void> {
 
 /** One of the actions, by the words on it. */
 function action(words: string): HTMLElement | undefined {
-	// The icon on a menu row is a LIGATURE, so its glyph is a private-use character sitting in front
-	// of the words: part of the row's own text, which `trim()` does not touch. Matching on the label
-	// alone would find nothing, which reads as the row having disappeared.
+	// The icon on a menu row is a LIGATURE, so its glyph is a private-use character sitting in
+	// front of the words: part of the row's own text, which `trim()` does not touch.
 	return [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
 		(item) => item.textContent?.replace(/[\uE000-\uF8FF]/g, '').trim() === words
 	);
@@ -92,9 +84,8 @@ function cancel(): HTMLElement {
 	return button as HTMLElement;
 }
 
-/* The dialog leaves on a transition rather than in the same frame, so "it went" is a thing to wait
- * for. Polled with a deadline rather than a fixed number of ticks: a tick count is a guess about
- * how long an animation takes, and the guess is what makes a test like this flaky later. */
+/* The dialog leaves on a transition rather than in the same frame, so "it went" is a thing to
+ * wait for. */
 async function until(condition: () => boolean, within = 2000): Promise<void> {
 	const deadline = Date.now() + within;
 	while (!condition() && Date.now() < deadline) {
@@ -112,17 +103,13 @@ beforeEach(() => {
 
 afterEach(() => {
 	host?.remove();
-	/* And everything portalled out of it. The confirm renders at the end of the document rather
-	 * than where it was written, so removing the host leaves it behind, and the next test then
-	 * reads a dialog the last one opened as though it were its own. */
+	/* And everything portalled out of it. */
 	document.body.innerHTML = '';
 });
 
 describe('what the screen says about a new guest', () => {
 	it('says the admin chooses the first password and the guest can change it', async () => {
-		/* The decision this screen has to communicate honestly. Nothing forces a change, so nothing
-		 * here may imply one: an admin who believes the password they said out loud expires on
-		 * first use will keep handing out the same one. */
+		/* The decision this screen has to communicate honestly. */
 		await show([ADMIN]);
 
 		expect(text()).toContain('first password');
@@ -139,8 +126,7 @@ describe('what the screen says about a new guest', () => {
 
 	it('says a guest sees nothing until something is shared', async () => {
 		/* Default-deny is the single most surprising thing about this feature: adding a user
-		 * gives that person access to nothing whatsoever. An admin who does not know that has added
-		 * a guest and will believe the library is now readable by them. */
+		 * gives that person access to nothing whatsoever. */
 		await show([ADMIN]);
 
 		expect(text()).toContain('nothing');
@@ -151,8 +137,7 @@ describe('what the screen says about a new guest', () => {
 describe('the list', () => {
 	it('shows the guests and leaves the admin out of the manageable rows', async () => {
 		/* An admin is named on the screen (they are signed in as one and the screen says so),
-		 * but they are not a row with Block and Remove beside them. The server refuses either way;
-		 * this is about not offering a button that cannot work. */
+		 * but they are not a row with Block and Remove beside them. */
 		await show([ADMIN, GUEST]);
 
 		expect(text()).toContain('sam');
@@ -221,14 +206,9 @@ describe('the confirmation in front of removing somebody', () => {
 	});
 
 	it('and can be asked again after saying no once', async () => {
-		/* The bug this pins, and it is the quiet kind.
-		 *
-		 * Deriving the dialog's open state from "is somebody being removed" means the dialog owns
-		 * that flag while it is up and this screen never hears about Cancel. The user is still
-		 * the one being removed, so the expression handed down has not changed, so nothing is
-		 * pushed back, and the Remove button for that row silently stops working for the rest of
-		 * the session. Nothing looks broken; the button simply does nothing.
-		 */
+		/* The bug this pins, and it is the quiet kind. Deriving the dialog's open state from "is
+		 * somebody being removed" means the dialog owns that flag while it is up and this screen
+		 * never hears about Cancel. */
 		await show([ADMIN, GUEST]);
 		await press('Delete');
 		cancel().click();
@@ -260,18 +240,7 @@ describe('when the users cannot be loaded', () => {
 
 describe('the guest rows are the shared row', () => {
 	it('opens its verbs from a right-click as well as from the three dots', () => {
-		/*
-		 * A list of rows carrying verbs must answer the right-click too. An `<li>` of its own with
-		 * a bare `RowMenu` hung on it would make the three dots work and the gesture every other
-		 * row in the app answers do nothing, and nothing could say so, because a hand-written row
-		 * is invisible to a gate that counts shared ones.
-		 *
-		 * Asserted on the source rather than by dispatching `contextmenu`, for the reason
-		 * `PickPicture.contract.test.ts` gives: what is being held is that this screen goes through
-		 * the shared component, and a rendered assertion would pass just as well against a second
-		 * hand-written menu that happened to open. `DataRow` has its own test that verbs given to
-		 * it reach both doors; this is the half that says this screen hands them over.
-		 */
+		/* A list of rows carrying verbs must answer the right-click too. */
 		const source = readFileSync('src/lib/settings-ui/Users.svelte', 'utf8');
 		expect(source).toContain('<DataRow');
 		expect(source).toMatch(/<DataRow[\s\S]*?verbs=\{userVerbs\(user\)\}/);
@@ -279,8 +248,7 @@ describe('the guest rows are the shared row', () => {
 	});
 
 	it('draws the list through DataRows, which holds it still under a pointer', () => {
-		// A live list that re-sorts under the cursor moves the row somebody is reaching for. The
-		// shared row is the only place the rule against it is written.
+		// A live list that re-sorts under the cursor moves the row somebody is reaching for.
 		const source = readFileSync('src/lib/settings-ui/Users.svelte', 'utf8');
 		expect(source).toContain('<DataRows');
 	});

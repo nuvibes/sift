@@ -1,23 +1,9 @@
 <script lang="ts">
 	/*
-	 * One tab's worth of an entity page: the things of some other kind that this thing's files reach.
-	 *
-	 * The same `EntityCard` the People, Tags, Sites and Collections walls draw, not a second
-	 * arrangement of it, so a person's card looks the same whether it is on the People wall or on
-	 * a tag's "People" tab. A wall that redrew its own copies would be one more implementation to
-	 * keep in step, which is the fault the whole design ratchet exists to prevent.
-	 *
-	 * ## The count under each name is the count in THIS context
-	 *
-	 * A tag on Jane's page reading "12" means twelve of Jane's files, not twelve in the library. The
-	 * server does the filtering inside the one statement that decides what may be seen, so the
-	 * number and the cards come from one question, and this component never computes a count of
-	 * its own from the rows it happens to be holding.
-	 *
+	 * One tab of an entity page: the things of another kind this thing's files reach, as the same
+	 * EntityCards the walls draw. A card's count is the count in this context, from the server.
 	 * NOT ON THE GALLERY: it fetches on mount, so an entry for it would draw whatever the live
-	 * library happened to hold rather than a fixed example: a gallery that changes with the data
-	 * is not showing the component. What it draws IS on the gallery: `EntityGrid` and `EntityCard`,
-	 * which is everything this composes, and `Tabs` beside them.
+	 * library held; EntityGrid, EntityCard and Tabs are there.
 	 */
 	import EntityCard from '$lib/components/entity/EntityCard.svelte';
 	import EntityGrid from '$lib/components/entity/EntityGrid.svelte';
@@ -69,40 +55,31 @@
 	import { emptyWallSays } from '$lib/components/shell/wall-words';
 
 	interface Props {
-		/** What kind of page this wall is on. */
 		on: EntityKind;
-		/** The id of the thing the page is about. */
 		id: string;
 		/** Its NAME, which is what a card carries away as a filter. See `hrefFor`. */
 		named?: string;
 		/** Which wall to draw. Never `files`: the media grid draws that one. */
 		showing: Exclude<RelatedKind, 'files'>;
-		/** The heading, which is the chosen tab's own word. */
 		title: string;
 		icon: IconName;
 		/** The page's tab strip, drawn inline with this wall's heading exactly as it is on Files. */
 		beside?: Snippet;
 		/** Let the tab row name the section instead of the title. See `PageHeader.titleHidden`. */
 		titleHidden?: boolean;
-		/** The page's identity band. Drawn on every tab, because whose page this is does not
-		 *  change with what is being shown OF them. */
+		/** The page's identity band, on every tab. */
 		above?: Snippet;
 		/** The trail for the frame's band, the same one on every tab of this page. */
 		crumbs?: Crumb[];
 		/** What the wall found, and whether words narrowed it: then it is not the tab's number. */
 		oncount?: (total: number, searched: boolean) => void;
 		/**
-		 * What the PAGE knows about one card, drawn under that card's facts. See
-		 * `EntityCard.beneath`. A person's page hands its handles on each Site to the Sites tab and a
-		 * Site's page hands each person's handles on it to the People tab; nothing else does. Handed
-		 * the row and the kind of card it is drawn as, which is the tab it was READ for: while the
-		 * next tab's answer is coming, the last tab's cards are still on screen (see `held`).
+		 * What the page knows about one card, drawn under its facts; handed the kind it was read
+		 * as.
 		 */
 		under?: Snippet<[RelatedRow, Exclude<RelatedKind, 'files'>]>;
 		/**
-		 * Cards the PAGE draws after this wall's own, on its last page: a Site's People tab ends
-		 * with the usernames on it that belong to nobody yet. `trailing` is how many, so a wall
-		 * holding only those is not drawn as empty.
+		 * Cards the page draws after this wall's, on its last page (a Site's unclaimed usernames).
 		 */
 		after?: Snippet;
 		trailing?: number;
@@ -130,21 +107,11 @@
 	let loading = $state(true);
 	let failed = $state<string | null>(null);
 
-	/*
-	 * Which tab the rows on screen were read for, and where in it.
-	 *
-	 * Not always the tab chosen: the last tab's cards stay until the new answer lands (`held`), drawn
-	 * as what they are. A card reads this; the heading, the empty words and the bar read `showing`.
-	 */
+	/* Which tab the rows on screen were read for; the last tab's stay until the answer lands. */
 	let rowsOf = $state<Exclude<RelatedKind, 'files'>>(untrack(() => showing));
 	let rowsAt = $state(0);
 
-	/*
-	 * Bumped when an answer lands on a wall that had nothing on it, which is when the wall
-	 * ARRIVES and plays its entrance. A tab changed or a page turned keeps the cards on screen
-	 * until the answer, so the wall never went: the dimming lifting is the arrival, and a fade from
-	 * nothing played over it would be a flash.
-	 */
+	/* Bumped when an answer lands on an empty wall, the only arrival that plays the entrance. */
 	let entrance = $state(0);
 
 	/** The last answer is on screen while the next is coming. See `EntityGrid.held`. */
@@ -177,67 +144,31 @@
 		return `${where.on}/${where.id}/${where.showing}\n${where.sort}\n${where.words}`;
 	}
 
-	/*
-	 * What one row of this wall is called, which is not what the tab is called.
-	 *
-	 * The tab's heading is always a plural, and on a person's own page the phrase "Seen with", so
-	 * it cannot be the noun: the selection bar is a sentence about the rows picked ("1 person
-	 * selected"), so its words come off the kind being drawn (see `nounFor`). The pager's empty
-	 * readout takes the noun too, so the two agree.
-	 */
+	/* What one row is called, for the bar's sentence and the pager; not the tab's heading. */
 	const rowNoun = $derived(nounFor(showing));
-	/* The pager counts the rows on screen, so while a tab's answer is coming it says them in their
-	   own noun. */
 	const heldNoun = $derived(nounFor(rowsOf));
 
-	/* Which page was last asked for, and at what size, so a settled screen does not ask twice. The
-	   guard the People wall carries, and it is load-bearing for the same reason: the fetch writes
-	   state this effect reads. */
+	/* The page last asked for, so a settled screen asks once: the fetch writes state read here. */
 	let askedFor = -1;
 	let askedSize = -1;
 	let askedWhere = '';
 
 	/*
-	 * Which subject and tab the reset has been done for, a different question from `askedWhere`
-	 * above, which is which one was fetched.
-	 *
-	 * Kept as two fields: with one, the reset would write the new tab where the loader compares,
-	 * the loader would decide it had already fetched, no request would go out, the generation
-	 * counter would not move, and the previous tab's answer would draw on the empty screen.
-	 * `RelatedWall.svelte.test.ts` holds this.
+	 * What the reset was done for, kept apart from what was fetched (RelatedWall.svelte.test.ts).
 	 */
 	let resetFor = '';
 
-	/*
-	 * Rising counter, so a slower answer for the tab somebody has already left cannot land under the
-	 * tab they are now on. The same guard the person page uses for aliases, and for the same reason:
-	 * without it the previous wall's cards appear under this wall's heading.
-	 */
+	/* So a slower answer for a tab already left cannot land under this one. */
 	let generation = 0;
 
-	/*
-	 * One read, asked two ways.
-	 *
-	 * Loud is a tab or a page arriving: the cards on screen are kept, quieter and out of reach,
-	 * until the answer lands, so the wall is never empty between two answers. QUIET is a re-read of
-	 * the tab already on screen, and it changes nothing until the new rows land: nobody asked to be
-	 * shown a loading state for a pin.
-	 *
-	 * The quiet one is why this is a function rather than only an effect. A pin is the one opinion
-	 * that changes WHERE a card belongs rather than what it looks like, and this wall is ordered by
-	 * it on the server, so settling the row in place, which is all every other opinion needs,
-	 * would move the mark and leave the card exactly where it was until somebody navigated away and
-	 * back.
-	 */
+	/* One read, two ways: loud keeps the old cards dimmed until the answer; quiet changes nothing
+	   until the rows land, for a pin, which moves a card in the server's order. */
 	async function read(where: Where, { quiet = false } = {}) {
 		const wanted = ++generation;
 		if (!quiet) loading = true;
 		failed = null;
 		try {
-			/* Through the paging, so the first measurement of a visit trims the rows held or asks for
-			   the remainder only, instead of asking for the whole page again. See `CardPaging.fill`.
-			   The question is the subject and the tab; this wall has no anchor, so every ask is an
-			   offset. */
+			/* Through the paging, so a first measurement trims or extends rather than re-asking. */
 			const page = await paging.fill(
 				keyOf(where),
 				() => rows,
@@ -263,9 +194,7 @@
 			oncount?.(page.total, Boolean(where.words));
 		} catch {
 			if (wanted !== generation) return;
-			// A quiet re-read that fails leaves what is on screen alone: it is still the truth as of
-			// a moment ago, and blanking a wall somebody is looking at is worse than being stale.
-			// A loud one says so, and takes the last tab's cards away with it.
+			// A quiet re-read that fails leaves the wall alone; a loud one says so.
 			if (!quiet) {
 				failed = 'That could not be loaded.';
 				rows = [];
@@ -277,20 +206,8 @@
 		}
 	}
 
-	/*
-	 * A different tab, or a different subject, starts at the beginning.
-	 *
-	 * Its own effect and BEFORE the one that fetches, because Svelte runs effects in the order they
-	 * were created: the reset lands in the same flush as the change that caused it, so the load
-	 * below never asks for page four of a wall it has just arrived at. Left in the loader as a
-	 * branch, the reset would be a write to state that same effect reads, which is the shape that
-	 * runs itself forever.
-	 *
-	 * And BEFORE the markup (`$effect.pre`), so the wall is marked as waiting in the same draw
-	 * that changes the heading. The rows stay: they are drawn as the kind they were read for
-	 * (`rowsOf`), never as the new tab's cards, which would ask a person's card for
-	 * `/api/sites/<person>/cover` with a link to a Site that is not there.
-	 */
+	/* A different tab or subject starts at the top: a pre-effect before the loader, so the reset
+	   lands in the same flush and draw; old rows stay drawn as the kind they were read for. */
 	$effect.pre(() => {
 		const where = keyOf(here());
 		untrack(() => {
@@ -298,8 +215,7 @@
 			resetFor = where;
 			paging.offset = 0;
 			loading = true;
-			/* The Loops tab is the media grid, not cards, so there is nothing of it to keep on
-			   either side: its rows are never drawn here. */
+			/* The Loops tab is the media grid; its rows are never drawn here. */
 			if (showing === 'loops' || rowsOf === 'loops') {
 				rows = [];
 				total = 0;
@@ -308,18 +224,14 @@
 	});
 
 	$effect(() => {
-		/* Named so the effect re-runs when the page moves, and the SIZE with it, because a taller
-		   window or a wider tile holds a different number of whole rows and that is a reason to
-		   re-ask. */
+		/* The page and its size, so a resize re-asks. */
 		const wanted = paging.offset;
 		const size = paging.size;
 		const where = here();
 		const key = keyOf(where);
 		untrack(() => {
 			if (askedWhere === key && askedFor === wanted && askedSize === size) return;
-			/* Only the SIZE moved: the first measurement of a visit, or a resize. Read quietly: a
-			   loud read empties the wall first, and `fill` can only trim or extend rows it still
-			   holds, so emptying them would turn a trim into a second request for the page. */
+			/* Only the size moved: read quietly, so `fill` can trim rows it still holds. */
 			const resized = askedWhere === key && askedFor === wanted;
 			askedWhere = key;
 			askedFor = wanted;
@@ -328,8 +240,7 @@
 		});
 	});
 
-	/* And again, quietly, when the library moves: a username given to somebody, a share taken back.
-	   Every other wall follows the library; a tab showing the same cards must too. */
+	/* And again, quietly, when the library moves. */
 	reloadOnLibraryChange(() => void read(here(), { quiet: true }));
 
 	/* The page's own cards go after the last of this wall's, so they are drawn once, at the end. */
@@ -361,17 +272,7 @@
 
 	$effect(() => () => screenBar.release(mine));
 
-	/*
-	 * Where a card leads, from the table that also decides what the card counts.
-	 *
-	 * The same fact is needed by the request that fills the wall: a press carrying a filter
-	 * means the number on the card is the size of the filtered wall. So both readers ask
-	 * `related.svelte`, where each wall's reasons are written beside its row, and a card never
-	 * prints one wall's count over a press that opens another.
-	 *
-	 * Loops are absent because they are not cards: a wall of marks is the media grid, which owns
-	 * opening a file at a moment. See below.
-	 */
+	/* Where a card leads, from related.svelte, which also decides what the card counts. */
 	function hrefFor(row: RelatedRow): string {
 		return nothingHere(row)
 			? relatedHref(on, rowsOf, row.id)
@@ -379,19 +280,7 @@
 	}
 
 	/*
-	 * A card with nothing here: its count in this context is nought, so a pick would filter the
-	 * files to none.
-	 *
-	 * A Site's People wall counts people with a username on it as well as people with files under
-	 * it, and a stash-box's answer can write somebody's username with nothing filed, so a Site can
-	 * hold many people and no files. A card whose number here is nought does not pick: its picture
-	 * is the link it is on every wall that does not pick, to the thing's own page without this page
-	 * carried as a filter (carried, it would open filtered to the same nothing). A disabled press
-	 * would make the biggest target on the card dead.
-	 *
-	 * Read off the number the card already prints, the count of exactly what a pick would filter to
-	 * (`SPECS.carries`), so the card's words and what its picture does cannot disagree. A row with
-	 * no count at all is not nought and keeps the pick.
+	 * A card counting nought here does not pick, which would filter to none; its picture is a link.
 	 */
 	function nothingHere(row: RelatedRow): boolean {
 		return (row.item_count ?? row.asset_count) === 0;
@@ -400,26 +289,15 @@
 	/** The line under the name. Whatever this kind of thing is counted in. */
 	function detailFor(row: RelatedRow): string {
 		const count = row.item_count ?? row.asset_count ?? 0;
-		// Through the one sentence every wall draws, so the figure is grouped the way it is on the
-		// username line under this card, rather than "3007 files from this Site" directly above
-		// "posted 3,003 files": two ways of writing one kind of number on one card.
-		// A Photo Set holds pictures; a collection holds files, and its card on its own wall says
-		// so, so it says so here too rather than calling the same files two things.
+		// The one sentence every wall draws; a Photo Set holds pictures, a collection files.
 		const counted = rowsOf === 'photo_sets' ? picturesSaid(count) : filesSaid(count);
-		// A Site's People tab: this person's files FROM THIS SITE, however they arrived; the username
-		// lines under the card count the files posted under one username.
+		// A Site's People tab: this person's files from this Site.
 		const said = on === 'site' && rowsOf === 'people' ? `${counted} from this Site` : counted;
 		// And how big those same files are, off the same row as the count.
 		return withSize(said, count, sizeOf(row));
 	}
 
-	/*
-	 * What to say when there is nothing, in words that name what is missing.
-	 *
-	 * A sentence that names what was looked for and where. An empty wall is the screen a person
-	 * reads most carefully, because they are trying
-	 * to work out whether it is broken.
-	 */
+	/* An empty wall names what was looked for and where. */
 	const emptyWords = $derived(
 		emptyWallSays(
 			rowNoun.many,
@@ -435,23 +313,8 @@
 		)
 	);
 
-	/*
-	 * Picking rows here, and the verbs that act on what is picked.
-	 *
-	 * Cards drawn with no menu, no selection and nothing to press would make the same tag a thing
-	 * you can act on on the Tags wall and a thing you can only look at on a person's Tags tab.
-	 *
-	 * The gesture and the selection are the SHARED ones, so a person who has learned long-press and
-	 * ctrl-click on a wall of files has learned them here. Nothing about them is re-implemented.
-	 *
-	 * ## Why the menu here is shorter than the wall's, and why that is right rather than a stub
-	 *
-	 * `entityVerbs` offers a verb only where it is handed a handler, which is the mechanism the four
-	 * walls already use to differ from each other: a tag cannot carry a tag, a collection has no
-	 * heart. This wall passes the verbs that need nothing but the row: a pin is an address and a
-	 * boolean. Rename, Share, Merge and Delete each open a flow that lives on the thing's own wall,
-	 * and half-building one here would be a second copy of it. They arrive by being handed in.
-	 */
+	/* The shared gesture and selection, and the verbs that need only the row; the flows that live
+	   on the thing's own wall arrive by being handed in. */
 	const selection = new Selection();
 	const gesture = new TileGesture(selection, () => rows.map((row) => row.id));
 	const pinnable = $derived(pinnableOf(showing));
@@ -462,22 +325,12 @@
 	}
 
 	/*
-	 * Every verb the thing on this card has, from the one registry that answers for all five kinds.
-	 *
-	 * The flows (Rename, Share, Merge, Delete) belong to the kind, not to any one wall, so they
-	 * live in `wall-verbs.svelte.ts` and `EntityWallFlows` draws the sheets; a person's card offers
-	 * the same verbs on a tag's People tab as on the People wall.
-	 *
-	 * The pin and Hidden are the walls' own too: a pin moves the row, so the tab is read again.
+	 * Every verb the card's thing has, from wall-verbs.svelte.ts, the one registry for all kinds.
 	 */
 	const wallKind = $derived(kindOf(showing));
 	const verbs = new WallVerbs({
 		kind: () => wallKind ?? 'person',
-		/* NO COUNT, deliberately, and it is the one thing this wall must not hand over: the number
-		   under a card here is the count IN THIS CONTEXT: a person on a tag's People tab reads the
-		   files of hers that carry that tag, while deleting her takes her off every file she is
-		   on. Passed along, the confirmation would understate the act by whatever the filtering
-		   was, and both numbers look perfectly reasonable on screen. See `WallRow.count`. */
+		/* No count: here it is in context, and a delete's confirmation would understate the act. */
 		rows: () =>
 			rows.map((row) => ({
 				id: row.id,
@@ -486,15 +339,10 @@
 				hidden: hiddenOf(row),
 				rating: row.rating ?? null,
 				pinned: row.pinned ?? false,
-				/* AND THE PICTURE, for the merge sheet, which reads a card by its face before its
-				   name. Only for the two kinds a merge exists for, and by the same two builders
-				   every other picker uses: a third spelling of "which picture does a person
-				   have" is a third answer to it. A row here already carries the cover columns:
-				   `EntityCard` on this very wall is drawn from them. */
+				/* And the picture, for the merge sheet, by the builders every picker uses. */
 				picture: pictureOf(row)
 			})),
-		/* Quietly: the rows on screen stay until the new ones land. A verb that wrote something is
-		   not a reason to blank a wall somebody is looking at. */
+		/* Quietly: the rows stay until the new ones land. */
 		changed: () => void read(here(), { quiet: true }),
 		clear: () => selection.clear(),
 		get pins() {
@@ -507,21 +355,14 @@
 		return row.vault ?? row.hidden ?? false;
 	}
 
-	/* What a row is drawn by, in the two words the pickers already use.
-	 *
-	 * Nothing for the kinds that cannot be merged: the sheet is never opened for them, and a
-	 * picture built for a tag or a collection would be a picture nothing reads. */
+	/* A row's picture, only for the kinds a merge exists for. */
 	function pictureOf(row: RelatedRow) {
 		if (wallKind === 'person') return personRow(row).picture;
 		if (wallKind === 'site') return siteRow(row).picture;
 		return undefined;
 	}
 
-	/* WHETHER THE ENRICH ROWS ARE DRAWN REFUSED on this tab's rows.
-	 *
-	 * Read off the same holder the handlers refuse from, so the row somebody presses and the row
-	 * that greys out cannot disagree. Nothing at all on a tab whose rows no stash-box is ever told
-	 * about: a wall of collections has no `enrichAs` and therefore no verb to grey. */
+	/* Whether the Enrich rows are refused, from the holder the handlers refuse from. */
 	function enrichState(ids: string[]): {
 		keptLocal?: boolean;
 		enrichRefused?: boolean;
@@ -546,26 +387,9 @@
 		if (session.isAdmin && verbs.facts.enrichAs) loadEnrichBoxes();
 	});
 
-	/*
-	 * Picking a card to filter this page's files by.
-	 *
-	 * A press on a card's picture picks it, and the pick is the filter from that moment: the card
-	 * takes the light accent wash and a filled filter glyph, the address gains the filter parameter
-	 * (`people=`, `tags=` ...), and the Files tab is filtered to files carrying every pick when it
-	 * is opened, with no second press. A second press on the picture takes the pick off; the
-	 * control beside the tab words clears them all. A press on the name opens the card's own page,
-	 * still carrying this page as a filter (see `hrefFor`); the keyboard reaches the picture as a
-	 * toggle (Space or Enter) and the name as a link.
-	 *
-	 * The picture because it is the big target and picking is what this wall is for; the name was
-	 * already a link. The verb selection still wins while running: long press or ctrl-click starts
-	 * it, and while anything is verb-selected a plain click adds to that (the gesture's capture
-	 * handler stops the press before the picture sees it), as on every wall of tiles.
-	 *
-	 * The picks are the address (see `picks.ts`), written with `replaceState`: a pick is not a
-	 * place to go Back to one click at a time, but the tab they were gathered on is, and moving to
-	 * the Files tab is a real navigation, so Back from it returns here with every pick.
-	 */
+	/* Picking a card filters this page's files: a press on its picture toggles the pick (wash and
+	 * mark, a parameter in the address through `replaceState`), the name stays a link, and a verb
+	 * selection in progress wins. See `picks.ts`. */
 	const pickField = $derived(pickFieldOf(showing));
 	/* The picks the cards on screen wear, which are their own tab's while a new tab is coming. */
 	const drawnPickField = $derived(pickFieldOf(rowsOf));
@@ -581,26 +405,12 @@
 		});
 	}
 
-	/* The very same filtering the entity walls ask with, as the media grid's query. Built by the
-	   one function rather than assembled here, so a tag's Loops tab and a tag's Tags tab cannot
-	   come to disagree about what "on this tag" means. */
+	/* The entity walls' own filtering, as the media grid's query. */
 	const narrowing = $derived(Object.fromEntries(narrowingFor(on, id, showing)));
 	const loopsAsked = $derived(words ? { ...narrowing, [NAME_WORDS]: words } : narrowing);
 
-	/*
-	 * The same page in the words the FILTER BAR reads, for the Loops tab's panel.
-	 *
-	 * The route is asked by id, which is right for it (a name is ambiguous and the page holds the
-	 * id) and which the query language does not read. The bar counts its columns and keeps its
-	 * filters in that language, so it is told the page by NAME, the way a card on this wall carries
-	 * the page away as a filter (`relatedHref`). Without it the panel over a person's loops would
-	 * count the marks of the whole library.
-	 *
-	 * The one thing it cannot say is a TAG reaching a mark directly: the language describes files,
-	 * so a tag's Loops tab counts the files carrying the tag and not the videos reached only through
-	 * a tagged mark. The wall itself still shows those; only the numbers in the columns leave them
-	 * out.
-	 */
+	/* The page by name, as the filter bar reads it, so the Loops panel counts this page's marks;
+	   a tag reaching a mark directly cannot be counted in that language. */
 	const filesQuery = $derived(named ? { [fieldOf(on)]: named } : undefined);
 </script>
 
@@ -656,13 +466,8 @@
 			{@render searchBox()}
 		{/snippet}
 		{#snippet pager()}
-			<!--
-				In the frame's footer, where every other wall's is. What it pages is what the
-				heading counts, so the two numbers agree: `total` is the scoped total the same
-				request answered with.
-			-->
-			<!-- While a tab's answer is coming it reads the cards still on screen, in their own
-			     noun, and its presses wait: they would page the new tab by the old one's total. -->
+			<!-- In the frame's footer, paging what the heading counts; while a tab's answer is coming it
+			reads the cards on screen and its presses wait. -->
 			<Pager
 				offset={rowsAt}
 				shown={rows.length}
@@ -708,22 +513,18 @@
 				picked={drawnPickField !== null && isPicked(picks, drawnPickField, row.name)}
 				onpick={pickField && !nothingHere(row) ? () => pickRow(row) : undefined}
 			>
-				<!-- Declared for every card, and it renders nothing where the page handed nothing or
-				     has nothing for this row: a snippet cannot be bound to one row and passed on, so
-				     the row is closed over here. -->
+				<!-- Declared for every card; it renders nothing where the page handed nothing. -->
 				{#snippet beneath()}
 					{@render under?.(row, rowsOf)}
 				{/snippet}
-				<!-- A Music tab's card says who the song credits under its name, as on the Music
-				     wall. Every card on the tab is a song, so every one draws the line. -->
+				<!-- A song card names who the song credits. -->
 				{#snippet byline()}
 					{#if rowsOf === 'songs'}
 						<SongArtists artists={row.artists ?? []} />
 					{/if}
 				{/snippet}
 				{#snippet menu()}
-					<!-- The same declared verbs the bar below draws, as menu rows. Not written out
-					     again, which is what stops the two coming apart. -->
+					<!-- The same declared verbs the bar draws. -->
 					<VerbMenuItems
 						ids={targetIds(row.id)}
 						subjectId={row.id}
@@ -748,8 +549,7 @@
 	</EntityGrid>
 {/if}
 
-<!-- What is picked, and what can be done with it. Only where there is a verb to offer: a tab whose
-     rows carry none would draw a bar with a count and nothing to press. -->
+<!-- The bar, only where there is a verb to offer. -->
 {#if pinnable}
 	<EntitySelectionBar
 		{selection}

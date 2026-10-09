@@ -1,23 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Whether the tunnel program is where the pack put it, and is the file the pack shipped.
 
-A virus scanner can take the tunnel program off the disk without asking, days after an install
-that finished cleanly: it is a small network program, the kind that gets flagged. What is left is
-an install that looks whole and a tunnel that cannot start, and the failure would otherwise surface
-as a tunnel that "did not connect" or a download refused over a tunnel that "no longer exists",
-neither of which points at the cause. So the program is checked at start-up and before every
-start, and when it is gone or altered every tunnel row, and every download that needed a tunnel,
-says so in the same words, and the log says it once.
-
-**Checked against the pack, never the machine.** Only a Windows pack has a folder the program was
-put in (`vendor_folder`); a checkout on Linux runs whatever copy the machine has, and there is
-nothing of Sift's to compare it with. There, a missing program is still the launch's own refusal
-(`process._NO_CLIENT`).
-
-**By content, cheaply.** The program is one file of about ten megabytes. Its digest is taken once
-and taken again only when the file's size or modification time moves, so asking before every
-start, and on every read of the tunnel list, costs a `stat`.
-"""
+An antivirus can remove it; checked by digest against the pack, retaken only when the file moves."""
 
 from __future__ import annotations
 
@@ -33,22 +17,15 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: The program's file name in the pack's folder.
 PROGRAM = "wireproxy.exe"
 
-#: The version of the program this build ships, as `scripts/vendor_manifest.json` pins it under
-#: `built`. A gate holds the two equal (`test_tunnels_client.py`), so moving the pin without moving
-#: the digest below fails the build rather than every tunnel on every install.
+#: The shipped version as the vendor manifest pins it; a gate holds the two equal.
 VERSION = "1.1.3+sift.1"
 
-#: The SHA-256 of `wireproxy.exe` as Sift builds it from its pinned source
-#: (`scripts/vendor_build/wireproxy/build.py`, which installs nothing else). The manifest pins the
-#: same digest, and the same gate holds the two equal.
+#: The SHA-256 of the program as Sift builds it from pinned source; the same gate holds it.
 SHA256 = "20d51a3f8532e8e1b77f2741fbc63b118111bf7689420aec563a1297befa9546"
 
-#: What every tunnel row and every download that needed a tunnel says when the program is gone.
-#: The cause first, because it is the one nobody thinks of after an install that finished cleanly,
-#: then the two ways back.
+#: What every tunnel row and download says when the program is gone, the cause first.
 CLIENT_REMOVED = (
     "Windows Defender or another antivirus removed Sift's tunnel program. Restore it from "
     "quarantine and allow it, or install Sift again."
@@ -65,7 +42,7 @@ _CHUNK = 1 << 20
 
 @dataclass(frozen=True, slots=True)
 class _Seen:
-    """What the file looked like when its digest was last taken, and whether the digest matched."""
+    """What the file looked like when its digest was last taken, and whether it matched."""
 
     size: int
     modified_ns: int
@@ -73,8 +50,7 @@ class _Seen:
 
 
 class ClientCheck:
-    """The check, holding what it last saw. One per process (`CHECK`); a test makes its own over a
-    folder of its own."""
+    """The check, holding what it last saw; one per process (`CHECK`)."""
 
     def __init__(
         self, folder: Callable[[], Path | None] = vendor_folder, *, digest: str = SHA256
@@ -82,15 +58,12 @@ class ClientCheck:
         self._folder = folder
         self._digest = digest
         self._seen: _Seen | None = None
-        #: What the log was last told, so a fault is logged when it starts and when it ends, once
-        #: each, however many rows and downloads ask in between.
+        #: What the log was last told, logging a fault once as it starts and once as it ends.
         self._said: str | None = None
         self._lock = threading.Lock()
 
     def fault(self) -> str | None:
-        """The sentence for what is wrong with the program, or None when nothing is (or when there
-        is no pack to compare with). Blocking: it may read the whole file, so it runs off the loop
-        (`client_fault`)."""
+        """The sentence for what is wrong with the program, or None; blocking."""
         with self._lock:
             found = self._look()
             if found != self._said:
@@ -135,7 +108,7 @@ def _digest_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-#: The check every tunnel start, the tunnel list and the way out of a download ask.
+#: The check every tunnel start, the tunnel list and a download's way out ask.
 CHECK = ClientCheck()
 
 

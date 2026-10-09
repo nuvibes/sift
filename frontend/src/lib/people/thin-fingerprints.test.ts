@@ -1,8 +1,6 @@
-/*
- * A person whose facial fingerprints are thin, said where they leave this library and where they
+/* A person whose facial fingerprints are thin, said where they leave this library and where they
  * arrive: the chooser's band and words, the held count, the group's question, and the one colour
- * rule the chooser shares with the person's page.
- */
+ * rule the chooser shares with the person's page. */
 
 import { describe, expect, it } from 'vitest';
 import type { PickChoice } from '$lib/components/common/verbs';

@@ -1,20 +1,6 @@
 <script lang="ts">
-	/*
-	 * Where Sift keeps its two folders on the computer running it, and moving them, from another
-	 * computer.
-	 *
-	 * The same two rows `StorageFolders` draws in the app on that computer, asked through the server,
-	 * which asks the Sift app there. The folder to move into is chosen in the server's own folder
-	 * browser over that computer's drives (the `machine` walk every browser already uses to add a
-	 * folder), never typed: every path sent is one the server handed back. The app there refuses a
-	 * folder that is not empty, not writable, on a network drive or inside the one in use, before
-	 * anything stops.
-	 *
-	 * Taken on, Sift stops there, moves and starts again, which takes as long as copying the library
-	 * does across drives, so the page waits for a new run of the server for a long while and says
-	 * what is happening. A move that failed after it started is said when Sift is back, from the
-	 * app's own record of it.
-	 */
+	/* Where Sift keeps its two folders on the computer running it, and moving them, from another
+	 * computer. */
 	import { onMount } from 'svelte';
 	import { Button, Note, Problem, Spinner } from '$lib/components/common';
 	import Modal from '$lib/components/common/Modal.svelte';
@@ -59,8 +45,7 @@
 		void readServerStorage().then((answer) => (report = answer));
 	});
 
-	/* No size before the first walk there ends: the word and the working mark, never a 0 B. A size
-	   once known is drawn while a new walk runs, and the walk is asked about again until it ends. */
+	/* No size before the first walk there ends: the word and the working mark, never a 0 B. */
 	const unmeasured = $derived(report !== null && report.measured_at === null);
 	const REREAD_MS = 1_000;
 	$effect(() => {
@@ -80,8 +65,8 @@
 	async function choose() {
 		pressedAtTop = false;
 		problem = null;
-		/* That computer's drives, from the top each time: the folders Sift was given are where the
-		   media is, and the empty folder a library moves into is usually somewhere else. */
+		/* That computer's drives, from the top each time: the folders Sift was given are where
+		   the media is, and the empty folder a library moves into is usually somewhere else. */
 		picker.scope = 'machine';
 		await picker.open();
 		choosing = true;

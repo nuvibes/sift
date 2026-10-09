@@ -1,14 +1,5 @@
-/* The utility process's entry point.
- *
- * It is four lines of wiring around one guarantee: whatever happens, the main process is told the
- * job has settled. A transfer that fails says so and leaves the marker a receiver watches for;
- * one whose process dies can do neither, and on the other side that looks like a file that has
- * simply stopped growing. An unhandled rejection here is exactly that.
- *
- * Nothing is forked. The module reads `process.parentPort` when it is imported and registers a
- * handler on it, so a stub put there first is the whole harness, which is also why every case
- * resets the module registry and imports again.
- */
+/* The utility process's entry point. It is four lines of wiring around one guarantee: whatever
+ * happens, the main process is told the job has settled. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,10 +72,7 @@ describe('the transfer worker', () => {
 		port.deliver(job);
 
 		expect(await settled()).toEqual({ id: 'job-1', kind: 'settled', path: '/tmp/clip.mp4' });
-		/* Deliberately thin: no path is decided here and no address is built here. Both arrive
-		 * fully formed from the side that knows the temporary folder and the asking window's
-		 * server, and a worker that worked either out for itself would be a second place for them
-		 * to be wrong. */
+		/* Deliberately thin: no path is decided here and no address is built here. */
 		const [, url, headers, arriving, total] = transferTo.mock.calls[0];
 		expect(url).toBe(job.url);
 		expect(headers).toBe(job.headers);
@@ -120,11 +108,7 @@ describe('the transfer worker', () => {
 	});
 
 	it('still reports the job settled when the transfer throws', async () => {
-		/* THE ONE THIS FILE EXISTS FOR. `transferTo` answers null for everything it expects to go
-		 * wrong, so reaching the catch means something it did not expect, and an unhandled
-		 * rejection would take this process down instead of answering. To a receiver that is not a
-		 * failure, it is a file that stopped growing, and it waits out its whole patience before
-		 * writing whatever arrived. */
+		/* THE ONE THIS FILE EXISTS FOR. */
 		transferTo.mockRejectedValue(new Error('the socket went away'));
 		await start();
 

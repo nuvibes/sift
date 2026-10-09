@@ -1,7 +1,5 @@
-/*
- * A row's button wears its act's glyph from the verb it is handed, so a verb that arrives from a
- * copy table (which the markup gate cannot read) still wears the same glyph as everywhere else.
- */
+/* A row's button wears its act's glyph from the verb it is handed, so a verb that arrives from a
+ * copy table (which the markup gate cannot read) still wears the same glyph as everywhere else. */
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, expect, it } from 'vitest';
 

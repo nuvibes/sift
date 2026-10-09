@@ -1,19 +1,6 @@
 <script lang="ts">
-	/*
-	 * Framing a cover: the whole picture, with the window the cover is drawn as laid over it.
-	 *
-	 * The window is the picture editor's crop rectangle (`components/edit/CropStage`, the one crop
-	 * control in the app) held to the cover box's shape: the same stage, dimming, eight grips and
-	 * moving middle, and arrow keys. Resizing it from a corner is the zoom; there is no slider,
-	 * wheel or pinch of its own.
-	 *
-	 * What this file owns is the cover's side of the handshake, none of the drawing: the picture's
-	 * shape (measured from the picture when it is an address, handed in when it is drawn another
-	 * way, such as a moment of a clip; see `picture`), the units the control works in
-	 * (`coverSpace`), and turning its box back into a `Frame` (`windowOf`) no smaller than
-	 * `atLeast` allows. It does not know which entity this is or how the frame is saved: `frame` is
-	 * bound, and the sheet around it saves it through the cover's own PUT.
-	 */
+	/* Framing a cover: the whole picture under the editor's crop window (`edit/CropStage`), held to
+	 * the cover's shape; this owns the shape, the units and turning the box back into a `Frame`. */
 	import { untrack, type Snippet } from 'svelte';
 	import CropStage from '$lib/components/edit/CropStage.svelte';
 	import {
@@ -32,17 +19,13 @@
 		frame?: Frame | null;
 		/** The whole picture, by address. Measured when it loads. */
 		src?: string;
-		/**
-		 * The whole picture drawn some other way, at the size given: a tile of a clip's strip,
-		 * which has no address of its own. `aspect` must come with it.
-		 */
+		/** The picture drawn another way (a strip tile), with `aspect`. */
 		picture?: Snippet<[{ width: number; height: number }]>;
 		/** The picture's width over its height, where it cannot be measured from `src`. */
 		aspect?: number;
 		/** The cover box's width over its height. Every cover Sift draws is a 3:4 portrait. */
 		ratio?: number;
-		/** Told the picture's shape once it is known, so the sheet can tell an unmoved window
-		 *  (saved as no frame) from a moved one. */
+		/** Told the picture's shape, so an unmoved window is saved as no frame. */
 		onmeasured?: (aspect: number) => void;
 	}
 
@@ -59,11 +42,8 @@
 	const aspect = $derived(given ?? measured);
 	const space = $derived(aspect ? coverSpace(aspect) : null);
 
-	/* Once the shape is known, the window is ALWAYS a window of the right shape: a stored one is
-	   re-made to it, and none opens on the middle. Written back to `frame` so the sheet saves exactly
-	   what is drawn. Once per shape, and reading `frame` untracked: every drag writes it, and this is
-	   about the picture arriving, not about the window moving. A new picture is a new editor (the
-	   sheet keys it) so there is no second picture to wait for here. */
+	/* Once the shape is known the window is always of the right shape, written back to `frame`;
+	   once per shape, `frame` read untracked. */
 	let shapedFor: number | null = null;
 	$effect(() => {
 		if (!aspect || aspect === shapedFor) return;
@@ -76,10 +56,7 @@
 		);
 	});
 
-	/* The control's box is the window, read in the control's units; what it hands back is turned
-	   into a window again. Derived rather than held beside `frame`, so there is one value: an
-	   untouched window is never round-tripped through the box, and Save on an untouched editor
-	   still writes nothing. */
+	/* The box derived from `frame`, so an untouched window writes nothing. */
 	function readBox(): Box {
 		return frame && space ? boxOf(frame, space) : { left: 0, top: 0, width: 0, height: 0 };
 	}
@@ -99,8 +76,7 @@
 
 <div class="framer">
 	{#if src && !given}
-		<!-- Fetched to be measured as well as shown; until it loads there is no shape to hold the
-		     window to, so the stage waits for it. -->
+		<!-- Fetched to be measured; the stage waits for its shape. -->
 		<img class="measure" {src} alt="" aria-hidden="true" onload={measure} />
 	{/if}
 
@@ -136,9 +112,7 @@
 		pointer-events: none;
 	}
 
-	/* Filling the stage exactly, which is the shape of the picture: the control reads every pointer
-	   as a fraction of the stage, so a letterboxed picture would be framed in one place and cut in
-	   another. */
+	/* Filling the stage exactly, as the control reads pointers as fractions of it. */
 	.whole {
 		display: block;
 		inline-size: 100%;

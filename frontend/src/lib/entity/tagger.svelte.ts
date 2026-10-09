@@ -1,22 +1,4 @@
-/* Files a stash-box recognised, and the one press that settles a page of them.
- *
- * ## Why the rows carry what they WOULD do
- *
- * A bulk confirm nobody can see the consequences of is a leap of faith with a progress bar on it.
- * So every row arrives with the fields it would change (what is there beside what is offered)
- * and with the names it would have to invent. The button counts those before it is pressed rather
- * than reporting them afterwards.
- *
- * ## Creating is per press, and per NAME
- *
- * `create` is sent with the press and is never remembered. A stored "always make the people" is
- * the automatic creation this feature deliberately refuses; a tick beside each name is a decision
- * somebody takes while looking at what it would do.
- *
- * NAMES rather than a yes-or-no. One tick over thirty-one entries offers two answers (all of
- * them, or none and lose the four that were wanted), so reading the list carefully would be
- * punished. An empty list means invent nothing.
- */
+/* Files a stash-box recognised, and the one press that settles a page of them. */
 
 import { api, ApiError } from '$lib/api/client';
 import type { FoundRecord } from '$lib/settings-ui/stash-boxes.svelte';
@@ -54,21 +36,12 @@ function said(error: unknown): string {
 }
 
 /** One page of the pile, surest first. */
-/**
- * What is waiting for ONE file. The chooser on the grid's own menu reads this.
- *
- * The same route and the same order as the pile, filtered by the file. Not a second function that
- * fetches everything and filters here: the pile is paged, so a file whose match sits on page four
- * would come back empty from a client-side filter and read as "nothing found".
- */
+/** What is waiting for ONE file. The chooser on the grid's own menu reads this. */
 export async function waitingFor(assetId: string, limit = PAGE): Promise<MatchPage> {
 	return await api.get<MatchPage>('/stash-boxes/matches', { query: { limit, asset: assetId } });
 }
 
-/**
- * What was already answered about ONE file, newest first: the settled half of `waitingFor`. The
- * chooser reads it so a file a box matched and somebody applied says so.
- */
+/** What was already answered about ONE file, newest first: the settled half of `waitingFor`. */
 export async function answeredFor(assetId: string, limit = PAGE): Promise<MatchPage> {
 	return await api.get<MatchPage>('/stash-boxes/matches', {
 		query: { limit, asset: assetId, state: 'answered' }
@@ -78,10 +51,8 @@ export async function answeredFor(assetId: string, limit = PAGE): Promise<MatchP
 /** Which state of the pile: what still waits, or what was already answered. */
 export type MatchState = 'waiting' | 'answered';
 
-/**
- * One page of the pile in one state, asked for by where it starts or by the row it starts AT:
- * the pile's paging (`CardPaging.query`) says which. A row is named `<file>:<box>`, `matchKey`.
- */
+/** One page of the pile in one state, asked for by where it starts or by the row it starts AT:
+ * the pile's paging (`CardPaging.query`) says which. */
 export async function waiting(query: PageAsk, state: MatchState = 'waiting'): Promise<MatchPage> {
 	return await api.get<MatchPage>('/stash-boxes/matches', {
 		query: { ...asked(query), state }
@@ -99,13 +70,7 @@ export async function apply(
 	});
 }
 
-/**
- * The disagreements somebody answered, addressed to their matches, as the press sends them.
- *
- * Only the matches still in the press, and only the answers that are not "keep mine": keeping
- * your own is the default and writing it would be a change in every log that watches for one, for
- * a decision that changed nothing.
- */
+/** The disagreements somebody answered, addressed to their matches, as the press sends them. */
 export function toSettle(
 	matches: Match[],
 	answers: Record<string, Record<string, Answer>>
@@ -148,16 +113,7 @@ export function rowKey(one: Missing): string {
 	return `${one.kind}:${one.name}`;
 }
 
-/**
- * Every row a set of matches would have to invent, counted once.
- *
- * Deduplicated across the whole page rather than summed per row, because the same person turns up
- * on twenty files from one release, and "this would create 20 people" beside a list of one name
- * is a number that makes somebody refuse a press they should have made.
- *
- * By KIND and name. Folding "the person Jane" into "the tag Jane" would offer one tick for two
- * different rows, and whichever the writer reached first would be the one that got made.
- */
+/** Every row a set of matches would have to invent, counted once. */
 export function wouldCreate(matches: Match[]): Missing[] {
 	const seen = new Map<string, Missing>();
 	for (const match of matches) {
@@ -166,14 +122,7 @@ export function wouldCreate(matches: Match[]): Missing[] {
 	return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * How many fields a set of matches would actually write, given the new rows ticked for making.
- * Conflicts are not among them.
- *
- * A field that names only rows nobody has made yet (four new tags) writes nothing unless one of
- * them is ticked: the press drops a name it may not make. So the count is of what the press will
- * land with these ticks, which is the number its receipt says afterwards.
- */
+/** How many fields a set of matches would actually write, given the new rows ticked for making. */
 export function wouldWrite(matches: Match[], making: readonly Missing[]): number {
 	const ticked = new Set(making.map(rowKey));
 	return matches.reduce(

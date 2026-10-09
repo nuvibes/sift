@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Tidy } from './tidy.svelte';
 
-/* The tidy-up half of Maintenance.
- *
- * Three decisions live here rather than in markup: that a request which failed does not read as
- * "nothing to do", that every kind is listed with the ones needing work first, and that the counts
- * after a run come from the server rather than being adjusted locally.
- */
+/* The tidy-up half of Maintenance. */
 
 const get = vi.fn();
 const post = vi.fn();
@@ -45,10 +40,10 @@ beforeEach(() => {
 
 describe('what has built up', () => {
 	it('lists every kind, with the ones needing work first', async () => {
-		/* Listing only what had built up would make a kind with nothing to remove indistinguishable
-		   from one that does not exist: somebody looking for the control that clears a particular
-		   thing would find an empty space and could not tell whether they were looking in the wrong
-		   place. */
+		/* Listing only what had built up would make a kind with nothing to remove
+		   indistinguishable from one that does not exist: somebody looking for the control that
+		   clears a particular thing would find an empty space and could not tell whether they
+		   were looking in the wrong place. */
 		get.mockResolvedValue({
 			leftovers: [leftovers(0, 'settled-failures'), leftovers(3)],
 			surveying: false
@@ -61,9 +56,7 @@ describe('what has built up', () => {
 	});
 
 	it('does not read a count that was never taken as something to do, or as nothing', async () => {
-		/* Two of the counts read the disk and arrive as null until a survey has been taken. Null
-		   is neither "there is something here" nor "there is nothing", and it says which counts
-		   are still waiting, and when the rest were taken. */
+		/* Two of the counts read the disk and arrive as null until a survey has been taken. */
 		get.mockResolvedValue({
 			leftovers: [leftovers(null, 'leftover-derivatives'), leftovers(0), leftovers(2, 'x', 500)],
 			surveying: false
@@ -121,8 +114,7 @@ describe('what has built up', () => {
 	});
 
 	it('knows the difference between listing everything and having something to do', async () => {
-		/* The screen keys its "nothing has built up" sentence off this. Read off the length of the
-		   list instead, it would never say it, since the list is always full. */
+		/* The screen keys its "nothing has built up" sentence off this. */
 		get.mockResolvedValue({
 			leftovers: [leftovers(0), leftovers(0, 'settled-failures')]
 		});
@@ -150,7 +142,7 @@ describe('what has built up', () => {
 		const one = leftovers(3);
 		get.mockResolvedValue({ leftovers: [one] });
 		// Removing rows strands the files they named, so a second entry GROWS while the first
-		// empties. Nothing here could work that out, which is why the server sends it.
+		// empties.
 		post.mockResolvedValue({
 			removed: 3,
 			leftovers: [leftovers(0), { ...leftovers(9, 'leftover-derivatives') }]
@@ -186,12 +178,7 @@ describe('what has built up', () => {
 	});
 });
 
-/* Bringing the hover clips up to the shape that is set.
- *
- * Its own count and its own run, not a corner of the rebuild beside it. They answer different
- * questions, and one button doing both would make changing a preference cost a full re-thumbnail
- * of the library.
- */
+/* Bringing the hover clips up to the shape that is set. */
 describe('the hover clips', () => {
 	it('counts the files whose clip is a different shape', async () => {
 		get.mockImplementation((path: string) =>
@@ -245,8 +232,8 @@ describe('the hover clips', () => {
 
 		await tidy.rebuildPreviews();
 
-		// A screen left busy after a failure is one where every other button stays disabled for
-		// the rest of the visit, with nothing saying why.
+		// A screen left busy after a failure is one where every other button stays disabled for the
+		// rest of the visit, with nothing saying why.
 		expect(tidy.busy).toBe(false);
 	});
 });

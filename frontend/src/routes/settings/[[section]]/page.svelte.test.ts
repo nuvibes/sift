@@ -1,10 +1,4 @@
-/*
- * Settings opened at its own address.
- *
- * A guest at the address of an admin's pane lands on their own first section before the pane can
- * ask the server for anything it would refuse, and the address says where they landed. An address
- * that is no section at all says so in one sentence.
- */
+/* Settings opened at its own address. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 

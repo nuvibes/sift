@@ -39,8 +39,8 @@ describe('The tabs of Tasks and Activity by address', () => {
 	});
 
 	it('owns every setting the Log tab draws, so a link to one opens that tab', () => {
-		/* The Log tab's rows are listed in `Logs.svelte`; a key listed there and not here would land
-		   on Tasks, where the row is not, and the link would say the setting had moved. */
+		/* The Log tab's rows are listed in `Logs.svelte`; a key listed there and not here would
+		   land on Tasks, where the row is not, and the link would say the setting had moved. */
 		const pane = readFileSync('src/lib/settings-ui/Logs.svelte', 'utf8');
 		const listed = pane.slice(
 			pane.indexOf('LOG_SETTINGS'),

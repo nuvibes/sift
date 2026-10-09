@@ -1,8 +1,6 @@
-/*
- * An admin's view of a person draws its header once, with what sits under the cover already in it:
- * those reads are asked beside the row and the page waits for both, so the wall under the header
- * never has its box shortened after it measured it.
- */
+/* An admin's view of a person draws its header once, with what sits under the cover already in
+ * it: those reads are asked beside the row and the page waits for both, so the wall under the
+ * header never has its box shortened after it measured it. */
 import { afterEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { session } from '$lib/shell/session.svelte';

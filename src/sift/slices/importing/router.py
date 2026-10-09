@@ -606,30 +606,16 @@ async def _press_one(
     policy: ImportPolicy,
     presser: str,
 ) -> _Pressed:
-    """Queue one pass for these files (already known to be visible), the way Importing would.
-
-    THE ONE BODY of a press, whether it named one pass or a stage's every pass: the every-pass
-    press is this, once per pass, so a switch refuses, a waiting file is skipped and a gap-filler
-    skips what it has by the same lines for both.
-    """
+    """Queue one pass for these visible files, the way Importing would: the one body of a press."""
     if isinstance(chosen, Product) and chosen.cannot_run is not None:
         problem = await chosen.cannot_run()
         if problem is not None:
             return _Pressed(chosen=chosen, queued=[], problem=problem)
 
-    # WHAT IS ALREADY COMING, from every queue type that would answer this for a file.
-    if isinstance(chosen, Reading):
-        live_types = [chosen.job_type]
-    else:
-        live_types = [RUNS[chosen.family][1]]
-        if chosen.governed_by is not None:
-            live_types.append(chosen.governed_by)
-
-    # WHAT IS ALREADY COMING, and the part of it still waiting pulled forward to this press. See
-    # `coming.take_over`: a press is now, even for work already in the queue.
+    # What is already coming; the part still waiting is pulled forward to this press.
     coming = await take_over(
         queue,
-        live_types,
+        _live_types(chosen),
         wanted,
         chosen.key,
         priority=WAITED_ON_PRIORITY,
@@ -664,16 +650,8 @@ async def _press_one(
             had = frozenset(asset_id for asset_id in left if asset_id not in lacking)
             left = [asset_id for asset_id in left if asset_id in lacking]
 
-    # ONE WRITE FOR THE WHOLE PRESS (`enqueue_many`), each file still collapsing onto an identical
-    # task already waiting, rather than one trip through the single writer per file.
-    tasks: list[dict[str, object]] = []
-    for asset_id in left:
-        task: dict[str, object] = {"asset_id": asset_id}
-        if not isinstance(chosen, Reading):
-            task["products"] = [chosen.key]
-            if chosen.again:
-                task[AGAIN] = True
-        tasks.append(task)
+    # One write for the whole press, each file still collapsing onto an identical waiting task.
+    tasks = _tasks_of(chosen, left)
     await queue.enqueue_many(
         chosen.job_type if isinstance(chosen, Reading) else RUNS[chosen.family][1],
         tasks,
@@ -690,6 +668,29 @@ async def _press_one(
         refused=frozenset(refused),
         switch=switch,
     )
+
+
+def _live_types(chosen: Reading | Product) -> list[str]:
+    """Every queue type that would answer for this pass on a file."""
+    if isinstance(chosen, Reading):
+        live_types = [chosen.job_type]
+    else:
+        live_types = [RUNS[chosen.family][1]]
+        if chosen.governed_by is not None:
+            live_types.append(chosen.governed_by)
+    return live_types
+
+
+def _tasks_of(chosen: Reading | Product, left: list[str]) -> list[dict[str, object]]:
+    tasks: list[dict[str, object]] = []
+    for asset_id in left:
+        task: dict[str, object] = {"asset_id": asset_id}
+        if not isinstance(chosen, Reading):
+            task["products"] = [chosen.key]
+            if chosen.again:
+                task[AGAIN] = True
+        tasks.append(task)
+    return tasks
 
 
 def _stage_said(family: Family, total: int, pressed: list[_Pressed]) -> tuple[list[str], str]:
@@ -722,36 +723,9 @@ async def run_now(
     products: Annotated[ProductRegistry, Depends(_products)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> RunNowStarted:
-    """Run one pass now, or a stage's every pass, for these files: what Importing's own press
-    does, narrowed to them.
+    """Run one pass now, or a stage's every pass (`<stage>:all`), for these files.
 
-    THE ONE DOOR for doing a file's work again by hand, for every pass: without it a bad thumbnail,
-    a watermark read under an older model or a file that was replaced on disk could only be done
-    again by walking the whole library. This is that walk's task, handed the files a person
-    picked:
-
-    * **Every pass is refused the way Importing refuses it.** A switch that says no for a file
-      (the library's, or the folder's answer over it) leaves that file out, and a press where it
-      said no for every file is refused naming the switch. A pass that cannot run on this machine
-      at all (`Product.cannot_run`) is refused before anything is queued, with its own sentence.
-    * **A file already waiting for this is not queued twice**, whoever queued it: an arriving
-      file's own job, a pass over the library, an earlier press. Read once per press, never looped.
-      Work of it still WAITING is pulled forward: the press collapses onto that row and runs it
-      now, whatever the task's When held it for; only work already running is left as it is.
-    * **Again means again** where the maker can: the task carries `AGAIN`. A pass whose maker only
-      fills what is missing is offered only for the files that lack it. See `Product.again`.
-    * **Ahead of the library-wide work** (`WAITED_ON_PRIORITY`), because somebody pressed it and is
-      looking at the files, and **named for the presser** (`requested_by`), which is also what tells
-      a face scan to ring the screens when it lands. Each task writes its own History line.
-    * **`<stage>:all` ("Identify all") is every pass of that stage**, expanded HERE rather than
-      by the screen sending one request per pass: the server is the one place that knows which
-      passes a stage has, so a pass registered tomorrow joins "Identify all" by the declaration
-      that draws its row, and the press answers with one sentence about the lot. Each pass is the
-      single press above; one that a switch refuses or that cannot run here is left out and named,
-      and the press is refused only when no pass queued anything.
-
-    An id this admin may not open is the 404 a made-up one gets, and one such id refuses the press:
-    a selection is what the wall showed, so a stranger in it is a request nobody's screen made.
+    Refused as Importing refuses it; a file already waiting is pulled forward, never queued twice.
     """
     target = _stage_named(products, body.run) or _pass_named(products, body.run)
     if target is None:

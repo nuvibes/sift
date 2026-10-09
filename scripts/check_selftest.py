@@ -1,23 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Run the machine measurement's two ffmpeg commands with the ffmpeg that ships.
-
-The measurement decides two instance-wide settings from a curve, and the curve is made of real
-encodes. Everything about the WALK between levels is tested with the unit of work injected, which
-is the right shape for the decisions, and it means the two commands underneath are the one part
-of the feature no unit test exercises.
-
-They are worth exercising because of how they fail. An argument this ffmpeg refuses does not report
-itself as a wrong argument: the encode is caught, counted as work that did not finish, and the
-level scores zero. A machine that encodes perfectly well is then measured as one that cannot, and
-the recommendation that comes out is a real number derived from nothing. Nobody reading the screen
-could tell.
-
-Shortened deliberately. The real measurement runs a twenty-second clip at five widths and takes
-about a minute; what has to be answered here is whether the commands are accepted and produce
-files, not how fast this machine is.
-
-    python scripts/check_selftest.py
-"""
+"""Run the machine measurement's two ffmpeg commands with the shipped ffmpeg."""
 
 from __future__ import annotations
 
@@ -40,8 +22,7 @@ async def check(work: Path, settings: Settings) -> list[str]:
         return failures
     print(f"ok   source        {clip.stat().st_size // 1024} KB")
 
-    # Capped, which is the state every level of a real run uses. Two flags and the same flag twice:
-    # one pool for decoding and the filter graph, another for the encoder.
+    # Capped, as a real run is: one pool for decoding and filters, one for the encoder.
     capped = await selftest._encode_once(clip, work, 0, settings, threads=2)
     written = (work / "encoded-0.mp4").exists() and (work / "encoded-0.mp4").stat().st_size > 0
     if not capped or not written:
@@ -55,8 +36,7 @@ async def check(work: Path, settings: Settings) -> list[str]:
         failures.append("an uncapped encode did not finish")
     print(f"{'FAIL' if not (loose and loose_written) else 'ok  '} plain encode   no thread cap")
 
-    # A source that is not there has to come back as work that did not finish rather than as an
-    # exception: one unit failing must not abandon the whole measurement.
+    # A missing source must come back as unfinished work, never an exception.
     gone = await selftest._encode_once(work / "not-here.mp4", work, 2, settings)
     if gone is not False:
         failures.append("a missing source was reported as an encode that finished")

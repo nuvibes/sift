@@ -1,9 +1,5 @@
-/*
- * One destructive treatment on every settings pane: a row with the name and its sentence on the
- * left and a quiet danger button on the right, which is `ActionRow` with `destructive`. A pane that
- * writes its own danger button (filled red under a paragraph, or on the left) is a second look for
- * the same act, so the panes are read for one.
- */
+/* One destructive treatment on every settings pane: a row with the name and its sentence on the
+ * left and a quiet danger button on the right, which is `ActionRow` with `destructive`. */
 import { words } from '$lib/design/testing.svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { flushSync, mount, unmount } from 'svelte';

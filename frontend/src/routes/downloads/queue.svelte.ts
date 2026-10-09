@@ -1,30 +1,4 @@
-/* What the download queue screen knows, and how it asks the server for it.
- *
- * The one connection this application holds says when the queue has changed and this asks then,
- * which covers the half that is never written down as well, because how far along a transfer is,
- * is held in memory and announced from there. So a queue with nothing in it costs nothing, and a
- * running download costs one read a second.
- *
- * The one distinction worth keeping is refused-versus-unreachable. A guest who reaches this
- * address (the nav item is hidden from them, but the address is typeable) gets a 403 from the
- * list, and that is a stop, not a thing to retry. Anything else is the server being briefly
- * unreachable, and the read simply comes back.
- *
- * ## ONE list, with a tab saying which part of it is showing
- *
- * A queue that reorders itself under the pointer is unreadable, and the freeze belongs to the
- * LIST COMPONENT, which holds its order while a pointer or the keyboard is inside it. So there is
- * one list, filtered by a state tab, and the tabs carry their counts: a count is only worth
- * reading next to the other counts, and one list has one empty state, one search, and one way to
- * look at everything that needs somebody.
- *
- * ## Filtered by the SERVER, because the list is paged
- *
- * The tab, the Site, the search and the order are all parameters of the one read; filtering only
- * the rows the first page holds would draw a fraction of "Done" under its count and never find
- * anything older. What this holds is the page the server chose; `matched` is how many there are
- * to page through.
- */
+/* What the download queue screen knows, and how it asks the server for it. */
 
 import { counted } from '$lib/entity/entity-counts';
 import { api, ApiError, type ApiPath } from '$lib/api/client';
@@ -35,35 +9,20 @@ import { toasts } from '$lib/shell/toasts.svelte';
 
 /* LIVE: followed by routes/downloads/+page.svelte (refresh on the downloads bell) */
 
-/** How far along a running download is.
- *
- *  Absent for anything not running. A bar left under a finished row is a stale number that reads as
- *  authoritative, and a total nobody knows is absent rather than zero: no total means no bar to
- *  draw, while a zero would mean a bar already full. */
+/** How far along a running download is. Absent for anything not running. */
 export type DownloadProgress = components['schemas']['DownloadProgress'];
 
 export type DownloadItem = components['schemas']['DownloadItem'];
 
-/** How the queue as a whole is doing.
- *
- *  One line above the list rather than fifty rows each ticking. It is the figure that has to update
- *  fastest, and it is one read on the server, so a queue of five hundred costs what a queue of one
- *  costs. */
+/** How the queue as a whole is doing. One line above the list rather than fifty rows each
+ * ticking. */
 export type QueueSummary = components['schemas']['QueueSummary'];
 
 /** What a paste of several links did: how many were queued, and every line that was not a link. */
 export type PastedLinks = components['schemas']['PastedLinks'];
 
-/**
- * What the page decides FOR THIS PASTE, sent with it: the page decides for this download,
- * Settings decides the default for every download.
- *
- * `dest` is the folder ('' or absent for the default). `remember` is the switch beside it: it
- * STARTS from the setting of the same name, and a value here is this paste's own answer, written
- * on each row it makes; the stored setting is never touched. Absent or
- * null sends nothing, and the job then follows the setting as it stands when it runs, which is
- * what a drop and the browser extension get.
- */
+/** What the page decides FOR THIS PASTE, sent with it: the page decides for this download,
+ * Settings decides the default for every download. */
 export interface PasteChoices {
 	dest?: string;
 	remember?: boolean | null;
@@ -77,14 +36,7 @@ function choiceBody(choices: PasteChoices): Record<string, unknown> {
 	};
 }
 
-/** What to tell somebody about a paste, or nothing when it all went in.
- *
- *  Everything the paste DID NOT do, in one sentence. A paste of forty that queues thirty-seven is
- *  a success with three facts attached, and leaving any of them out is the screen quietly deciding
- *  somebody did not need to know: the refusals are named one by one because "3 were refused" says
- *  which nothing, the repeats are counted because a repeat is not something to act on, and the
- *  overflow is counted because what is left is still sitting in the box.
- */
+/** What to tell somebody about a paste, or nothing when it all went in. */
 function said(answer: PastedLinks): string | undefined {
 	const notes: string[] = [];
 	if (answer.refused.length > 0) {
@@ -104,18 +56,7 @@ function said(answer: PastedLinks): string | undefined {
 	return `${counted(answer.queued)} queued. ${notes.join('. ')}.`;
 }
 
-/**
- * The lines of a paste that could each be an address.
- *
- * A list copied out of a page or a notes file arrives with blank lines and trailing spaces in it,
- * and those are not something to complain at somebody about. Split on newlines only: a space is
- * legal inside a URL once it is encoded, and splitting on whitespace would cut one address into two
- * halves that are each refused.
- *
- * Here rather than on the box, because two callers need the same answer: the box counts them to
- * label its button, and the page decides from the same count whether to send one link or a list.
- * Two copies of a splitting rule is two answers to "how many links is this".
- */
+/** The lines of a paste that could each be an address. */
 export function lines(text: string): string[] {
 	return text
 		.split(/[\r\n]+/)
@@ -130,12 +71,7 @@ export type BulkPreview = components['schemas']['BulkPreview'];
 
 const NOT_ALLOWED = "You aren't signed in as an admin.";
 
-/** The states that mean there is still work to happen. Everything else is history.
- *
- *  `paused` is one of them, which is the whole of what separates it from `canceled`: the row is
- *  held, not finished, its bytes are still in the staging folder and one press puts it back in the
- *  queue. So it counts under Active, it is not removable from the list, and the summary's own
- *  count of outstanding work includes it: all three from this one line. */
+/** The states that mean there is still work to happen. */
 const ACTIVE = new Set(['queued', 'running', 'blocked', 'paused']);
 
 /** Which part of the queue is showing. The tabs' ids and the server's `show`, so the tab, the
@@ -145,15 +81,7 @@ export type QueueFilter = 'all' | 'active' | 'needs' | 'done' | 'failed';
 /** Every value of `QueueFilter`, for reading one out of an address without trusting it. */
 export const FILTERS: readonly QueueFilter[] = ['all', 'active', 'needs', 'done', 'failed'];
 
-/*
- * HOW THE LIST IS ORDERED, in the words and under the glyphs every other wall uses.
- *
- * These are KEYS, taken out of the shared list by name the way the folder view's and the entity
- * walls' are, and the server's `sort` takes the same keys; the glyph is looked up by key
- * (`sortIcon`). A download's size is the bytes of the file it landed, so `Largest file` is the true
- * word here and not the count the entity walls say. The one order no other wall has is the Site's,
- * and its words and glyph are declared beside the rest (`SITE_ORDER`) rather than here.
- */
+/* HOW THE LIST IS ORDERED, in the words and under the glyphs every other wall uses. */
 const QUEUE_SORT_KEYS = [
 	'newest',
 	'oldest',
@@ -177,11 +105,9 @@ function shared(key: QueueSort): { value: QueueSort; label: string } {
 /** The orders, in the words the menu says them. The first is what the list is at rest. */
 export const SORTS: readonly { value: QueueSort; label: string }[] = QUEUE_SORT_KEYS.map(shared);
 
-/*
- * The spellings this screen's address carried before its keys became the shared ones, read as
+/* The spellings this screen's address carried before its keys became the shared ones, read as
  * what they meant: a link somebody kept to "by size" still opens by size rather than quietly
- * newest first. Nothing writes them.
- */
+ * newest first. */
 const FORMER_KEYS: Readonly<Record<string, QueueSort>> = { name: 'name_az', size: 'largest' };
 
 /** The order an address asks for, or the list at rest for anything this screen does not offer. */
@@ -193,17 +119,7 @@ export function queueSortFrom(value: string | null): QueueSort {
 /** How many rows a page holds. The server's own default page, so one number is being paged by. */
 export const PAGE = 50;
 
-/*
- * WHAT A DOWNLOAD CALLS THE FOLDER IT GOES TO, by where it has got to: one rule, every place.
- *
- * "Saving to" is a claim that bytes are moving into that folder NOW. So the present tense belongs
- * to a running download alone, the past tense to one whose file is there, and everything else
- * (queued, waiting on cookies, paused, failed, cancelled, skipped) names the folder it WOULD use,
- * which is also what the setting that chose it is called.
- *
- * A duplicate counts as landed: the file it would have fetched is already in the library, which is
- * the same reason a re-paste of it is skipped.
- */
+/* WHAT A DOWNLOAD CALLS THE FOLDER IT GOES TO, by where it has got to: one rule, every place. */
 type DestinationWord = 'Saving to' | 'Saved to' | 'Save to';
 
 const LANDED = new Set(['done', 'duplicate']);
@@ -214,49 +130,24 @@ export function destinationWord(status: string): DestinationWord {
 	return 'Save to';
 }
 
-/**
- * A row that is waiting for a person rather than for the machine.
- *
- * Two states and no more. `blocked` is the queue's only way of saying it wants cookies: the
- * service says so in as many words ("a blocked job means the download is waiting", and the row
- * badge reads "Waiting for cookies"), and a failure can be tried again, which is a verb somebody
- * has to press.
- *
- * `canceled` is NOT here: somebody already decided that one, and a list of things needing attention
- * that fills up with decisions already taken is a list nobody reads twice. Nor is `quarantined`,
- * and that one is deliberate against appearances: the same bytes would arrive and be quarantined
- * again, so Try again is the wrong verb for it and the badge that draws it says so.
- */
+/** A row that is waiting for a person rather than for the machine. */
 export function needsYou(item: DownloadItem): boolean {
 	return item.status === 'blocked' || item.status === 'failed';
 }
 
-/* WHICH VERBS A ROW CAN TAKE, in one place.
- *
- * The row draws them and the selection bar offers them, and the bar's whole rule is that it names
- * only what EVERY picked row can take, so the two have to agree about each one. Written out in
- * both files they would agree until the day one of them learned a new state. */
+/* WHICH VERBS A ROW CAN TAKE, in one place. */
 
 /** Moving up the queue means anything at all only for something that has not started. */
 export function canGoFirst(item: DownloadItem): boolean {
 	return item.status === 'queued';
 }
 
-/** A download can be stopped while it is still on its way. Once settled there is nothing to stop.
- *
- *  A PAUSED one can be stopped too, and that is not a contradiction: pausing keeps the bytes for
- *  later and cancelling throws them away, so the two are different answers to different questions
- *  and a row held for a week still wants a way out of the list. */
+/** A download can be stopped while it is still on its way. */
 export function canCancel(item: DownloadItem): boolean {
 	return ACTIVE.has(item.status);
 }
 
-/** Holding one where it stands: only something the machine is actually about to do, or doing.
- *
- *  Not `blocked`, and that is worth saying because it looks like the same thing from the outside.
- *  A blocked row is already stopped (it is waiting for cookies and will not move until somebody
- *  brings some), so pausing it would be a press that changes nothing and takes away the badge
- *  that says what it is waiting for. */
+/** Holding one where it stands: only something the machine is actually about to do, or doing. */
 export function canPause(item: DownloadItem): boolean {
 	return item.status === 'running' || item.status === 'queued';
 }
@@ -277,12 +168,7 @@ export function canRemove(item: DownloadItem): boolean {
 	return !ACTIVE.has(item.status);
 }
 
-/**
- * What went wrong, in words, whatever kind of failure it was.
- *
- * One function because every caller below wants the same sentence: the server's own explanation
- * where there is one, and `UNREACHABLE` where the request never arrived.
- */
+/** What went wrong, in words, whatever kind of failure it was. */
 function describe(error: unknown): string {
 	if (error instanceof ApiError) return error.detail ?? error.message;
 	return "Couldn't reach Sift. Check that it's still running.";
@@ -294,8 +180,7 @@ export class DownloadQueue {
 	summary = $state<QueueSummary | null | undefined>(null);
 	/** Kept, not thrown: a read that fails leaves the last good list on screen and says why. */
 	problem = $state<string | null>(null);
-	/** Set when the server says this account may not look. The nav item is hidden from a guest but
-	 *  the address is typeable, and asking again on their behalf would be asking to be refused. */
+	/** Set when the server says this account may not look. */
 	refused = $state(false);
 	/** Set under the submit box when a pasted link is refused. */
 	submitError = $state<string | undefined>(undefined);
@@ -305,12 +190,10 @@ export class DownloadQueue {
 	 *  from a site somebody remembers is exactly the row they came here to find. */
 	search = $state('');
 
-	/** Which state tab is open. Everything, until somebody filters it. The page keeps it in the
-	 *  address and hands it here; see `+page.svelte`. */
+	/** Which state tab is open. Everything, until somebody filters it. */
 	filter = $state<QueueFilter>('all');
 
-	/** Which Sites the list is filtered to, by name: either of them. Empty is every Site. The
-	 *  filter panel's Site column writes them into the address, and the page hands them here. */
+	/** Which Sites the list is filtered to, by name: either of them. */
 	siteNames = $state<string[]>([]);
 
 	/** The order the list is in. */
@@ -325,29 +208,15 @@ export class DownloadQueue {
 	/** Each shown state and how many rows wear it, inside the chosen Site. */
 	counts = $state<Record<string, number>>({});
 
-	/**
-	 * The state tabs above the list, each with what it would show.
-	 *
-	 * The counts are the SERVER's, over the whole queue inside the chosen Site, and NOT of the
-	 * search. That is the one decision in here worth stating: a tab whose count changed as somebody typed
-	 * would be answering "how many failures match this search", and the question a tab answers is
-	 * "how many failures are there". The list under it is what the search filters.
-	 *
-	 * "Needs you" overlaps Active and Failed on purpose. It is not a sixth state: it is the one
-	 * question this screen exists to answer, gathered from wherever it lives.
-	 */
-	/**
-	 * Every download inside the chosen Sites, in every state: the All tab's count, and the heading's.
-	 * One getter, so a Site left out of the filter leaves the two figures agreeing. `total` stays the
-	 * whole queue, which is what decides whether the queue is empty at all.
-	 */
+	/** The state tabs above the list, each with what it would show. */
+	/** Every download inside the chosen Sites, in every state: the All tab's count, and the
+	 * heading's. */
 	get inSites(): number {
 		return this.tabs[0].count;
 	}
 
 	get tabs(): { id: QueueFilter; label: string; count: number }[] {
-		/* The server's counts when it has answered; the rows on this page only until then.
-		   Counts taken from the page would say 50 under a header saying several hundred. */
+		/* The server's counts when it has answered; the rows on this page only until then. */
 		const whole = Object.keys(this.counts).length > 0 ? this.counts : this.summary?.by_state;
 		const of = (each: (item: DownloadItem) => boolean) => this.items.filter(each).length;
 		const many = (...states: string[]) =>
@@ -370,23 +239,13 @@ export class DownloadQueue {
 		];
 	}
 
-	/**
-	 * The rows to draw: the page the server chose for the tab, the Site, the search and the order.
-	 *
-	 * Nothing is filtered here. The name a row is drawn under is among what the search reads,
-	 * server-side, since somebody searching a download manager is nearly always looking for a file
-	 * they remember the name of.
-	 */
+	/** The rows to draw: the page the server chose for the tab, the Site, the search and the
+	 * order. */
 	get shown(): DownloadItem[] {
 		return this.items;
 	}
 
-	/**
-	 * Filter or re-order, and read the first page of what that leaves.
-	 *
-	 * Back to the first page on every change, because the page somebody was on is a position in a
-	 * list that no longer exists: page four of "Done" is not a place in "Failed".
-	 */
+	/** Filter or re-order, and read the first page of what that leaves. */
 	async narrow(
 		changes: Partial<{
 			filter: QueueFilter;
@@ -409,10 +268,7 @@ export class DownloadQueue {
 		await this.refresh();
 	}
 
-	/* Which read is the newest one asked. The list is read on every move of the queue AND on every
-	   filter, so two can be in flight at the same time, and an answer for the tab somebody has just
-	   left, landing after the one for the tab they pressed, would draw the wrong rows under the
-	   right tab. Only the newest answer is kept. */
+	/* Which read is the newest one asked. */
 	#asked = 0;
 
 	async refresh(): Promise<void> {
@@ -446,8 +302,7 @@ export class DownloadQueue {
 		} catch (error) {
 			if (asked !== this.#asked) return;
 			// A refusal is the one thing not to ask again about: the address is admin-only and the
-			// caller is not one. Everything else is the server being briefly unreachable, so the
-			// next announcement brings it back and the last good list stays put in the meantime.
+			// caller is not one.
 			if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
 				this.problem = NOT_ALLOWED;
 				this.refused = true;
@@ -459,14 +314,8 @@ export class DownloadQueue {
 		}
 	}
 
-	/**
-	 * Queue a download from a pasted link. Returns a refusal to show under the box, or undefined.
-	 *
-	 * SET as well as returned: the box below the input draws from `submitError`, so a refusal that
-	 * was only returned (an unsupported site, a malformed address) would show nothing at all. A
-	 * store method that hands a message back to a caller with nowhere to put it is a message nobody
-	 * reads.
-	 */
+	/** Queue a download from a pasted link. Returns a refusal to show under the box, or
+	 * undefined. */
 	async submit(url: string, choices: PasteChoices = {}): Promise<string | undefined> {
 		this.busy = true;
 		this.submitError = undefined;
@@ -482,14 +331,7 @@ export class DownloadQueue {
 		}
 	}
 
-	/** Queue several pasted addresses in one go, one download each.
-	 *
-	 *  Separate from `submit` rather than a loop over it, and the difference is what it can say. A
-	 *  paste of forty has to report what it refused as well as what it took, and one bad line must
-	 *  never lose the other thirty-nine, which a loop that stopped at the first refusal would do.
-	 *
-	 *  The refusals come back as a sentence on `submitError` because that is where the box already
-	 *  draws one. Naming them is the point: "3 were refused" tells nobody which three. */
+	/** Queue several pasted addresses in one go, one download each. */
 	async submitMany(urls: string[], choices: PasteChoices = {}): Promise<PastedLinks | undefined> {
 		this.busy = true;
 		this.submitError = undefined;
@@ -508,10 +350,7 @@ export class DownloadQueue {
 		}
 	}
 
-	/** Ask what a playlist or channel address holds, without fetching any of it.
-	 *
-	 *  Nothing is queued by this. Taking everything a creator has posted is a decision worth making
-	 *  with the number in front of you, and the listing costs one request and no media. */
+	/** Ask what a playlist or channel address holds, without fetching any of it. */
 	async preview(url: string, choices: PasteChoices = {}): Promise<BulkPreview | undefined> {
 		this.busy = true;
 		this.submitError = undefined;
@@ -566,10 +405,7 @@ export class DownloadQueue {
 		await this.#act(`/downloads/${id}/first`);
 	}
 
-	/** Hold a download where it is. What has been fetched stays on disk, waiting for Resume.
-	 *
-	 *  A running one stops at the next moment its fetcher can be asked to; a waiting one simply
-	 *  never starts. Both answer the same address, because from this screen they are one act. */
+	/** Hold a download where it is. What has been fetched stays on disk, waiting for Resume. */
 	async pause(id: string): Promise<void> {
 		await this.#act(`/downloads/${id}/pause`);
 	}
@@ -579,13 +415,7 @@ export class DownloadQueue {
 		await this.#act(`/downloads/${id}/resume`);
 	}
 
-	/**
-	 * Take a settled row off the list. The download is not undone and no file is touched.
-	 *
-	 * The server hides the row rather than deleting the record (what was downloaded is history and
-	 * history is not editable), so this is the one way a finished row leaves a list that otherwise
-	 * keeps everything for ever.
-	 */
+	/** Take a settled row off the list. The download is not undone and no file is touched. */
 	async remove(id: string): Promise<void> {
 		await this.#act(`/downloads/${id}/remove`);
 	}
@@ -595,16 +425,7 @@ export class DownloadQueue {
 		await this.#act(`/downloads/${id}/restore`);
 	}
 
-	/**
-	 * Take rows off the list and say so, with the one press back.
-	 *
-	 * The row is hidden rather than deleted, and `restore` un-hides it, so the Undo can be
-	 * honoured.
-	 *
-	 * Here rather than on the page, because the row's own verb and the selection bar's both end up
-	 * here and the sentence has to be the same one. It is the shape `hiding.ts` already uses for
-	 * exactly this pairing: the act, the sentence, and the way back, written together.
-	 */
+	/** Take rows off the list and say so, with the one press back. */
 	async removeRows(ids: string[]): Promise<void> {
 		for (const id of ids) await this.remove(id);
 		const said = ids.length === 1 ? 'Removed from the list' : `${ids.length} removed from the list`;
@@ -620,11 +441,7 @@ export class DownloadQueue {
 		});
 	}
 
-	/** One row action: ask, then re-read.
-	 *
-	 *  Deliberately quiet on failure. Every one of these is idempotent on the server and the next
-	 *  read keeps the list honest, so a message would be a second, slower answer to a question the
-	 *  row itself is about to answer. */
+	/** One row action: ask, then re-read. Deliberately quiet on failure. */
 	async #act(path: ApiPath): Promise<void> {
 		try {
 			await api.post(path);

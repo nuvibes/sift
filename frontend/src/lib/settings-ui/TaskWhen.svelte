@@ -1,86 +1,6 @@
 <script lang="ts">
-	/*
-	 * One task's row: its press (Run now, with when it runs and the other ways to run it behind the
-	 * chevron), and what it last did and does next.
-	 *
-	 * ## One setting, two doors, ONE component
-	 *
-	 * Every task is drawn twice: in the Tasks list, where every task's When sits under quiet hours,
-	 * and in the section that owns the thing the task does: Faces beside recognition, Importing
-	 * beside each stage. That is not the duplication the settings rule forbids (two controls that
-	 * disagree about one question). It is one setting drawn in its home and in the list of all of
-	 * them, and it stays one because both doors are THIS component reading the same row of the same
-	 * store: a When changed on Faces is the When on Tasks, the same moment.
-	 *
-	 * ## What it writes
-	 *
-	 * The When is an ordinary setting (`tasks.<id>.when`) written through the ordinary settings
-	 * write, so there is no second path to the stored value. The press is the one act of its own:
-	 * Run now always runs straight away, whatever the When and whatever switch is over the work:
-	 * somebody pressing it has just answered "should this run" for themselves. Run during quiet hours queues
-	 * the same run held to the range. Neither moves the When.
-	 *
-	 * ## Why it is not a `SettingRow`
-	 *
-	 * A registry row draws a control and nothing else, and this row's control is only a third of
-	 * what it says: the press that goes with the choice and the facts that say whether the choice is
-	 * working (last ran and how that ended, next, how much is waiting) are what somebody opens a task
-	 * to read. The geometry is the same `LabelledRow` every setting row uses, so it lines up.
-	 *
-	 * ## One line, one control
-	 *
-	 * Where the row carries its press, the press IS the choice: one split button whose main half
-	 * always reads Run now, because that is what pressing it does whatever the When, and whose
-	 * chevron holds the When's answers with the current one ticked, above the other ways to run it.
-	 * Picking an answer there writes the When, the same write the chooser makes. A chooser beside
-	 * the press says the same task twice and costs the row half its width. Where there is no press
-	 * (an owning pane, a feature that is off) the When is the ordinary chooser, since there is no
-	 * button to fold it into.
-	 *
-	 * The facts are the row's foot line on the LEFT, under the help they qualify. Stacked in the
-	 * control column they would make every task row three controls tall with most of the row empty
-	 * beside them. Where the When is folded into the press, its answer is the first of them, so
-	 * the row still says when the task runs without the menu being opened.
-	 *
-	 * ## During quiet hours, with its range
-	 *
-	 * Every answer is the server's words through `taskList.whenLabel`, which adds quiet hours'
-	 * range to the answer that waits for them: "During quiet hours (11 PM to 7 AM)".
-	 *
-	 * ## Part of a task, and its dry run
-	 *
-	 * The press's trailing half is a menu. At the top, when it runs (above). Then every other way to
-	 * run it: Run during quiet hours, a Run for the ticked ones, and the dry run where the task has
-	 * one, so the acts stand together whatever the list under them holds. Then the box every Add to list has, filtering what is
-	 * under it, and the task's parts with ticks (its sub-tasks, and for Scan, Generate and Identify
-	 * the library folders). Every row of it is drawn from the task's own declaration on the
-	 * server, which is also what checks the press, so it never offers a part that would be
-	 * refused. The last dry run's report is a fact on the row's foot.
-	 *
-	 * ## Where it runs from
-	 *
-	 * Presses live on Tasks. A pane that owns a task draws its row with `press={false}`. What a
-	 * caller puts `beside` it (an import stage's Edit) stands before the press.
-	 *
-	 * ## A stage that is several tasks
-	 *
-	 * Identify's When reads its three tasks' Whens: their shared answer, or "Mixed" while they
-	 * disagree. Mixed is drawn as the current value (ticked, in the press's menu) and cannot be
-	 * chosen; choosing an answer writes it to all three, on the server.
-	 *
-	 * ## A feature that is off
-	 *
-	 * Work for a feature that is turned off does nothing, so the row says which switch that is and
-	 * where it is turned on, and its press is not offered. The choice stays live: a When can be set
-	 * before the feature is turned on.
-	 *
-	 * ## The address
-	 *
-	 * The row carries `id="tasks.<id>.when"`, the When's own key, so a link naming the setting
-	 * lands on it and rings it: Activity's "Run in Tasks", a search result, Performance's pointer.
-	 * Written from the prop rather than from the answer, so the anchor exists before the list has
-	 * come back and a deep link does not race the request.
-	 */
+	/* One task's row: its press (Run now, with when it runs and the other ways to run it behind
+	 * the chevron), and what it last did and does next. */
 	import { onMount, type Snippet } from 'svelte';
 	import {
 		Badge,
@@ -176,8 +96,7 @@
 	const folded = $derived(press && !offAt);
 	const chosen = $derived(options.find((one) => one.value === row?.when)?.label ?? null);
 
-	/* What is ticked in the press's menu: some of the task's parts, some library folders. Kept
-	   while the row is on screen, so a second look at the menu finds the same ticks. */
+	/* What is ticked in the press's menu: some of the task's parts, some library folders. */
 	let ticked = $state<string[]>([]);
 	let tickedFolders = $state<string[]>([]);
 
@@ -185,8 +104,7 @@
 	const choices = $derived((row?.parts.length ?? 0) > 0 || folders.length > 0);
 	const anyTicked = $derived(ticked.length > 0 || tickedFolders.length > 0);
 
-	/* What is typed in the menu's box, and the parts and folders it leaves. Matched anywhere in the
-	   name, ignoring case, as the Add to lists match; a ticked row the box hides stays ticked. */
+	/* What is typed in the menu's box, and the parts and folders it leaves. */
 	let narrowed = $state('');
 	const needle = $derived(narrowed.trim().toLocaleLowerCase());
 	const matching = <T extends { label: string }>(list: readonly T[]): T[] =>
@@ -194,8 +112,8 @@
 	const shownParts = $derived(matching(row?.parts ?? []));
 	const shownFolders = $derived(matching(folders));
 
-	/* Keys the menu walks its rows with pass through the box; every other key is typing, which the
-	   menu's own type-to-find would otherwise take as a jump to a row. */
+	/* Keys the menu walks its rows with pass through the box; every other key is typing, which
+	   the menu's own type-to-find would otherwise take as a jump to a row. */
 	const WALKS = new Set(['ArrowDown', 'ArrowUp', 'Escape', 'Tab']);
 	function typing(event: KeyboardEvent): void {
 		if (!WALKS.has(event.key)) event.stopPropagation();
@@ -205,8 +123,8 @@
 		return list.includes(key) ? list.filter((one) => one !== key) : [...list, key];
 	}
 
-	/* The ticked part of the task, as the run route takes it: a list only where something in it is
-	   ticked, so an untouched group is all of it. */
+	/* The ticked part of the task, as the run route takes it: a list only where something in it
+	   is ticked, so an untouched group is all of it. */
 	function only(): Only {
 		return {
 			...(ticked.length ? { parts: ticked } : {}),
@@ -361,8 +279,7 @@
 				<span data-fact="dry-running"><Badge state="running" label={COPY.when.dryRunning} /></span>
 			{/if}
 			{#if row.dry_run}
-				<!-- The phrase says when; the report opens beside it, on hover or on a press. A report
-				     lists counts and file names, which is a panel's worth of words and never a tooltip's. -->
+				<!-- The phrase says when; the report opens beside it, on hover or on a press. -->
 				{@const dry = row.dry_run}
 				<Popover
 					hover
@@ -435,10 +352,7 @@
 				<div class="press">{@render beside()}</div>
 			{/if}
 			{#if folded}
-				<!-- The press and the choice in one control. See "One line, one control" above. The
-				     menu stays open while the press is out, so the When can still be changed. The
-				     When is chosen in the menu, so a link to it opens the menu (`data-setting-door`,
-				     read by `settings-anchor`). -->
+				<!-- The press and the choice in one control. See "One line, one control" above. -->
 				<div class="press" data-setting-door>
 					<SplitButton
 						tone="secondary"
@@ -468,9 +382,8 @@
 </LabelledRow>
 
 <style>
-	/* The choice and its press on one line, ending at the column's far edge like every control on
-	   the pane. The choice takes what the press leaves; in a narrow window the press wraps under it
-	   rather than squeezing it. */
+	/* The choice and its press on one line, ending at the column's far edge like every control
+	   on the pane. */
 	.when {
 		display: flex;
 		flex-wrap: wrap;
@@ -523,9 +436,8 @@
 		white-space: nowrap;
 	}
 
-	/* The last dry run, said as a fact on the foot in the foot's own ink; its report opens beside
-	   it. The shared link button, so a keyboard reaches it, drawn as the words it is: dotted under,
-	   because there is something behind it. Anchored at the foot, which only this file writes. */
+	/* The last dry run, said as a fact on the foot in the foot's own ink; its report opens
+	   beside it. */
 	.facts :global(.dry) {
 		font: inherit;
 		color: inherit;
@@ -552,8 +464,8 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* As rows: the sentence first, then each count beside its label, the names as a list, and the
-	   close. One gap between every block, so it reads as one panel and not as stacked notes. */
+	/* As rows: the sentence first, then each count beside its label, the names as a list, and
+	   the close. */
 	div.report {
 		display: flex;
 		flex-direction: column;
@@ -609,9 +521,8 @@
 		list-style: none;
 	}
 
-	/* One name to a line, cut at the end rather than broken mid-extension ("j" over "pg"); the whole
-	   name is on the app's own tooltip. A block inside the tooltip's inline target, so the cut has
-	   the line's width to measure against. */
+	/* One name to a line, cut at the end rather than broken mid-extension ("j" over "pg"); the
+	   whole name is on the app's own tooltip. */
 	.cut {
 		display: block;
 		overflow: hidden;

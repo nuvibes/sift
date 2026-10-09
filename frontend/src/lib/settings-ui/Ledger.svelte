@@ -1,64 +1,12 @@
 <script lang="ts" module>
-	/*
-	 * WHERE THIS FEED WAS LEFT, kept outside the component so it outlives one.
-	 *
-	 * Turning to page five, opening a name from a line and coming back must not give the first
-	 * page again, at the top. Opening a name RUNS a route, so this pane is torn down and built
-	 * again, and everything it had read goes with it. The order of the lines is fixed and the
-	 * narrowing is drawn from a control, so the page and the position on it are the whole of what
-	 * a person would lose.
-	 *
-	 * A module and not storage, deliberately. This is where somebody is standing in a list right
-	 * now, not an arrangement they chose: it is worth nothing after the tab is closed, it needs no
-	 * serialising and it cannot be refused by a browser with storage switched off. The one thing
-	 * storage would add (surviving a full page load) is the case where the list has to be read
-	 * from the server again anyway.
-	 *
-	 * Keyed by the narrowing, because two narrowings are two different lists: page five of
-	 * "everything" says nothing about where somebody was in "only shares".
-	 */
+	/* WHERE THIS FEED WAS LEFT, kept outside the component so it outlives one. */
 	type Place = { offset: number; at: number };
 
 	const places = new Map<string, Place>();
 </script>
 
 <script lang="ts">
-	/*
-	 * Activity > History: everything this installation has done, newest first.
-	 *
-	 * ## Why it is a tab of Activity, beside Now and Log
-	 *
-	 * Because those two are the other answers to "what has this thing been doing". Now says what it
-	 * is doing, the log says what it wrote down while doing it, and this says what happened, and
-	 * all three are facts about the installation rather than about a library, which is what makes
-	 * them an admin's and not a guest's. Other lists that answer "what happened" are narrowings of
-	 * this one rather than lists beside it: "Saved to a device" (the `saved` act), the runs of
-	 * the long passes, whose `ran` lines each open a copyable report, and Decisions, every act a
-	 * queue can take back (Organize's answers and Sift's own filings) with its Undo. One place to
-	 * look for what happened, whichever kind of thing happened.
-	 *
-	 * **Not on Organize.** That screen's promise is that it empties: it is the work waiting on
-	 * somebody, and a record of what was decided competes with the work. This list only ever grows,
-	 * and a growing list on a screen whose whole point is reaching nought is a screen that never
-	 * looks finished.
-	 *
-	 * ## THERE IS NO PER-ACCOUNT "YOUR YEAR" HERE, and that is a decision rather than a gap
-	 *
-	 * A record of what the INSTALLATION did and a story about what one PERSON did are different
-	 * surfaces with different audiences: this one is admin-only by its nature, and that one must
-	 * not be: it is the thing a guest would most want to see about themselves. It is a fourth
-	 * thing and it gets an address of its own the way `/recent` has one, rather than a tab on a
-	 * settings pane. Nothing here is in its way; the events it would be built from are these.
-	 *
-	 * ## Why it re-reads on the library's bell and not on every one
-	 *
-	 * The change bus is separate bells on purpose, and the cost of each differs by an order of
-	 * magnitude. `libraryChanges` is rung by the acts this record is made of: something shared,
-	 * hidden, renamed, created, deleted. `arrivals` is rung on every beat of a scan, which on a
-	 * large import is several times a second, and following it would put a page read and an exact
-	 * count behind each one. So a scan's own lines land when the next act does or when this pane is
-	 * opened again, which is the honest trade and is written down here rather than discovered.
-	 */
+	/* Activity > History: everything this installation has done, newest first. */
 	import { onMount, tick, untrack } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import {
@@ -99,10 +47,7 @@
 	import Pager from '$lib/components/common/Pager.svelte';
 	import { COPY } from './Ledger.search';
 
-	/* The line, what can be done about it, and its moment, each in a column of its own. Fixed
-	   tracks, so every time ends at the same edge whether or not its line has a Report or an
-	   Undo, and a line that wraps keeps its time beside it rather than under it. The time track
-	   holds a full date in the data face; the action track holds two of the link-tone presses. */
+	/* The line, what can be done about it, and its moment, each in a column of its own. */
 	const HISTORY_COLUMNS: readonly Column[] = [
 		{ id: 'what', width: 'minmax(0, 1fr)' },
 		{ id: 'act', width: '9rem', align: 'end' },
@@ -110,32 +55,23 @@
 	];
 
 	/* The same row at a phone's width: the line alone, with its presses and its moment on a line
-	   of their own under it. The two fixed tracks above are 20rem, and a phone line is about 24rem,
-	   so beside them the sentence would be left a word's width and read one word to a line. */
+	   of their own under it. */
 	const HISTORY_CARD: readonly Column[] = [{ id: 'what', width: 'minmax(0, 1fr)' }];
 
 	let events = $state<LedgerEvent[]>([]);
 	let total = $state(0);
 	let failed = $state<string | null>(null);
 	let reading = $state(false);
-	/* Nothing has been read yet, which is a different state from "there is nothing". One draws
-	   nothing at all and the other draws the empty state, and showing the second while the first is
-	   true tells somebody their library has no history when Sift has not looked yet. */
+	/* Nothing has been read yet, which is a different state from "there is nothing". */
 	let asked = $state(false);
 
 	interface Props {
-		/**
-		 * The act this list opens narrowed to, where it was reached for one: "Saved to a device"
-		 * opens it on `saved`, "How long tasks take" on `ran`. Only where it STARTS: the Action
-		 * choice is still the reader's to change, and a caller that wants a different start mounts
-		 * the list again (Activity keys it on this).
-		 */
+		/** The act this list opens narrowed to, where it was reached for one: "Saved to a device"
+		 * opens it on `saved`, "How long tasks take" on `ran`. */
 		verb?: string;
-		/**
-		 * Whether it opens on the decisions alone: what was decided on Organize and what Sift filed
-		 * by itself, each with its Undo, where it was reached from Organize's Decisions (or the old
-		 * address of the record that list replaced). Only where it starts, as `verb`.
-		 */
+		/** Whether it opens on the decisions alone: what was decided on Organize and what Sift
+		 * filed by itself, each with its Undo, where it was reached from Organize's Decisions
+		 * (or the old address of the record that list replaced). */
 		decisions?: boolean;
 	}
 
@@ -153,8 +89,7 @@
 		{ value: DECISIONS, label: COPY.show.decisions }
 	];
 
-	/* Built from the vocabulary rather than listed here. See `kindChoices`. A pane holding its own
-	   list of acts is a pane that goes one line short the day an act is added. */
+	/* Built from the vocabulary rather than listed here. */
 	const KIND_CHOICES = kindChoices();
 	const VERB_CHOICES = verbChoices();
 
@@ -164,12 +99,11 @@
 		decisions: showing === DECISIONS ? true : undefined
 	});
 
-	/* Where the page on screen starts, counting from zero. A page is `PAGE` lines, newest first, so
-	   page three is the same lines on every screen and the pager can name it by number. */
+	/* Where the page on screen starts, counting from zero. */
 	let offset = $state(0);
 
 	/** Read the page starting at `at` for whatever is being asked for now, replacing the one on
-	    screen. A page past the end (lines taken away since) is read again at the last page. */
+	   screen. */
 	async function readPage(at: number, problem: string = COPY.cannotLoad): Promise<void> {
 		reading = true;
 		failed = null;
@@ -200,46 +134,22 @@
 		await readPage(Math.max(0, at), COPY.cannotLoadMore);
 	}
 
-	/*
-	 * SOMETHING HAPPENED WHILE THIS WAS OPEN: the page on screen read again.
-	 *
-	 * The same page, not the first: somebody reading page five is not taken back to the top by an
-	 * act landing somewhere else. On the first page the new lines arrive at its top. A folded line
-	 * that grew (a task still running hands its line back with a newer id and a larger count) is
-	 * the server's one line for its press, so reading the page again never holds the press twice.
-	 */
+	/* SOMETHING HAPPENED WHILE THIS WAS OPEN: the page on screen read again. */
 	async function refresh(): Promise<void> {
 		if (reading) return;
-		/* A refusal is taken and dropped here, deliberately, and it is caught on the call rather than
-		   around it so that nothing else in this function can be swallowed with it. Nothing was
-		   asked for: the screen still shows what it read, and a red box about a background re-read
-		   would be the only thing on this pane that was about nothing somebody did. The next press
-		   says so if it is still broken. */
+		/* A refusal is taken and dropped here, deliberately, and it is caught on the call rather
+		   than around it so that nothing else in this function can be swallowed with it. */
 		const page = await readLedger({ ...narrowing, limit: PAGE, offset }).catch(() => null);
 		if (page === null) return;
 		events = page.items;
 		total = page.total;
 	}
 
-	/*
-	 * TAKING ONE BACK, from the list that holds every act rather than from the screen it was taken
-	 * on.
-	 *
-	 * An event with a receipt IS a workbench decision (the row is the same row, and the event's
-	 * id is the decision's), so the undo here is the very door a queue screen pressed, reached
-	 * through `undoDecision`. Offered only where there is a receipt, it has not already been taken
-	 * back, and the queue that wrote it can take any of its decisions back at all (`final`, which
-	 * the server answers because reversibility is the queue registry's and not the row's).
-	 *
-	 * Here rather than in a band above the work on every queue screen: that would be context in
-	 * front of the work, on every one of them, showing one queue's thread. This is one list of
-	 * everything, in the place the other two answers to "what has this thing been doing" already
-	 * live.
-	 */
+	/* TAKING ONE BACK, from the list that holds every act rather than from the screen it was
+	 * taken on. */
 	let undoing = $state<string | null>(null);
 
-	/** Whether this line can still be taken back. See the note above. A folded line is taken back
-	    whole, by Undo all, and never by its newest act alone. */
+	/** Whether this line can still be taken back. See the note above. */
 	function canUndo(event: LedgerEvent): boolean {
 		return (
 			(event.folded ?? 1) <= 1 &&
@@ -249,11 +159,8 @@
 		);
 	}
 
-	/*
-	 * UNDO ALL, on a line that stands for a press of many decisions: a task's four thousand
-	 * filings. The server reads the press again under the same narrowing and puts each decision back
-	 * through its own undo (`ledger_router.undo_all`); offered while any of them still stands.
-	 */
+	/* UNDO ALL, on a line that stands for a press of many decisions: a task's four thousand
+	 * filings. */
 	function canUndoAll(event: LedgerEvent): boolean {
 		return (
 			(event.folded ?? 1) > 1 &&
@@ -274,9 +181,7 @@
 		return event.more ?? '';
 	}
 
-	/* The folded line Undo all was pressed on, while the question is up. It asks first: one press
-	   puts back every decision of a run, which may be thousands of filings, and the count is
-	   what somebody needs to see before they agree to that. */
+	/* The folded line Undo all was pressed on, while the question is up. */
 	let asking = $state<LedgerEvent | null>(null);
 	let askingOpen = $state(false);
 
@@ -316,25 +221,10 @@
 		}
 	}
 
-	/*
-	 * A RUN'S OWN REPORT, from its line.
-	 *
-	 * Every long pass that finishes writes a `ran` event whose subject is the run itself (see
-	 * `kernel/jobs/ledger.py`), and every run has a plain-text report on the server (what it did,
-	 * how long, on which device, at what settings), made to be pasted to somebody comparing their
-	 * machine with yours. The line in History that says the pass ran is the natural door to it, so
-	 * it opens there, under the line, with the copy beside it. Read when asked for and not before:
-	 * a page of fifty lines is fifty reports nobody asked to see.
-	 */
+	/* A RUN'S OWN REPORT, from its line. */
 	type RunReport = components['schemas']['RunReportView'];
 
-	/**
-	 * The run whose report a line opens, where the server says it has one.
-	 *
-	 * The SERVER's answer (`report`), not a guess from the subject: a task's own run line (a
-	 * backup, a clean-up) names the task under the same subject kind and has no report, and
-	 * offering one would answer "Couldn't load that report".
-	 */
+	/** The run whose report a line opens, where the server says it has one. */
 	function runOf(event: LedgerEvent): string | null {
 		return event.report ?? null;
 	}
@@ -378,31 +268,15 @@
 
 	whenChanged(libraryChanges, () => void refresh());
 
-	/* Which list this is, as a key. Two narrowings are two different lists, so where somebody was in
-	   one says nothing about the other. */
+	/* Which list this is, as a key. Two narrowings are two different lists, so where somebody
+	   was in one says nothing about the other. */
 	const key = $derived(JSON.stringify(narrowing));
 
-	/**
-	 * The element this pane can be found by. The box it scrolls inside is worked out FROM it, at
-	 * the moment it is wanted, and never kept.
-	 *
-	 * Kept, it would be wrong: `scrollParent` answers by computed overflow, and the box here is a
-	 * scrolling area that declares itself scrollable after it has set itself up, so asked during
-	 * mount it answers `document.documentElement`, which never scrolls. The listener would sit on
-	 * `<html>`, nothing would ever be recorded, `at` would stay nought, and the restore below would
-	 * be skipped every time.
-	 */
+	/** The element this pane can be found by. The box it scrolls inside is worked out FROM it, at
+	 * the moment it is wanted, and never kept. */
 	let anchor: HTMLElement | null = null;
 
-	/**
-	 * The scrolling box, once it has answered as one.
-	 *
-	 * Kept only after it has been found to be a real box: `document.documentElement` is what
-	 * `scrollParent` answers before the area has declared itself scrollable, and it never scrolls,
-	 * so accepting it would freeze the wrong element in place for the life of the pane. Held
-	 * because the LAST moment the position is wanted is the moment this pane is taken apart, and by
-	 * then walking up from `anchor` can find nothing at all.
-	 */
+	/** The scrolling box, once it has answered as one. */
 	let box: HTMLElement | null = null;
 
 	/** The box now, or the last real one. Null until the area has become one. */
@@ -423,20 +297,8 @@
 		};
 	}
 
-	/*
-	 * WHERE THE LIST WAS BEING READ, taken at the moment somebody starts to leave and never from a
-	 * scroll event.
-	 *
-	 * Watching the scrolling records the WRONG POSITION: pressing a name in a line scrolls the box
-	 * from deep down to near the top a fraction of a second later, with every line still drawn and
-	 * the box still its full height: a screen on its way out being tidied, arriving as an
-	 * ordinary scroll. So the last thing recorded would be a reset, and coming back would put
-	 * people at the top of a list they had read a long way down. `navigation.svelte` follows the
-	 * same rule for the walls.
-	 *
-	 * Leaving is the one moment the position is both wanted and honest, and this is the door that
-	 * says so: it runs before the router has begun taking anything apart.
-	 */
+	/* WHERE THE LIST WAS BEING READ, taken at the moment somebody starts to leave and never from
+	 * a scroll event. */
 	beforeNavigate(() => {
 		const here = scrollBox();
 		if (!here || !asked) return;
@@ -444,12 +306,7 @@
 	});
 
 	/* The page on its own, so a feed somebody paged through without scrolling (a short window, a
-	   long page) is still remembered. The position it already has is kept.
-
-	   It is also where the scrolling box is FOUND and where the SECOND door below is hung on it: by
-	   the time there are lines to scroll past, the area around this pane has settled into being
-	   one. Asked again on every change, so an area that declares itself late is still found on the
-	   next one, and the listener moves with it. */
+	   long page) is still remembered. */
 	$effect(() => {
 		if (events.length === 0) return;
 		const on = offset;
@@ -457,29 +314,7 @@
 		untrack(() => places.set(key, { offset: on, at: places.get(key)?.at ?? 0 }));
 		if (!here) return;
 
-		/*
-		 * THE SECOND DOOR: the press itself, because the leaving it answers announces nothing.
-		 *
-		 * Pressing a FILE's name opens the popout through `pushState`, and `pushState` in
-		 * `@sveltejs/kit` assigns `page.state` wholesale, so `page.state.settings` is gone, the
-		 * Settings panel is unmounted, and NO navigation is announced. Taken only at the navigation
-		 * door, the position would be lost: standing at 347 in a 450-line feed, pressing a file's
-		 * name and closing the popout with Escape would come back 450 lines deep (the line above
-		 * keeps the depth) and at the top.
-		 *
-		 * Recording the position as the pane is taken apart does NOT work, and it is the obvious
-		 * answer: it puts nothing back: 0 where 347 was standing. A teardown is late by exactly
-		 * the amount that matters: the screen is already being tidied on its way out, which is the
-		 * reset the note on `beforeNavigate` below is about.
-		 *
-		 * A press is early by the same amount. Nothing has moved yet when a finger goes down, so
-		 * the reading is the one somebody can see, and the press is the act that may take them
-		 * away. `keydown` beside it for the same act reached by the keyboard, where there is no
-		 * pointer. In CAPTURE, so a handler that stops the event (a link that opens a panel does),
-		 * cannot stop this seeing it. It is recorded on every press rather than only on the ones
-		 * that leave, which costs one number written to a map and needs no list of which controls
-		 * are a way out.
-		 */
+		/* THE SECOND DOOR: the press itself, because the leaving it answers announces nothing. */
 		const take = () => {
 			if (asked) places.set(key, { offset, at: here.scrollTop });
 		};
@@ -491,12 +326,7 @@
 		};
 	});
 
-	/**
-	 * Open where it was left: the same page, and the same place on it.
-	 *
-	 * The position is put back after the lines are drawn, because a box cannot be scrolled to a
-	 * place that has nothing in it yet.
-	 */
+	/** Open where it was left: the same page, and the same place on it. */
 	onMount(() => {
 		const place = places.get(key);
 		/* Left on the first page at its top is not a place: it is where a list opens anyway. */
@@ -507,7 +337,7 @@
 		void readPage(place.offset).finally(() => {
 			void tick().then(() => {
 				/* The box is asked for HERE and not at mount: by now the lines are drawn and the
-				   scrolling area has settled into being one. See `anchor` above. */
+				   scrolling area has settled into being one. */
 				const here = scrollBox();
 				if (!here || place.at <= 0) return;
 				here.scrollTop = place.at;
@@ -573,10 +403,7 @@
 	<!-- Not read yet: the loading state every list has, never the filters over nothing. -->
 	{#if !failed}<Skeleton lines={6} />{/if}
 {:else if events.length === 0}
-	<!-- TWO empty states, because they are two different facts and one sentence cannot be both. An
-	     install with no record yet is waiting for its first act; a narrowed list with nothing in it
-	     has a record and was asked the wrong question, and telling that person "nothing yet" is
-	     telling them their library has no history. The same distinction the run history makes. -->
+	<!-- TWO empty states, because they are two different facts and one sentence cannot be both. -->
 	{#if kind === ANY && verb === ANY && showing === EVERYTHING}
 		<Empty scope="page" icon="history" title={COPY.emptyTitle}>{COPY.empty}</Empty>
 	{:else}
@@ -732,14 +559,9 @@
 	}
 
 	/* `what` and not `line`: `DataRow` puts `class="line"` on the `<li>` it draws, so the name
-	   would match two nested elements on every row of this pane: the same collision as a
-	   second `.pane` inside the settings shell. Styles are not at risk (Svelte scopes them), but
-	   a test reading the sentences would find twice as many as there are. */
-	/* WRAPPED. The row this sits in keeps its subject on ONE line and clips the end (`DataRow`'s
-	   `.subject`, right for a folder name), and a line naming nineteen files would be cut off
-	   after the fourth under the time beside it, with nothing saying so. A sentence is read to
-	   its end, so it takes as many lines as it needs; `anywhere` lets a long file name break
-	   rather than push the row wide. */
+	   would match two nested elements on every row of this pane: the same collision as a second
+	   `.pane` inside the settings shell. */
+	/* WRAPPED. */
 	.what {
 		margin: 0;
 		font: var(--text-body-sm);
@@ -775,9 +597,9 @@
 	}
 
 	/* An event that was undone keeps its place in the order (a record that quietly loses its
-	   reversals reads as though nothing had ever happened), and says so in QUIETER INK rather than
-	   by being struck through, as `HistoryRow` does: a line through a sentence is read as "this is
-	   not true", and it was true at the time. */
+	   reversals reads as though nothing had ever happened), and says so in QUIETER INK rather
+	   than by being struck through, as `HistoryRow` does: a line through a sentence is read as
+	   "this is not true", and it was true at the time. */
 	.taken-back {
 		color: var(--sift-ink-3);
 	}
@@ -799,10 +621,7 @@
 		white-space: nowrap;
 	}
 
-	/* A run's report: the server's plain text, kept as it was written so it pastes as it reads. In
-	   the data face, and wrapped, so a long line does not push the row wide. Set in from the line it
-	   belongs to rather than boxed: a box is `Panel`'s to draw, and a rule down its edge says "this
-	   belongs to the line above" without being a second surface inside a list. */
+	/* A run's report: the server's plain text, kept as it was written so it pastes as it reads. */
 	.report {
 		margin: var(--space-2) 0 0;
 		padding-inline-start: var(--space-3);

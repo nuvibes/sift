@@ -5,17 +5,7 @@ import { ApiError } from '$lib/api/client';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { movable } from '$lib/library/movable.svelte';
 
-/*
- * What downloaded files are called and where they land.
- *
- * The rule worth a test: the two fields are stored together, so a write that carries one and not
- * the other is not a partial save: it is a save of the missing one as empty. Leaving the naming
- * box would write a blank destination over whatever was there, every time, so the per-site list
- * could never hold anything and the folder would never stay set.
- *
- * The rest is the shape the routing panel next door already has: everything follows a default, a
- * site can be given its own, and it can be put back.
- */
+/* What downloaded files are called and where they land. */
 
 const get = vi.fn();
 const put = vi.fn();
@@ -123,10 +113,7 @@ async function render(sites: unknown[] = []) {
 	return host;
 }
 
-/* By its accessible name, not by "the first one on the screen".
-   There are two template boxes (the default's and one inside each Site card), because
-   both are the same shared field. Picking by position is a locator that goes on finding SOMETHING
-   after the screen changes, which is worse than one that fails. */
+/* By its accessible name, not by "the first one on the screen". */
 function templateBox(label = 'Name template for other addresses'): HTMLInputElement {
 	const found = host.querySelector(`input[aria-label="${label}"]`);
 	if (!found) throw new Error(`no template box labelled ${label}`);
@@ -139,17 +126,7 @@ function button(label: string): HTMLButtonElement | undefined {
 	) as HTMLButtonElement | undefined;
 }
 
-/* One row, three answers, and a write that carries ALL of them.
- *
- * Exercised on a Site card rather than on the default, and not by choice: the default's only
- * remaining control is a chooser, and this one is a `bits-ui` Select, which cannot be opened or
- * picked from under jsdom. Both go through the SAME `store()` (one row, one write body, one
- * rule), so the card is where the rule can actually be driven.
- *
- * The fields are stored together, so a write carrying one and not the others is not a partial
- * save: it is a save of the missing ones as empty, the folder cleared on every edit of the name
- * beside it, and any answer added to the row open to the same.
- */
+/* One row, three answers, and a write that carries ALL of them. */
 const A_SITE_WITH_ITS_OWN = [
 	{ scope: 'pornhub', naming: '{name}', dest_folder_id: 'f2', downloader: 'ytdlp' }
 ];
@@ -196,9 +173,7 @@ describe('per site', () => {
 	it('lists a site that does, by name rather than by key', async () => {
 		await render([{ scope: 'youtube', naming: '{name}', dest_folder_id: null }]);
 
-		// Read off the row itself rather than off the whole panel. Anything on this screen could
-		// happen to contain the word (the worked example can), and a test reading the panel would
-		// pass against a row showing the raw key.
+		// Read off the row itself rather than off the whole panel.
 		const named = [...host.querySelectorAll('.sites summary')].map((one) =>
 			one.textContent?.trim()
 		);
@@ -209,13 +184,10 @@ describe('per site', () => {
 	it('writes both fields when one of them is edited', async () => {
 		await render([{ scope: 'youtube', naming: '{name}', dest_folder_id: 'f2' }]);
 
-		// By its accessible name, not "the second one on the screen". Both boxes are the same
-		// shared field, and index order is not a property this test is about.
+		// By its accessible name, not "the second one on the screen".
 		const box = templateBox('Name template');
 		box.value = '{site}';
 		// `input` before `blur`, which is what a browser does and what the two tests above model.
-		// Setting `.value` alone leaves the field's bound state untouched, so the assertion would
-		// be against a write of the value it started with.
 		box.dispatchEvent(new Event('input', { bubbles: true }));
 		box.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
 		await tick();
@@ -256,9 +228,8 @@ describe('per site', () => {
 	});
 });
 
-/* THE FOLDER ROW WITH NOTHING SET. "Sift" there would look like a folder called Sift, and
-   there is none: with no folder set a download has nowhere to land. The row says the state and
-   what it means for the next download, in the phrase every other chooser of it uses. */
+/* THE FOLDER ROW WITH NOTHING SET. "Sift" there would look like a folder called Sift, and there
+   is none: with no folder set a download has nowhere to land. */
 describe('the download folder, not set', () => {
 	it('says each download asks, and names no folder', async () => {
 		get.mockImplementation((path: string) => {
@@ -323,10 +294,7 @@ describe('the download folder, when the folders are not read', () => {
 });
 
 /* THE DEFAULT DOWNLOADS FOLDER, SET FROM ANYWHERE, not only from the folders already in a
-   library. It is chosen by pointing at
-   it (the operating system's dialog in the application, the folder picker in a browser), never
-   typed; it is made a library folder first, and the default row is written with it and with the
-   two answers it did not touch. */
+   library. */
 describe('the default downloads folder', () => {
 	it('is named for what it is, and each Site follows it rather than a row above', async () => {
 		await render();
@@ -453,8 +421,7 @@ describe('the box for other addresses', () => {
 describe('the example while typing', () => {
 	/* The box asks for an example on every keystroke, and answers need not come back in the
 	   order they were asked: with the first answer held back, the box could read `{site} x` and
-	   the line under it "A file would be called {". Only the newest question's answer may be
-	   shown, and a refusal of an older one must not replace it either. */
+	   the line under it "A file would be called {". */
 	it('shows the answer to what is in the box, not an older answer that arrived last', async () => {
 		await render();
 		const held: ((answer: { example: string }) => void)[] = [];

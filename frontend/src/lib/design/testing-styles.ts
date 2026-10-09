@@ -1,28 +1,11 @@
-/* Support for the tests, and only for the tests.
- *
- * A component's own stylesheet, put into the document a test mounted it in.
- *
- * The unit environment loads no component CSS, so `getComputedStyle` there knows nothing a
- * `<style>` block says. A rule that lands on the wrong element, or loses to another component's
- * rule, is only visible with both sets of rules in place, so a test asking what an element looks
- * like compiles each stylesheet itself and adds it here.
- *
- * Nothing in the app imports this, and it is not in the bundle.
- */
+/* Support for the tests, and only for the tests. */
 
 import { compile } from 'svelte/compiler';
 
 const compiled = new Map<string, string>();
 const added: HTMLStyleElement[] = [];
 
-/**
- * Add the stylesheet `source` compiles to, as the last one in the document.
- *
- * The scoping class the compiler writes comes from the file name it is given, which is not the name
- * the test run compiled the mounted component under. So `scope`, an element the mounted component
- * drew itself, names the class its scoped rules must carry to land on it. Without a `scope` the
- * scoped rules match nothing, which is what a test asking only where the GLOBAL rules land wants.
- */
+/** Add the stylesheet `source` compiles to, as the last one in the document. */
 export function applyStyles(source: string, scope?: Element | null): void {
 	let css = compiled.get(source);
 	if (css === undefined) {

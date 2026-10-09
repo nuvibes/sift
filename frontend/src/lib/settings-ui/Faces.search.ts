@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Faces pane's own words, and its search entries built from the same objects, so a heading on
- * the pane and the result a search finds cannot say two different things. The thresholds around
- * them are registered settings and find themselves; the switch's section and deleting what was
- * collected are not. */
+/* The Faces pane's own words, and its search entries built from the same objects, so a heading
+ * on the pane and the result a search finds cannot say two different things. */
 import type { Searchable } from './search';
 import { counted, filesSaid } from '$lib/entity/entity-counts';
 import type { FaceSettings } from '$lib/people/faces.svelte';
@@ -33,8 +31,7 @@ const PEOPLE_KNOWN = {
 const CONFIRMED_FACES =
 	"A confirmed face is one you confirmed as that person. Sift compares every new face with them, and the colored bar on the person's page is based on them. Faces Recognized by Sift aren't counted here. Once someone has 20 confirmed faces, Sift also learns from the ones it recognizes most surely. Those are marked on that person's Recognized by Sift tab. A face too small or blurred to learn from still gets the name, but Sift doesn't learn from it.";
 
-/* The official word for what Sift learns from a face. The code still says "pack" for the file
-   that carries them; the screen never does. */
+/* The official word for what Sift learns from a face. */
 const FACIAL_FINGERPRINTS = {
 	name: 'Facial fingerprints',
 	help: 'What Sift learned from the faces of the people it can recognize. They move between Sift libraries as one file, without any of your files.'
@@ -52,10 +49,8 @@ const WAITING_FOR_A_FACE = {
 	help: 'People from a facial fingerprints file or a folder that no face in your library matches yet. Create a person for any of these people now, or remove one.'
 };
 
-/**
- * The words the pane writes itself, in one place: the status line, the two pages one level in, and
- * the rows on them that are not registered settings. The registered rows carry their own words.
- */
+/** The words the pane writes itself, in one place: the status line, the two pages one level in,
+ * and the rows on them that are not registered settings. */
 export const COPY = {
 	status: {
 		off: 'Turned off. The faces Sift already found are kept.',
@@ -100,8 +95,8 @@ export const COPY = {
 		canceling: 'Canceling\u2026',
 		leave:
 			'The scan continues if you leave this screen, and you can follow or cancel it in Activity. Canceling keeps every face already found.',
-		/* Said when a search or a link lands on the row while no such scan runs: the row is drawn
-		   only during one, and the press that starts one is rung in its place. */
+		/* Said when a search or a link lands on the row while no such scan runs: the row is
+		   drawn only during one, and the press that starts one is rung in its place. */
 		notRunning:
 			'\u201cIdentifying all files again\u201d is shown only while every file is being identified again. \u201cIdentify all files again\u201d starts one.'
 	},
@@ -172,8 +167,7 @@ export const COPY = {
 		couldNotAdd: "Couldn't add the people from that file.",
 		couldNotSave: "Couldn't save the file.",
 		nobodyLeft: "Everyone was left out, so there's nothing to export.",
-		/* Said after a file taken in while recognition is off: the People are kept and wait. The
-		   switch's own registered name goes between the two halves, as a link to it. */
+		/* Said after a file taken in while recognition is off: the People are kept and wait. */
 		waitsForSwitch: ["Sift won't recognize anyone until ", ' is on.'] as const,
 		busy: 'Importing\u2026'
 	},
@@ -236,8 +230,8 @@ export const COPY = {
 			`Adding starter pictures for ${people.toLocaleString()} ${people === 1 ? 'person' : 'people'}. Activity shows the task.`,
 		failed: "Couldn't add the starter pictures"
 	},
-	/** How long a scan of every file still has to go, by the one estimate formatter: its own words
-	    below the sample, a window after it. Opens a sentence of its own, so it opens with a capital. */
+	/** How long a scan of every file still has to go, by the one estimate formatter: its own
+	   words below the sample, a window after it. */
 	timeLeft: (seconds: number | null): string => {
 		const said = seconds === null ? NOT_ENOUGH_TO_SAY : describeWait(seconds);
 		return said.charAt(0).toUpperCase() + said.slice(1);
@@ -249,13 +243,7 @@ export const COPY = {
 	}
 } as const;
 
-/**
- * Where recognition stands, in one line under its switch, every number the server's. Shared by the
- * Faces pane and the Recognition switches on Importing, so the two say the same thing.
- *
- * The backlog is split by reason, with the files not read yet after it, or a library four-fifths
- * unscanned would read like a finished one. The last scan says when it ENDED, or was canceled.
- */
+/** Where recognition stands, in one line under its switch, every number the server's. */
 export function facesStatus(
 	feature: FaceSettings | null,
 	enabled: boolean,
@@ -273,8 +261,7 @@ export function facesStatus(
 	if ((feature.scanned_under_older_rules ?? 0) > 0)
 		parts.push(COPY.status.older(feature.scanned_under_older_rules ?? 0));
 	if (feature.last_run_at) {
-		/* The one moment on the wire in milliseconds; every other is seconds. Mid-sentence, so
-		   `inline`: "Last scan ended today", never "ended Today". */
+		/* The one moment on the wire in milliseconds; every other is seconds. */
 		const said = onRecord(feature.last_run_at / 1000, { inline: true });
 		parts.push(
 			feature.last_run_canceled === true ? COPY.status.lastCanceled(said) : COPY.status.last(said)
@@ -297,8 +284,8 @@ export const SEARCHABLE: Searchable[] = [
 		help: COPY.more.help,
 		keywords: 'device gpu cpu models quality regroup rescan advanced expert'
 	},
-	/* On the page behind More settings, filed under it: the page claims them, so each opens it and
-	   rings its row. */
+	/* On the page behind More settings, filed under it: the page claims them, so each opens it
+	   and rings its row. */
 	{
 		name: COPY.regroup.label,
 		key: 'faces.regroup',

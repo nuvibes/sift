@@ -1,39 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Whether a kind of background work is wanted, and whether it can run at all.
+"""Whether a kind of background work is switched on, and whether this machine can run it.
 
-Two questions about the same work, asked by different people and answered from different places,
-which is why they are declared together and kept apart.
-
-**Is it switched on** is a person's answer. It is a stored preference: the pictures, the faces,
-the meaning and the marks are each gated by a key the composition root names (see the import gates
-in the application's wiring), and the walk that finds files, the duplicate sweep and the folder pass
-are gated here, without which there would be no way to say no to them at all.
-
-**Can it run** is a fact about the machine. Recognition needs a runtime and a set of model files; a
-description needs the same. Neither is a preference and neither is stored, so it is asked of the
-feature that knows, every time it is wanted.
-
-## Why the switch is declared per JOB TYPE and the readiness per FAMILY
-
-Because that is the honest grain of each.
-
-A switch stops work. "Stop scanning" cannot mean "stop probing a file that is already in the
-library": probe and import are in the SCAN family too, and a file taken in with no probe has no
-dimensions and cannot be drawn on a wall. So a switch names the job types it actually refuses:
-the walk, the whole-library pass and the catch-up, and leaves the rest of the family alone. It is
-the same grain `WorkAhead` registers at and the same grain the import gates use, so there is one
-vocabulary for a kind of work rather than two.
-
-Readiness is about a capability, and a capability belongs to a feature, and a feature is a family:
-every job type under IDENTIFY needs the same runtime. Asked per type it would be the same answer
-repeated, and the screen that draws it draws one row per family.
-
-## Why the composition root fills both in
-
-Neither answer is the queue's to know. A switch is a settings key, and the kernel must not learn
-that settings exist in a particular shape; readiness lives inside the feature. So a caller hands in
-a function for each, exactly as it does for the counters on `WorkAhead`, and this holds the result.
-"""
+A switch is per job type and readiness per family; the composition root fills both in."""
 
 from __future__ import annotations
 
@@ -50,14 +18,7 @@ log = get_logger(__name__)
 
 
 class JobSwitchedOff(Exception):
-    """This work is switched off, so nothing was queued. The message is meant to be read.
-
-    Raised rather than returned, because the two callers want opposite things and only the caller
-    knows which it is. Somebody pressing a button needs a sentence saying why nothing happened; a
-    watcher noticing a file needs to carry on quietly, and catches this. A queue that silently
-    dropped the work would leave the person with no answer at all, which is the worse of the two
-    mistakes to make by default.
-    """
+    """This work is switched off, so nothing was queued. The message is meant to be read."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,27 +48,18 @@ class Readiness:
 
 Ask = Callable[[], Awaitable[Readiness]]
 
-#: When a family's quiet-hours window opens, as the "HH:MM" the person set, or None when it has
-#: no window. See `Switchboard.declare_window`.
+#: When a family's quiet-hours window opens, as "HH:MM", or None without one.
 Opens = Callable[[], Awaitable[str | None]]
 
 
 @dataclass(frozen=True, slots=True)
 class QuietHold:
-    """What quiet hours hold back right now: whether the range is open, and whose work waits for it.
-
-    `types` are the job types whose task is set to "In quiet hours". Work of those types that nobody
-    pressed is not handed out while the range is shut, which is how it waits for the opening and
-    how it is paused at the close. A press is never held, whatever its type; a press of "At quiet
-    hours" is held however its task is set. Both are marks on the ROW (`jobs.timing`), so this only
-    ever speaks for work nobody asked for.
-    """
+    """What quiet hours hold back now: whether the range is open, and whose unpressed work waits."""
 
     open: bool = True
     types: frozenset[str] = frozenset()
 
 
-#: The answer a board gives with nothing declared: always open, nothing held.
 NOTHING_HELD = QuietHold()
 
 AskQuiet = Callable[[], Awaitable[QuietHold]]
@@ -130,11 +82,7 @@ def one_reading_now() -> OneReading | None:
 
 @asynccontextmanager
 async def one_reading() -> AsyncIterator[None]:
-    """Every setting a question asks, answered from one read taken when it is first needed.
-
-    Live per question, never kept past it: a switch moved is read by the next question. A question
-    inside another shares the outer one's reading.
-    """
+    """Every setting a question asks, from one read; a nested question shares the outer's."""
     if _READING.get() is not None:
         yield
         return
@@ -146,13 +94,7 @@ async def one_reading() -> AsyncIterator[None]:
 
 
 class Switchboard:
-    """What the application knows about each kind of background work that the queue cannot.
-
-    Empty by default, and an empty board allows everything: a job type nothing has declared a
-    switch for is always on, and a family nothing has been asked about is ready. That is what keeps
-    this from becoming a list every new job has to be added to before it will run at all: the
-    same rule the import gates follow.
-    """
+    """What the app knows about each kind of background work; an empty board allows everything."""
 
     def __init__(self) -> None:
         self._switches: dict[str, Switch] = {}
@@ -162,28 +104,18 @@ class Switchboard:
         self._quiet: AskQuiet | None = None
         self._asking: asyncio.Future[dict[Family, Readiness]] | None = None
 
-    # --- the switch ----------------------------------------------------------------------
-
     def declare(self, switch: Switch, *job_types: str) -> None:
-        """Say which setting switches these job types off, and what a refusal says.
-
-        Several types share one switch on purpose: the walk, the whole-library pass and the
-        catch-up are one thing to a person and three rows to the queue. Declaring the same type
-        twice replaces the first, which is what makes this safe to call from a composition root
-        that may build a feature more than once in a test.
-        """
+        """Say which setting switches these job types off; declaring a type again replaces it."""
         for job_type in job_types:
             self._switches[job_type] = switch
 
     def declare_shown(self, on: Callable[[], Awaitable[bool]], *job_types: str) -> None:
-        """Say how Activity reads whether work of these types starts on its own, for work whose
-        off is not a refusal (a claim-only follow-on still runs while it is off)."""
+        """Say how Activity reads whether these types start on their own."""
         for job_type in job_types:
             self._shown[job_type] = on
 
     async def shown_off(self, job_type: str) -> bool:
-        """Whether Activity reads this type as switched off: its switch refuses, or what was
-        declared for it says it does not start on its own. Unreadable reads as on."""
+        """Whether Activity reads this type as switched off; unreadable reads as on."""
         if await self.refusal(job_type) is not None:
             return True
         ask = self._shown.get(job_type)
@@ -205,18 +137,8 @@ class Switchboard:
         return dict(self._switches)
 
     async def refusal(self, job_type: str, *, pressed: bool = False) -> str | None:
-        """Why this work may not be queued, or None when it may.
-
-        A PRESS IS NEVER REFUSED. Every switch declared here answers whether work starts ON ITS OWN
-        (a task's When, read as "anything but Only when I press it"), and somebody pressing Run
-        now, a queue's Scan now or a file's Run task has just answered that for themselves. Refusing
-        them with the sentence for work nobody asked for would say "Scanning is switched off" to
-        the person who had just pressed Scan.
-
-        A switch that cannot be read is treated as ON. The alternative is a broken settings read
-        silencing every background pass in the application together, which is the one wrong answer
-        that looks like nothing being wrong.
-        """
+        """Why this work may not be queued, or None. A press is never refused."""
+        # An unreadable switch is on: a broken read must not silence every background pass.
         switch = self._switches.get(job_type)
         if switch is None or pressed:
             return None
@@ -228,21 +150,12 @@ class Switchboard:
             return None
         return None if on else switch.refusal
 
-    # --- whether it can run at all -------------------------------------------------------
-
     def declare_ready(self, family: Family, ask: Ask) -> None:
         """Say how to find out whether this family's work can run on this machine."""
         self._asks[family] = ask
 
     async def readiness(self) -> dict[Family, Readiness]:
-        """Every family that was asked about, and what it said.
-
-        A family whose answer cannot be read is LEFT OUT rather than reported as not ready, for the
-        reason `WorkAhead` leaves a failed counter out: "not known" is the honest answer to a read
-        that did not come back, and a screen that said "waiting for the runtime" over an
-        unreachable endpoint would be inventing a fault. Callers arriving while one ask is out
-        share its answer: every worker claims together, and each would ask every feature again.
-        """
+        """Every family asked about and its answer; a failed read is left out, never "not ready"."""
         if self._asking is None or self._asking.get_loop() is not asyncio.get_running_loop():
             self._asking = asyncio.ensure_future(self._ask_every_family())
             self._asking.add_done_callback(self._asked)
@@ -262,35 +175,16 @@ class Switchboard:
                     log.warning("switchboard.readiness_failed", family=family.value, error=str(exc))
         return answers
 
-    # --- when it is allowed to run -------------------------------------------------------
-
     def declare_window(self, family: Family, opens: Opens) -> None:
-        """Say when this family's overnight window opens, so a pass held by it can say when.
-
-        The window itself is the pool's caps going to nought outside the hours, which the Activity
-        screen reads as "held". What the caps cannot say is WHEN they come back, and "Waiting for
-        tonight's window." without the hour leaves somebody guessing whether that is ten minutes or
-        ten hours. The hour is a setting the feature owns, so (like the switch and the readiness
-        above) the composition root hands in the function that reads it.
-        """
+        """Say when this family's overnight window opens, so a held pass can say when."""
         self._windows[family] = opens
 
     def declare_quiet_hours(self, ask: AskQuiet) -> None:
-        """Say how to find out whether quiet hours are open and whose automatic work waits for them.
-
-        Handed in for the reason the switch and the readiness are: the range and each task's When
-        are settings, and the queue must not learn that settings exist. One answer for the whole
-        install, because quiet hours is one range.
-        """
+        """Say how to read quiet hours: whether open and whose automatic work waits for them."""
         self._quiet = ask
 
     async def quiet_hold(self) -> QuietHold:
-        """Whether quiet hours are open and which types wait for them. Nothing held if undeclared.
-
-        A read that fails holds NOTHING back, for the reason a switch that cannot be read is on: a
-        broken settings read must not silently stop every quiet-hours task in the install. The
-        worse error would look like nothing being wrong.
-        """
+        """Whether quiet hours are open and which types wait; a failed read holds nothing back."""
         if self._quiet is None:
             return NOTHING_HELD
         try:
@@ -301,12 +195,7 @@ class Switchboard:
             return NOTHING_HELD
 
     async def window_opens(self, family: Family) -> str | None:
-        """When this family's window opens, or None: never declared, or not readable right now.
-
-        A read that fails is None rather than an error, for the reason `readiness` leaves a failed
-        answer out: the sentence falls back to saying there is a window, which is true, instead of
-        inventing an hour.
-        """
+        """When this family's window opens, or None when undeclared or unreadable."""
         opens = self._windows.get(family)
         if opens is None:
             return None

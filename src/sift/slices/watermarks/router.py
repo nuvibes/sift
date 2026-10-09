@@ -1,18 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The endpoints this feature has. The ones that SPEND anything are admin-only.
-
-Reading a library's watermarks is a property of the whole install rather than a personal
-preference, and everything that reports on it or spends the machine's time and network on it takes
-an admin. There is no asset a caller chooses in any of those, so refusing a guest outright leaks
-nothing.
-
-There is no per-file read here: what was read off one file is the watermark line of that file's
-History, which already answers per file, to exactly the users who may see it.
-
-Nor is there a library sweep of this feature's own: reading the library is the watermark task's
-Run now (`/api/tasks`), which runs the Build for this one product, the way Smart Search's describe
-does: a second walk would read every file twice.
-"""
+"""The watermark endpoints; everything that spends anything is admin-only and names no asset."""
 
 from __future__ import annotations
 
@@ -53,7 +40,6 @@ async def read_status(
     queue: Annotated[JobQueue, Depends(wiring.queue)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> WatermarkStatus:
-    """What this install can do, and why not when it cannot."""
     enabled = await service.enabled()
     ready, problem = await service.ready()
     store = weights.store(service.settings)
@@ -63,8 +49,7 @@ async def read_status(
         device=await service.device(),
         read_files=await service.read_files(),
         marks_found=await service.marks_found(),
-        # Counted no further than a page. A screen that said "100,000 files waiting" would be
-        # reading the whole library to say something nobody acts on.
+        # Counted no further than a page.
         waiting_files=await service.waiting(),
         unread_files=await service.unread() if ready else 0,
         running_jobs=await queue.outstanding(WATERMARK_READ),
@@ -82,18 +67,7 @@ async def fetch_models(
     viewer: Annotated[Viewer, Depends(require_admin)],
     again: bool = False,
 ) -> ModelsFetching:
-    """Fetch the models. Hands back the job doing it.
-
-    **Sift ships no models**, so this is how a fresh install becomes able to read anything, and it
-    is a deliberate act by an admin rather than something that happens on enabling, because what it
-    downloads is published by somebody else on their own terms.
-
-    Answers 409 with the feature off. Downloading models for a feature nobody switched on is
-    exactly the network call the switch exists to prevent.
-
-    `again=true` fetches files that are already on disk, for a damaged model. A second press joins
-    the download already waiting or under way.
-    """
+    """Fetch the models (Sift ships none); 409 with the feature off; returns the job."""
     if not await service.enabled():
         raise _off()
     newest = [job.id for job in await queue.newest_of(WATERMARK_FETCH_MODELS, limit=1)]
@@ -112,15 +86,5 @@ async def forget_reads(
     service: Annotated[WatermarkService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> ReadingsRemoved:
-    """Throw away what was read, so the library is read again.
-
-    **The filings are left exactly where they are**, and that is the difference between this and
-    undoing them. What goes is the record of having looked, which is what makes the next sweep read
-    the library again: somebody who has changed a setting or suspects a bad pass wants that, and
-    they do not want every site Sift filed a file under to vanish with it. A filing is taken back
-    one file at a time, on that file, where the evidence for it is.
-
-    Answers on an install where the feature is off, because clearing what an earlier decision left
-    behind is exactly what somebody does after switching it off.
-    """
+    """Throw away what was read so the library is read again; the filings stay."""
     return ReadingsRemoved(removed=await service.forget_reads())

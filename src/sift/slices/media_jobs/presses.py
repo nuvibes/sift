@@ -1,21 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The runs over some files, as Activity's Library tasks describe them.
+"""The runs over some files that Activity's Library tasks describe, beside the library's work.
 
-Run task on a file, a selection or a folder's files queues the chosen passes for THOSE files, as
-top rows named for the presser (`POST /assets/run`). A family's row on Activity that read the
-library's figures over them would say, for forty files pressed beside nothing else, how far the
-whole library had got, and price the library's owed files at the ledger's pace as their time
-left: a quarter of an hour for a minute's work. What is here is the figures of those presses,
-whole, and how much of each family's live work is the library's, read in one go so the two are
-never weighed against each other from two different moments.
-
-A TASK'S RUN NOW OVER SOME LIBRARY FOLDERS IS THE SAME CASE FROM ANOTHER DOOR: its row would
-read the library's figures while it walked one folder. It is described by its folders' files, by
-the count the task's dry run over them states, and what it has made since it began.
-
-ALL PRESSES STILL GOING IN A FAMILY ARE ONE RUN. A second press made while the first is going
-joins it, and the run ends when the last of them does; the next press starts a new one. Read from
-the queue rather than remembered here, so a restart in the middle of a run reads the same run.
+All presses still going in a family are one run, read from the queue so a restart reads the same run.
 """
 
 from __future__ import annotations
@@ -35,9 +21,7 @@ from sift.kernel.jobs.queue import LiveWork, PressedWork
 
 @dataclass(slots=True)
 class Presses:
-    """What the runs over some files have in one family, beside the library's work: a press for
-    some files (Run task), and a run over some library folders (a task's Run now with folders
-    ticked)."""
+    """One family's runs over some files (Run task) or some folders, beside the library's work."""
 
     live: int = 0
     """Pressed rows still going: queued, running or held."""
@@ -84,28 +68,18 @@ class Presses:
 
     @property
     def alone(self) -> bool:
-        """Whether what this family is doing now is runs over some files and nothing of the
-        library's: then the row is those runs' own figures. A pass over the library that is
-        WAITING (every row of it held for quiet hours) is not doing anything now, and its files
-        are not what a person reading the time left beside forty pressed files is asking about;
-        once the range opens it is running, and the row is the library's again."""
+        """Whether only presses are going; a library pass held for quiet hours is not going."""
         return self.going and self.library <= self.held
 
 
 def families_of(line: LiveWork | PressedWork, carriers: Collection[str]) -> dict[Family, list[str]]:
-    """Which families a row is work of, each with the lines it is drawn on there.
-
-    A coordinator's task is the work of each product it names, on that product's own line
-    (`PRODUCT_TYPES`): a task making previews and strips is on both of Generate's lines. Any other
-    row is its own type's, in the family it is registered under.
-    """
+    """Which families a row is work of, each with the lines it is drawn on there."""
     if line.type in carriers:
         found: dict[Family, list[str]] = {}
         for key in line.products:
             if key in PRODUCT_FAMILIES:
                 found.setdefault(PRODUCT_FAMILIES[key], []).append(PRODUCT_TYPES.get(key, key))
         return found
-    # Every type read is one the registry put in a family: see `read_presses`.
     return {registered_families()[line.type]: [line.type]}
 
 
@@ -119,18 +93,20 @@ def pass_types() -> list[str]:
 async def read_presses(
     queue: JobQueue, counted: Collection[str]
 ) -> tuple[dict[Family, Presses], list[LiveWork]]:
-    """The runs over some files still going and the library's live work, per long pass, and the
-    live rows themselves, grouped: the one read of them Activity makes.
-
-    Two reads: the live rows, split by whether they are a press's, a run over some folders' or the
-    library's (`JobQueue.live_by_press`), and for each family with such a run going, every file's
-    row of its types since the oldest of them began (`JobQueue.pressed_since`), which is what makes
-    the bar done of total. `counted` is the job types a count of the library answers for
-    (`WorkAhead`).
-    """
+    """The live presses and the library's live work per long pass, read together for Activity."""
     carriers = registered_product_carriers()
     types = pass_types()
     lines = await queue.live_by_press(types)
+    answer, began = _tally_live(lines, carriers, counted)
+    if any(press.folders for press in answer.values()):
+        await _weigh_folders(queue, types, answer)
+    await _tally_pressed(queue, types, carriers, answer, began)
+    return answer, lines
+
+
+def _tally_live(
+    lines: list[LiveWork], carriers: Collection[str], counted: Collection[str]
+) -> tuple[dict[Family, Presses], dict[Family, int]]:
     answer: dict[Family, Presses] = {}
     began: dict[Family, int] = {}
     for line in lines:
@@ -147,34 +123,42 @@ async def read_presses(
             else:
                 continue
             began[family] = min(began.get(family, line.since), line.since)
-    # WHAT EACH RUN OVER SOME FOLDERS WAS WEIGHED BY, from its first page, which carries it for as
-    # long as any of the run goes. A run that carries no count per product (one asked for before it
-    # was written) is drawn as the library's work, which is what it was drawn as then.
-    if any(press.folders for press in answer.values()):
-        for payload in await queue.live_tops(types):
-            each = payload.get("each")
-            if not isinstance(payload.get("roots"), list) or not isinstance(each, dict):
+    return answer, began
+
+
+async def _weigh_folders(queue: JobQueue, types: list[str], answer: dict[Family, Presses]) -> None:
+    # A run that carries no count per product predates the count and is drawn as library work.
+    for payload in await queue.live_tops(types):
+        each = payload.get("each")
+        if not isinstance(payload.get("roots"), list) or not isinstance(each, dict):
+            continue
+        for key, count in each.items():
+            whose = PRODUCT_FAMILIES.get(str(key))
+            if whose is None or whose not in answer or not isinstance(count, int):
                 continue
-            for key, count in each.items():
-                whose = PRODUCT_FAMILIES.get(str(key))
-                if whose is None or whose not in answer or not isinstance(count, int):
-                    continue
-                part = PRODUCT_TYPES.get(str(key), str(key))
-                totals = answer[whose].folders_total
-                totals[part] = totals.get(part, 0) + count
-        for press in answer.values():
-            if press.folders and not press.folders_total:
-                press.library += press.folders
-                press.folders = 0
+            part = PRODUCT_TYPES.get(str(key), str(key))
+            totals = answer[whose].folders_total
+            totals[part] = totals.get(part, 0) + count
+    for press in answer.values():
+        if press.folders and not press.folders_total:
+            press.library += press.folders
+            press.folders = 0
+
+
+async def _tally_pressed(
+    queue: JobQueue,
+    types: list[str],
+    carriers: Collection[str],
+    answer: dict[Family, Presses],
+    began: dict[Family, int],
+) -> None:
     for family, since in sorted(began.items()):
         press = answer[family]
-        # Every type of the long passes, not only the ones with a row still live: a run's file
-        # tasks may all be finished while its page or a last step still goes.
+        # Every long-pass type: a run's file tasks may be done while its page still goes.
         for row in await queue.pressed_since(types, since):
             for part in families_of(row, carriers).get(family, []):
                 if row.folders:
-                    # What is left of a run over folders is what it was weighed by less what it
-                    # has made, so only what it has made is read here.
+                    # A folder run's remainder is its weight less what it made, so only DONE counts.
                     if press.folders and row.state is JobState.DONE:
                         press.folders_done[part] = press.folders_done.get(part, 0) + row.count
                     continue
@@ -183,4 +167,3 @@ async def read_presses(
                     tally[1] += row.count
                     if row.state is JobState.DONE:
                         tally[0] += row.count
-    return answer, lines

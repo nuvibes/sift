@@ -1,12 +1,5 @@
-/*
- * A press on a settings pane sits in a row's control column, on the right, with the row's name and
- * its sentence on the left: never a button at the pane's left edge under a paragraph. These are the
- * presses most likely to be drawn that way, each held to its row.
- *
- * Read from the markup, for the reason `TaskWhen.owners.test.ts` gives: several of these are drawn
- * behind loads, an admin check or the desktop app, so a rendered test sees only what its mocks let
- * through, and what is pinned here is what the pane DECLARES.
- */
+/* A press on a settings pane sits in a row's control column, on the right, with the row's name
+ * and its sentence on the left: never a button at the pane's left edge under a paragraph. */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -47,8 +40,7 @@ describe.each(PRESSES)('$pane', ({ pane, press }) => {
 
 it("draws a stash-box card's verbs through the shared row, never in a head of its own", () => {
 	/* The card is a `DataRow`: the verbs come from one declared list, opened from the three-dot
-	   menu and from a right-click, with the switch at the row's end. A hand-written head with its
-	   own verbs box is refused because it would be a second look for one act. */
+	   menu and from a right-click, with the switch at the row's end. */
 	const markup = markupOf('StashBoxes');
 	const row = markup.indexOf('<DataRow verbs={boxVerbs(box)}');
 	const marks = markup.indexOf('<div class="marks">');
@@ -58,11 +50,8 @@ it("draws a stash-box card's verbs through the shared row, never in a head of it
 	expect(markup.includes('<div class="verbs">')).toBe(false);
 });
 
-/*
- * ONE PRESS HEIGHT: a press inside a settings row or a pane's form names no size; the row decides
- * it (see `press-size`). A row whose control column holds a field beside a press that is not a
- * submit says so with `besideField`, so the press stands level with the field.
- */
+/* ONE PRESS HEIGHT: a press inside a settings row or a pane's form names no size; the row
+ * decides it (see `press-size`). */
 const PANE_FILES = import.meta.glob(['./*.svelte', '!./*.test.svelte'], {
 	query: '?raw',
 	import: 'default',

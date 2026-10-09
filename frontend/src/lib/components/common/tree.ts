@@ -1,11 +1,4 @@
-/* The shape of a folder tree, and the one operation worth having on its own.
- *
- * The rows are rendered flat rather than as components inside components. A tree drawn by nesting
- * has to move focus across that nesting to answer an arrow key, and every level is somewhere for
- * that to go wrong. Flattened, the arrow keys are a step through a list, and the structure is said
- * out loud by aria-level instead of by the shape of the markup, which is what a screen reader
- * reads anyway.
- */
+/* A folder tree's shape, rendered flat: arrow keys step a list and aria-level says the depth. */
 
 export interface TreeNode {
 	id: string;
@@ -32,12 +25,7 @@ export interface FlatNode {
 	hasChildren: boolean;
 }
 
-/**
- * The rows that are actually on screen, in order, with the depth each one sits at.
- *
- * A collapsed node's children are not here at all: they are not rendered, so they are not rows, and
- * an arrow key must not walk onto something nobody can see.
- */
+/** The rows on screen in order with their depth; a collapsed node's children are not rows. */
 export function flattenTree(
 	nodes: readonly TreeNode[],
 	expandedIds: ReadonlySet<string>,

@@ -2,16 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { choiceFor, controlFor, optionsFor, PERCENT } from './control';
 import type { SettingEntry } from '$lib/settings-ui/settings';
 
-/* The rule this file guards is the reason there is one settings control chooser.
- *
- * A pane that picks its own control can pick "switch" for everything registered into its section,
- * whatever the setting holds: four sizes in megabytes and six recognition settings on screen as
- * toggles, reading as off because a number is not `true`, and sending a boolean the server
- * refuses when flipped. Dead controls, with every test green unless something asserts that a
- * number gets a number field.
- *
- * This is that assertion, and the rest of the settings surface rests on it.
- */
+/* The rule this file guards is the reason there is one settings control chooser. */
 
 function entry(over: Partial<SettingEntry> = {}): SettingEntry {
 	return { key: 'test.setting', value: undefined, ...over };
@@ -46,9 +37,7 @@ describe('the control a setting gets', () => {
 
 	it('gives a clock time a clock, read off the default and not off a list of keys', () => {
 		/* The quiet hours. As text boxes they would take `11pm` and `2300` with only a sentence
-		   underneath saying otherwise. A list of keys here would be a copy of something the
-		   server owns and would go stale the first time a setting was added; the SHAPE of the
-		   default cannot. */
+		   underneath saying otherwise. */
 		expect(controlFor(entry({ default: '23:00' }))).toBe('time');
 		expect(controlFor(entry({ default: '07:00' }))).toBe('time');
 		expect(controlFor(entry({ default: '00:00' }))).toBe('time');
@@ -71,10 +60,8 @@ describe('the control a setting gets', () => {
 	});
 
 	it('reads the declared default, not the stored value', () => {
-		/* A stored value can be absent, and after a version change it can be a leftover of the wrong
-		 * type. The default is declared beside the validator that accepts it, so it is the one field
-		 * guaranteed to be an example of what the setting holds: deciding from `value` would make a
-		 * number with nothing stored yet a toggle. */
+		/* A stored value can be absent, and after a version change it can be a leftover of the
+		 * wrong type. */
 		expect(controlFor(entry({ default: 60, value: undefined }))).toBe('number');
 		expect(controlFor(entry({ default: 60, value: true }))).toBe('number');
 	});
@@ -82,9 +69,7 @@ describe('the control a setting gets', () => {
 
 describe('the slider', () => {
 	it('is what a percentage gets, and only a percentage', () => {
-		/* A range input fires `input` once per pixel of travel. The rule that decides this is worth
-		 * pinning on its own: every extra slider is a control that writes on every frame of a drag
-		 * unless the row handles it, and the row only handles it for the shape it knows about. */
+		/* A range input fires `input` once per pixel of travel. */
 		expect(controlFor(entry({ default: 50, minimum: 0, maximum: 100, unit: PERCENT }))).toBe(
 			'slider'
 		);
@@ -109,8 +94,7 @@ describe('what a menu shows', () => {
 	});
 
 	it('falls back to the stored word when a name is missing, visibly', () => {
-		// Only reachable from a server older than this client. Showing `fully_gone` says plainly
-		// that something is out of step, where a prettified guess would hide it.
+		// Only reachable from a server older than this client.
 		const older = entry({ default: 'fully_gone', choices: ['fully_gone', 'placeholder'] });
 		expect(optionsFor(older)[0].label).toBe('fully_gone');
 	});
@@ -118,7 +102,7 @@ describe('what a menu shows', () => {
 
 describe('the way back from an option to the choice', () => {
 	/* A menu's option is a string; the server checks the declared choice, typed, and refuses a
-	   number menu that sends "720". See `choiceFor`. */
+	   number menu that sends "720". */
 	it('returns the declared choice in its declared type', () => {
 		const height = entry({ default: 1080, choices: [480, 720, 1080] });
 		expect(choiceFor(height, '720')).toBe(720);

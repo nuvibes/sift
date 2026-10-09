@@ -1,15 +1,4 @@
-/* The photo-set list, and the two writes a file's verbs make against it.
- *
- * Narrower than the collection store beside it, and deliberately: the Photo Sets wall reads its own
- * page with its own paging, sorting and filters, and nothing here is trying to replace that. What
- * this is for is the question the FILE side asks (what sets are there, make one, put these
- * pictures in it), which is asked from the verbs and from nowhere else.
- *
- * Counts are not held at all, for the same reason the collection store does not compute them: a
- * number worked out from the rows this session happens to have fetched is not the number the
- * server would give, and getting that wrong is how a screen tells somebody how much they are not
- * being shown.
- */
+/* The photo-set list, and the two writes a file's verbs make against it. */
 
 import { recorded } from '$lib/library/changes.svelte';
 import { overChunks, type BulkWriteDone } from '$lib/library/bulk';
@@ -20,12 +9,7 @@ import type { components } from '$lib/api/schema';
 /** A set, taken from the server's own definition rather than described again here. */
 export type PhotoSet = components['schemas']['PhotoSetSummary'];
 
-/* How many to ask for when the verbs need a list to choose from.
- *
- * The pick sheet filters what is already loaded rather than re-asking as somebody types, so this is
- * the ceiling on what can be chosen from it. The same number the collection store uses, for the
- * same reason: it is comfortably past any hand-made list and short of a page nobody could read.
- */
+/* How many to ask for when the verbs need a list to choose from. */
 const ENOUGH_TO_CHOOSE_FROM = 200;
 
 function byName(one: PhotoSet, other: PhotoSet): number {
@@ -40,13 +24,11 @@ class PhotoSets {
 	failed = $state(false);
 	loaded = $state(false);
 
-	/* Rising counter so a slow answer cannot overwrite a newer one, and so a write that edits the
-	   list in place discards a page that was already in the air. Every list store in this client
-	   carries one. */
+	/* Rising counter so a slow answer cannot overwrite a newer one, and so a write that edits
+	   the list in place discards a page that was already in the air. */
 	#generation = 0;
 
-	/** Empty the cache, so the next screen that wants it asks again. For the vault: what is
-	 *  concealed never arrives, so a list held from while it was open still holds it afterwards. */
+	/** Empty the cache, so the next screen that wants it asks again. */
 	forget(): void {
 		this.items = [];
 		this.loaded = false;
@@ -72,21 +54,7 @@ class PhotoSets {
 		}
 	}
 
-	/**
-	 * One page for a PICKER, alphabetical, filtered by what is being typed.
-	 *
-	 * Deliberately does NOT touch `items`: a picker is a flyout over a screen that is showing its
-	 * own page of the same wall, and letting a keystroke in the flyout rewrite what is behind it
-	 * would move the thing somebody was looking at. So this answers the caller and keeps nothing.
-	 *
-	 * `name_az` rather than the wall's own order: a picker is read by somebody looking for a name
-	 * they already have in mind, and an order by size puts the answer somewhere nobody can predict.
-	 * What they reach for often comes first anyway (`$lib/search/frequent` puts those in front on the
-	 * client), so the page under that wants to be the one order a person can navigate without
-	 * reading every row.
-	 *
-	 * `total` comes back beside the page so the picker can say how many it is NOT showing.
-	 */
+	/** One page for a PICKER, alphabetical, filtered by what is being typed. */
 	async choices(prefix = '', limit = PICK_PAGE): Promise<{ items: PhotoSet[]; total: number }> {
 		const page = await api.get<components['schemas']['PhotoSetList']>('/photo-sets', {
 			query: { prefix, limit, offset: 0, sort: 'name_az' }

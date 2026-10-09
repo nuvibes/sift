@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What a file's own tables record about it: the point reads its History is drawn from, and the
-sources that need no user's name, fold or Undo to be said.
-"""
+"""What a file's own tables record about it: the point reads its History is drawn from."""
 
 from __future__ import annotations
 
@@ -63,24 +61,10 @@ __all__ = [
     "pressers_of",
 ]
 
-# EVERY STATEMENT BELOW IS DECLARED A POINT READ, and that is a claim with a gate behind it rather
-# than a label. Each answers about ONE file, so each may run on the event loop: twelve of these
-# run to draw one pane, and a thread handoff apiece would spend most of the pane's cost on
-# machinery rather than on reading.
-#
-# What makes it safe is that `tests/gates/test_a_point_read_is_not_a_library_read.py` plans every
-# one of them on every run and fails any that walks a table growing with the library. That is not
-# a formality here: `_ENRICHED` below is one unary plus away from being exactly such a walk, and
-# nothing in its text says so. See `point_read`.
-#: When the file was taken in, and under what name.
-#:
-#: The name is here and not on the record: a name the file ARRIVED under is not a property of the
-#: file, it is something that HAPPENED to it, on a day, and this is the list of things that happened
-#: to it.
+# Every statement below is a point read on one file; `test_a_point_read_is_not_a_library_read` plans
+# each and fails any that walks the library.
 _ADDED = point_read("history.added", "SELECT added_at, original_filename FROM assets WHERE id = ?")
 
-#: Where a file was first found: its oldest copy's place. The folder its arrival line names when
-#: no move says otherwise (`arrived_in`).
 _FIRST_PLACE = point_read(
     "history.first_place",
     """
@@ -138,26 +122,8 @@ SELECT ac.name AS name, pl.id AS site_id, pl.name AS site, link.source AS source
 """,
 )
 
-#: Only the APPLIED matches, which is the line `enriched_stash` draws too: a match still waiting is
-#: a question nobody has answered and a refused one is an answer of no, and neither wrote anything
-#: to the file.
-#:
-#: THE `+` IN FRONT OF `m.state` IS LOAD-BEARING and is not a typo. Written plainly, SQLite
-#: plans this as a seek on `ix_stash_matches_state (state=?)` (every applied match in the whole
-#: library, filtered afterwards to the one file), which on a library a stash-box has swept is a
-#: read that grows with the media. The unary plus makes that term unusable as an index lookup, so
-#: the planner takes the primary key instead and the plan becomes
-#: `SEARCH m USING PRIMARY KEY (asset_id=?)` (EXPLAIN QUERY PLAN shows both).
-#: `enrichment_runs` carries the half of the fact this table cannot: whether somebody pressed it.
-#:
-#: NOT A LEFT JOIN: every ask is kept (v51 of the catalog), so a file enriched against one box three
-#: times would join three rows and the pane would draw the
-#: same line three times. What is wanted is the LAST of them, which is one row off
-#: `ix_enrichment_runs_subject`: the index carries `at` behind the three, so this reads one entry
-#: and never opens the table. An applied match written by the switch that accepts exact matches and
-#: one somebody agreed to on the confirm screen leave identical rows here, so the answer is stored
-#: beside them rather than read out of them. NULL for a match applied before that was recorded,
-#: which the sentence draws as saying nothing rather than as a guess.
+#: Applied matches only. The `+` on `m.state` keeps the planner on the primary key rather than every
+#: applied match in the library; the subquery takes the last run only.
 _ENRICHED = point_read(
     "history.enriched",
     """
@@ -175,24 +141,7 @@ SELECT b.name AS box, m.decided_at AS decided_at, m.grade AS grade, m.remote_id 
 """,
 )
 
-#: WHICH BOXES WERE ASKED ABOUT THIS FILE AND FOUND NOTHING.
-#:
-#: The other half of the enrichment line. `_ENRICHED` above says which box recognised the file; a
-#: box that was asked and had never heard of it leaves a row saying so (`stash_box_scans`, written
-#: by `service.scan_one` on every ask, found or not). Without this a file put to three public
-#: services and matched by none of them has a history identical to a file nobody ever asked about.
-#:
-#: `found = 0` ONLY. A box that found something is already told by `_ENRICHED` where the match was
-#: applied, and where it is still waiting the answer is under Organize rather than on this file:
-#: either way "nothing matched" would be false, which is the one thing a history line may not be.
-#:
-#: ONE LINE PER BOX, at the LAST ask, and the count where there was more than one. Every ask is
-#: kept (version 12 of the stash-box component), so a file a sweep has put to one box five times
-#: has five rows, and five lines saying the same thing is exactly the repetition this pane's folds
-#: exist to end. What somebody wants is that the box has been asked, how lately, and how doggedly.
-#:
-#: A point read: `ix_stash_scans_asset (asset_id, box_id, scanned_at)` is sought on its first
-#: column, so the grouping is over one file's own rows however many asks the library holds.
+#: Boxes asked about this file that found nothing, one line per box at its last ask.
 _ASKED = point_read(
     "history.asked",
     "SELECT b.name AS box, COUNT(*) AS asks, MAX(s.scanned_at) AS scanned_at"
@@ -209,18 +158,8 @@ _FACE_SCAN = point_read(
     " FROM face_scans WHERE asset_id = ?",
 )
 
-#: EVERY FACE THE SCAN FOUND, so the line about it can name them instead of counting them.
-#:
-#: A count alone is the one thing nobody needs from that sentence: "found 7" is a number somebody
-#: then has to go and look up, and most of the seven are usually people this library already knows.
-#: So the known are named, and a face nobody has named links to the group it waits in.
-#:
-#: `ix_face_tracks_asset` is what makes it a point read. The join is `LEFT` because the row that
-#: matters most here is the one with no person on it (a face waiting to be named), and an inner
-#: join would answer with exactly the faces this sentence does not need to name.
-#:
-#: A SUGGESTED face joins its person too, with the attribution beside it: the line says it as a
-#: face that may be them (`history_faces._faces_found`), never as a face nobody named.
+#: Every face the scan found, so the line can name them; `LEFT` because an unnamed face matters
+#: most.
 _FACES_FOUND = point_read(
     "history.faces_found",
     """
@@ -261,11 +200,7 @@ _PRODUCED = point_read(
     " FROM produced_files WHERE asset_id = ?",
 )
 
-#: The other end of the same row: what was made OUT of this file. Newest first and capped, because a
-#: file somebody has trimmed thirty times is a list rather than a fact: the same reasoning, and
-#: the same ceiling, the editing feature's own read of this table uses.
-#:
-#: `ix_produced_source` is what makes it a point read rather than a walk of the table.
+#: What was made out of this file, newest first and capped as the editing feature caps it.
 _MADE_INTO = point_read(
     "history.made_into",
     """
@@ -276,35 +211,10 @@ SELECT asset_id, operation, produced_by, produced_at
 """,
 )
 
-#: How many copies one file's history will name. See `_MADE_INTO`.
 MOST_COPIES = 12
 
-#: The decisions somebody took that named this file. See the module docstring of `history` for the
-#: link table.
-#:
-#: The SEARCH is on `ix_workbench_subject (kind, subject_id)`, which is the whole reason that index
-#: exists: without it this is a walk of every link row in the library (a table that grows with
-#: every press anybody makes) to draw one file's pane.
-#:
-#: The kind is written into the statement rather than bound, because this read is about a FILE and
-#: nothing else: a bound kind would make it a general link lookup that happens to be called with
-#: `asset`, which is a wider question living in a function that cannot answer it.
-#:
-#: AND IT MUST NOT DRAW AN EVENT. The event ledger is this very table, so every act a writer records
-#: lands here, and read straight out, an event would draw as a bulk judgement with an Undo on it,
-#: offering a button the workbench refuses because an event under `LEDGER_QUEUE` belongs to no queue
-#: and has no reverser. The word is
-#: reserved so that no queue may claim it, which makes this exclusion exact rather than a guess. An
-#: event that carries a RECEIPT is written under that receipt's own queue and still draws, which is
-#: right: it is a decision and it can be taken back.
-#:
-#: AND IT IS SHOWN ONLY WHEN THE READER MAY SEE EVERY FILE IT NAMES. A receipt's title is written
-#: with its number the moment it happens ("matched 300 more faces"), so the number is a count
-#: taken over files this reader may never have been shown, and it cannot be recounted per reader
-#: without rewording what was stored. Reached through the one file the reader CAN see, the title
-#: would say how much there is around it. The same rule, from the one place it is written
-#: (`history_events.NOTHING_HIDDEN`, the event ledger's), so the three threads and the ledger cannot
-#: disagree about which receipt a reader is shown.
+#: The decisions that named this file, never an event (`LEDGER_QUEUE`), and only where the reader
+#: may see every file it names, since the stored title's count cannot be scoped.
 _DECIDED = point_read(
     "history.decided",
     splice(
@@ -324,8 +234,7 @@ SELECT d.id AS id, d.title AS title, d.queue AS queue, d.user_id AS user_id,
     ),
 )
 
-#: Grants on the FILE itself. A grant on a tag or a person reaches this file too, and it is not an
-#: event in this file's history: it happened to the tag.
+#: A grant on a tag or person reaches this file too, but happened to the tag, not the file.
 _GRANTS = point_read(
     "history.grants",
     """
@@ -338,11 +247,7 @@ SELECT u.username AS username, g.effect AS effect, g.created_at AS created_at,
 """,
 )
 
-#: WHICH FOLDER NAMED THIS PERSON ON THIS FILE: the nearest folder above the file (or the library's
-#: own top) that was answered as the person, the standing rule the folder read keeps per folder
-#: (`folder_people`). Read from the person's end, so `ix_folder_people_person` is the seek, then
-#: each answered folder by its key and the file's places by the file. A folder deleted since has
-#: no row here, and the line says what it can without one.
+#: The nearest folder above the file that was answered as the person.
 _NAMING_FOLDER = point_read(
     "history.naming_folder",
     """
@@ -357,12 +262,7 @@ SELECT f.id AS folder_id, f.root_id AS root_id, f.rel_path AS path, f.name AS na
 """,
 )
 
-#: The same rule for a page of files in one go: every folder answered as the person
-#: (`folder_people`) that holds each file, the library's own top included; the caller keeps the
-#: nearest, the longest path, as `_NAMING_FOLDER` does with its ORDER BY. The locations lead
-#: (`CROSS JOIN` fixes the order), so each file is a seek on `ix_loc_asset` and the person's few
-#: answered folders a seek on `ix_folder_people_person`, never a walk of a library's locations
-#: under a folder.
+#: The same for a page of files; `CROSS JOIN` leads with the locations so each file is a seek.
 _NAMING_FOLDERS = (
     "SELECT loc.asset_id AS asset_id, f.id AS folder_id, f.root_id AS root_id, "
     "f.rel_path AS path, f.name AS name "
@@ -373,21 +273,13 @@ _NAMING_FOLDERS = (
     "  AND (f.rel_path = '' OR substr(loc.rel_path, 1, length(f.rel_path) + 1) = f.rel_path || '/')"
 )
 
-#: How many files one read of `_NAMING_FOLDERS` names, well under any bound on parameters.
 _FILES_PER_READ = 500
 
 
 async def nearest_naming_folders(
     database: Database, person_id: str, asset_ids: Sequence[str]
 ) -> dict[str, tuple[str, str, str, str]]:
-    """The folder that named this person on each of these files, by file id: the folder's id, its
-    library, its path inside it and its name.
-
-    The NEAREST folder answered as the person above each file, the one a file's own History line
-    names (`_NAMING_FOLDER`). A file no answered folder holds any more (the folder deleted, the
-    answer taken back) is not in the answer. Unscoped: who may be told a folder is the caller's
-    question (`folder_said`), asked of the path this hands back.
-    """
+    """The folder that named this person on each of these files, by file id."""
     nearest: dict[str, tuple[int, str]] = {}
     about: dict[str, tuple[str, str, str, str]] = {}
     wanted = list(dict.fromkeys(asset_ids))
@@ -411,8 +303,7 @@ async def naming_folders(
     person_ids: Sequence[str],
     seen: Mapping[str, frozenset[str]] | None = None,
 ) -> dict[str, Piece]:
-    """The folder each person was named from on this file, by person id: only one the reader may
-    see all the way down, a library's top included; any other line says "from a folder name"."""
+    """The folder each person was named from on this file, where the reader may see it."""
     found: dict[str, Piece] = {}
     for person_id in dict.fromkeys(person_ids):
         row = await database.fetch_one(_NAMING_FOLDER, (asset_id, person_id))
@@ -428,8 +319,7 @@ async def naming_folders(
 
 
 async def _folders_seen(access: Repository, viewer: Viewer) -> Mapping[str, frozenset[str]]:
-    """The folders this reader may see now, by library, under the rule every place a location is
-    said reads (`kernel.where`)."""
+    """The folders this reader may see now, by library (`kernel.where`)."""
     folders = await access.visible_folders(viewer)
     return whereabouts_from(viewer, folders, root_paths={}, profile=None).seen
 
@@ -437,13 +327,7 @@ async def _folders_seen(access: Repository, viewer: Viewer) -> Mapping[str, froz
 def arrived_in(
     moves: Sequence[Row], first: Row | None, seen: Mapping[str, frozenset[str]]
 ) -> tuple[str, str | None] | None:
-    """The folder a file was in when Sift took it in, and how the reader may be told it.
-
-    Recorded twice over, and neither is the file's place now: the first move's old path is where
-    it was before anybody moved it, and with no move the oldest copy's place still is. A picture
-    in an archive arrived in the archive's folder. None where neither is known, or where it came
-    in at the top of the library, which the line says nothing about.
-    """
+    """The folder a file was in when Sift took it in, and how the reader may be told it."""
     if moves:
         root_id, path = str(moves[0]["root_id"]), str(moves[0]["from_rel_path"])
     elif first is not None:
@@ -466,9 +350,7 @@ def _landed(row: Row, seen: Mapping[str, frozenset[str]]) -> str | None:
 
 
 def landing_folders(moves: Sequence[Row], arrived: tuple[str, str] | None) -> list[tuple[str, str]]:
-    """Each (library, folder path) a file's lines name: where each move landed and where it arrived
-    (`arrived` is the library and the path it arrived at). The top of a library is a phrase, not a
-    folder, and is left out."""
+    """Each (library, folder path) a file's lines name; the top of a library is left out."""
     places = [(str(row["root_id"]), str(row["to_rel_path"])) for row in moves]
     if arrived is not None:
         places.append(arrived)
@@ -484,8 +366,7 @@ _FOLDER_AT = point_read(
 async def folder_ids(
     database: Database, places: Sequence[tuple[str, str]]
 ) -> dict[tuple[str, str], str]:
-    """Each folder's id by (library, path), for the ones still here: a line links a folder by its
-    id (`sentences.folder_named`), and one that has gone is said in words."""
+    """Each folder's id by (library, path), for the ones still here."""
     found: dict[tuple[str, str], str] = {}
     for place in places:
         row = await database.fetch_one(_FOLDER_AT, place)
@@ -500,18 +381,7 @@ def _move_events(
     seen: Mapping[str, frozenset[str]],
     folders: Mapping[tuple[str, str], str] | None = None,
 ) -> list[Event]:
-    """A rename or a move, plus the moment it was taken back where it was.
-
-    `seen` is the folders the reader may see, by library (`kernel.where`): a move names the folder
-    it landed in only as far as they may see it, so a Hidden folder is never named while Hidden is
-    shut.
-
-    Only the LAST move that has not been undone carries an `undo`, and only for an admin. Both
-    halves are the organizer's own rules rather than a guess made here: it refuses an undo out of
-    order (a file renamed twice would otherwise go back to a name it only ever had in passing),
-    and it refuses one from a guest. An affordance the server would refuse is worse than none,
-    because the only way to find out is to press it.
-    """
+    """A rename or a move, plus the moment it was taken back where it was."""
     events: list[Event] = []
     undoable = ""
     if who.viewer.is_admin:
@@ -522,7 +392,6 @@ def _move_events(
         renamed = str(row["kind"]) == "rename"
         actor, name = who.of(None if row["moved_by"] is None else str(row["moved_by"]))
         if row["moved_by"] is None and int(row["moved_by_sift"] or 0):
-            # A move nobody asked for is Sift's own repair, not "Somebody renamed".
             actor, name = Actor.SIFT, SIFT
         where = str(row["to_rel_path"])
         events.append(
@@ -531,8 +400,6 @@ def _move_events(
                 actor=actor,
                 actor_name=name,
                 kind="renamed" if renamed else "moved",
-                # The folder is placed where it sits (`say.folder_of`): a way there, or plain
-                # words for the top of the library, which is a phrase and not a folder.
                 pieces=(
                     say.renamed(by_of(actor, name), where, row["reason"], row["from_rel_path"])
                     if renamed
@@ -549,10 +416,7 @@ def _move_events(
         )
         if row["undone_at"] is None:
             continue
-        # SOMEBODY, never the user who made the move. `file_moves` records who moved a file
-        # and the MOMENT it was put back, and nothing at all about who put it back, so carrying
-        # the mover across would say a named user did something it may not have done. That is
-        # the one direction an attribution may not be wrong in.
+        # Somebody, never the mover: nothing records who put a file back.
         events.append(
             Event(
                 at=int(row["undone_at"]),
@@ -566,20 +430,12 @@ def _move_events(
 
 
 def _filed_site(row: Row) -> Piece | None:
-    """The site a filing names, as somewhere to go.
-
-    The SITE and never the username, and that asymmetry is the tables' rather than a choice made
-    here: a site is a row with a page of its own, and a username is a name on a site with no
-    page anywhere in Sift. So the username stays words. A filing whose site has been deleted has
-    none to link (`usernames.site_id` is `ON DELETE SET NULL`), and the sentence already says
-    "Filed under <username>" with no site in it, so there is nothing to find either.
-    """
+    """The site a filing names, as somewhere to go; a username has no page and stays words."""
     if row["site_id"] is None:
         return None
     return say.thing("site", str(row["site_id"]), str(row["site"]))
 
 
-#: The passes over a file that say nothing on its History of their own, and why.
 NOT_SAID_ON_A_FILE: Mapping[str, str] = {
     "generate": "walks the files a Generate run chose and hands each its products; each says itself",
     "identify": "walks the files an Identify run chose and hands each its products; each says itself",
@@ -587,5 +443,4 @@ NOT_SAID_ON_A_FILE: Mapping[str, str] = {
     "identify_file": "carries the products an Identify press chose; each says itself",
 }
 
-#: The prefix a ledger act is named by in a declaration (`ledger:scanned`).
 LEDGER_SAID = "ledger:"

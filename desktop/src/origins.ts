@@ -1,16 +1,4 @@
-/* Which pages are allowed to be Sift, and which are just the internet.
- *
- * This is the shell's security boundary and it is small on purpose. An Electron window is a browser
- * with a preload script attached, and that preload is what turns a web page into something that can
- * drive the local machine. So the only question that matters is: which origins get the preload?
- *
- * The answer is: the local backend, and the servers the person typed in themselves. Nothing else:
- * not a link in a description, not a redirect, not an embedded page.
- *
- * And WHICH of the two it is decides how much of the preload it gets. The local backend is this
- * machine's own Sift and gets every verb; a saved server is another computer, and gets only the
- * verbs a window onto somebody else's library needs (see `REMOTE_VERBS` in verbs.ts).
- */
+/* Which pages are allowed to be Sift, and which are just the internet. */
 
 import { URL } from 'node:url';
 
@@ -39,14 +27,7 @@ export function isHomeNetworkAddress(address: string): boolean {
 	return a === 172 && b >= 16 && b <= 31;
 }
 
-/**
- * Null when a server may be reached at this origin, else the sentence saying why not.
- *
- * Plain http is accepted only where the connection stays on the local network: a private IPv4
- * address, this machine, a `.local` name or a bare machine name. Anywhere else the connection
- * crosses networks somebody else runs, and anyone on the way could change the page, which is a
- * page the shell then gives part of its bridge to. So those need https.
- */
+/** Null when a server may be reached at this origin, else the sentence saying why not. */
 export function plainHttpRefusal(origin: string): string | null {
 	let url: URL;
 	try {
@@ -73,12 +54,7 @@ export function plainHttpRefusal(origin: string): string | null {
 /** Which kind of trusted page this is: this machine's own Sift, a saved server, or neither. */
 export type Reach = 'local' | 'remote';
 
-/**
- * How far a page at this URL may reach into the shell. Null for a page that is not Sift at all.
- *
- * A saved server over plain http outside the local network is refused here as well as when it is
- * saved, so an address saved before that rule existed stops being trusted rather than lingering.
- */
+/** How far a page at this URL may reach into the shell. */
 export function reachOf(settings: DesktopSettings, url: string): Reach | null {
 	const origin = normaliseOrigin(url);
 	if (origin === null) return null;
@@ -96,31 +72,17 @@ export function trustedOrigins(settings: DesktopSettings): Set<string> {
 	return trusted;
 }
 
-/** The header every response from a Sift carries, and the value it carries. The server sets it
- *  beside its other security headers, on sign-in refusals as much as on pages.
- *
- *  It is a shape check against typing the wrong address, not a secret: any server can send it. */
+/** The header every response from a Sift carries, and the value it carries. */
 export const SIFT_MARK_HEADER = 'x-sift';
 export const SIFT_MARK_VALUE = '1';
 
-/**
- * The address a server announces on the network, or null when it is on no network: the machine's
- * address and the port the backend listens on, as a browser on another machine would type them.
- */
+/** The address a server announces on the network, or null when it is on no network: the machine's
+ * address and the port the backend listens on, as a browser on another machine would type them. */
 export function shareAddress(host: string | null, port: number): string | null {
 	return host === null ? null : `http://${host}:${port}`;
 }
 
-/**
- * Whether what answered at an address is a Sift, judged from one response to `/health`.
- *
- * A host that merely answered 200 or 401 is not enough: a mistyped address pointing at some other
- * program on the network would become a trusted origin with part of the shell's bridge attached.
- * Trust needs Sift's mark on the response AND the shape Sift's health answer has. A 401 is still
- * a good answer (a Sift wanting a sign-in), but only from a Sift.
- *
- * Returns null when it is a Sift, otherwise the sentence for the connect screen.
- */
+/** Whether what answered at an address is a Sift, judged from one response to `/health`. */
 export function looksLikeSift(status: number, headers: Headers, body: string): string | null {
 	if (headers.get(SIFT_MARK_HEADER) !== SIFT_MARK_VALUE) {
 		return 'Something answered at that address, but it was not Sift.';
@@ -139,9 +101,7 @@ export function looksLikeSift(status: number, headers: Headers, body: string): s
 }
 
 /* Asked for every navigation and every window the page tries to open, so a redirect chain cannot
- * walk out of a trusted origin while keeping the bridge attached. A page that is not Sift is not
- * something rendered with privileges: it goes to the real browser, where the person's extensions,
- * their password manager and their own judgement all apply. */
+ * walk out of a trusted origin while keeping the bridge attached. */
 export function isTrusted(settings: DesktopSettings, url: string): boolean {
 	return reachOf(settings, url) !== null;
 }

@@ -1,9 +1,4 @@
-/*
- * The groups on Maintenance, drawn. The count row and the tidyings it counts are ONE group, so the
- * list follows its row with the line between two rows rather than a band of empty space; and the
- * three acts that delete nothing are the page's first group, under its title, away from the
- * deletes.
- */
+/* The groups on Maintenance, drawn. */
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -203,7 +198,7 @@ describe('the rows that delete', () => {
 
 	it('says what quarantine is once, and ends on its own rows', async () => {
 		/* The row's help says what the folder is; the group's sentence says what to do about it,
-		   never the same sentence twice. The pointer to saved copies lives on Privacy. */
+		   never the same sentence twice. */
 		await groups();
 		const row = await vi.waitFor(() => {
 			const found = document.querySelector<HTMLElement>('[id="quarantine.keep_days"]');

@@ -1,11 +1,6 @@
-/*
- * The first read of a library carries its one recommendation: download the face models and turn
- * faces on before the scan, so the scan finds the people as it reads and no second pass is needed.
- *
- * Read from the source, because mounting Browse is mounting the whole wall. What is held is that
- * the sentence sits with the Scan now press, links to the switch itself, and is said only while
- * faces are off.
- */
+/* The first read of a library carries its one recommendation: download the face models and turn
+ * faces on before the scan, so the scan finds the people as it reads and no second pass is
+ * needed. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -25,9 +20,8 @@ describe('the first read', () => {
 	});
 
 	it('links the switch where it is turned on, not the Faces pane that only points there', () => {
-		/* The Faces pane draws a pointer row for the switch ("Change in Identify settings"); a link to
-		   that row would leave the reader one press short. Import tasks claims the key and opens
-		   Identify's page. */
+		/* The Faces pane draws a pointer row for the switch ("Change in Identify settings"); a
+		   link to that row would leave the reader one press short. */
 		expect(scanNow).toMatch(
 			/<SettingLink section="tasks" setting=\{FACES_KEY\}\s*>Settings > Tasks and Activity > Import tasks<\/SettingLink/
 		);

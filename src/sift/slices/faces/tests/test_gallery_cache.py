@@ -1,13 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The reference gallery is built once, not once per file.
-
-The table is small, but the cost is the clustering arithmetic, and done per file it would run
-again over unchanged rows every few seconds while a library is being scanned.
-
-The cache is held against a stamp read back off the table rather than against a flag some writer
-has to remember to clear. Six methods write a reference today; a rule living in six places holds
-until somebody adds the seventh, and a stale cache looks exactly like a fresh one from outside.
-"""
+"""The reference gallery is built once, not once per file, held against a stamp read back off the
+table, since six methods write a reference and a seventh would forget a flag."""
 
 from __future__ import annotations
 
@@ -51,11 +44,7 @@ async def test_the_stamp_moves_when_one_is_removed(store: Store, person: str) ->
 
 
 async def test_swapping_one_for_another_still_moves_the_stamp(store: Store, person: str) -> None:
-    """The case a naive count would miss, and the reason the highest id is in the stamp too.
-
-    A removal and an addition in the same moment leaves the count exactly where it was. Ids are
-    minted under a floor that never goes down, so the new one is always higher than the old.
-    """
+    """A removal and an addition together leave the count, so the highest id is in the stamp too."""
     first = await _reference(store, person)
     before = await store.reference_stamp()
 
@@ -69,8 +58,7 @@ async def test_swapping_one_for_another_still_moves_the_stamp(store: Store, pers
 
 
 async def test_an_unchanged_table_gives_the_same_stamp(store: Store, person: str) -> None:
-    """The half that makes it a cache rather than a slow rebuild: reading twice over untouched
-    rows has to answer the same, or nothing is ever reused."""
+    """Reading twice over untouched rows answers the same, or nothing is reused."""
     await _reference(store, person)
 
     assert await store.reference_stamp() == await store.reference_stamp()

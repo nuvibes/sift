@@ -1,10 +1,5 @@
-/*
- * The phrasing check: the shapes of a sentence a person would not write, found in the strings the
- * client puts on screen and counted per file by `scripts/check_vocabulary.js`.
- *
- * Each case plants a sentence of a shape the check refuses into a component, reads it the way the
- * gate reads the tree, and proves the check finds it; then reads the rewrite and proves it passes.
- */
+/* The phrasing check: the shapes of a sentence a person would not write, found in the strings
+ * the client puts on screen and counted per file by `scripts/check_vocabulary.js`. */
 import { describe, expect, it } from 'vitest';
 
 import { copyIn } from '../../../scripts/lib/copy.js';

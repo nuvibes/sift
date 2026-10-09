@@ -1,14 +1,5 @@
-/* The Search-by-meaning pane.
- *
- * Everything here is a claim the screen makes about what this install can do, and each one is a
- * sentence somebody would act on. A machine that cannot load the add-on must be told so rather than
- * handed a switch; switched on is not the same as able to run, so a fresh install must read as
- * "fetch the models" and not as broken; and the control that throws the index away must not be
- * offered when there is no index to throw.
- *
- * All four are decided in the markup, from three fields of one answer, and nothing in the server
- * tests can see any of them.
- */
+/* The Search-by-meaning pane. Everything here is a claim the screen makes about what this
+ * install can do, and each one is a sentence somebody would act on. */
 
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -34,9 +25,7 @@ const jobProgress =
 		) => Promise<{ state: string; progress: number; note: string | null } | null>
 	>();
 
-/* The task's When row reads the tasks store. No row answers here, so the row is drawn by its
-   address with no controls in it: what is tested is that the pane draws the task's row at all,
-   and draws no describe button of its own beside it. The row itself is TaskWhen's to test. */
+/* The task's When row reads the tasks store. */
 /* The two deletions are jobs followed by `$lib/jobs/watch-removal`, tested beside it. */
 vi.mock('$lib/jobs/watch-removal.svelte', () => {
 	const watch = {
@@ -62,8 +51,8 @@ vi.mock('$lib/jobs/tasks.svelte', () => ({
 vi.mock('$lib/settings-ui/settings', () => ({
 	fetchSettings: () => fetchSettings(),
 	saveSettings: (values: Record<string, unknown>) => saveSettings(values),
-	// A rating is drawn wherever this reaches, and the rating scale registers its watcher at
-	// module scope. A partial mock without this fails the suite at import.
+	// A rating is drawn wherever this reaches, and the rating scale registers its watcher at module
+	// scope.
 	onSettingsSaved: vi.fn()
 }));
 
@@ -77,31 +66,14 @@ vi.mock('$lib/search/semantic.svelte', () => ({
 	jobProgress: (type: string, jobId: string) => jobProgress(type, jobId)
 }));
 
-/*
- * The two runs, stood in for.
- *
- * They live outside this component on purpose: a watcher held here would die with the pane. What
- * is left to test HERE is the markup: which of the three
- * states each section draws, and what it says in each. So the stores are replaced by plain objects
- * a test can set, and what they do internally is their own business.
- *
- * The stores' own behaviour (the estimate, the resume, and the "switched off mid-run" stop) is
- * tested in `semantic-runs.svelte.test.ts`.
- *
- * A stand-in must answer EVERY field the component reads. A field it leaves out comes back
- * undefined, and the branch behind it (which model file is arriving, the interrupted-run warning)
- * is never drawn by any test while it looks covered. The last test in this file reads the
- * component and refuses a field the stand-in has no answer for.
- */
+/* The two runs, stood in for. They live outside this component on purpose: a watcher held here
+ * would die with the pane. */
 const runs = vi.hoisted(() => {
 	const fetching = {
 		jobId: null as string | null,
 		fraction: 0,
 		note: null as string | null,
-		/* Where the download has got to, IN WORDS. The watcher composes the sentence (every
-		   pane building its own from the fraction and the note would say "0% - downloading" for
-		   a job no worker has picked up), so what this pane owns is drawing it. What the
-		   sentence SAYS is proved in `$lib/jobs/watch-download.svelte.test.ts`. */
+		/* Where the download has got to, IN WORDS. */
 		status: 'Waiting to start',
 		outcome: null as string | null
 	};
@@ -238,8 +210,7 @@ function status(over: Partial<SemanticStatus> = {}): SemanticStatus {
 
 let host: HTMLElement;
 
-/* The watchers wait on real timers, so the clock is this test's to move. Without it every
-   assertion about a progress bar would have to sit through two seconds of nothing per tick. */
+/* The watchers wait on real timers, so the clock is this test's to move. */
 beforeEach(() => {
 	vi.useFakeTimers();
 	Object.assign(runs.fetching, {
@@ -286,7 +257,7 @@ async function render(state: SemanticStatus, enabled = false) {
 	document.body.append(host);
 	mount(Semantic, { target: host });
 	// The page behind More settings is drawn by the settings frame, so it is mounted beside the
-	// pane exactly as the frame mounts it. See `DrilldownPage`.
+	// pane exactly as the frame mounts it.
 	mount(DrilldownPage, { target: host, props: { behind: 'Smart Search' } });
 	await vi.waitFor(() => expect(semanticStatus).toHaveBeenCalled(), { interval: 1 });
 	await Promise.resolve();
@@ -415,8 +386,8 @@ it('offers to remove the index once something has been described', async () => {
 });
 
 it('draws no switch of its own: it says whether it is on and links to the one under Import tasks', async () => {
-	/* One setting, one door. The switch is under Import tasks with the other recognition switches;
-	   a second one here would be two controls for one answer. */
+	/* One setting, one door. The switch is under Import tasks with the other recognition
+	   switches; a second one here would be two controls for one answer. */
 	await render(status({ enabled: true, ready: true, indexed_frames: 40 }), true);
 
 	expect(toggle()).toBeNull();
@@ -436,8 +407,8 @@ it('starts the download rather than fetching the models itself', async () => {
 
 it("describing the library is the task's own When row, not a button of the pane's", async () => {
 	/* Describing the library is the Smart Search task's row, the same row Tasks draws, so there
-	   is one Run now and it is the same everywhere, not a button here starting the Build for
-	   one product. */
+	   is one Run now and it is the same everywhere, not a button here starting the Build for one
+	   product. */
 	await render(status({ enabled: true, ready: true }), true);
 
 	expect(whenRow()).not.toBeNull();
@@ -445,21 +416,8 @@ it("describing the library is the task's own When row, not a button of the pane'
 	expect(button('Resume')).toBeUndefined();
 });
 
-/* --- progress, and saying which way it ended ---------------------------------------------------
- *
- * Both buttons here start a job that takes minutes. A toast pointing at a different screen, and a
- * button that goes back to looking exactly as it did before it was pressed, would leave no way,
- * from this screen, to find out whether a few hundred megabytes had arrived, which is the one
- * question somebody presses that button to answer.
- *
- * What is asserted here is the MARKUP: which of the three states each section draws, and what it
- * says in each. The following of a run happens in `$lib/jobs/semantic-runs` and is stood in for above,
- * so the stand-in is set BEFORE the pane is drawn rather than mutated underneath it. A plain
- * object is not reactive, and a test that mutated one and expected the screen to move would be
- * asserting against Svelte rather than against this component.
- *
- * The stores' own behaviour is tested in `semantic-runs.svelte.test.ts`.
- */
+/* --- progress, and saying which way it ended
+ * --------------------------------------------------- */
 
 it('shows how far the download has got, where the button was', async () => {
 	runs.fetching.jobId = 'job-1';
@@ -475,9 +433,7 @@ it('shows how far the download has got, where the button was', async () => {
 
 it('says a download is waiting when nothing has picked it up yet', async () => {
 	/* A download queued behind other jobs must not draw "0% - downloading" for minutes, which
-	   reads as a stuck download rather than a queue. The bar stays (the button
-	   must not come back, or somebody starts a second one), and the words say which of the two
-	   it is. */
+	   reads as a stuck download rather than a queue. */
 	runs.fetching.jobId = 'job-1';
 	await render(status({ enabled: true, ready: false, problem: 'Not yet.' }), true);
 
@@ -496,8 +452,8 @@ it('says the models arrived, rather than leaving the bar where it stopped', asyn
 });
 
 it('offers to fetch them AGAIN once they are already here, and says why you would', async () => {
-	/* "Download the models" over models that are on the disk is an instruction to somebody who has
-	   already followed it. */
+	/* "Download the models" over models that are on the disk is an instruction to somebody who
+	   has already followed it. */
 	await render(status({ enabled: true, ready: true }), true);
 	openMore();
 
@@ -507,8 +463,8 @@ it('offers to fetch them AGAIN once they are already here, and says why you woul
 });
 
 it('asks for a forced fetch only when the files are already here', async () => {
-	/* The difference is the whole of the second press: without it every file is skipped, nothing is
-	   downloaded, and the job reports success. */
+	/* The difference is the whole of the second press: without it every file is skipped, nothing
+	   is downloaded, and the job reports success. */
 	await render(status({ enabled: true, ready: true }), true);
 	openMore();
 
@@ -544,8 +500,8 @@ it('does not report a failure to start as work in progress', async () => {
 });
 
 it('names which of the set is arriving, rather than only a percentage', async () => {
-	/* Three separate downloads of wildly different sizes, so the fraction alone runs to one and back
-	   to zero three times, which reads as a download that keeps failing and starting again. */
+	/* Three separate downloads of wildly different sizes, so the fraction alone runs to one and
+	   back to zero three times, which reads as a download that keeps failing and starting again. */
 	runs.fetching.jobId = 'job-1';
 	runs.fetching.fraction = 0.5;
 	runs.fetching.note = '2 of 3 - word reader';
@@ -565,9 +521,8 @@ it('falls back to a plain word when the job has nothing to say yet', async () =>
 });
 
 it('says a run stopped rather than drawing a bar that will never move again', async () => {
-	/* Switching the feature off does not cancel what it has already queued: every one of those jobs
-	   runs, finds the switch off, and finishes having done nothing. Work left with nothing doing it
-	   is the state that leaves behind, and it is identical to a run in progress from the counts. */
+	/* Switching the feature off does not cancel what it has already queued: every one of those
+	   jobs runs, finds the switch off, and finishes having done nothing. */
 	Object.assign(runs.describingState, {
 		running: false,
 		stopped: true,
@@ -594,17 +549,7 @@ it('says nothing about a stopped run when none was interrupted', async () => {
 	expect(host.textContent).not.toContain('were not described');
 });
 
-/*
- * The stand-in above answers every field this component reads.
- *
- * A plain object standing in for a store is invisible to the type checker (a `vi.mock` factory is
- * never compared against the module it replaces), so a field the component starts reading comes
- * back `undefined` and the branch behind it is simply never drawn. Every test still passes, and the
- * pane looks covered.
- *
- * Derived from the component rather than listed, so a field added tomorrow is covered by having
- * been written rather than by somebody remembering this.
- */
+/* The stand-in above answers every field this component reads. */
 it('the stand-in answers every field the pane reads off the two runs', async () => {
 	const source = readFileSync('src/lib/settings-ui/Semantic.svelte', 'utf8');
 	// The stand-in itself, as the component receives it, not the plain object behind it, which a
@@ -623,13 +568,7 @@ it('the stand-in answers every field the pane reads off the two runs', async () 
 	expect(missing, 'the pane reads fields the stand-in has no answer for').toEqual([]);
 });
 
-/* The pane follows the bus.
- *
- * The same account in a second window, or another admin turning an installation-wide switch: the
- * server rings the bell, and a pane that only read on mount would go on showing the value from
- * before. On the desktop app there is no page load to put it right, so it would stay wrong until
- * a restart.
- */
+/* The pane follows the bus. */
 it('re-reads when a setting moves somewhere else', async () => {
 	await render(status({ supported: true }), false);
 	expect(stateOf(pointer())).toBe('Off');

@@ -1,11 +1,5 @@
 <script lang="ts">
-	/*
-	 * A Site that does not exist yet, drawn as the form its own page opens.
-	 *
-	 * The same shape as the person's, and the same reason for the order of the writes: the name
-	 * makes the row and the details are a second write, because that is what pressing Save on a
-	 * Site's own page already does. See `/people/new` for the argument written out in full.
-	 */
+	/* A Site that does not exist yet, drawn as the form its own page opens. */
 	import { goto } from '$app/navigation';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
 	import NewEntity from '$lib/components/entity/NewEntity.svelte';
@@ -33,9 +27,7 @@
 				await entityTags.set('sites', made.id, tag.id, true);
 			}
 			// The picture LAST, because it goes on a row and the row was made by the line above:
-			// there is nothing to put a cover on until the create has answered. Inside this try with
-			// the rest of the record, so a picture the server refuses says what every other unfinished
-			// part of the record says and leaves the thing made.
+			// there is nothing to put a cover on until the create has answered.
 			if (cover) await sites.uploadCover(made.id, cover);
 			toasts.show([thing('site', made.id, name), ' was added'], { tone: 'success' });
 		} catch {

@@ -1,15 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What Sift is running on, and what to do about it.
+"""What Sift is running on, and what to do about it, asked once of the machine.
 
-The machines Sift runs on have almost nothing in common: a mini PC, an old laptop, a NAS, a
-workstation with a GPU in it. So it asks the machine what it is rather than assuming, and the
-answers live here so that no feature has to work it out again.
-
-The probe is honest in both directions. It never requires a GPU (everything works on the CPU,
-just more slowly) and it never pretends a GPU is present when it is not. If Sift is told to
-expect a GPU but none is visible on the machine, the report says so in plain words rather than
-silently falling back to the CPU and leaving someone to wonder why it is slow.
-"""
+A GPU is never required and never pretended; one expected and missing is said in plain words."""
 
 from __future__ import annotations
 
@@ -30,26 +22,18 @@ from sift.kernel.log import get_logger
 from sift.kernel.subprocess import SubprocessError
 from sift.kernel.subprocess import run as run_tool
 
-# Read through a flag rather than tested directly: mypy narrows a literal
-# `sys.platform == "win32"` and then calls the other platform's branch unreachable, which
-# would leave whichever half is not being checked unchecked. Same reason as kernel/paths.py.
+# A flag, as mypy calls a literal platform test's other branch unreachable.
 _WINDOWS = sys.platform == "win32"
 
 log = get_logger(__name__)
 
-# Above this, more workers stop helping. Jobs are mostly ffmpeg and disk, so a dozen together on a
-# machine with a single spinning disk finishes slower than four, and a big server is far more
-# likely to be running Sift alongside other things than to want every core given to it.
+# More workers stop helping: jobs are mostly ffmpeg and disk.
 MAX_WORKERS = 8
 
-# How long to wait for ffmpeg to list its encoders. It reads no files and does no work, so this is
-# only a guard against a wedged binary, not a real time budget.
+# Only a guard against a wedged binary; listing encoders does no work.
 _FFMPEG_TIMEOUT_SECONDS = 10.0
 
-# The hardware video encoders worth using, and the device each one needs in order to actually run.
-# ffmpeg can be built with an encoder the machine has no hardware for; asking such an encoder to run
-# fails, or worse, quietly falls back to something slower than plain CPU. So an encoder counts as
-# usable only when it is compiled in AND its device is present: both halves are checked below.
+# Hardware encoders and the device each needs: usable only when compiled in and the device exists.
 _NVIDIA = "nvidia"
 _RENDER = "render"  # a /dev/dri render node: shared by VAAPI (most GPUs) and Intel Quick Sync
 _TRANSCODE_ENCODERS: dict[str, str] = {
@@ -66,12 +50,7 @@ _TRANSCODE_ENCODERS: dict[str, str] = {
 
 
 def worker_concurrency(settings: Settings) -> int:
-    """How many jobs to run together.
-
-    One core is left for everything that is not a job: the web server, the database, the browser
-    on the other end waiting for a thumbnail. A box with two cores gets one worker, which is
-    slower than two and much better than a machine that stops answering while it thumbnails.
-    """
+    """How many jobs to run together, leaving one core for the server and the database."""
     if settings.worker_concurrency is not None:
         return settings.worker_concurrency
 
@@ -81,13 +60,7 @@ def worker_concurrency(settings: Settings) -> int:
 
 @dataclass(frozen=True)
 class HardwareReport:
-    """What the machine turned out to be. Built once at startup and read from thereafter.
-
-    Other parts of the app consume this instead of probing for themselves, so the answer is
-    decided in one place and cannot disagree with itself: the worker pool sizes from it, the
-    player picks a transcode path from it, and the optional similarity features decide from it
-    whether they can run at all.
-    """
+    """What the machine turned out to be, built once at startup so every part reads one answer."""
 
     cpu_count: int
     total_ram_bytes: int | None
@@ -101,26 +74,13 @@ class HardwareReport:
     warnings: tuple[str, ...]
     """Plain-language notes for the person running Sift. Also written to the log at startup."""
 
-    # The make-and-model fields. Last, and optional, because they are the only ones nothing in Sift
-    # decides anything from: they are read by an admin looking at a screen. A probe that could not
-    # name a part leaves it None and the screen simply says less.
+    # The make-and-model fields, read by an admin and decided from by nothing.
     cpu_model: str | None = None
     """What the processor calls itself, or None where the platform will not say."""
 
     @property
     def profile(self) -> str:
-        """A short name for THIS shape of machine, stable across restarts.
-
-        Two runs are comparable when they happened on the same hardware, and "the same hardware" has
-        to mean something narrower than "the same computer": a machine with a graphics card removed
-        is a different machine for anything that measures how fast it works.
-
-        So the digest covers only what DECIDES speed: how many cores, how many workers, whether
-        there is a compute device, and which hardware encoders are actually usable. It deliberately
-        leaves out everything a driver update moves: card names, driver versions, warnings, and the
-        make and model strings, which are read by people and by nothing else. Included, they would
-        make every past run belong to a machine that no longer exists after a routine update.
-        """
+        """A stable name for this shape of machine, from only what decides speed."""
         parts = (
             str(self.cpu_count),
             str(self.worker_concurrency),
@@ -132,12 +92,7 @@ class HardwareReport:
 
     @property
     def profile_label(self) -> str:
-        """The same machine, for somebody to read. Never used to tell two profiles apart.
-
-        A label and a digest rather than one string doing both: this is written for a person, so it
-        changes when a driver starts reporting a card differently, and a history keyed on it would
-        split in two on a day nothing about the machine changed.
-        """
+        """The same machine for somebody to read; never used to tell two profiles apart."""
         cores = f"{self.cpu_count} threads"
         gpu = self.gpu_cards[0].name if self.gpu_cards and self.gpu_cards[0].name else None
         return " - ".join(part for part in (self.cpu_model, cores, gpu) if part)
@@ -167,23 +122,18 @@ class HardwareReport:
 
     @property
     def _working_card(self) -> Card | None:
-        """The card Sift would put a model on, which is not always the first one listed.
-
-        A machine with a chip built into its processor and a card in a slot has two adapters and
-        one answer. Picking the first would name whichever Windows happened to enumerate first.
-        """
+        """The card Sift would put a model on, which is not always the first listed."""
         return next((one for one in self.gpu_cards if one.can_compute), None)
 
     @property
     def gpu_name(self) -> str | None:
-        """What that card is called. None where nothing here can do the work."""
+        """What that card is called; None where nothing here can do the work."""
         card = self._working_card
         return card.name if card else None
 
     @property
     def gpu_vram_bytes(self) -> int | None:
-        """Its memory. The figure that decides what will FIT: a model too big for the card does not
-        run slowly, it fails at the point of loading."""
+        """Its memory, which decides what fits: a model too big fails as it loads."""
         card = self._working_card
         return card.vram_bytes if card else None
 
@@ -193,13 +143,7 @@ class HardwareReport:
         return bool(self.transcode_encoders)
 
     def as_dict(self) -> dict[str, Any]:
-        """The shape served at /health.
-
-        Deliberately carries nothing that identifies the machine: no paths, no hostname, no
-        usernames, and none of the make-and-model fields below: /health can be reachable, and
-        that detail is exactly what a stranger would use to fingerprint a box. The settings screen
-        shows more and reads it through an admin-only route of its own.
-        """
+        """The shape served at /health, with nothing that identifies the machine."""
         return {
             "cpu_count": self.cpu_count,
             "total_ram_bytes": self.total_ram_bytes,
@@ -211,15 +155,7 @@ class HardwareReport:
 
 
 def parse_encoders(text: str) -> frozenset[str]:
-    """Pull the encoder names out of `ffmpeg -encoders` output.
-
-    The format is a legend, then a line of dashes, then one encoder per line: six flag characters,
-    the name, and a description. Only the lines after the dashes are encoders; the legend above
-    them uses the same flag column and would otherwise be misread as encoders called "=".
-
-    Kept as its own function, and tested against captured output, because this is where a future
-    ffmpeg quietly changing its listing format would silently switch hardware acceleration off.
-    """
+    """The encoder names in `ffmpeg -encoders` output, only after the dashes; tested on captures."""
     names: set[str] = set()
     in_table = False
     for line in text.splitlines():
@@ -241,17 +177,11 @@ def _is_flag_column(token: str) -> bool:
 
 
 def _total_ram_bytes() -> int | None:
-    """Total physical memory, or None where the platform will not say.
-
-    Reports what the machine has, which on a container host is the host's memory rather than any
-    cgroup limit. It is a diagnostic figure, not a budget anything is spent against, so the simple
-    honest number is the right one.
-    """
+    """Total physical memory, or None; the host's on a container, as it is only diagnostic."""
     if _WINDOWS:
         return _windows_total_memory()
     try:
-        # `sysconf` is absent from `os` on Windows, so the ignore is needed when this is checked
-        # there and unnecessary in CI. Both codes, so neither host complains about the other.
+        # Both codes, so neither the Linux nor the Windows check complains.
         page = os.sysconf("SC_PAGE_SIZE")  # type: ignore[attr-defined, unused-ignore]
         pages = os.sysconf("SC_PHYS_PAGES")  # type: ignore[attr-defined, unused-ignore]
         return int(page) * int(pages)
@@ -260,16 +190,7 @@ def _total_ram_bytes() -> int | None:
 
 
 def _windows_total_memory() -> int | None:
-    """How much memory the machine has, asked the way Windows answers it.
-
-    Without this the answer is simply `None` on the platform Sift ships on: `os.sysconf` does not
-    exist there, the guard above swallows the AttributeError, and the hardware report says the
-    machine's memory is unknown. Nothing crashes, which is why it would go unnoticed, and
-    "unknown" is what the worker sizing and the diagnostics would have to work from.
-
-    `GlobalMemoryStatusEx` is the same physical total `sysconf` reports, from the same kind of
-    place: the operating system, not a guess.
-    """
+    """How much memory the machine has, asked the way Windows answers it."""
     import ctypes
     from ctypes import wintypes
 
@@ -298,26 +219,9 @@ def _windows_total_memory() -> int | None:
 
 
 def _installed_ram_bytes() -> int | None:
-    """What the memory sticks in the machine add up to, or None where nothing will say.
-
-    NOT THE SAME NUMBER AS `_total_ram_bytes`, AND THE DIFFERENCE IS WHY THIS EXISTS. What the
-    operating system reports as physical memory is what it can ADDRESS, which is the installed
-    total minus whatever the firmware and the hardware have reserved. On a machine with 32 GB in it
-    that is a little under 31 GB, and beside the system's own dialog saying 32 GB the honest number
-    reads as Sift being unable to count.
-
-    Both are kept. The addressable figure is the one any sizing decision has to be made against,
-    because it is the memory that actually exists to be spent; this one is what a person recognises
-    as their machine, and it is the one the description of the machine should show.
-
-    `GetPhysicallyInstalledSystemMemory` reads it out of the firmware's own table, in kilobytes. It
-    is one call to a library already loaded, rather than a WMI query, which would be a subprocess
-    and a second of startup.
-    """
+    """What the memory sticks add up to, unlike the addressable total; None where unknown."""
     if not _WINDOWS:
-        # Linux has no equivalent that is not a guess: /proc/meminfo reports the same addressable
-        # total, and reading DMI needs privileges a container does not have. Answering nothing is
-        # better than answering the number that is already in the field beside it.
+        # Linux has no equivalent that is not a guess.
         return None
     import ctypes
 
@@ -333,31 +237,14 @@ def _installed_ram_bytes() -> int | None:
 
 
 def _nvidia_present() -> bool:
-    """Whether an NVIDIA GPU is here for the transcode ladder to use.
-
-    THE POSIX BRANCH IS ALWAYS FALSE ON WINDOWS, which is the platform Sift ships on. There is no
-    `/dev` there at all, so on its own it would answer "no NVIDIA card" on a machine with one, and
-    since it gates which of ffmpeg's `*_nvenc` encoders count as usable, the ladder could never
-    pick one.
-    """
+    """Whether an NVIDIA GPU is here for the transcode ladder; Windows has no /dev to look in."""
     if _WINDOWS:
         return _windows_nvidia_present()
     return any(os.path.exists(node) for node in ("/dev/nvidia0", "/dev/nvidiactl"))
 
 
 def _windows_nvidia_present() -> bool:
-    """Ask the driver's own management library how many NVIDIA devices there are.
-
-    NOT a file-existence check, deliberately. The POSIX branch can look for a device node because
-    one exists precisely when the driver is loaded; Windows has no equivalent path to test, and
-    guessing at a DLL's presence would say yes for a driver that is installed and broken.
-    `nvmlDeviceGetCount_v2` answers the question actually being asked (is there a working NVIDIA
-    device) and it is the same library `nvidia-smi` is a front end for.
-
-    Every failure is the same answer: no card. A missing library, a driver mid-upgrade, an
-    initialisation that refuses: none of them are worth a crash at start-up over an optional
-    accelerator, and the ladder's software path is always there behind it.
-    """
+    """Ask NVML how many NVIDIA devices work; every failure means no card."""
     import ctypes
 
     try:
@@ -372,33 +259,21 @@ def _windows_nvidia_present() -> bool:
             return False
         return count.value > 0
     finally:
-        # Refcounted inside NVML, so this releases exactly what the init above took and leaves any
-        # other user of the library alone.
+        # Refcounted, so this releases only what the init above took.
         nvml.nvmlShutdown()
 
 
-#: Where Linux writes the processor's own name for itself. Read rather than shelled out to: this
-#: runs at startup on every install, and a file read cannot hang the way a subprocess can.
+#: Read rather than shelled out to, as a file read cannot hang at startup.
 _CPU_INFO = Path("/proc/cpuinfo")
 _CPU_MODEL_FIELDS = ("model name", "Model", "Hardware", "cpu model")
 
-#: Where Windows writes the same thing. The registry rather than `platform.processor()`, which
-#: answers with the family and stepping ("AMD64 Family <n> Model <n> Stepping <n>") and not with
-#: the name anybody would recognise; and rather than WMI, which is a subprocess.
+#: The registry, as `platform.processor()` gives only family and stepping, and WMI is a subprocess.
 _CPU_REGISTRY_KEY = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
 _CPU_REGISTRY_VALUE = "ProcessorNameString"
 
 
 def _windows_cpu_model() -> str | None:  # pragma: no cover (the other platform's branch)
-    """What the processor calls itself on Windows, or None.
-
-    `/proc/cpuinfo` does not exist on Windows, so the Linux probe alone would leave the
-    Performance screen naming the machine's processor as unknown on every Windows install while
-    reporting its core count correctly beside it.
-
-    A registry read, for the reason the file read was chosen: it cannot hang the way a subprocess
-    can, and this runs while the application is starting.
-    """
+    """What the processor calls itself on Windows, or None; a registry read cannot hang."""
     import winreg
 
     try:
@@ -412,13 +287,7 @@ def _windows_cpu_model() -> str | None:  # pragma: no cover (the other platform'
 
 
 def _cpu_model() -> str | None:
-    """What the processor calls itself, or None.
-
-    The field differs by architecture: x86 writes "model name", an ARM board often writes only
-    "Model" or "Hardware", so several are tried and the first that answers wins. None is an
-    ordinary answer: the screen shows the core count either way and simply says nothing about the
-    make.
-    """
+    """What the processor calls itself, or None; the first field that answers wins."""
     if _WINDOWS:
         return _windows_cpu_model()
     try:
@@ -432,15 +301,13 @@ def _cpu_model() -> str | None:
     return None
 
 
-#: How long to wait for the card to introduce itself. Startup work, and a driver in a bad state can
-#: leave this hanging: a machine that boots slowly because of an optional line on a settings
-#: screen is a worse outcome than a screen that says the card is present and unnamed.
+#: A driver in a bad state can hang this, and startup must not wait for an optional name.
 _NVIDIA_SMI_TIMEOUT_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
 class Card:
-    """One graphics adapter. Every field independently absent: an older driver reports less."""
+    """One graphics adapter; every field may be absent, as older drivers report less."""
 
     name: str | None = None
     driver: str | None = None
@@ -455,20 +322,7 @@ class Card:
 
 
 async def _nvidia_identity() -> list[Card]:
-    """Every card the driver reports: what each is called and how much memory it has.
-
-    Only asked when a device node is already there, so this is not how Sift decides whether a card
-    exists: it is how it says which one. Every failure is the same answer: a card with nothing
-    filled in, and a screen that reports a card it cannot name.
-
-    THE MEMORY IS THE FIGURE THAT DECIDES WHAT WILL FIT. A model that does not fit in the card's
-    memory does not run slowly; it fails, at the point of loading, in a message from a C library,
-    so "how much has it got" is the first question anybody asks of a machine before turning a
-    feature on.
-
-    `nounits` is asked for so the memory comes back as a bare number. It is reported in MEBIBYTES,
-    which is the one thing about this output easy to get wrong by a factor of a million.
-    """
+    """Every card the driver reports with its name and memory; memory arrives in mebibytes."""
     argv = [
         "nvidia-smi",
         "--query-gpu=name,driver_version,memory.total",
@@ -482,8 +336,7 @@ async def _nvidia_identity() -> list[Card]:
     if result.returncode != 0:
         return []
 
-    # ONE ROW PER CARD. Taking only the first would describe a two-card machine by half of it,
-    # with nothing anywhere saying so.
+    # One row per card, so a two-card machine is described whole.
     return [
         _card_from(line)
         for line in result.stdout.decode("utf-8", "replace").splitlines()
@@ -492,12 +345,7 @@ async def _nvidia_identity() -> list[Card]:
 
 
 def _card_from(line: str) -> Card:
-    """One CSV row from nvidia-smi, as far as it can be read.
-
-    Field by field rather than all-or-nothing: a driver that names the card but will not report its
-    memory should still put the card's name on the screen. Older drivers answer `[N/A]` for a
-    figure they do not have, which is why the memory is parsed rather than trusted.
-    """
+    """One nvidia-smi CSV row, field by field, as old drivers answer `[N/A]`."""
     fields = [part.strip() for part in line.split(",")]
     name = fields[0] if fields and fields[0] else None
     driver = fields[1] if len(fields) > 1 and fields[1] else None
@@ -509,38 +357,19 @@ def _card_from(line: str) -> Card:
             mebibytes = 0
         if mebibytes > 0:
             vram = mebibytes * 1024 * 1024
-    # Everything nvidia-smi answers is a card CUDA can be put on: it is the driver's own tool and
-    # it lists nothing else.
+    # nvidia-smi lists only cards CUDA can use.
     return Card(name=name, driver=driver, vram_bytes=vram, can_compute=True)
 
 
-#: Adapters Windows lists that are not hardware anybody has.
-#:
-#: `Microsoft Remote Display Adapter` appears on every machine that has ever had a remote session,
-#: and `Microsoft Basic Display Adapter` is what stands in before a real driver is installed. Both
-#: are real entries and neither is a card; listing them makes a description of somebody's computer
-#: read as though it has hardware it does not.
+#: Adapters Windows lists that are not hardware: remote display, and the basic stand-in.
 _NOT_REALLY_A_CARD = ("microsoft ",)
 
-#: Where `AdapterRAM` stops being an answer.
-#:
-#: The field is 32 bits, so every card with 4 GB or more reports 4293918720 and no more. Above the
-#: cap it says nothing except "at least four", which is not a
-#: figure to put on a screen, and for the cards this matters most for, NVIDIA's own tool has the
-#: real number anyway.
+#: `AdapterRAM` is 32 bits, so at this cap it only says "at least four gigabytes".
 _ADAPTER_RAM_CAP = 4293918720
 
 
-#: The display-adapter class in the registry, where the driver records what the card really has.
-#:
-#: `AdapterRAM` is 32 bits, so every card with 4 GB or more reports the same 4293918720, which is
-#: why a 16 GB card would come out with no memory beside it at all. `HardwareInformation.qwMemorySize`
-#: is 64 bits and is the real figure, the same one nvidia-smi reports for the card.
-#:
-#: BOTH ARE ASKED, and neither on its own is the answer. The registry keeps entries for drivers that
-#: are no longer installed (stale ones for a remote-display adapter are common), so it cannot say
-#: what is PRESENT. `Win32_VideoController` says exactly what is present and is the vague
-#: one about memory. One invocation, joined on the name.
+#: The registry knows real memory but keeps stale drivers; Windows' list knows what is present.
+#: Both are asked in one invocation and joined on the name.
 _ADAPTER_QUERY = (
     "$mem = @{};"
     " Get-ItemProperty"
@@ -554,17 +383,7 @@ _ADAPTER_QUERY = (
 
 
 async def _windows_display_adapters() -> list[Card]:
-    """Every graphics adapter Windows knows about, whoever made it.
-
-    THIS IS WHERE AN AMD CARD COMES FROM, and an Intel one, and the chip built into a processor.
-    NVIDIA's own tool knows about NVIDIA cards and nothing else, so without this a machine with a
-    Radeon in it would have a hardware report that did not mention it, which is a description of
-    somebody's computer with a piece missing and nothing saying so.
-
-    None of these can do work for Sift today: putting a model on a card means CUDA. They are here
-    because a description of a machine should describe the machine, and because "which of these is
-    the one Sift uses" is a question that cannot be asked of a list with one entry.
-    """
+    """Every graphics adapter Windows knows of, so an AMD or Intel one is described too."""
     if not _WINDOWS:
         return []
     argv = ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _ADAPTER_QUERY]
@@ -579,7 +398,7 @@ async def _windows_display_adapters() -> list[Card]:
 
 
 def _adapters_from(lines: Sequence[str]) -> list[Card]:
-    """The adapter rows, as far as each can be read. See `_windows_display_adapters`."""
+    """The adapter rows, as far as each can be read."""
     found: list[Card] = []
     for line in lines:
         parts = [part.strip() for part in line.split("|")]
@@ -592,12 +411,7 @@ def _adapters_from(lines: Sequence[str]) -> list[Card]:
 
 
 def _memory_of(parts: Sequence[str]) -> int | None:
-    """The card's memory: what the driver recorded, or the capped field, or nothing.
-
-    The registry figure first, because it is 64 bits and is what the card actually has. The
-    `AdapterRAM` field is the fallback for a driver that recorded nothing, and it is only believed
-    BELOW the cap, because at the cap it means "four gigabytes or more" and nothing else.
-    """
+    """The card's memory: the 64-bit registry figure, else `AdapterRAM` below its cap."""
     recorded = _as_bytes(parts[2] if len(parts) > 2 else "")
     if recorded is not None:
         return recorded
@@ -606,7 +420,7 @@ def _memory_of(parts: Sequence[str]) -> int | None:
 
 
 def _as_bytes(field: str) -> int | None:
-    """A size out of one field. None for anything that is not a positive number."""
+    """A size out of one field; None for anything that is not a positive number."""
     try:
         value = int(field.strip())
     except ValueError:
@@ -615,7 +429,7 @@ def _as_bytes(field: str) -> int | None:
 
 
 def _amd_compute_present() -> bool:
-    # The AMD compute (ROCm) device. Distinct from the render node below, which is video only.
+    # The AMD compute device, apart from the video-only render node.
     return os.path.exists("/dev/kfd")
 
 
@@ -627,12 +441,7 @@ def _render_node_present() -> bool:
 
 
 async def _ffmpeg_encoders(settings: Settings) -> frozenset[str]:
-    """Ask ffmpeg which encoders it was built with. Empty set if it cannot be run.
-
-    A missing or broken ffmpeg is not made fatal here: the rest of the app will notice when it
-    tries to use it, with a better message than a probe could give. The probe's job is only to
-    report what it found, so a failure to run means "no hardware encoders known", not a crash.
-    """
+    """The encoders ffmpeg was built with, or an empty set; a broken ffmpeg is not fatal here."""
     argv = [settings.ffmpeg_path, "-hide_banner", "-encoders"]
     try:
         result = await run_tool(argv, time_limit=_FFMPEG_TIMEOUT_SECONDS)
@@ -648,11 +457,7 @@ async def _ffmpeg_encoders(settings: Settings) -> frozenset[str]:
 
 
 def _acceleration_warnings(preference: str, *, cuda: bool, rocm: bool) -> tuple[str, ...]:
-    """The plain-language notes for a GPU that was expected but is not there.
-
-    Only fires when a specific accelerator was asked for (SIFT_GPU set to cuda or rocm), so "auto"
-    never warns: on a machine with no GPU, the CPU is the right and expected answer, not a fault.
-    """
+    """Notes for a GPU asked for and missing; "auto" never warns, as the CPU is then expected."""
     warnings: list[str] = []
     if preference == "cuda" and not cuda:
         warnings.append(
@@ -669,13 +474,12 @@ def _acceleration_warnings(preference: str, *, cuda: bool, rocm: bool) -> tuple[
     return tuple(warnings)
 
 
-#: Bumped when what the three programs' answers are read into changes, so an older file is ignored.
+#: Bumped when the kept answers' shape changes, so an older file is ignored.
 _KEPT_FORMAT = 1
 
 
 def _kept_key(settings: Settings, *, cuda: bool) -> str | None:
-    """What the kept answers depend on: ffmpeg's file, and whether a card is there. None when
-    ffmpeg cannot be found, which a kept answer must never hide."""
+    """What the kept answers depend on; None when ffmpeg cannot be found, never hidden."""
     found = shutil.which(settings.ffmpeg_path)
     if found is None:
         return None
@@ -687,7 +491,7 @@ def _kept_key(settings: Settings, *, cuda: bool) -> str | None:
 
 
 async def _ask_the_programs(settings: Settings, *, cuda: bool) -> tuple[frozenset[str], list[Card]]:
-    """The slow half of the probe: three programs, asked together rather than in turn."""
+    """The slow half of the probe: three programs, asked together."""
 
     async def nvidia() -> list[Card]:
         return await _nvidia_identity() if cuda else []
@@ -695,11 +499,7 @@ async def _ask_the_programs(settings: Settings, *, cuda: bool) -> tuple[frozense
     encoders, named, adapters = await asyncio.gather(
         _ffmpeg_encoders(settings), nvidia(), _windows_display_adapters()
     )
-    # THE TWO SOURCES, and the order is the answer to "which one does the work". NVIDIA's own tool
-    # is exact about its own cards and knows about nothing else; Windows lists every adapter and is
-    # vague about memory. The computable ones come first so that the card Sift uses is the card the
-    # screen names first, and anything NVIDIA is dropped from the second list rather than appearing
-    # twice under a slightly different name.
+    # NVIDIA's exact list first, so the card Sift uses is named first; no NVIDIA card twice.
     cards = named + [
         one for one in adapters if not (one.name or "").casefold().startswith("nvidia")
     ]
@@ -738,17 +538,10 @@ def _write_kept(kept: Path, key: str, encoders: frozenset[str], cards: Sequence[
 
 
 async def probe(settings: Settings, *, kept: Path | None = None) -> HardwareReport:
-    """Look at the machine once, and hand back what to do about it.
-
-    Run at startup; the result is kept and read from. With `kept`, the three programs' answers of
-    the last start are used when ffmpeg and the card are unchanged, and `reprobe` asks again after
-    the start: nothing a request waits for depends on them.
-    """
+    """Look at the machine once at startup, reusing last start's program answers when unchanged."""
     cpu_count = os.cpu_count() or 1
     cpu_model = await asyncio.to_thread(_cpu_model)
-    # Each of these asks the filesystem whether a device is there. Startup work rather than
-    # serving work, so the cost is not the point: what matters is that the rule holds without
-    # exception, because an exception is what the next one hides behind.
+    # Each asks the filesystem whether a device is there.
     cuda = await asyncio.to_thread(_nvidia_present)
     rocm = await asyncio.to_thread(_amd_compute_present)
     render_node = await asyncio.to_thread(_render_node_present)
@@ -774,16 +567,14 @@ async def probe(settings: Settings, *, kept: Path | None = None) -> HardwareRepo
         cuda=cuda,
         rocm=rocm,
         gpu_cards=tuple(cards),
-        # ONE driver serves every NVIDIA card in a machine, so it is a fact about the machine
-        # rather than about a card, and the first one to report it is as good as any.
+        # One driver serves every NVIDIA card, so the first to report it serves.
         gpu_driver=next((one.driver for one in cards if one.driver), None),
         transcode_encoders=transcode_encoders,
         warnings=warnings,
         answers_kept=held is not None,
     )
 
-    # Loud, but not fatal: the warning is logged and also carried in the report to /health, and the
-    # app keeps running on the CPU regardless.
+    # Loud, not fatal: logged and carried to /health while the app runs on the CPU.
     for note in warnings:
         log.warning("hardware.acceleration_unavailable", detail=note)
     log.info(
@@ -800,11 +591,7 @@ async def probe(settings: Settings, *, kept: Path | None = None) -> HardwareRepo
 
 
 async def reprobe(settings: Settings, report: HardwareReport, *, kept: Path) -> bool:
-    """Ask the three programs again after a start that used kept answers, and keep the new ones.
-
-    True when they differ from what this run is using: the next start takes them, and the log says
-    so now.
-    """
+    """Ask the programs again after a start that used kept answers; True when they changed."""
     key = await asyncio.to_thread(_kept_key, settings, cuda=report.cuda)
     if key is None:
         return False
@@ -819,32 +606,9 @@ async def reprobe(settings: Settings, report: HardwareReport, *, kept: Path) -> 
 
 
 def machine_name() -> str | None:
-    """What this computer is CALLED, for a screen that has to say which computer it means.
+    """What this computer is called, for an admin's screen; None for no usable name.
 
-    ## Why a screen needs it at all
-
-    Sift's client is the same page whether it is opened in a browser on the machine holding the
-    library or in the desktop application on another one. So "on a disk in this computer" is a
-    sentence whose meaning depends on where the reader is sitting, and for the person sitting
-    somewhere else it is simply wrong: the disk is in a computer, and it is not theirs. The name is
-    the only thing that makes the sentence true in both places.
-
-    ## The tension with the redaction policy, said out loud
-
-    A hostname is treated as identifying everywhere else in this application: `kernel/log.py`
-    substitutes it out of every log line, and `/health` is asserted not to contain it, because logs
-    get pasted into issues and a hardware summary is a fingerprinting surface. This is a deliberate,
-    narrow exception to that, and the difference is who is being shown it. Those two surfaces
-    travel: off the machine, to strangers. This one goes to an ADMIN and to nobody else.
-
-    A GUEST IS NEVER SHOWN IT. The one route that returns this is `GET /api/library/roots`, which
-    takes `Depends(require_admin)` (a guest is refused before any of it is assembled) and the
-    authorization matrix declares and probes it as admin-only. Nothing here should be copied into a
-    log or a report.
-
-    None when the machine has no name worth saying: `localhost`, a container's random hex id, or an
-    empty answer. The screen then falls back to a sentence that names no machine.
-    """
+    A narrow exception to redacting hostnames: only the admin-only roots route returns it."""
     try:
         name = socket.gethostname()
     except OSError:
@@ -852,8 +616,7 @@ def machine_name() -> str | None:
     base = name.split(".")[0].strip()
     if not base or base.lower() == "localhost":
         return None
-    # A container id: twelve hex characters, different on every run, and no use to anybody reading
-    # it. The same test `kernel/log.py` applies for the opposite reason.
+    # A container id: twelve hex characters, no use to anybody.
     if len(base) == 12 and all(c in "0123456789abcdef" for c in base.lower()):
         return None
     return base

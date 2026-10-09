@@ -1,24 +1,4 @@
-/*
- * The two long-running things this feature does, followed from outside any one screen.
- *
- * Held at module level for the reason recognition's sweep is: a run outlives the pane that started
- * it. Kept inside the component, closing the settings sheet would throw the watcher away, and
- * coming back would show a button, so the only way to find out whether several hundred megabytes
- * had arrived would be to reload the page. Here it goes on running, and reopening the pane joins
- * whatever is already happening rather than starting from a blank screen.
- *
- * The two are followed in completely different ways, and that is deliberate.
- *
- * **Fetching the models is a job**, so it is followed as one: a job id, a fraction, and an outcome
- * when the queue stops listing it.
- *
- * **Describing the library is NOT.** It is Identify's Meaning product, started from the Identify
- * row on Importing or from this pane, and its tasks are a crowd of per-file jobs on the Activity
- * screen. Following one job would say nothing about the rest. So the progress here is the thing
- * itself: how many files have been described, against how many are still to do, read from the
- * status the server already computes. It needs no job id, which is also what makes it resume for
- * free: a page opened an hour later reads the same two numbers and shows the same bar.
- */
+/* The two long-running things this feature does, followed from outside any one screen. */
 
 import { ModelFetchWatch } from '$lib/jobs/model-fetch';
 import {
@@ -59,18 +39,7 @@ class Describing {
 
 	#generation = 0;
 
-	/* Whether anything is actually being done right now.
-	 *
-	 * **Asked of the QUEUE, not of the file counts.** Files still to do is not the same question: a run stopped halfway
-	 * leaves exactly as many files undone as a run still going, so a bar drawn from that number
-	 * sits at whatever it reached, for ever, describing work that will never happen.
-	 *
-	 * Turning the switch off mid-run does not cancel the queued work:
-	 * every one of those jobs runs, finds the feature off, and finishes having done nothing. The
-	 * queue empties, the files stay undescribed, and switching back on does not bring them back.
-	 * What recovers it is an Identify run with Meaning, and
-	 * `stopped` below is what tells the screen to offer that instead of a bar.
-	 */
+	/* Whether anything is actually being done right now. */
 	get running(): boolean {
 		if (this.status === null || !this.status.ready) return false;
 		return this.status.running_jobs > 0;
@@ -92,22 +61,10 @@ class Describing {
 		return this.status?.waiting_files ?? 0;
 	}
 
-	/* What the count has done lately, for working out how long the rest will take.
-	 *
-	 * A window rather than the whole run, and that is not a refinement: files are wildly unequal
-	 * (a photograph is one moment and a feature video is sixty), so an average taken over everything
-	 * since the start keeps reporting a rate the machine has not managed for some time, and drifts
-	 * further from the truth the longer it goes on. What somebody wants is how long the REST will
-	 * take at the rate it is going NOW.
-	 */
+	/* What the count has done lately, for working out how long the rest will take. */
 	#seen = $state<{ at: number; left: number }[]>([]);
 
-	/* Roughly how long is left, in seconds, or null when there is nothing honest to say.
-	 *
-	 * Null until there is enough to divide by, and null again if the count has not moved across the
-	 * whole window, which is what a stalled run looks like. No number is better than one that ticks
-	 * up by a second every second.
-	 */
+	/* Roughly how long is left, in seconds, or null when there is nothing honest to say. */
 	get remaining(): number | null {
 		const first = this.#seen[0];
 		const last = this.#seen[this.#seen.length - 1];
@@ -126,8 +83,7 @@ class Describing {
 		return this.done / total;
 	}
 
-	/** Read once, and keep reading for as long as there is work. Called on mount, so opening the
-	 *  pane halfway through a run shows the run. */
+	/** Read once, and keep reading for as long as there is work. */
 	async attach(): Promise<void> {
 		this.#generation += 1;
 		await this.#poll(this.#generation, { immediately: true, asked: false });
@@ -173,8 +129,8 @@ class Describing {
 			under ||= state.running_jobs > 0;
 			if (state.running_jobs > 0) continue;
 			if (state.waiting_files > 0) {
-				// Nothing running and work left. Stopped, not finished, and said so plainly, because
-				// the alternative is a bar that never moves again and no way to tell why.
+				// Nothing running and work left. Stopped, not finished, and said so plainly,
+				// because the alternative is a bar that never moves again and no way to tell why.
 				this.outcome =
 					`Stopped with ${state.waiting_files} still to do. ` +
 					'Run now on Identify, under Import tasks, picks up where it left off.';
@@ -188,14 +144,7 @@ class Describing {
 	}
 }
 
-/*
- * Whether the search box should offer to search by meaning.
- *
- * Held here rather than asked for by the box, so that turning the switch off makes the control go
- * immediately instead of at the next full page load. Asking once when the box is drawn is correct
- * for a fact about the machine and wrong for one somebody can change from another screen, and this
- * is both.
- */
+/* Whether the search box should offer to search by meaning. */
 class Availability {
 	available = $state(false);
 	#asked = false;
@@ -218,23 +167,7 @@ class Availability {
 	}
 }
 
-/*
- * How much of the library a search by meaning can currently reach.
- *
- * Held here beside the availability above, and read for a different reason: that one decides
- * whether a control appears, this one explains an answer. A search by meaning can only answer out
- * of what has been described, and until the background pass has been round the library that is a
- * minority of it. So a thin set of results for a good phrase reads as the files not being there.
- *
- * Asked by the wall that draws such a result set, and only when it draws one. It is one count over
- * the library on the server, so it is not something to fold into the read every client makes on
- * every page load: most of them never search by meaning at all.
- *
- * Read again each time a wall starts drawing a search by meaning, rather than once per page load
- * like the availability above. The background pass moves this number while somebody is sitting
- * here, and a sentence that froze at whatever it said when the tab was opened would be wrong in
- * the direction that matters. It would keep saying a library is less described than it is.
- */
+/* How much of the library a search by meaning can currently reach. */
 class Coverage {
 	described = $state(0);
 	library = $state(0);
@@ -257,8 +190,7 @@ class Coverage {
 			this.described = answer.described;
 			this.library = answer.library;
 		} catch {
-			// Nobody signed in yet, or the install cannot answer. Zero, which is how the sentence
-			// says nothing at all rather than guessing at a fraction.
+			// Nobody signed in yet, or the install cannot answer.
 			this.described = 0;
 			this.library = 0;
 		}

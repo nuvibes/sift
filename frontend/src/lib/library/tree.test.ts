@@ -23,10 +23,7 @@ function folder(id: string, name: string, parent_id: string | null, root_id = RO
 	};
 }
 
-// Videos            (the folder standing for the root)
-//   clips
-//     holiday
-//   archive
+// Videos            (the folder standing for the root) clips holiday archive
 const LIBRARY: Folder[] = [
 	folder('videos', 'Videos', null),
 	folder('clips', 'clips', 'videos'),
@@ -58,8 +55,6 @@ describe('buildTree', () => {
 
 	it('shows a shared folder whose parent is concealed, at the top', () => {
 		// Not defensive: restrict a folder, share one inside it, and this is what the server sends.
-		// The inner folder is visible and its parent is not: nearest-wins, which is the entire
-		// point of restrict being overridable. Dropping it would make the share silently do nothing.
 		const shared = [folder('videos', 'Videos', null), folder('holiday', 'holiday', 'clips')];
 
 		const tree = buildTree(shared);

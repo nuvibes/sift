@@ -24,14 +24,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 });
 
-/*
- * The Importing screen's own request layer.
- *
- * Four addresses and three key groups, and the addresses are the half a type cannot hold: every one
- * of these returns a shape the generated schema describes, so a wrong PATH type-checks perfectly and
- * fails at runtime on a screen. `check_settings_followed.js` already holds the keys against the
- * server's own list; what is asserted here is that the screen asks the right questions.
- */
+/* The Importing screen's own request layer. */
 
 describe('the Importing screen asks the server', () => {
 	it('for every folder and what it answers differently', async () => {
@@ -73,10 +66,9 @@ describe('the Importing screen asks the server', () => {
 });
 
 describe('the three groups the screen arranges the switches into', () => {
-	/* Named here rather than read from the server, deliberately: the screen has to group them before
-	   any request has come back, and a group whose membership arrived asynchronously would draw
-	   itself once empty and once full. So the arrangement is the screen's and the VALUES are the
-	   server's, which makes the membership worth pinning. */
+	/* Named here rather than read from the server, deliberately: the screen has to group them
+	   before any request has come back, and a group whose membership arrived asynchronously
+	   would draw itself once empty and once full. */
 	it('do not overlap, and no group is empty', () => {
 		const groups = [SCAN_KEYS, GENERATE_KEYS, IDENTIFY_KEYS];
 		for (const group of groups) expect(group.length).toBeGreaterThan(0);
@@ -88,8 +80,8 @@ describe('the three groups the screen arranges the switches into', () => {
 	});
 
 	it('are the parts, and the two masters are not among them', () => {
-		/* `importing.generate` and `importing.identify` govern their groups; a master listed inside
-		   its own group would draw as one of the parts it turns off. */
+		/* `importing.generate` and `importing.identify` govern their groups; a master listed
+		   inside its own group would draw as one of the parts it turns off. */
 		const all = [...SCAN_KEYS, ...GENERATE_KEYS, ...IDENTIFY_KEYS];
 		expect(all).not.toContain(GENERATE_KEY);
 		expect(all).not.toContain(IDENTIFY_KEY);

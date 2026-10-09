@@ -1,24 +1,9 @@
 <script lang="ts">
 	/* LIVE: nothing moves it (one random file asked for on a press and opened immediately; nothing is kept) */
 	/*
-	 * A photograph or a GIF in the stage, with the one control it needs.
-	 *
-	 * The file itself rather than its thumbnail: the still was made for a tile, and blown up to fill
-	 * this space it is a soft, blocky version of a picture the person already has at full size. A
-	 * GIF is here rather than in the player for a harder reason: no browser demuxes GIF through
-	 * the media stack, so a `<video>` pointed at a perfectly good one shows a blank frame forever
-	 * and reports nothing wrong. An `<img>` animates it and loops it without being asked.
-	 *
-	 * What this adds is a still's chrome. The player draws a bar with a fullscreen button on it and
-	 * a double-click that toggles; without the same on a photograph:
-	 *
-	 *   - opening one from the grid would give no way to fill the screen with it at all, and
-	 *   - stepping from a video onto one WHILE fullscreen would leave the screen taken by a picture
-	 *     with no visible way back out except Escape: the button would go with the player.
-	 *
-	 * The stage keeps fullscreen across that step. This is the half that makes it usable: the same
-	 * bar in the same place with the same button, so moving through a mixed run does not change what
-	 * the controls are.
+	 * A photograph or a GIF in the stage: the file itself, not its thumbnail; a GIF in an `<img>`,
+	 * since no browser demuxes one as video. The same bar and fullscreen button as a clip, so
+	 * stepping through a mixed run, fullscreen included, changes nothing under the hand.
 	 */
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { handover } from '$lib/player/mini.svelte';
@@ -59,48 +44,21 @@
 
 	interface Props {
 		id: string;
-		/** What this is: a photograph, or a GIF with a length of its own. */
 		mediaType?: string;
-		/** How long a GIF runs for, in milliseconds. A photograph has none. */
 		durationMs?: number | null;
-		/**
-		 * Where a run goes when this one has been on screen long enough.
-		 *
-		 * A picture has no end to reach, so without this a run of clips would stop dead on the first
-		 * photograph in it and wait for somebody to come back to the screen. How long "long
-		 * enough" is depends on what this is. See `restFor`.
-		 */
+		/** Where a run goes once this has been on screen long enough (`restFor`). */
 		onplayedthrough?: () => void;
-		/** Whether the run brought this picture up; one opened by a press waits for Play. */
 		reachedByRun?: boolean;
-		/** Open some other file instead of this one. Absent where there is no way to open what it
-		 *  finds, and then the control that needs it is not drawn. */
 		/** Open another file, one this list may not hold; `runs` says whether it plays. */
 		onopen?: (id: string, runs: boolean) => void;
-		/**
-		 * The browser has decoded enough of the file to know its shape: the picture's counterpart
-		 * to the player's `ondurationknown`, for the same caller. The corner panel takes the shape
-		 * of what is put in it, and asking too early answers nothing, so it is told.
-		 */
+		/** The decoded shape, for the corner panel, which takes the shape of what is in it. */
 		onpicturesize?: (size: { width: number; height: number }) => void;
-		/**
-		 * Whether this is the small panel in the corner rather than the full-size view.
-		 *
-		 * The panel draws its own chrome: it is a few hundred pixels across, and a bar over that is
-		 * most of what there is to look at, so the picture arrives with nothing on it. The same
-		 * word the player uses for the same request.
-		 */
+		/** The corner panel, which draws its own chrome. */
 		compact?: boolean;
-		/** The file before and after this one in the list it was opened from: the bar's outer pair. */
 		onprevious?: () => void;
 		onnext?: () => void;
-		/** The file's own facts, for the panel somebody opens deliberately.
-		 *
-		 *  The clip player's shape, not a second one written out here: this panel answers the same
-		 *  questions that one does, and a still describing its own facts would come to word them
-		 *  differently. */
+		/** The clip player's shape, so both panels word the facts alike. */
 		file?: FileFacts | null;
-		/** A picture only some browsers draw (a phone's HEIC), as the file's detail says. */
 		mayNotDraw?: boolean;
 	}
 
@@ -121,24 +79,18 @@
 
 	onMount(() => void dwell.load());
 
-	/*
-	 * The run moving on from a picture, by a timer: a picture has no end to report. It rests where
-	 * a clip's end would move the run on (`run.movesOnAfter`) for as long as `restFor` says, and
-	 * only once the run brought it up or Play was pressed on it.
-	 */
+	/* A picture rests by a timer where a clip's end would move the run on (`run.movesOnAfter`). */
 	const restLength = $derived(
 		onplayedthrough && dwell.known && run.movesOnAfter(dwell.mode)
 			? restFor(mediaType, durationMs, { pictures: dwell.pictures })
 			: null
 	);
-	/** Play pressed on a picture waiting under Play through: its rest starts. */
 	let begun = $state(false);
 	const rest = $derived(restLength !== null && (reachedByRun || begun) ? restLength : null);
 	const waits = $derived(restLength !== null && rest === null);
 	$effect(() => {
 		void id;
-		// Held (Space, or the phone's pause): the run waits on this picture until it is let go, and
-		// then gives it its whole rest again.
+		// Held: the run waits here, and gets its whole rest again when let go.
 		if (rest === null || held) return;
 		const timer = setTimeout(() => onplayedthrough?.(), rest);
 		return () => clearTimeout(timer);
@@ -147,25 +99,12 @@
 	const frame = getStage();
 
 	/*
-	 * Looking closer, while fullscreen.
-	 *
-	 * Fullscreen is where a picture is finally big enough that the detail in it is worth reaching,
-	 * and it is also the one place there is nothing else on screen for a wheel or a drag to mean. In
-	 * the window they already mean something: the wheel scrolls the page behind the viewer, and a drag
-	 * is how a picture gets dropped onto a tag. So this is fullscreen only, rather than a mode with a
-	 * button, and outside it every gesture keeps the meaning it had.
-	 *
-	 * Held here rather than as a transform on the stage, because it belongs to THIS picture: stepping
-	 * to the next one starts again at fit-to-screen, which is what somebody moving through a run
-	 * expects. Coming back out of fullscreen resets it for the same reason.
+	 * Looking closer, in FULLSCREEN only: in the window the wheel scrolls and a drag files the
+	 * picture. Belongs to this picture, so the next starts at fit-to-screen. The arithmetic is
+	 * `Zoomable`'s.
 	 */
-	/* The arithmetic lives in `Zoomable`, which the full-screen picture viewer uses as well. Keeping
-	   the point under the pointer and clamping the pan to the overhang are the same rules on both
-	   surfaces, and two copies of them would drift into two pictures that magnify slightly
-	   differently, which is not something anybody would ever report. */
 	const view = new Zoomable();
-	/* A picture shown magnified says so to the sitting looking at it, which the frame around this
-	   owns (`noteMagnified`): whether it was magnified is a fact of the sitting, kept with it. */
+	/* Magnified is a fact of the sitting (`noteMagnified`). */
 	$effect(() => {
 		if (view.magnified) untrack(() => noteMagnified(id));
 	});
@@ -173,18 +112,11 @@
 	let img = $state<HTMLImageElement | null>(null);
 
 	/*
-	 * A GIF is driven (decoded frame by frame onto a canvas) wherever the browser can decode
-	 * one, which makes it pausable: an `<img>` has no playhead, no pause and no way to be asked.
-	 * The same as Theater's cell.
-	 *
-	 * Where the browser cannot (Firefox, and any page over plain http, where the decoder is
-	 * withheld with the rest of the secure-context features), the `<img>` stays, the GIF
-	 * plays, and the pause control is not offered rather than offered and ignored.
-	 * `$lib/player/animation` knows which, and measures it.
+	 * A GIF is driven onto a canvas where it can be, so it can pause; elsewhere the pause is
+	 * withheld.
 	 */
 	const driven = $derived(mediaType === 'gif' && canDriveAnimations());
-	/* In a run, Play is a thing this picture has on one answer and not the others, so the bar keeps
-	   it, dimmed with the reason, and pressing Repeat this takes nothing off the bar. */
+	/* In a run, Play stays dimmed with its reason. */
 	const playWhy = $derived(
 		!onplayedthrough || driven || rest !== null || waits
 			? undefined
@@ -192,15 +124,10 @@
 				? PICTURES_LEFT_OUT
 				: PLAYS_THROUGH_ONLY
 	);
-	/* Where it is not driven, the pause control is withheld and nothing says so. */
 	let frozen = $state<HTMLCanvasElement | null>(null);
-	/** The GIF being driven, while one is. Not state: nothing draws from it. */
 	let running: Animation | null = null;
-	/** Which file the GIF was started for, so a re-run does not start it twice. */
 	let animating: string | null = null;
-	/** Whether the person has held the GIF on a frame. A new file starts playing. */
 	let held = $state(false);
-	/* The presses of R and S at the keyboard, for their corner badges (`KeyEcho`), the Player's. */
 	let repeatPresses = $state(0);
 	let shufflePresses = $state(0);
 	$effect(() => {
@@ -221,8 +148,7 @@
 			onsize: (size) => onpicturesize?.(size),
 			onfail: () => (unreachable = true)
 		}).then((made) => {
-			// The picture may have moved on while the file was being fetched, and then this
-			// belongs to nothing: closed rather than left decoding into a canvas somebody else has.
+			// The picture moved on during the fetch: closed, not left decoding.
 			if (made === null) return;
 			if (animating !== wanted) made.close();
 			else running = made;
@@ -240,7 +166,6 @@
 		held = !held;
 	}
 
-	/* Play on a waiting picture starts its rest; otherwise it holds and lets go. */
 	function pressPlay(): void {
 		if (waits) {
 			begun = true;
@@ -253,22 +178,16 @@
 		view.watch(driven ? frozen : img);
 	});
 
-	/* Whether the full-size fetch failed. Set by the element's own `error`, which is the only way
-	   to learn it: asking the server first would be a request per picture to find out something
-	   the browser is about to say. Reset when the id changes, or stepping from a file that is gone
-	   to one that is there would leave the message up over a perfectly good picture. */
+	/* From the element's own `error`; reset when the id changes. */
 	let unreachable = $state(false);
-	/* A picture whose bytes ARRIVED and which this browser could not DRAW: a phone's HEIC in
-	   anything but Safari. The element's `error` says the same for both, so after one the server
-	   is asked (a HEAD of the same address, so nothing is downloaded twice) whether the file is
-	   there. There, the photograph is drawn from the copy Sift made of it when it was read, a JPEG
-	   every browser draws (`copy`); with no copy either, the screen says the browser cannot show
-	   it (`undrawable`), and never that the file cannot be reached, because it can. Save to device
-	   still hands over the original: this changes what is drawn, never what is saved. */
+	/*
+	 * Arrived but undrawable (a phone's HEIC): a HEAD asks whether the file is there, then Sift's
+	 * JPEG copy is drawn, else the browser is said to be unable. Save still hands over the
+	 * original.
+	 */
 	let copy = $state(false);
 	let undrawable = $state(false);
-	/* Whether this browser draws HEIC (`./heic`). A picture only some browsers draw is drawn from
-	   its copy from the start where the answer is no, and held until the answer is in. */
+	/* Whether this browser draws HEIC (`./heic`). */
 	let heic = $state(drawsHeicNow());
 	$effect(() => {
 		if (mayNotDraw && heic === undefined) void drawsHeic().then((answer) => (heic = answer));
@@ -282,13 +201,11 @@
 		undrawable = false;
 	});
 
-	/** The element could not draw what it was given: work out which of the three answers it is. */
 	async function drawFailed(): Promise<void> {
 		if (copy) {
 			undrawable = true;
 			return;
 		}
-		// One refusal is enough for a picture the server says only some browsers draw.
 		if (mayNotDraw && !fromCopy) {
 			copy = true;
 			return;
@@ -300,10 +217,7 @@
 		} catch {
 			there = false;
 		}
-		// The viewer may have moved on while the server answered; this belongs to nothing then.
 		if (asked !== id) return;
-		// Drawn from the copy from the start and the copy is missing: the original is there and
-		// this browser cannot draw it.
 		if (fromCopy) {
 			if (there) undrawable = true;
 			else unreachable = true;
@@ -313,23 +227,18 @@
 		else unreachable = true;
 	}
 
-	/* A new picture, or the end of fullscreen, is a fresh start. Reading both so either does it. */
 	$effect(() => {
 		void id;
 		void frame?.isFullscreen;
 		view.reset();
 	});
 
-	/* And the pointer says so while it is available. The same condition the gestures below are
-	   gated on, read from the same place: a cursor offering to magnify where the wheel does
-	   nothing is worse than no cursor at all. */
+	/* The cursor offers magnifying only where the wheel does it. */
 	$effect(() => {
 		view.canMagnify = frame?.isFullscreen === true;
 	});
 
-	/* Fullscreen only, rather than a mode with a button. In the window the wheel scrolls the page
-	   behind the viewer and a drag is how a picture gets dropped onto a tag, so magnifying there
-	   would take two gestures away from what they already mean. */
+	/* Fullscreen only. */
 	function onWheel(event: WheelEvent): void {
 		if (!frame?.isFullscreen) return;
 		if (view.wheel(event)) frame.wake();
@@ -349,42 +258,14 @@
 	}
 
 	/*
-	 * A press steps the magnification, while the screen is filled.
-	 *
-	 * Fullscreen only, like every other gesture here: in the window a press on a picture starts a
-	 * drag onto a tag, which already means something. `panned` separates two presses that begin
-	 * identically: a press that moved the picture was a pan, and letting go at its end must not
-	 * also zoom.
-	 *
-	 * A press waits to find out whether it was a press. A click is known to be single only once the
-	 * double-click window has passed (the browser says so afterwards, with `dblclick`), and acting
-	 * immediately then taking it back is not enough: the step is animated over a third of a second,
-	 * so part of it would be on screen before the second click, exactly what somebody leaving the
-	 * filled screen sees.
-	 *
-	 * So the step is held for `A_SECOND_CLICK_MAY_STILL_COME` and cancelled if a second click
-	 * comes. That costs a quarter of a second of lag on the zoom, the right way round: the coarse
-	 * zoom is a press somebody makes and watches, while leaving is a gesture they expect to just
-	 * work. The wheel is untouched and immediate.
-	 *
-	 * `undoStep` is not redundant: Windows allows a double-click as slow as half a second, and a
-	 * press held that long would read as broken, so the timer is set for the fast case and the undo
-	 * catches a slow double-click that fires after the step has run. Quick double-clicks never
-	 * zoom; slow ones zoom and are put straight back.
-	 *
-	 * A judgement rather than a guard (raising it makes the zoom laggier and catches slower
-	 * double-clicks, and the undo covers what it misses), and it is pinned:
-	 * `StillView.svelte.test.ts` advances the clock by less than the wait, which separates zero
-	 * (the step is due immediately) from 260 (nothing is due yet), alongside the test that a
-	 * double-press cancels the held one.
+	 * A press steps the magnification in fullscreen, held for `A_SECOND_CLICK_MAY_STILL_COME` in
+	 * case it was a double-click (which leaves fullscreen); `undoStep` catches a slow one. Pinned
+	 * by `StillView.svelte.test.ts`.
 	 */
 	const A_SECOND_CLICK_MAY_STILL_COME = 260;
 
-	/** The held press, or null when none is waiting. */
 	let waiting: ReturnType<typeof setTimeout> | null = null;
-	/* Whether a press that ALREADY RAN belongs to the sequence in progress, so a double-press knows
-	   whether there is anything to take back. Written on every first click, so it can never
-	   describe an older one: a stale yes would restore a magnification somebody had already left. */
+	/* Written on every first click, so it never describes an older one. */
 	let stepped = false;
 
 	function forgetTheHeldPress(): void {
@@ -393,16 +274,12 @@
 	}
 
 	function onPress(event: MouseEvent): void {
-		/* The second click of a double-click is not a press. Letting it through would step the
-		   zoom twice on the way to a gesture that means "leave the filled screen", so the picture
-		   would jump in and back out under somebody trying to get out of it. */
+		/* The second click of a double-click is not a press. */
 		if (event.detail > 1) return;
 		stepped = false;
 		forgetTheHeldPress();
 		if (!frame?.isFullscreen || view.panned) return;
-		// The event is not kept: only the point it happened at. An event object is pooled and
-		// reused by the browser, and reading `clientX` off it a quarter of a second later is
-		// reading whatever it has been recycled for since.
+		// The point, not the event: the browser recycles event objects.
 		const at = { clientX: event.clientX, clientY: event.clientY };
 		waiting = setTimeout(() => {
 			waiting = null;
@@ -411,40 +288,22 @@
 		}, A_SECOND_CLICK_MAY_STILL_COME);
 	}
 
-	/*
-	 * Double-press fills the screen, or empties it, and nothing else: one gesture, one meaning,
-	 * including on a magnified picture. The accidental step the two clicks would take is taken
-	 * straight back rather than animated back.
-	 */
+	/** One gesture, one meaning, magnified or not; a step already taken is undone. */
 	function onDoubleClick(): void {
-		// A press still waiting is a press that never happened. Nothing to undo, and nothing to see.
 		forgetTheHeldPress();
-		// One that already ran (a slow double-click) is put straight back, without animating.
 		if (stepped) view.undoStep();
 		stepped = false;
 		frame?.toggleFullscreen();
 	}
 
-	/*
-	 * Arriving to fill the screen: F pressed on the corner panel, which has no stage of its own (see
-	 * `handover.fillsTheScreen`), answered here the way the video player answers it, once the stage
-	 * is drawn and still inside the moment the browser counts the press as the person's own.
-	 */
+	/* F pressed on the corner panel arrives here (`handover.fillsTheScreen`). */
 	$effect(() => {
 		if (compact || !frame?.element) return;
 		untrack(() => {
 			if (handover.takeFill(id) && !document.fullscreenElement) frame.toggleFullscreen();
 		});
 	});
-	/*
-	 * No delay on this end: the stage waits a second after the pointer leaves the picture before
-	 * putting the control away, and a second wait here would fire after that and wake it again. One
-	 * thing owns the waiting.
-	 *
-	 * A press held when the picture goes away is aimed at something that is not there: stepping the
-	 * zoom of whatever replaced it a quarter of a second later would be somebody else's
-	 * magnification arriving on screen.
-	 */
+	/* No delay here: the stage owns the waiting. A held press dies with the picture. */
 	onDestroy(forgetTheHeldPress);
 
 	function holdControl(event?: PointerEvent) {
@@ -455,15 +314,7 @@
 		frame?.wake();
 	}
 
-	/*
-	 * The same drawer the player carries, with what a picture can answer.
-	 *
-	 * What happens at the end, Shuffle and "play something else" are about the RUN rather than about
-	 * the file, so they apply to a photograph exactly as they do to a clip, and having them
-	 * disappear on every still in a mixed run would make a run of mixed media feel like two
-	 * different applications. What is dimmed here has no meaning on a picture: there is no playhead
-	 * to loop between, no seconds to clip and one size.
-	 */
+	/* The player's drawer; the run's controls apply to a picture too, the rest dim. */
 	let statsOpen = $state(false);
 	let finding = $state(false);
 
@@ -484,18 +335,7 @@
 		}
 	}
 
-	/*
-	 * Carry on looking at it in the corner.
-	 *
-	 * A photograph goes to the panel as a clip does, although the player does not draw it: a run of
-	 * mixed media that lost the panel every time it reached a picture would lose it at exactly the
-	 * moment somebody goes looking for the next thing.
-	 *
-	 * Nothing to hand over but the id, what this is and the panel's sitting with it. There is no
-	 * playhead to carry across and nothing to pause, so the two facts the player has to send with a
-	 * clip do not arise. The sitting goes along so the corner carries on the view rather than
-	 * counting a second one.
-	 */
+	/* To the corner panel as a clip goes, with the id, its kind and the sitting. */
 	function toMini() {
 		mini.open(
 			{ id, mediaType, sitting: handOffSitting(id, 'panel') },
@@ -506,16 +346,9 @@
 		);
 	}
 
-	/*
-	 * The shape of the picture, in its own pixels, for the panel, which takes the shape of what is
-	 * put in it.
-	 *
-	 * Null until the browser has decoded enough of the file to know, and null rather than a guess,
-	 * because a guess is a panel resized to the wrong shape, which reads as the panel being broken.
-	 */
+	/** Null until decoded, never a guess. */
 	export function pictureSize(): { width: number; height: number } | null {
 		if (driven) {
-			// The driver sizes the canvas to the first frame it decodes. See `driveAnimation`.
 			if (!frozen || !frozen.width || !frozen.height) return null;
 			return { width: frozen.width, height: frozen.height };
 		}
@@ -523,40 +356,17 @@
 		return { width: img.naturalWidth, height: img.naturalHeight };
 	}
 
-	/*
-	 * The same keys the player takes, for the same requests.
-	 *
-	 * The one the corner is opened with belongs to whatever is on screen at FULL SIZE. In the panel
-	 * that key means the opposite
-	 * (come back out of the corner) and the panel binds it, so this is the one place the two are
-	 * told apart. The guard is here rather than in `toMini` because what has to be avoided is not
-	 * only opening a panel that is already open: it is TAKING the press, which happens on the line
-	 * below and cannot be undone further in.
-	 */
+	/* The player's keys; the corner key is told apart here, before the press is taken. */
 	const actions: Actions<PlayerAction> = {
-		// The same key that pauses a clip pauses a GIF, where one can be paused at all.
 		'player.playPause': ({ value }) => {
-			// A GIF pauses; a photograph resting in a run is held there. A photograph that is not
-			// in a run has nothing to pause.
+			// A GIF pauses; a photograph rests in a run; otherwise nothing.
 			if (!driven && rest === null && !waits) return false;
-			// The phone sends the state it wants; a key flips it.
 			const wantsPlaying = value === null ? !looksPlaying : value === 1;
 			if (wantsPlaying !== looksPlaying) pressPlay();
 			return true;
 		},
-		/*
-		 * F fills the screen with the picture, through the stage's own toggle.
-		 *
-		 * The bar's fullscreen button and the double-click already do it, and the key is declared
-		 * once for "what you are watching", which includes a picture the player does not draw. The
-		 * same call the player and the button make; there is no second idea of what filling the
-		 * screen means. The player resets its magnification on the way through, and this does not
-		 * need to: the effect above does it on every change of `isFullscreen`, so entering or
-		 * leaving always starts at fit-to-screen.
-		 */
+		/* F, through the stage's own toggle; the effect above resets magnification. */
 		'player.fill': () => {
-			// A still drawn with no stage around it (the panel, a harness) has no screen to
-			// fill, and correctly does nothing rather than reaching for one.
 			if (!frame) return false;
 			frame.toggleFullscreen();
 			return true;
@@ -565,9 +375,7 @@
 			toMini();
 			return true;
 		},
-		/* R and S, as on a clip: what happens at the end and the order are the run's, so a key's
-		   outcome is the same on every player, and the corner badge says it. The phone names the
-		   answer it wants by its place in the order the key cycles, and Shuffle by its state. */
+		/* R and S, as on a clip, with the corner badge. */
 		'player.repeat': ({ key, value }) => {
 			if (key === null && value !== null) return dwell.chooseAt(value);
 			void dwell.choose(nextLoopMode(dwell.mode));
@@ -582,25 +390,11 @@
 		}
 	};
 
-	/*
-	 * What this picture hands up to the viewer it is drawn in, which offers it to the phone
-	 * (`offerViewer`). Not offering it ("a picture has nothing playing") would leave a popout showing a
-	 * photograph no screen at all to the phone. A picture has presses a phone can make: the
-	 * file before and after, holding a GIF or a photograph's rest in a run, filling the screen; the
-	 * viewer adds its own (a favourite, the O counter).
-	 *
-	 * The step pair is the phone's only, and so is not in the key table: on a still the bare arrows
-	 * are the viewer's own keys, and a second answer to them here would step twice.
-	 */
+	/* What the phone may press here (`offerViewer`); the step pair is the phone's alone. */
 	export function remote(): Offerable {
-		/* Only what a press here would do is offered, so the phone draws no control that answers
-		   nothing: a photograph outside a run has nothing to pause, and a picture opened with no
-		   list around it has no file before or after. Read afresh at every report, so a run
-		   reaching this picture offers the pause the moment it can hold. */
+		/* Only what a press here would do, read afresh at every report. */
 		const table: Actions<PlayerAction> = { ...actions };
 		if (!driven && rest === null && !waits) delete table['player.playPause'];
-		/* What happens at the end and the order are the run's, and the drawer offers both here, so
-		   the phone does too, through the keys' own answers above. */
 		if (onprevious)
 			table['player.previous'] = ({ key }) => {
 				if (key !== null || !onprevious) return false;
@@ -628,7 +422,6 @@
 		};
 	}
 
-	/* A still answers its keys from a table like the player's (see `$lib/shell/shortcuts`). */
 	function onKeydown(event: KeyboardEvent) {
 		if (compact) return;
 		if (event.target instanceof HTMLElement && event.target.closest('input, textarea')) return;
@@ -639,8 +432,6 @@
 		window.addEventListener('keydown', onKeydown);
 		return () => window.removeEventListener('keydown', onKeydown);
 	});
-
-	/** A button on the bar is pressed, not moved to. See the player's bar for why. */
 </script>
 
 <!--
@@ -649,11 +440,7 @@
 	and not the sole affordance. Same gesture the video takes, on purpose.
 -->
 {#if undrawable}
-	<!--
-		The file is there and this browser cannot draw it, and there is no copy to draw instead.
-		Said as what it is, a fact about the browser, never as a missing file: the facts below are
-		the file's, and Save to device hands over the original.
-	-->
+	<!-- Undrawable here and no copy: a fact about the browser, never a missing file. -->
 	<div class="gone">
 		<Empty scope="page" icon="hide_image" title="This browser can't show this kind of picture">
 			The file is here and nothing is wrong with it. Save to device gives you the original, to open
@@ -662,19 +449,7 @@
 	</div>
 {:else if unreachable}
 	<!--
-		The bytes are not there, and this says so rather than drawing a broken frame.
-
-		A picture whose file has gone still has a thumbnail (derivatives are kept beside the
-		library, not inside it), so it appears on the wall, opens, and reports its size and
-		dimensions from the row. Only the full-size fetch fails, and the browser's answer is a
-		torn-page glyph in a black rectangle, which reads as Sift being broken.
-
-		A file can be gone for ordinary reasons (a drive not mounted, a folder moved, an archive
-		deleted after its pictures were taken in), and the screen cannot tell which, so it says the
-		one thing it knows.
-
-		The same glyph the tile's gone mark wears, distinct from the hidden mark's crossed-out eye:
-		one fact, one glyph, on the wall and on the file alike.
+	The bytes are not there: the tile's torn-page glyph and one plain sentence, not a broken frame.
 	-->
 	<div class="gone">
 		<FileUnreachable />
@@ -685,9 +460,7 @@
 	     without a pointer. Nothing is reachable only this way, and the wheel and the drag beside it
 	     are exempt for the same reason. -->
 	{#if driven}
-		<!-- The frames, drawn by Sift rather than by the element, which is what makes them stoppable.
-		     Every gesture the picture takes is the same one, so magnifying and dragging a GIF
-		     is magnifying and dragging a photograph. -->
+		<!-- Frames drawn by Sift, so they stop; the same gestures as a photograph. -->
 		<canvas
 			bind:this={frozen}
 			class="picture"
@@ -733,9 +506,6 @@
 	{/if}
 {/if}
 
-<!-- The bar a clip wears, every control in its place; nothing to seek or hear. -->
-
-<!-- What R and S just did, in the corner of the picture, as the Player says it for a clip. -->
 {#if !compact}
 	<div class="key-echoes">
 		{#key id}
@@ -783,13 +553,7 @@
 	/>
 {/if}
 
-<!--
-	The drawer: THE SAME NINE a clip's drawer holds, in the same places, so stepping from a clip to
-	a picture moves nothing under the hand. What a picture cannot do is drawn dimmed with the reason
-	as its label, the rule a Theater cell's drawer follows. Order: Clip, Screenshot, Quality;
-	Randomize, what happens at the end, Shuffle; the loop's two marks, Save as Loop; Stats for nerds.
-	The end's answer is live here too: it is what moves a run off this picture.
--->
+<!-- The drawer: THE SAME NINE as a clip's, what a picture cannot do dimmed with its reason. -->
 {#snippet pictureTray()}
 	<Tooltip label="A picture has no seconds to clip" placement="top">
 		<Button
@@ -849,7 +613,6 @@
 	</Tooltip>
 {/snippet}
 
-<!-- The end of the row where a clip's bar keeps it: the Audio player dimmed, the corner, the screen. -->
 {#snippet pictureTrailing()}
 	<Separator vertical />
 	{#if !phoneWidth.yes}
@@ -865,22 +628,12 @@
 
 {#if statsOpen && !compact}
 	<!--
-		The SAME panel the player and a Theater cell draw, told that nothing is playing.
-
-		Not a second copy (its own `<aside>`, its own `<dl>`, rows written out by hand, a different
-		corner of the picture): nothing would keep the two in step, and a line added to the panel a
-		clip carries would never appear on a photograph with nothing to say so. `still` takes out
-		the eight rows about playback (a picture has no bitrate and no playhead) and `kind` is
-		the one line a still has that a clip does not.
-
-		Inside the stage rather than portalled to the page, for the reason the player's panel
-		documents: a browser draws the fullscreened element and what is inside it.
+	The SAME panel as the player's, with `still` and `kind`, inside the stage for fullscreen.
 	-->
 	<StatsPanel {file} still kind={mediaType === 'gif' ? 'GIF' : 'Photo'} position={0} duration={0} />
 {/if}
 
 <style>
-	/* The Player's corner: clear of the top edge's strip and inside the frame's rounding. */
 	.key-echoes {
 		position: absolute;
 		inset-block-start: var(--space-5);
@@ -892,12 +645,7 @@
 		pointer-events: none;
 	}
 
-	/* A file Sift cannot reach. Centred in the frame the picture would have filled, and quiet: it
-	   is a statement of fact rather than an error, and everything known about the file is still on
-	   the page below it. */
-	/* Only the BOX is this view's: the words are `FileUnreachable`'s, which the video's player says
-	   too, so one missing file reads the same in both. This keeps the stage's height so a
-	   file that cannot be reached does not collapse the viewer to a line of text. */
+	/* Only the box: the words are `FileUnreachable`'s; the stage keeps its height. */
 	.gone {
 		display: grid;
 		place-items: center;
@@ -906,20 +654,12 @@
 		padding: var(--space-6);
 	}
 
-	/* Rendered inside the bar rather than here, so the rule has to be `:global`: a snippet is
-	   styled where it is drawn, not where it is written. Namespaced for the same reason, and dressed
-	   the way the wall dresses its copy: the sentence is shared, the dressing belongs to each bar,
-	   which is the rule every component in this app follows about its own furniture. */
+	/* `:global`: rendered inside the bar. */
 	img,
 	.picture {
 		display: block;
-		/* Says the picture can be double-clicked, the same way the video's does. */
 		cursor: pointer;
 	}
 
-	/* Magnified, the picture is something to move rather than something to press, and what the
-	   pointer looks like while it is being moved is `Zoomable`'s answer, shared with the two other
-	   surfaces that magnify a picture. See the getter. There is deliberately no transition on the
-	   scale or the translate: a wheel arrives as a stream of small steps, and a duration on each one
-	   is a magnifier that lags behind the hand. */
+	/* No transition on scale or translate: the wheel is a stream of steps. */
 </style>

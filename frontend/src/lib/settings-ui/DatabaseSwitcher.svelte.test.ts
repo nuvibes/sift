@@ -1,12 +1,4 @@
-/* The Database Switcher under Backup and restore.
- *
- * What is worth being sure of is what the PAGE may send: a library from the server's list by the id
- * the server handed out, a new one by a NAME, an upload by a file and a name, never a path of its
- * own. That an older library is asked about before the ask goes. That a switch is followed to a
- * DIFFERENT run of the server before the page reloads. And that what only the app can do (the
- * machine's own picker, the libraries it remembers from elsewhere) still goes through the bridge,
- * while a browser gets the upload instead.
- */
+/* The Database Switcher under Backup and restore. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -123,10 +115,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-	/* A test that pressed a switch leaves its wait polling. Abandoned here, it never arrives; and
-	   it is waited OUT here, past its 500 ms poll, so what it does once it wakes (nothing but the
-	   page's own still-switching lines) lands in this test's record every time, never in whichever
-	   later test happens to be alive. A test that used fake timers drops the timer instead. */
+	/* A test that pressed a switch leaves its wait polling. */
 	vi.useRealTimers();
 	abandonSwitches();
 	await new Promise((settle) => setTimeout(settle, 520));
@@ -194,8 +183,7 @@ it('lists the server libraries with the open one marked and an older one said so
 	expect(get).toHaveBeenCalledWith('/libraries');
 	expect(said()).toContain('Work');
 	expect(said()).toContain('Created by an older Sift');
-	// The open library's own row: marked as open right now, its Open button off. Every Open
-	// button reads the same word now, so the current library is the first of them.
+	// The open library's own row: marked as open right now, its Open button off.
 	expect(button('Open', 0).disabled).toBe(true);
 });
 
@@ -265,9 +253,7 @@ it('opens a library by the id the server handed out, then follows the server to 
 });
 
 it('says it is still switching when no new run of the server answers within the limit', async () => {
-	/* The follow gives up after its limit and the row says so, instead of a spinner for ever. This
-	   path is also what an abandoned wait runs when a later test's generation bump wakes it, so it
-	   is covered here on purpose rather than by whichever test happens to be alive 500 ms later. */
+	/* The follow gives up after its limit and the row says so, instead of a spinner for ever. */
 	vi.useFakeTimers();
 	serverBootId.mockReset().mockResolvedValue('run-1');
 	await draw();
@@ -456,8 +442,8 @@ it('puts the pictures switch on the control column, the row as wide as the pane'
 	button('Duplicate\u2026').click();
 	await settle();
 
-	// The form is a column that keeps each line at its own width; the row holding the switch has
-	// to stretch across it, or its control column ends where the row's words end.
+	// The form is a column that keeps each line at its own width; the row holding the switch has to
+	// stretch across it, or its control column ends where the row's words end.
 	let line: HTMLElement = host.querySelector<HTMLElement>('[role="switch"]')!;
 	while (!line.parentElement!.classList.contains('make')) line = line.parentElement!;
 	applyStyles(switcherSource, line.parentElement);

@@ -1,38 +1,9 @@
-/* What the page is allowed to ask the machine to do.
- *
- * This runs with access to Node, in the same world as the page, so everything exposed here is
- * reachable by anything running on that page. It is therefore deliberately a list of named verbs
- * and never a general capability: no file paths in, no arbitrary commands, nothing that takes a
- * function.
- *
- * It is attached only to origins the person has saved (see origins.ts). On any other page there is
- * no preload at all, so `window.sift` is simply absent and every capability in
- * frontend/src/lib/bridge reports false, which is exactly what it does in an ordinary browser.
- *
- * And a page gets only the methods its origin may use: all of them on this machine's own Sift, a
- * few on a server elsewhere (see `REMOTE_VERBS` in verbs.ts). A method left off reads as a
- * capability this copy does not have, so the screens that offer it draw nothing.
- *
- * Each capability appears here as it is actually built, one method at a time, and the
- * page feature-detects each one independently, so a version that has one and not another reports
- * exactly what it has.
- */
+/* What the page is allowed to ask the machine to do. */
 
 import type { CaptureArea, SetupStep } from '../../shared/bridge';
 import { contextBridge, ipcRenderer } from 'electron';
 
-/* This file imports nothing but `electron`, and that is a hard constraint.
- *
- * A preload in an isolated renderer has no module loader for the application's own files.
- * `require('./channels')` is not available to it: only `electron` and a handful of Node
- * built-ins are. So a relative import here does not fail loudly: the preload throws while
- * loading, nothing surfaces, and `window.sift` is undefined. The application opens, reports every
- * capability as false, and has quietly lost the entire bridge.
- *
- * That is why the channel names are written out here instead of imported from the module that
- * implements them. `preload.contract.test.ts` compares the two copies and fails the build if they
- * ever differ.
- */
+/* This file imports nothing but `electron`, and that is a hard constraint. */
 const BRIDGE_VERBS = 'sift:bridgeVerbs';
 const CHOOSE_FOLDER = 'sift:chooseFolder';
 const CHOOSE_FILE = 'sift:chooseFile';
@@ -124,8 +95,7 @@ type MoveOutcome =
 	  }
 	| { ok: false; reason: string | null };
 
-/** One library this copy has opened, as the Library screen lists it. Written out here rather than
- *  imported (see the note above about what a relative import costs an isolated preload). */
+/** One library this copy has opened, as the Library screen lists it. */
 
 interface Sharing {
 	enabled: boolean;
@@ -150,11 +120,7 @@ type FirewallReport = {
 	scope: 'private' | 'any' | null;
 };
 
-/* What the computer this window is running on is.
- *
- * DECLARED HERE rather than imported, like everything else in this file: an isolated preload cannot
- * import any of the project's own modules, so the shapes it carries are written out and the main
- * process's copy is what they are checked against at the far end. */
+/* What the computer this window is running on is. */
 interface LocalMachine {
 	cpu_model: string | null;
 	thread_count: number;
@@ -176,30 +142,19 @@ function areaOf(area: unknown): CaptureArea | null {
 	};
 }
 
-/* The shape frontend/src/lib/bridge/index.ts feature-detects against. Every method is optional
- * THERE, so adding one here is the whole of shipping a capability: nothing has to be told. */
+/* The shape frontend/src/lib/bridge/index.ts feature-detects against. */
 const api = {
 	/** Present only inside the desktop shell. Nothing branches on it today; it is what makes a
 	 *  "you are running the app" statement checkable rather than guessed. */
 	isDesktop: true as const,
 
-	/* The folder dialog that grants a library root. It takes NOTHING (no starting
-	 * path, no filter, no title), so a page cannot use it to steer somebody towards a particular
-	 * folder or to learn anything about the disk. It answers a path or nothing at all. */
+	/* The folder dialog that grants a library root. */
 	chooseFolder: (): Promise<string | null> => ipcRenderer.invoke(CHOOSE_FOLDER),
 
-	/* The file dialog Migrate from Stash reads a database through. It takes NOTHING, as the folder
-	 * dialog does: the kind of file offered is fixed on the other side, so a page cannot steer the
-	 * dialog or learn about the disk by asking. It answers a path or nothing at all, and the server
-	 * reads it only inside a folder Sift has been given. */
+	/* The file dialog Migrate from Stash reads a database through. */
 	chooseFile: (): Promise<string | null> => ipcRenderer.invoke(CHOOSE_FILE),
 
-	/* Drag one asset out of the window. AN ID, NEVER A PATH.
-	 *
-	 * That is the whole security design of this verb: a page that could name a file could name any
-	 * file on the machine, and anything that got code into the page could then drag somebody's
-	 * documents into a chat window. The main process resolves the id against the server the page is
-	 * already signed in to, so a drag reaches exactly what the person could already watch. */
+	/* Drag one asset out of the window. AN ID, NEVER A PATH. */
 	startDrag: (assetId: string): Promise<string> => ipcRenderer.invoke(START_DRAG, assetId),
 
 	/* How a client-mode fetch is getting on. Wrapped rather than handed `ipcRenderer.on` directly:
@@ -213,32 +168,25 @@ const api = {
 		};
 	},
 
-	/* What is on the clipboard, asked of the operating system rather than of the browser. The
-	 * browser's own clipboard read needs a secure context, which a Sift reached over plain http on
-	 * a LAN does not have, so this is the verb that makes a Paste button possible there. */
+	/* What is on the clipboard, asked of the operating system rather than of the browser. */
 	readClipboard: (): Promise<{ text: string; image: string | null } | null> =>
 		ipcRenderer.invoke(READ_CLIPBOARD),
 
-	/* A picture of this window, or of one area of it, as PNG bytes. The area is four numbers in the
-	 * page's own pixels and nothing else crosses: anything that is not one is the whole window. The
-	 * page saves the picture itself, through the same download door as every other file. */
+	/* A picture of this window, or of one area of it, as PNG bytes. */
 	captureWindow: (area: CaptureArea | null): Promise<Uint8Array | null> =>
 		ipcRenderer.invoke(CAPTURE_WINDOW, areaOf(area)),
 
-	/* Client mode's first run: which computer the library is on. It answers null when the address
-	 * was saved and a sentence when it was not: the shell is the side that knows why. */
+	/* Client mode's first run: which computer the library is on. */
 	saveServer: (origin: string): Promise<string | null> => ipcRenderer.invoke(SAVE_SERVER, origin),
 	lastServer: (): Promise<string | null> => ipcRenderer.invoke(LAST_SERVER),
-	/* The whole of what the connect screen draws: the address last tried, the sentence saying why
-	 * it did not answer (when that is why the screen is up), and every address saved. And taking
-	 * one off that list: the way back from a server that has moved or gone. */
+	/* The whole of what the connect screen draws: the address last tried, the sentence saying
+	 * why it did not answer (when that is why the screen is up), and every address saved. */
 	connectState: (): Promise<ConnectState> => ipcRenderer.invoke(CONNECT_STATE),
 	forgetServer: (origin: string): Promise<SavedServer[]> =>
 		ipcRenderer.invoke(FORGET_SERVER, origin),
 
 	/* THE TWO QUESTIONS BEFORE THERE IS A BACKEND, asked on Sift's own screens rather than in an
-	 * operating-system message box. Each answers whether it took, and a sentence when it did not:
-	 * the shell is the side that knows why, exactly as with the address above. */
+	 * operating-system message box. */
 	chooseMode: (mode: 'standalone' | 'client'): Promise<{ ok: boolean; refusal: string | null }> =>
 		ipcRenderer.invoke(CHOOSE_MODE, mode),
 	/* The folder offered first, and whether a library is already there to carry on with. */
@@ -260,34 +208,20 @@ const api = {
 	 * forwards. */
 	setupBack: (): Promise<{ ok: boolean; refusal: string | null }> => ipcRenderer.invoke(SETUP_BACK),
 
-	/* Update this application. IT TAKES NOTHING: no address, no version, no file.
-	 *
-	 * That is deliberate and it is the difference between an update button and remote code
-	 * execution. The shell reads the release feed itself and refuses to launch anything whose
-	 * SHA-256 does not match a hash file signed by Sift's own key, so the worst a page can do here
-	 * is ask for the update it would have got anyway. */
+	/* Update this application. IT TAKES NOTHING: no address, no version, no file. */
 	applyUpdate: (): Promise<{
 		ok: boolean;
 		version?: string;
 		reason?: string;
 	}> => ipcRenderer.invoke(APPLY_UPDATE),
 
-	/* What the computer this window is running on is. Answers null where there is nothing to add:
-	 * on the machine running the library, the hardware block already describes it. Read-only, and
-	 * about the machine rather than the person: a processor name, a thread count and a memory size.
-	 */
+	/* What the computer this window is running on is. */
 	localHardware: (): Promise<LocalMachine | null> => ipcRenderer.invoke(LOCAL_HARDWARE),
 
-	/* What this computer is called, for the name a phone's remote lists this window under. Takes
-	 * nothing and sets nothing: it is the name the computer already gives its network. */
+	/* What this computer is called, for the name a phone's remote lists this window under. */
 	machineName: (): Promise<string | null> => ipcRenderer.invoke(MACHINE_NAME),
 
-	/* Whether this library is offered to the rest of the network, and where to reach it.
-	 *
-	 * Reading it is harmless; SETTING it is the one verb here that changes what the machine exposes
-	 * to anything outside it, which is why it takes a plain boolean and nothing else. There is no
-	 * address to pass, no port, no interface to name. The shell decides all of that, so the worst
-	 * a page can ask for is the switch a person could have flicked themselves. */
+	/* Whether this library is offered to the rest of the network, and where to reach it. */
 	getSharing: (): Promise<Sharing | null> => ipcRenderer.invoke(GET_SHARING),
 	setSharing: (on: boolean): Promise<Sharing | null> => ipcRenderer.invoke(SET_SHARING, on),
 
@@ -303,17 +237,12 @@ const api = {
 	saveLogArchive: (name: string): Promise<{ file: string } | { reason: string }> =>
 		ipcRenderer.invoke(SAVE_LOG_ARCHIVE, name),
 
-	/* Whether Windows is letting anything through to that port, and asking it to. BOTH TAKE
-	 * NOTHING: the port is the shell's own and the rule is written in the shell, so the most this
-	 * can ask for is the one rule Sift would ever create. Opening it raises Windows' own
-	 * administrator prompt, which this application cannot answer on somebody's behalf. */
+	/* Whether Windows is letting anything through to that port, and asking it to. */
 	firewall: (): Promise<FirewallReport> => ipcRenderer.invoke(GET_FIREWALL),
 	openFirewall: (scope?: string): Promise<FirewallReport> =>
 		ipcRenderer.invoke(OPEN_FIREWALL, scope),
 
-	/* Where links open. Reading the list is a question about this machine; choosing takes an id out
-	 * of that same list and nothing else: the page cannot name an arbitrary program to run, which
-	 * is the property that makes "let the page pick a browser" safe to offer at all. */
+	/* Where links open. */
 	listBrowsers: (): Promise<{
 		chosen: string | null;
 		browsers: { id: string; name: string }[];
@@ -325,35 +254,21 @@ const api = {
 		browsers: { id: string; name: string }[];
 	}> => ipcRenderer.invoke(SET_BROWSER, id),
 
-	/* Where a saved file lands. Reading it is a question about this machine; changing it opens the
-	 * operating system's folder picker, so the page cannot name a folder for this application to
-	 * write into. It can only ask for the picker, exactly as the library-folder grant does. The
-	 * one value it may pass is `null`, meaning "back to the machine's own Downloads". */
+	/* Where a saved file lands. Reading it is a question about this machine; changing it opens
+	 * the operating system's folder picker, so the page cannot name a folder for this
+	 * application to write into. */
 	downloadFolder: (): Promise<{ path: string; chosen: boolean } | null> =>
 		ipcRenderer.invoke(GET_DOWNLOAD_DIR),
 	chooseDownloadFolder: (reset: null | true): Promise<{ path: string; chosen: boolean } | null> =>
 		ipcRenderer.invoke(SET_DOWNLOAD_DIR, reset === true ? true : null),
 
-	/* A backup Sift saved on this computer, shown in its folder in the system's own file manager.
-	 * Showing a file opens nothing and runs nothing, and the shell shows only a Sift backup that is
-	 * on this disk. Only a window onto this computer's own Sift is offered it: a backup saved on
-	 * another computer is not in any folder here. */
+	/* A backup Sift saved on this computer, shown in its folder in the system's own file
+	 * manager. */
 	showInFolder: (path: string): Promise<boolean> =>
 		ipcRenderer.invoke(SHOW_IN_FOLDER, typeof path === 'string' ? path : ''),
 
-	/* The window's own caption buttons, painted in the colours the page is painting itself in.
-	 *
-	 * TWO COLOURS AND NOTHING ELSE, and that is the whole of what makes it safe to offer. The
-	 * caption buttons belong to the operating system; a verb that could move them, resize them, or
-	 * hide them would be a verb for making a window that cannot be closed. This can change what
-	 * shade they are drawn in, which is a thing the person could achieve by picking a different
-	 * theme, and both values are refused at the far end unless they are plain hex colours. */
-	/* Sift's own two folders: where they are, how big they are, and moving them.
-	 *
-	 * `moveStorage` takes NO path. The folder is chosen in the operating system's own picker, on the
-	 * other side of this bridge: a page that could name the folder a library moves into would be a
-	 * page choosing where this application writes, which is the property the whole bridge is built
-	 * on. */
+	/* The window's own caption buttons, painted in the colours the page is painting itself in. */
+	/* Sift's own two folders: where they are, how big they are, and moving them. */
 	storage: (): Promise<StorageReport | null> => ipcRenderer.invoke(GET_STORAGE),
 	moveStorage: (): Promise<MoveOutcome> => ipcRenderer.invoke(MOVE_STORAGE),
 	onStorageProgress: (listen: (progress: MoveProgress) => void): (() => void) => {
@@ -366,26 +281,16 @@ const api = {
 	/** Close Sift and open it again. True once it is on its way; the page goes with it. */
 	restartApp: (): Promise<boolean> => ipcRenderer.invoke(RESTART_APP),
 
-	/* Whether closing the window leaves Sift running in the notification area. A plain boolean in
-	 * each direction: there is no window to name, nothing to hide and nothing to show, so the most
-	 * a page can ask for is the switch a person could have flicked themselves. */
+	/* Whether closing the window leaves Sift running in the notification area. */
 	keepRunningWhenClosed: (): Promise<boolean | null> => ipcRenderer.invoke(GET_KEEP_RUNNING),
 	keepRunning: (on: boolean): Promise<boolean | null> => ipcRenderer.invoke(SET_KEEP_RUNNING, on),
 
-	/* Whether Sift starts when this person signs in to Windows. A plain boolean in each direction,
-	 * like the switch above: no program to name, no argument to pass. The shell registers its own
-	 * executable and nothing else, so the most a page can ask for is the switch a person could have
-	 * flicked in Task Manager. Null from a checkout, which has no installed program to register. */
+	/* Whether Sift starts when this person signs in to Windows. */
 	startsWithWindows: (): Promise<boolean | null> => ipcRenderer.invoke(GET_START_WITH_WINDOWS),
 	startWithWindows: (on: boolean): Promise<boolean | null> =>
 		ipcRenderer.invoke(SET_START_WITH_WINDOWS, on),
 
-	/* The libraries this copy has opened, and switching to one.
-	 *
-	 * `openLibrary` names a folder ALREADY ON THAT LIST and the shell refuses anything else, so a
-	 * page cannot point this application's backend at a folder of its choosing. `addLibrary` takes
-	 * NOTHING and opens the operating system's own file picker for a Sift database, the only thing
-	 * that can hand over a path. */
+	/* The libraries this copy has opened, and switching to one. */
 	libraries: (): Promise<{
 		current: string | null;
 		libraries: {

@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Two rules of the menu's shape that no rendered test can see.
- *
- * jsdom applies no component <style>, so a computed-style assertion would have to be end-to-end.
- * What these two hold is written in the source and is exactly what a mutation would change, so
- * the source is what is read: the same shape `LooksLikeThis.svelte.test.ts` uses for a token.
- */
+/* Two rules of the menu's shape that no rendered test can see. */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -23,15 +17,8 @@ describe('the menu row', () => {
 	});
 });
 
-/*
- * A chooser of menu rows that opens from a control stands in the MENU's box, not a plain panel's.
- *
- * The rating chooser behind a star, on the plain popover panel (the `md` corner and the `sm`
- * inset, 10px and 8px), would carry rows of `--menu-row-radius`, the menu's corner less the
- * menu's inset: concentric in that box would be a two-pixel row radius, a rectangle. So the
- * shared Popover has a `menu` shape that takes the menu's own pair, and the chooser asks for it.
- * Read from the source for the reason the rules above are: jsdom draws no component style.
- */
+/* A chooser of menu rows that opens from a control stands in the MENU's box, not a plain
+ * panel's. */
 describe('the menu shape of a popover', () => {
 	const read = (path: string) => readFileSync(resolve(path), 'utf8');
 

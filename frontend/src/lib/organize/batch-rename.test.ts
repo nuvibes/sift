@@ -1,6 +1,4 @@
-/*
- * The words the batch rename sheet says about a plan, and where a pressed word lands in the box.
- */
+/* The words the batch rename sheet says about a plan, and where a pressed word lands in the box. */
 import { describe, expect, it } from 'vitest';
 import { insertWord, rowNote, summary, type RenamePreview } from './batch-rename';
 

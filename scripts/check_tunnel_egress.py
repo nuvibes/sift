@@ -1,38 +1,6 @@
 #!/usr/bin/env python
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Prove every way Sift reaches the internet honours the route it is given.
-
-Sift fetches four ways: two downloader tools it runs as processes, an impersonating client the
-resolvers use for service APIs, and a streaming session for direct media addresses. A route that
-reaches some of them and not the others is worse than none: the traffic that escapes is the traffic
-of the sites somebody deliberately routed away from their own address, and nothing about the
-download looks wrong afterwards.
-
-The unit tests assert each seam is HANDED the route. This asserts it USES it, which is a different
-claim and the one that matters. Two checks per seam:
-
-  * the two clients inside the process are pointed at a real tunnel and asked what address they came
-    out on: it must be the tunnel's, not the machine's;
-  * all four are pointed at a local proxy that writes down what it is asked for and then refuses. A
-    tool that ignores its proxy flag never contacts it at all, which is the only way to test the two
-    that run as separate processes.
-
-Run it from a checkout with the shipped tools fetched (scripts/fetch_vendor.py): the downloaders
-and the tunnel client resolve to vendor/bin there as they do in an installed copy. Start the tunnel
-client first, on a configuration that points at the provider's and listens where SIFT_TUNNEL_PROXY
-says (127.0.0.1:9080 unless it is set):
-
-    WGConfig = path/to/provider.conf
-
-    [http]
-    BindAddress = 127.0.0.1:9080
-
-    vendor/bin/wireproxy.exe -c wp.conf -s
-    python scripts/check_tunnel_egress.py
-
-It needs a WireGuard configuration from a VPN provider and it makes real requests, so it is not part
-of CI. It is what to run after touching anything on a fetch path.
-"""
+"""Prove every way Sift reaches the internet honours the route it is given; needs a real tunnel."""
 
 from __future__ import annotations
 
@@ -47,8 +15,7 @@ from pathlib import Path
 
 from sift.slices.download.sources import argv, curl, fetcher, net
 
-#: The tunnel's own proxy, and the recorder's. Both loopback; both overridable for a machine where
-#: something else already holds a port.
+#: Both loopback; both overridable where something else holds the port.
 TUNNEL_PROXY = os.environ.get("SIFT_TUNNEL_PROXY", "http://127.0.0.1:9080")
 RECORDER_PORT = int(os.environ.get("SIFT_RECORDER_PORT", "9099"))
 RECORDER = f"http://127.0.0.1:{RECORDER_PORT}"
@@ -56,8 +23,7 @@ RECORDER = f"http://127.0.0.1:{RECORDER_PORT}"
 #: A service that answers with the address the request came from. The whole check turns on it.
 ECHO = "https://ipinfo.io/json"
 
-#: Each tool needs an address it has an extractor for. One it does not recognise is refused before
-#: any request is made, which reads exactly like a proxy being ignored.
+#: An address the tool has no extractor for is refused first, which reads like a proxy ignored.
 TOOLS = (
     ("yt-dlp", argv.build_ytdlp_argv, "https://www.youtube.com/watch?v=aqz-KE-bpKQ", "youtube.com"),
     ("gallery-dl", argv.build_gallerydl_argv, "https://www.reddit.com/r/pics/", "reddit.com"),
@@ -128,7 +94,7 @@ async def main() -> int:
         _fail("streaming fetcher", "came out somewhere else")
 
     print("\nall four, against a proxy that records and refuses:")
-    # Every call below is expected to fail. Contacting the proxy at all is the whole of the claim.
+    # Every call below is expected to fail: contacting the proxy at all is the claim.
     asked.clear()
     with contextlib.suppress(Exception):
         await curl.guarded_get(ECHO, proxy=RECORDER, time_limit=15)
@@ -142,8 +108,7 @@ async def main() -> int:
 
     for name, build, url, host in TOOLS:
         asked.clear()
-        # Started on the loop rather than waited on: the recorder is a server in this same process,
-        # so blocking here would starve the very thing the tool is trying to talk to.
+        # Started on the loop, not waited on: the recorder is a server in this same process.
         with tempfile.TemporaryDirectory() as workspace:
             child = await asyncio.create_subprocess_exec(
                 *build(url, Path(workspace), proxy=RECORDER),

@@ -1,10 +1,4 @@
-/* The pile of fields two answers differ about, and what taking one of them does.
- *
- * The rule with the most behind it is the quiet one: keeping what is already there is an answer,
- * and it must still be SENT. The row leaves the list because the server recorded a decision, not
- * because the browser dropped it. A list worked out on every read would otherwise put the same
- * disagreement back the next time it was drawn.
- */
+/* The pile of fields two answers differ about, and what taking one of them does. */
 
 import { beforeEach, expect, it, vi } from 'vitest';
 
@@ -55,8 +49,8 @@ beforeEach(() => {
 });
 
 it('reads the pile out of the answer rather than handing the answer back', async () => {
-	// Every other screen here takes a list. A caller that had to reach through a wrapper is a caller
-	// that has to know the wrapper is there, and the next one will forget.
+	// Every other screen here takes a list. A caller that had to reach through a wrapper is a
+	// caller that has to know the wrapper is there, and the next one will forget.
 	mocked.get.mockResolvedValue({ disagreements: [row()] });
 
 	expect(await disagreements()).toEqual([row()]);
@@ -66,9 +60,7 @@ it('reads the pile out of the answer rather than handing the answer back', async
 });
 
 it('sends the whole of what identifies one row, and no more', async () => {
-	// Four parts, because a disagreement is a FIELD on a subject as one box sees it. Anything less
-	// settles more than was pressed: without the box, a record two boxes disagree about would have
-	// the first box's row settled whichever row was pressed.
+	// Four parts, because a disagreement is a FIELD on a subject as one box sees it.
 	mocked.post.mockResolvedValue({ files: 0, fields: 1, created: 0, decision_id: 'd-1' });
 
 	await settle(row(), true);

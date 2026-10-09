@@ -1,11 +1,4 @@
-/* The main process's half of a transfer, and the one thing about it that is not obvious.
- *
- * A transfer that FAILS reports itself and leaves the marker a receiver watches for. A transfer
- * whose PROCESS has died can do neither, and that is the case worth a test, because what it looks
- * like on the other side is not an error but a file that has simply stopped growing. The receiver
- * cannot tell that from a slow network, so it waits out its whole patience and then writes out
- * whatever arrived. The marker left from here is what stops that.
- */
+/* The main process's half of a transfer, and the one thing about it that is not obvious. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -167,8 +160,7 @@ describe('a worker that dies', () => {
 		expect(fs.existsSync(markerFiles(at).failed)).toBe(true);
 	});
 
-	/* A transfer that reported its own conclusion has already left the right marker. Writing a
-	   failure over the top of a SUCCESS would turn a finished file into a refused one. */
+	/* A transfer that reported its own conclusion has already left the right marker. */
 	it('leaves nothing over a transfer that had already settled', async () => {
 		const child = new FakeChild();
 		const pool = new TransferPool(() => child);

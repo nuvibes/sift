@@ -1,15 +1,5 @@
-/*
- * Everything that has a cover can have one chosen, from its own page.
- *
- * Six things in Sift carry a `cover_asset_id`: a person, a Site, an account, a tag, a photo set and
- * a collection. Five have a page to choose it from; an account has none (see `UNCOVERED`).
- * Right-clicking a file on a Files tab for "Use as the cover" works but is not a way anybody finds,
- * so each page carries the chooser.
- *
- * A "two lists that must agree" guard: the list on the server is the columns, the list here is the
- * pages. A seventh cover column with no page fails, and so does a page that quietly loses its
- * chooser.
- */
+/* Everything with a cover can have one chosen from its own page: the server's cover columns
+ * checked against the pages that carry the chooser. */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -23,11 +13,7 @@ const COVERED: { what: string; page: string }[] = [
 	{ what: 'a song', page: 'src/routes/songs/[id]/+page.svelte' }
 ];
 
-/*
- * Cover columns with no page to choose them from, each by decision and with its reason. A table
- * leaving `COVERED` has to arrive here, so the count below still names all of them. Empty: every
- * cover column there is has a page.
- */
+/* Cover columns with no page, each with its reason; empty today. */
 const UNCOVERED: { table: string; why: string }[] = [];
 
 describe('a cover can be chosen wherever there is one', () => {
@@ -41,9 +27,7 @@ describe('a cover can be chosen wherever there is one', () => {
 	it.each(COVERED)(
 		'$what writes its cover through a route rather than a second store',
 		({ page }) => {
-			// One way to set a cover, reached from two places. The right-click on the Files tab and the
-			// pencil both go through the same call, so a fix to one is a fix to both, and neither can
-			// come to mean something the other does not.
+			// One way to set a cover, from the pencil and the Files tab alike.
 			const source = readFileSync(page, 'utf8');
 			expect(source).toMatch(/setCover|\/cover/);
 		}
@@ -51,13 +35,8 @@ describe('a cover can be chosen wherever there is one', () => {
 
 	it('checks every cover column there is', () => {
 		/*
-		 * A list of pages beside the thing it describes drifts, and a short list looks finished. So
-		 * it is counted against the server's list: the schema is where a cover column comes into
-		 * existence, and a seventh fails here until it has a page.
-		 *
-		 * Counted as tables rather than occurrences of the column, which differ: three of the six
-		 * arrive by `ALTER` on a table whose `CREATE` also declares it, and there is a
-		 * `photo_sets_rebuilt` copy from the migration that reshaped that table.
+		 * Counted as tables in the schema, not as occurrences of the column (ALTERs, a rebuilt
+		 * copy).
 		 */
 		const schema = readFileSync('../src/sift/kernel/access/schema.py', 'utf8');
 		const tables = new Set<string>();
@@ -84,18 +63,14 @@ describe('a cover can be chosen wherever there is one', () => {
 
 describe('the pencil is findable', () => {
 	it('does not wait for the record to be put into edit mode', () => {
-		// Changing the picture does not require Edit first: the gesture for changing a thing you
-		// are looking at is to press it, and requiring Edit would hide the sheet from anybody who
-		// did not already know it existed.
+		// The picture is changed by pressing it, without Edit first.
 		const header = readFileSync('src/lib/components/entity/EntityCover.svelte', 'utf8');
 		expect(header).toContain('{#if mayEdit && onpicture}');
 		expect(header).not.toContain('{#if editing && mayEdit && onpicture}');
 	});
 
 	it('is reachable by the keyboard, not only by a pointer', () => {
-		// The Reveal register: a control that exists only under a cursor does not exist for
-		// half the people using Sift. It is in the tab order whether or not it can be seen, so it has
-		// to show itself when it is focused.
+		// The Reveal register: in the tab order, so it shows itself on focus.
 		const header = readFileSync('src/lib/components/entity/EntityCover.svelte', 'utf8');
 		expect(header).toContain(':global(.pencil:focus-visible)');
 	});

@@ -4,9 +4,7 @@ import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import DownloadTools from './DownloadTools.svelte';
 
-/* The download tools on Settings > Updates. What is pinned: one row per tool with the version the
- * server read, the copy Sift ships told apart from the machine's own, the engine's "none found" said
- * as that rather than as a version, and the check for a newer yt-dlp happening ONLY when pressed. */
+/* The download tools on Settings > Updates. */
 
 type Tools = components['schemas']['DownloadTools'];
 

@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* A row's help is one or two sentences; anything longer is folded under "More about this".
- *
- * For help a pane does not write itself (a tidying's description comes from the server), the rule
- * is applied here, at the one place the words meet the screen, so a longer description written
- * later still reads as a short line with the rest one press away. */
+/* A row's help is one or two sentences; anything longer is folded under "More about this". */
 
-/* A sentence ends at a full stop, question or exclamation mark followed by a space and a capital,
-   a digit or an opening quote: the boundaries the server's prose uses. */
+/* A sentence ends at a full stop, question or exclamation mark followed by a space and a
+   capital, a digit or an opening quote: the boundaries the server's prose uses. */
 const BOUNDARY = /(?<=[.!?])\s+(?=[A-Z0-9"'])/;
 
 interface SplitHelp {

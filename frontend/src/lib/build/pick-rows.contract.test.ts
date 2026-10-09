@@ -1,12 +1,6 @@
 /*
- * Every picker that offers people, Sites, tags, collections or Photo Sets draws its rows by the one
- * rule for the picture a thing is drawn by: `pickRow` in `$lib/entity/entity-picture` (and `personRow` and
- * `siteRow`, which are it). A row built any other way looks one way in a picker and another on the
- * thing's card and page.
- *
- * Static: it reads the source of every file that both offers a pick and reads one of the stores
- * those kinds live in, so it proves each picker asks the rule, not that the rule is right
- * (`entity-picture.test.ts` holds that).
+ * Every picker of people, Sites, tags, collections or Photo Sets draws rows by `pickRow` (or
+ * `personRow`, `siteRow`). Static: it proves each picker asks the rule, not that the rule is right.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -15,28 +9,22 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-/** The whole of `src`, resolved from this file so the runner's working directory cannot move it. */
 const SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** Where rows reach a pick surface: the sheet, the flyout, a verb's `ask`, or a page of choices. */
 const OFFERS_A_PICK = /<PickDialog\b|<PickMenu\b|\bask: async\b|\bchoices: /;
 
-/** The stores the five kinds with pictures are read from, and the one the people who can be
- *  recognized are read from (`knownPeople`), who are People too. */
+/** The stores the five kinds are read from, and `knownPeople`. */
 const READS_A_KIND =
 	/from '\$lib\/(entity\/tags|people\/people|library\/collections|library\/photo-sets|people\/faces)\.svelte'/;
 
-/** The rule, under any of its three names. */
 const ASKS_THE_RULE = /from '\$lib\/(entity\/entity-picture|people\/person-row|entity\/site-row)'/;
 
-/** A row made of a name and an id alone: the shape that drops the picture. An `as` on the id
- *  is matched too, or a renamed id would hide one from this. */
+/** A row of a name and an id alone, which drops the picture; an `as` on the id too. */
 const NAME_ONLY_ROW = /\(\{\s*id:\s*[\w.]+\.id(?:\s+as\s+\w+)?,\s*name:\s*[\w.]+\.name\s*\}\)/;
 
-/** A picture put together in the picker rather than asked of the rule. */
 const HAND_BUILT_PICTURE = /\bpicture:\s*\{|\bsrc:\s*(coverUrl|faceCoverUrl)\(/;
 
-/** The component gallery is a separate checkout and not part of the product. */
+/** The DESIGN GALLERY is a separate checkout. */
 const NOT_SURVEYED = ['routes/design/'];
 
 function sources(directory: string): string[] {
@@ -56,7 +44,6 @@ const pickers = sources(SOURCE)
 
 describe('the rows a picker offers', () => {
 	it('are found at all', () => {
-		// Every rule below iterates; a survey that found nothing would pass them all.
 		const files = pickers.map(({ file }) => file);
 		for (const known of [
 			'lib/components/common/FileVerbs.svelte',

@@ -1,26 +1,6 @@
 <script lang="ts">
-	/*
-	 * General: what the application does on THIS device, and the choices about the whole app that
-	 * belong to no one feature.
-	 *
-	 * In reading order: the three rows the desktop app answers (which browser a link opens in, what
-	 * the close button does, whether Sift starts with Windows); the confirmations; network sharing;
-	 * and last where the library is, with the way back to setup and a restart, because that is the
-	 * one group here that changes how Sift starts.
-	 *
-	 * Every shell-only row is drawn only where the shell can answer it (the rule every shell-only
-	 * control keeps), so in a browser those rows are absent and one line says where they are.
-	 *
-	 * Looked at from ANOTHER computer (the app in client mode, or a browser), one more group says
-	 * what the computer running Sift does: starting with Windows, a restart, its sharing switch and
-	 * its firewall. Those act THERE, through the server and the Sift app that started it
-	 * (`server-shell.ts`), never on the computer in front of the admin.
-	 *
-	 * And the other way round: in the app in client mode, the rows about how THIS window behaves
-	 * (links, the close button, starting with Windows) are this computer's own, stored by its shell
-	 * and never by the server, so they open under a heading naming this computer. Two groups that
-	 * could each say "Start Sift when Windows starts" then each say which computer they mean.
-	 */
+	/* General: what the application does on THIS device, and the choices about the whole app
+	 * that belong to no one feature. */
 	import { onMount } from 'svelte';
 	import { Note, Problem, Switch } from '$lib/components/common';
 	import LabelledRow from '$lib/components/common/LabelledRow.svelte';
@@ -55,20 +35,17 @@
 		type ServerDesktop
 	} from '$lib/desktop/server-shell';
 
-	/* Asked once: whether this shell can answer any of the three device rows. Each row decides its
-	   own drawing; this decides only whether the line saying where they are is needed instead. */
+	/* Asked once: whether this shell can answer any of the three device rows. */
 	const offersStartup = bridge.canStartWithWindows();
 	const offersDevice =
 		bridge.canChooseBrowser() || bridge.canKeepRunningWhenClosed() || offersStartup;
 
-	/* The way back to setup, and the restart that reaches it now rather than at the next launch.
-	   A window onto a library on another device may forget its mode but not restart this app, so
-	   there the row says to close and open Sift instead. */
+	/* The way back to setup, and the restart that reaches it now rather than at the next launch. */
 	const offersSetup = bridge.canForgetMode();
 	const offersRestart = bridge.canRestartApp();
 
 	/* The app on a computer that is not the one running Sift: a shell that answers this window's
-	   rows and cannot restart the Sift it is looking at. Its rows are named for this computer. */
+	   rows and cannot restart the Sift it is looking at. */
 	const clientWindow = offersDevice && !offersRestart;
 	let here = $state<string | null>(null);
 
@@ -81,9 +58,7 @@
 	];
 	const SETUP_ROWS = ['general.library_location', 'general.run_setup', 'general.restart'];
 	/* The computer running Sift, when this window is not on it: the app in client mode, or a
-	   browser. Its own rows act THERE through the server (see `server-shell.ts`); on the computer
-	   running Sift the app's own rows above already do. Null until it answers, and for anybody the
-	   server does not let ask (a guest), so nothing is drawn that could not be pressed. */
+	   browser. */
 	let desk = $state<ServerDesktop | null>(null);
 	const reachesServer = $derived(offersServer(desk) && !(offersStartup && offersRestart));
 	let restartingServer = $state(false);
@@ -120,8 +95,8 @@
 		'The computer running Sift is changed from here only while the Sift app is open on it and you are on another computer.';
 	$effect(() =>
 		explainAbsentRows((key) => {
-			/* Asked from another computer, the switches and the restart are the ones in the group
-			   about the computer running Sift. */
+			/* Asked from another computer, the switches and the restart are the ones in the
+			   group about the computer running Sift. */
 			const there = ['general.restart', 'privacy.network_sharing'];
 			/* This window's own switch is drawn here in the app; only a browser is sent there. */
 			if (!offersStartup) there.push('general.start_with_windows');
@@ -157,17 +132,15 @@
 
 	async function restart() {
 		restarting = true;
-		/* True means the app is on its way down and this page with it. False is a shell that could
-		   not do it, and the button comes back. */
+		/* True means the app is on its way down and this page with it. */
 		if (!(await bridge.restartApp())) {
 			restarting = false;
 			toasts.show(COPY.restart.failed, { tone: 'error' });
 		}
 	}
 
-	/* This browser's own answer, not a registry setting: the delete sheet's "Don't ask me again" box
-	   writes it, and this is the one place it can be turned back on. Read once on arrival; the
-	   switch below is the only writer while the pane is open. */
+	/* This browser's own answer, not a registry setting: the delete sheet's "Don't ask me again"
+	   box writes it, and this is the one place it can be turned back on. */
 	let askBeforeDelete = $state(!deleteConfirmationSkipped());
 	/* The account's answer, not this browser's: the chip's "Don't ask me again" box writes it to
 	   the account's interface state, so it is read after that document has landed. */
@@ -178,8 +151,8 @@
 		});
 	});
 
-	/* Null until the shell has answered, and the row is not drawn before then: a switch showing off
-	   while the question is still in flight is a switch that says the wrong thing first. */
+	/* Null until the shell has answered, and the row is not drawn before then: a switch showing
+	   off while the question is still in flight is a switch that says the wrong thing first. */
 	let starting = $state<boolean | null>(null);
 
 	onMount(() => {
@@ -303,8 +276,7 @@
 	</SettingGroup>
 {/if}
 
-<!-- Who can reach this library over the network, and what Windows asks when it goes on. Drawn
-     only where this device holds the library it would share; see that component. -->
+<!-- Who can reach this library over the network, and what Windows asks when it goes on. -->
 <NetworkSharing />
 
 <!-- Last, because it is the one group here that changes how Sift starts. -->

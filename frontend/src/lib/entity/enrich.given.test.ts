@@ -1,7 +1,5 @@
-/*
- * Where each field of a record came from, as its hover says it: read off the links' `gave`, which
- * the server holds only while a value is still the one that box gave.
- */
+/* Where each field of a record came from, as its hover says it: read off the links' `gave`,
+ * which the server holds only while a value is still the one that box gave. */
 import { expect, it } from 'vitest';
 import { givenBy, type StashBoxLink } from './enrich.svelte';
 

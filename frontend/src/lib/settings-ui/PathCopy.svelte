@@ -1,16 +1,6 @@
 <script lang="ts">
-	/*
-	 * The copy button to the left of a settings name: puts the name's settings path on the
-	 * clipboard (`Settings > Privacy > Auto-lock > Lock Hidden when you switch away`).
-	 *
-	 * Shown while the name's holder is hovered. The holder is the element this is drawn in, marked
-	 * `path-host` by the caller; the button stands in the gutter to the left of it, which the
-	 * settings frame keeps clear for it. Outside Settings there is no place to say, so nothing is
-	 * drawn.
-	 *
-	 * Out of the tab order: every row on a pane has one, and a second stop per row would double the
-	 * walk through a pane for a shortcut the search box already offers by typing the path.
-	 */
+	/* The copy button to the left of a settings name: puts the name's settings path on the
+	 * clipboard (`Settings > Privacy > Auto-lock > Lock Hidden when you switch away`). */
 	/* By file, not through the common index: rows and headings there draw this component. */
 	import Button from '$lib/components/common/Button.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -61,14 +51,7 @@
 {/if}
 
 <style>
-	/*
-	 * In the gutter left of the name, centred on the name's first line. The padding on its right
-	 * bridges the gap to the name, so the pointer moving across to it never leaves the holder.
-	 *
-	 * The line is the ROW NAME's line, said here in the name's own font and line height: `1lh` in
-	 * the holder's inherited font would be the help text's taller line, standing every press 2px
-	 * below the name it copies, on every row of every pane.
-	 */
+	/* In the gutter left of the name, centred on the name's first line. */
 	.path-copy {
 		position: absolute;
 		inset-block-start: 0;

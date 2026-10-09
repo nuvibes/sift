@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Which files are waiting for a face scan: counted, paged for a sweep, and said as the Build's
-term, all under the tuning that is set now.
-"""
+term, all under the tuning set now."""
 
 from __future__ import annotations
 
@@ -14,13 +13,7 @@ from sift.kernel.content import Lack, VerdictProduct
 from sift.kernel.sampling import face_frames
 from sift.slices.faces.service_base import FaceServiceBase
 
-#: How many of the files waiting to be scanned are measured to work out what an average one costs.
-#:
-#: One page exactly, because that is the most the access layer answers about in one ask: request
-#: more and everything past the cap comes back looking like a file this user may not see. Far
-#: more than an average needs in any case: the queue on a large library IS the library, and reading
-#: a hundred thousand rows to refine a number that gets rounded to the nearest ten minutes is work
-#: spent on precision nobody can use.
+#: Files measured to estimate an average one's cost: one page, the most the access layer answers.
 _WORK_SAMPLE = MAX_PAGE_SIZE
 
 
@@ -30,9 +23,7 @@ class SweepMixin(FaceServiceBase):
     async def under_an_earlier_floor(
         self, *, after: str = "", limit: int = MAX_PAGE_SIZE
     ) -> list[str]:
-        """The files a lower size floor can change: a face their scan refused for size would be
-        accepted today. What the floor pass looks at again, and nothing else. See
-        `Store.under_an_earlier_floor`."""
+        """The files a lower size floor can change: what the floor pass looks at again."""
         configured = await self.configuration()
         return await self._store.under_an_earlier_floor(
             configured.bar.min_pixels, after=after, limit=limit
@@ -45,16 +36,8 @@ class SweepMixin(FaceServiceBase):
     async def read_from_a_tile(
         self, *, after: str = "", limit: int = MAX_PAGE_SIZE
     ) -> tuple[list[str], str]:
-        """One page of HEIF stills walked: the ones whose faces were read from one tile, and the
-        last id walked, empty once the walk is over.
-
-        A HEIF photograph is a grid of tiles, and before the HEIF door every pass read the first
-        tile as the picture. The door writes a copy of the whole picture, and a face scan reads
-        that copy, so a scan OLDER than the copy, or of a file with no copy yet, read a tile. A
-        scan taken again reads the copy and is newer than it, so the file leaves the list and the
-        pass ends. A copy swept from the cache and made again is newer than every scan, and the
-        file is looked at one more time: a picture's faces read again from the same picture.
-        """
+        """One page of HEIF stills walked: those whose faces were read from one tile (scanned
+        before the whole-picture copy), and the last id walked, empty once the walk is over."""
         page = await self._content.heif_stills(after=after, limit=limit)
         if not page:
             return [], ""
@@ -67,8 +50,7 @@ class SweepMixin(FaceServiceBase):
         return tiles, page[-1][0]
 
     async def tile_pass_owed(self) -> bool:
-        """Whether any HEIF still's faces were read from one tile: what a start asks. A walk of
-        the HEIF stills alone, which are few."""
+        """Whether any HEIF still's faces were read from one tile: what a start asks."""
         after = ""
         while True:
             tiles, after = await self.read_from_a_tile(after=after)
@@ -80,20 +62,7 @@ class SweepMixin(FaceServiceBase):
     async def work_left(self, viewer: Viewer) -> tuple[int, int]:
         """How many files are still to be scanned, and how many moments that is.
 
-        The second number is what makes an estimate of the time left worth reading. Files are not
-        interchangeable (one is a photograph and the next is two hours), so a rate in files per
-        minute describes the stretch of library it was measured over and not the stretch ahead of
-        it. Moments are what a pass actually spends its time on: one seek, one decode, one look. A
-        hundred of them costs about the same whatever they were cut from.
-
-        Nothing is opened to work this out. Every file was probed when it was imported, so the
-        durations are already stored, and how many moments a duration comes to is the sampler's
-        arithmetic.
-
-        The durations come back through the access layer like everything else about an asset, so a
-        file this user may not see contributes nothing, including to a number as innocuous as
-        how much work is left. The sample is one page exactly, which is the largest a single ask can
-        answer without being silently cut short.
+        Moments are what a pass spends its time on, so they make the estimate worth reading.
         """
         ids, waiting = await self._store.waiting_asset_ids(_WORK_SAMPLE)
         if waiting == 0 or not ids:
@@ -113,43 +82,11 @@ class SweepMixin(FaceServiceBase):
     async def needs_scanning_page(
         self, viewer: Viewer, *, offset: int, limit: int, force: bool = False
     ) -> tuple[list[str], int, int]:
-        """One page of the library, minus what has already been looked at under the current tuning.
+        """One page of the library, less what was looked at under the current tuning.
 
-        Through the access layer rather than against the assets table. A slice reading that table
-        directly writes a second copy of the scoping rule, and this one runs as a background job
-        where nobody would notice it disagreeing with the first, which is exactly the case the
-        rule about it exists for. It also means the sweep covers what an admin who asked for it
-        may see, rather than quietly reaching past them.
-
-        **A file scanned under different settings counts as needing another look.** Changing the
-        depth, the quality bar or the model family changes what a pass would find, and the tuning
-        each result was produced under is stored beside it precisely so this can be told. Without
-        that comparison every file is scanned once and never again, and turning the depth up does
-        nothing to anything already in the library.
-
-        The comparison is symmetrical, which is worth saying out loud: turning the depth back *down*
-        also makes everything stale, and the next sweep will redo it at the shallower setting. That
-        is the honest reading of "scan under the settings I have now", and the alternative (only
-        ever redoing a file when the new settings look harder) means a setting that is supposed to
-        control the whole library silently applies to part of it.
-
-        `force` ignores all of that and offers everything. It is for the cases the comparison cannot
-        see: crops that came out badly, a model swapped underneath, or scans that failed so often
-        they were given up on.
-
-        Paged by offset, and that is safe here for a reason worth stating: scanning a file writes a
-        row in the face tables and changes nothing about the asset list, so the page under the
-        offset does not shift while the sweep walks it.
-
-        Returns the ids worth scanning, how many the library holds, and **how many rows this page
-        actually walked past**, which is not the same as the limit that was asked for, and the
-        difference is why this third number exists.
-
-        The access layer caps a page. A caller that asks for 500 and is given 200 has no way to tell
-        from the first two numbers, so a sweep advancing its offset by what it requested would step
-        over everything between the cap and the request, silently. The walked count is what the
-        caller must step by, and it is reported rather than inferred so that the cap can change
-        without anything here having to know it did.
+        Through the access layer, so the sweep covers what its admin may see. Returns the ids to
+        scan, the library's total, and how many rows the page walked, which the caller steps by
+        since the access layer caps a page.
         """
         if not await self.enabled():
             return [], 0, 0
@@ -161,8 +98,7 @@ class SweepMixin(FaceServiceBase):
         settled = await self._store.settled_ids(
             configured.digest, shape=configured.shape, density=configured.density
         )
-        # And the files this feature has said it cannot look at: offered again, they would be
-        # scanned again, and verdicted again, on every sweep.
+        # And the files this feature said it cannot look at, or every sweep would retry them.
         settled |= await self._content.verdicted_among(
             VerdictProduct.FACES, [item.asset.id for item in page.items]
         )
@@ -170,11 +106,7 @@ class SweepMixin(FaceServiceBase):
         return waiting, page.total, walked
 
     async def needs_scanning_among(self, asset_ids: Sequence[str]) -> set[str]:
-        """Which of these files a pass would look at under the tuning that is set.
-
-        Empty while the feature is off: nothing is going to be looked at, so nothing is lacking.
-        What the Build asks, a page at a time, to decide each file's products.
-        """
+        """Which of these files a pass would look at under the tuning set; none while off."""
         if not await self.enabled():
             return set()
         configured = await self.configuration()
@@ -183,13 +115,7 @@ class SweepMixin(FaceServiceBase):
         )
 
     async def backlog(self) -> tuple[int, int]:
-        """How many READ files want looking at for faces: never looked at, and looked at under an
-        older rule or other settings. Zero and zero while the feature is off.
-
-        One statement from this feature's two conditions, so the two add up to what `lack` counts.
-        Unlike the Build sheet it keeps files in folders that refuse face scans: it says what has
-        been looked at, whatever a folder asks for next.
-        """
+        """How many read files want a look: never looked at, and looked at under other rules."""
         if not await self.enabled():
             return 0, 0
         configured = await self.configuration()
@@ -202,14 +128,11 @@ class SweepMixin(FaceServiceBase):
         return never, wanting - never
 
     async def unread(self) -> int:
-        """How many files not read yet will want a look, which `backlog` cannot see. Zero while
-        the feature is off."""
+        """How many files not read yet will want a look; zero while off."""
         return await self._unread.get() if await self.enabled() else 0
 
     async def lack(self) -> Lack | None:
-        """What a pass would look at under the tuning that is set, as one term of the Build's
-        count. None while the feature is off: nothing is going to be looked at, so nothing is
-        lacking: the same answer `needs_scanning_among` gives, as a condition."""
+        """What a pass would look at, as one term of the Build's count; None while off."""
         if not await self.enabled():
             return None
         configured = await self.configuration()

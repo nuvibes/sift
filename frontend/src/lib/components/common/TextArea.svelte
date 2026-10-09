@@ -14,13 +14,7 @@
 	/* WHY NOT BITS-UI: a text area is the site's, for the reason `TextInput` gives: the library
 	   has nothing to add to typing several lines, and `app.css` dresses the element once. */
 
-	/*
-	 * The one box for several lines.
-	 *
-	 * `inline-size: 100%` is load-bearing for every `<textarea>`: a textarea sizes itself by
-	 * `cols`, not by its column, so an undressed one stops short of the box it sits in. Written
-	 * here once rather than on every screen that wants several lines.
-	 */
+	/* The one box for several lines. */
 	import type { HTMLTextareaAttributes } from 'svelte/elements';
 
 	interface Props extends Omit<HTMLTextareaAttributes, 'value'> {
@@ -52,9 +46,7 @@
 	{...rest}></textarea>
 
 <style>
-	/* `inline-size: 100%` is load-bearing, not tidy: a textarea sizes itself by `cols` and not by
-	   the column it sits in, so without this it stops short of the box around it. The rest of the
-	   look (the minimum height, the vertical resize, the inset) is app.css's. */
+	/* `inline-size: 100%`: a textarea sizes by `cols`, not its column. */
 	.text-area {
 		inline-size: 100%;
 		min-inline-size: 0;

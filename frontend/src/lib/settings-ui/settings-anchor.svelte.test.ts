@@ -1,11 +1,4 @@
-/* The deep-link hunt: landing on a row and ringing it, every time.
- *
- * A fixed clock would give up while a pane on a big library is still drawing its rows: the link
- * opening the right pane and ringing nothing, silently. These drive the cases that matter and the
- * ones that must stay quiet: a row that arrives late because the pane is still loading, a row
- * folded inside a closed `<details>`, a row that is never coming (which has to SAY so), and a
- * hunt a newer link took over (which must not).
- */
+/* The deep-link hunt: landing on a row and ringing it, every time. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -103,10 +96,7 @@ describe('a row that is never coming', () => {
 });
 
 describe('a row the pane pushes down as it goes on loading', () => {
-	/* On Performance the "Is Sift keeping up?" row is drawn immediately and the blocks above it
-	   arrive afterwards, so the row would be scrolled to, rung, and then pushed two screens
-	   down: a ring nobody could see. A row whose place moves while the pane is loading is put
-	   back in view and rung again. */
+	/* On Performance the "Is Sift keeping up?" */
 	function movable(key: string): { target: HTMLElement; moveTo: (top: number) => void } {
 		const target = row(key);
 		let top = 100;
@@ -161,8 +151,7 @@ describe('a row the pane pushes down as it goes on loading', () => {
 describe('a row whose id a pointer on the pane being left also carries', () => {
 	it('is found on the section being opened, never the pointer left behind', async () => {
 		// "Change in Importing" on the Faces pane: the pointer row keeps the switch's id, and the
-		// Faces pane is still mounted when the hunt starts. Ringing the pointer would end the hunt
-		// and leave Importing open at its top.
+		// Faces pane is still mounted when the hunt starts.
 		const leaving = pane();
 		leaving.dataset.section = 'faces';
 		const pointer = row('faces.enabled');
@@ -184,10 +173,8 @@ describe('a row whose id a pointer on the pane being left also carries', () => {
 });
 
 describe('a row the pane is deliberately not drawing', () => {
-	/* Save screenshots to is drawn only while Save is the answer, How often only while the backup
-	   runs on its own. A search or a pasted path landing on one must not say the setting "may have
-	   moved or been removed", which is false: the pane that leaves it out says why, and the row that
-	   decides it is rung in its place. */
+	/* Save screenshots to is drawn only while Save is the answer, How often only while the
+	   backup runs on its own. */
 	it('rings the row that decides it and says why, never that it moved', async () => {
 		const body = pane();
 		const choice = row('playback.screenshot');
@@ -280,10 +267,7 @@ describe('a row the pane is deliberately not drawing', () => {
 });
 
 describe('a row whose choice is made in a menu', () => {
-	/* A task's When is chosen in the menu behind the chevron beside Run now. Rung alone, the row
-	   would leave the answers behind a press nobody had been told to make; the ring opens the menu, the
-	   way the keyboard does, and following the row goes on (the hunt's own press is not somebody
-	   taking over). */
+	/* A task's When is chosen in the menu behind the chevron beside Run now. */
 	function rowWithDoor(key: string): { one: HTMLElement; door: HTMLButtonElement } {
 		const one = row(key);
 		const holder = document.createElement('div');

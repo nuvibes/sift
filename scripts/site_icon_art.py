@@ -1,34 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The picture half of the site-icon build: any logo in, one clean 256-pixel square out.
 
-A MAINTAINER'S HELPER, imported only by `scripts/build_site_icons.py`. Nothing in Sift imports it.
-It is separate from the crawl because the two fail differently: the crawl decides WHICH picture of
-a site is its logo and talks to the internet; this decides what that picture becomes and talks to
-nothing. Every function here is pure except `Renderer`, so the rules below are held by tests that
-need no network (`tests/gates/test_site_icon_build.py`).
-
-## The bar, and the measurement behind it
-
-A Sites card draws a mark at `30cqi`, about 96 CSS pixels, and an entity header at about 59. At a
-device pixel ratio of 2 that is 192 device pixels, so a pack capped at 128 would be UPSCALED on
-every HiDPI screen, and a 16-pixel favicon twelve times. So every icon is exactly `SIZE` square,
-made by DOWNSCALING something bigger or by drawing a vector.
-
-## What happens to one picture, in order
-
-1. **Read** by Chromium (`site_icon_render.mjs`), into straight RGBA, SVG drawn at `DRAW_LONG`.
-2. **Worked at `WORK_LONG` at most**, so the plate step below costs the same for a 4000-pixel
-   banner as for a favicon.
-3. **An opaque plate is taken off.** A logo served on a white or light-grey square reads on the
-   tinted tile as a light square with a logo in it. See `remove_plate` for which plates are kept
-   and why.
-4. **Trimmed** to the mark itself, so every mark is drawn at one measure whatever padding the site
-   put around it.
-5. **Fitted** into the square with `MARGIN` on every side, resampled with a Lanczos-3 filter on
-   PREMULTIPLIED colour: a straight-alpha resample drags the colour of invisible pixels into the
-   edge and draws a dark or light fringe round every mark.
-6. **Written** as a full-colour RGBA PNG. Not quantised: a palette step thresholds alpha at one
-   bit (`paletteuse ... alpha_threshold=128`), which is a jagged edge by construction.
+Pure but for `Renderer`, so its rules are tested without a network. Each picture is read by
+Chromium, worked at `WORK_LONG` at most, its light plate taken off, trimmed to the mark, fitted
+with `MARGIN` by a Lanczos-3 resample on premultiplied colour, and written as full-colour RGBA:
+a palette step would threshold alpha at one bit, a jagged edge by construction.
 """
 
 from __future__ import annotations
@@ -47,38 +23,26 @@ import numpy.typing as npt
 
 from sift.kernel.site_icons import ICON_PIXELS
 
-#: Every icon in the pack is exactly this many pixels square. The package that SERVES the pack
-#: owns the number and says why it is what it is; this reads it rather than keeping a second copy.
+#: Read from the package that serves the pack, which owns the number.
 SIZE = ICON_PIXELS
 
-#: Transparent pixels left round the mark on every side. Small, because the client already sits the
-#: mark in a box of its own; enough that an anti-aliased edge is never cut by the square's edge.
+#: Enough that an anti-aliased edge is never cut by the square's edge.
 MARGIN = 8
 
-#: What an SVG's longer side is drawn at. Big enough that a mark with generous padding in its
-#: viewBox still arrives larger than `SIZE` once trimmed.
+#: Big enough that a vector with generous padding still arrives larger than `SIZE` once trimmed.
 DRAW_LONG = 1024
 
-#: The largest a picture is worked at before the plate step. Three times the output: the plate's
-#: edge is found at this size and its anti-aliasing is then carried down by the resample.
+#: Three times the output: the plate's edge is found here and carried down by the resample.
 WORK_LONG = 768
 
-#: A mark drawn from fewer pixels than this across its longer side is recorded `quality: low`, and
-#: the build goes on looking for a better source.
-#:
-#: 160, and the reason is what the tile is judged at: about 96 CSS pixels, so about 180 device
-#: pixels on a HiDPI screen once the margin is taken off. A clean 180-pixel touch icon from the site
-#: itself (the commonest big picture a site has) therefore reads sharp on the tile and is kept
-#: rather than traded for a hunt after a vector; what is refused is the 16, 32 and 48-pixel favicon
-#: that draws as a smear. Not 192, the tile's device size exactly: that would send every 180 touch
-#: icon with a little padding on to a one-colour glyph instead.
+#: Below this many source pixels a mark is `quality: low`: a clean 180-pixel touch icon is sharp on
+#: a HiDPI tile, a 48-pixel favicon is a smear.
 LOW_BELOW = 160
 
 #: How far (0-255, largest channel) a pixel may be from the plate colour and still BE the plate.
 PLATE_TOLERANCE = 40
 
-#: Alpha at or under this is empty space for trimming. Not zero: a site's own soft glow or a
-#: JPEG-ish halo of nearly-transparent pixels would otherwise stop a trim at the picture's edge.
+#: Not zero: a soft glow of nearly transparent pixels would stop a trim at the picture's edge.
 EMPTY_ALPHA = 8
 
 Pixels = npt.NDArray[np.uint8]
@@ -88,11 +52,7 @@ Pixels = npt.NDArray[np.uint8]
 
 
 class Renderer:
-    """One Chromium for the whole build, behind a lock: bytes in, an RGBA array out.
-
-    A process rather than a library because the renderer is a browser. One for the run because a
-    browser costs about a second to start and a build reads a thousand pictures.
-    """
+    """One Chromium for the whole build, behind a lock: bytes in, an RGBA array out."""
 
     def __init__(self, node: str, script: Path, playwright: Path) -> None:
         self._process = subprocess.Popen(
@@ -120,12 +80,7 @@ class Renderer:
         return answer if isinstance(answer, dict) else {"error": "not an answer"}
 
     def sheet(self, cells: list[dict[str, object]], *, columns: int, cell: int) -> bytes:
-        """A CONTACT SHEET of icons as PNG bytes: each at `cell` pixels with its label under it.
-
-        For a person to LOOK at the pack with, which nothing in the bytes can do for them: a
-        wrong logo, a blurred one and a photograph all pass every gate. Each cell is
-        `{png: base64, label, note, ground: "#rrggbb", low: bool}`.
-        """
+        """A contact sheet of icons as PNG bytes, each at `cell` pixels with its label under it."""
         answer = self._ask({"sheet": {"cells": cells, "columns": columns, "cell": cell}})
         if "png" not in answer:
             raise RuntimeError(f"the contact sheet was not drawn: {answer.get('error')}")
@@ -169,11 +124,7 @@ def _lanczos(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
 
 
 def _weights(size_in: int, size_out: int) -> npt.NDArray[np.float64]:
-    """The (out x in) matrix of a Lanczos-3 resample along one axis, each row summing to one.
-
-    Widened by the scale factor when shrinking, which is what makes it a DOWNSCALE filter rather
-    than a point sample: every input pixel under an output pixel contributes to it.
-    """
+    """The (out x in) Lanczos-3 matrix along one axis, widened by the scale when shrinking."""
     scale = size_out / size_in
     stretch = min(scale, 1.0)
     support = 3.0 / stretch
@@ -193,11 +144,7 @@ def _weights(size_in: int, size_out: int) -> npt.NDArray[np.float64]:
 
 
 def resample(rgba: Pixels, width: int, height: int) -> Pixels:
-    """This picture at `width` x `height`, resampled on premultiplied colour.
-
-    Premultiplied because a transparent pixel's colour is meaningless (often black, sometimes
-    white), and a straight-alpha filter averages it into the visible edge beside it.
-    """
+    """This picture at `width` x `height`, resampled on premultiplied colour: no fringe."""
     work = rgba.astype(np.float64) / 255.0
     alpha = work[..., 3:4]
     work[..., :3] *= alpha
@@ -246,12 +193,7 @@ def _dilate(mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
 
 
 def _flood(allowed: npt.NDArray[np.bool_], seeds: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
-    """Everything in `allowed` reachable from `seeds` through `allowed`, four-connected.
-
-    Grown one pixel a step, so the cost is the region's width in steps; on a big picture the
-    coarse half is done first at a quarter of the size or less (`_coarse_flood`) and only the last
-    few pixels are grown here.
-    """
+    """Everything in `allowed` reachable from `seeds` through `allowed`, four-connected."""
     region = seeds & allowed
     for _ in range(4 * sum(allowed.shape)):
         grown = _dilate(region) & allowed
@@ -262,14 +204,7 @@ def _flood(allowed: npt.NDArray[np.bool_], seeds: npt.NDArray[np.bool_]) -> npt.
 
 
 def _coarse_flood(allowed: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
-    """The plate region of a big picture, flooded at a small size and finished at the full one.
-
-    A block of the small mask is allowed only when EVERY pixel under it is, so a thin line of the
-    mark still blocks the fill at the small size rather than being averaged away and leaked through.
-    The region found there is enlarged back, cut to what is allowed at full size, and then grown the
-    last few pixels to the true edge, which is where the anti-aliasing is decided, so that part is
-    never approximated.
-    """
+    """The plate region, flooded small (a block allowed only when all of it is), then full size."""
     height, width = allowed.shape
     step = max(1, max(height, width) // 256)
     if step == 1:
@@ -299,17 +234,7 @@ def _coarse_flood(allowed: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
 
 
 def plate_colour(rgba: Pixels) -> npt.NDArray[np.float64] | None:
-    """The colour of an opaque plate the picture sits on, or None when it has none.
-
-    Read off the picture's outer RING (every pixel within `ring` of an edge) rather than off
-    its four corners, because sites draw a hairline frame round a plate often enough to matter:
-    CamSoda's touch icon is a light-grey square with a one-pixel white line along two of its edges,
-    so its corners disagree about their colour while nine tenths of its ring is one grey.
-
-    A plate is a ring that is opaque nearly everywhere and one colour over four fifths of it.
-    A picture with a transparent edge, or a ring of many colours (a photograph, a gradient, a
-    mark drawn to the edge of its canvas), has none.
-    """
+    """An opaque plate's colour off the outer ring (corners can carry a frame), or None."""
     height, width = rgba.shape[:2]
     ring = max(1, min(height, width) // 50)
     edge = np.concatenate(
@@ -330,13 +255,7 @@ def plate_colour(rgba: Pixels) -> npt.NDArray[np.float64] | None:
 
 
 def kind_of_plate(colour: npt.NDArray[np.float64]) -> str:
-    """`light`, `dark` or `colour`.
-
-    LIGHT is any plate a page could be the colour of: a grey from 170 up, or a PALE tint of any hue
-    from 200 up. CamSoda's big touch icon is a pale-blue square with its ring on it, and on a tile
-    that reads exactly as a grey square does: a background, not the brand.
-    A saturated square (a red tile behind a white play button) is a colour, and stays.
-    """
+    """`light`, `dark` or `colour`; a pale tint of any hue reads on a tile as a light plate."""
     spread = float(colour.max() - colour.min())
     level = float(colour.mean())
     if level >= 200:
@@ -351,29 +270,11 @@ def kind_of_plate(colour: npt.NDArray[np.float64]) -> str:
 
 
 def remove_plate(rgba: Pixels, *, force: bool = False) -> Plate:
-    """Take an opaque LIGHT plate off a logo, anti-aliasing the new edge. Keep any other.
+    """Take an opaque light plate off a logo, anti-aliasing the new edge; keep any other as a tile.
 
-    ## Which plates go, and which are a brand's own tile
-
-    **A light plate goes, always.** White or light grey behind a logo is somebody's page colour, not
-    the brand: it is what makes a logo read as a light square on the tile.
-
-    **A dark plate or a coloured one STAYS, and the picture is recorded as a tile.** A coloured
-    square is a brand tile by design (a red square with a white play button is what that brand
-    looks like). A black one nearly always carries a WHITE mark, and the ground a mark is drawn on is
-    the page colour under a scrim, so on a light page, taking the black away leaves a white mark
-    on white, which is no logo at all.
-
-    ## How it goes
-
-    Flood-filled from the four corners through pixels within `PLATE_TOLERANCE` of the plate colour,
-    so a white shape INSIDE the mark (the camera body in a camera icon) is never reached. Then the
-    two-pixel band just inside the filled region is un-blended from the plate colour ("colour to
-    alpha"): an anti-aliased edge pixel that was half mark, half white becomes the mark's colour at
-    half opacity, rather than a hard cut with a white fringe.
-
-    `force` takes ANY plate off, for a site named in `site_icon_catalog.PLATE_OFF`: a decision
-    about one brand, made by looking at it, never a rule about colours.
+    A dark or coloured plate is the brand's own tile (a black one carries a white mark). The fill
+    starts at the corners, so a white shape inside the mark is never reached; `force` takes any
+    plate off, for a site in `site_icon_catalog.PLATE_OFF`.
     """
     colour = plate_colour(rgba)
     if colour is None:
@@ -390,8 +291,7 @@ def remove_plate(rgba: Pixels, *, force: bool = False) -> Plate:
         return Plate(rgba, removed=False, tile=False)
 
     band = _dilate(_dilate(plate)) & ~plate
-    # Colour to alpha: the least opacity at which this pixel, laid over the plate colour, would
-    # show as it does. Per channel, how far it sits from the plate towards 0 or towards 255.
+    # Colour to alpha: the least opacity at which this pixel over the plate shows as it does.
     above = np.where(
         work[..., :3] > colour, (work[..., :3] - colour) / np.maximum(255.0 - colour, 1.0), 0.0
     )
@@ -439,29 +339,20 @@ class Icon:
         return "low" if self.source_pixels < LOW_BELOW else "high"
 
 
-#: How nearly one colour a picture's opaque pixels must be, and how much of its own box it must
-#: fill, to be a BLANK TILE rather than a mark. See `is_blank`.
+#: How nearly one colour, and how much of its box, a picture must be to be a blank tile.
 BLANK_SPREAD = 12
 BLANK_FILL = 0.8
 
 
 def is_blank(mark: Pixels) -> bool:
-    """A filled shape of one flat colour with nothing on it: a tile whose mark is missing.
-
-    Not hypothetical: one site's own 192-pixel icon is a yellow rounded square and nothing else,
-    which draws as exactly that: a picture that identifies no site. A one-colour GLYPH
-    (Simple Icons, the link-kind glyphs) is never refused by this, because a glyph is lines and
-    holes and covers well under four fifths of its own box.
-    """
+    """A filled shape of one flat colour with nothing on it: a tile whose mark is missing."""
     solid = mark[..., 3] >= 250
     if not solid.any() or float(solid.mean()) < BLANK_FILL:
         return False
     colours = mark[solid][:, :3].astype(np.int16)
     if int((colours.max(axis=0) - colours.min(axis=0)).max()) > BLANK_SPREAD:
         return False
-    # ...AND NO HOLES. A mark CUT OUT of a flat tile is one colour too (Idol Erotic's icon is a
-    # pink square with its mark punched through it), and it is a logo. Transparency the edge
-    # cannot reach is a hole; a blank tile has none.
+    # And no holes: a mark cut out of a flat tile is a logo.
     clear = mark[..., 3] < 128
     holes = clear & ~_coarse_flood(clear)
     return float(holes.mean()) < 0.01
@@ -492,13 +383,7 @@ def make_icon(rgba: Pixels, *, plate_off: bool = False) -> Icon | None:
 
 
 def encode_png(rgba: Pixels) -> bytes:
-    """An 8-bit RGBA PNG, each row given whichever of None, Sub and Up compresses it best.
-
-    Three of PNG's five filters, not all five, and the two left out are the ones that cannot be
-    undone a whole row at a time: Average and Paeth each depend on the pixel just decoded to their
-    left. Keeping to these three is what lets `decode_png` read the whole pack back in numpy in a
-    few seconds, which is what lets a gate check every icon's pixels rather than a sample of them.
-    """
+    """An 8-bit RGBA PNG, rows filtered None, Sub or Up: the three undone a row at a time."""
     height, width = rgba.shape[:2]
     data = rgba.astype(np.int16).reshape(height, width * 4)
     left = np.zeros_like(data)
@@ -528,13 +413,7 @@ def encode_png(rgba: Pixels) -> bytes:
 
 
 def decode_png(raw: bytes) -> Pixels:
-    """Read back a PNG that `encode_png` wrote, as an H x W x 4 array.
-
-    For the gates and the report: they check what is ON DISK, so they read it without a browser.
-    8-bit RGB or RGBA, not interlaced, rows filtered None, Sub or Up, exactly what `encode_png`
-    writes. Anything else RAISES rather than answering: an icon in the pack that this cannot read
-    is an icon that did not come out of this build, and that is itself the finding.
-    """
+    """Read back a PNG that `encode_png` wrote, as H x W x 4; anything else raises."""
     if raw[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("not a PNG")
     at = 8
@@ -559,20 +438,7 @@ def decode_png(raw: bytes) -> Pixels:
     out = np.zeros((height, stride), dtype=np.uint8)
     previous = np.zeros(stride, dtype=np.uint8)
     for row in range(height):
-        line = flat[row, 1:]
-        how = int(flat[row, 0])
-        if how == 0:
-            current = line.copy()
-        elif how == 1:
-            current = (
-                (np.cumsum(line.reshape(width, channels).astype(np.int64), axis=0) % 256)
-                .astype(np.uint8)
-                .reshape(stride)
-            )
-        elif how == 2:
-            current = ((line.astype(np.int16) + previous) % 256).astype(np.uint8)
-        else:
-            raise ValueError(f"row {row} is filtered {how}, which this build never writes")
+        current = _unfiltered(flat[row], row, previous, width, channels)
         out[row] = current
         previous = current
     pixels = out.reshape(height, width, channels)
@@ -581,13 +447,28 @@ def decode_png(raw: bytes) -> Pixels:
     return pixels
 
 
-def fills_its_box(rgba: Pixels) -> bool:
-    """True when all four corners of the mark's own box are opaque: a full-bleed square picture.
+def _unfiltered(filtered: Pixels, row: int, previous: Pixels, width: int, channels: int) -> Pixels:
+    """One row with its None, Sub or Up filter undone."""
+    stride = width * channels
+    line = filtered[1:]
+    how = int(filtered[0])
+    if how == 0:
+        current = line.copy()
+    elif how == 1:
+        current = (
+            (np.cumsum(line.reshape(width, channels).astype(np.int64), axis=0) % 256)
+            .astype(np.uint8)
+            .reshape(stride)
+        )
+    elif how == 2:
+        current = ((line.astype(np.int16) + previous) % 256).astype(np.uint8)
+    else:
+        raise ValueError(f"row {row} is filtered {how}, which this build never writes")
+    return current
 
-    What such a picture IS depends on where it came from, which this cannot see: from a site's
-    declared icon it is the brand's tile; from `og:image` it is nearly always a photograph. The
-    build decides with the source in hand (`build_site_icons.make_picture`).
-    """
+
+def fills_its_box(rgba: Pixels) -> bool:
+    """True when all four corners of the mark's own box are opaque: a full-bleed square."""
     box = content_box(rgba)
     if box is None:
         return False
@@ -602,12 +483,7 @@ def fills_its_box(rgba: Pixels) -> bool:
 
 
 def tone_of(rgba: Pixels) -> str:
-    """`light`, `dark` or `colour`: what the visible part of a mark is, for a ground to answer.
-
-    Recorded in the manifest so that whatever draws the mark can tell a white mark (which needs a
-    dark ground) and a black one (which needs a light ground) from a coloured one (which reads on
-    either). Weighted by opacity, so an anti-aliased edge does not count as much as the body.
-    """
+    """`light`, `dark` or `colour`: a mark's visible part, by opacity, for a ground to answer."""
     alpha = rgba[..., 3].astype(np.float64) / 255.0
     weight = alpha.sum()
     if weight <= 0:

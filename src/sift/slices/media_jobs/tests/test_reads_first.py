@@ -20,12 +20,13 @@ from sift.kernel.jobs import JobContext
 from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.main import create_app
 from sift.slices.media_jobs import probing, read_first
+from sift.slices.media_jobs.activity_families import _AFTER_THE_READ, PACE_WINDOW_SECONDS, _joined
 from sift.slices.media_jobs.activity_wire import FamilyOfWork
 from sift.slices.media_jobs.read_first import READ_FIRST_ON_SHARE, after_the_read_first
-from sift.slices.media_jobs.router import _AFTER_THE_READ, WAITING_FOR_THE_SCAN, _joined
+from sift.slices.media_jobs.router import WAITING_FOR_THE_SCAN
 from sift.testing.auth import establish_session
 
-ROUTER = sys.modules[_joined.__module__]
+ROUTER = sys.modules["sift.slices.media_jobs.router"]
 
 
 async def test_a_probe_reads_as_a_files_read(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,4 +142,4 @@ def test_activity_carries_the_sentence(client: TestClient, monkeypatch: pytest.M
     client.headers[CSRF_HEADER_NAME] = csrf
 
     assert client.get("/api/jobs").json()["families"]["generate"]["pace"] == "Read first."
-    assert read_first.WINDOW_SECONDS == ROUTER.PACE_WINDOW_SECONDS
+    assert read_first.WINDOW_SECONDS == PACE_WINDOW_SECONDS

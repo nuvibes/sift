@@ -1,15 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What part of a task can be run on its own, and what a dry run of it says it would do.
-
-A task's parts are declared once, by the composition root (which is the only place that knows
-which products a task is made of): its sub-tasks, and whether it can be run over some of the
-library folders. The Tasks screen draws its menu from that declaration and the run route checks a
-press against the same one, so the menu can never offer a part the server would refuse.
-
-A dry run is a pass that reads and writes nothing, asked of the same planning step the real run
-starts from: the counts it reports are the counts the run would be weighed by, and the files it
-names are the first the run would hand out.
-"""
+"""What part of a task can be run on its own, and what a dry run of it says it would do."""
 
 from __future__ import annotations
 
@@ -30,8 +20,6 @@ class TaskPart:
 
     key: str
     label: str
-    #: Where a library folder is on this device, for the menu to draw beside its name; empty for
-    #: a sub-task.
     path: str = ""
 
 
@@ -40,7 +28,6 @@ class TaskParts:
     """What a task can be run in part over. A task with neither runs only whole."""
 
     subtasks: tuple[TaskPart, ...] = ()
-    #: Whether a press may name some of the library folders.
     locations: bool = False
 
 
@@ -56,7 +43,6 @@ class Selection:
         return self.parts is None and self.locations is None
 
 
-#: A press on the lead half: the whole task.
 EVERYTHING = Selection()
 
 
@@ -66,12 +52,7 @@ def narrowed(
     locations: Sequence[str] | None,
     folders: Sequence[str],
 ) -> Selection:
-    """A press's parts, checked against the task's declaration and the folders there are now.
-
-    A list that is given must name at least one thing, each of them the task's own. An empty list
-    is refused rather than read as everything: somebody who unticked every row did not ask for
-    the whole task.
-    """
+    """A press's parts, checked against the declaration; an empty list is refused, never all."""
     chosen_parts: tuple[str, ...] | None = None
     if parts is not None:
         known = {one.key for one in declared.subtasks}
@@ -104,37 +85,27 @@ class PlanLine:
     count: int
 
 
-#: What a plan's names are, as its report heads them, where they are the first files it would do.
 FIRST_FILES = "First files"
 
-#: What a Build with nothing to do says after the task's name.
 NOTHING_TO_MAKE = "has nothing to do. Every file already has what it would make."
 
-#: The longest a name in a report may be. A report is stored with its job, whose note is bounded, so
-#: a name is shortened in the middle and keeps its start and its extension.
+#: Names are shortened in the middle, keeping start and extension, to fit the job's note.
 NAME_CHARS = 96
 
-#: The longest a report may be as a note. Under the note's own bound, so it is never cut through.
+#: Under the note's own bound, so it is never cut through.
 NOTE_CHARS = 1800
 
 
 @dataclass(frozen=True, slots=True)
 class DryReport:
-    """What a dry run said, as fields the task's row lays out and as the sentence History reads.
-
-    Stored as the dry run job's note, in JSON (`note`), because the note is the one thing a job
-    leaves behind for whoever asked, and the row reads it back from there."""
+    """What a dry run said, as fields for the task's row and as a sentence for History."""
 
     said: str
-    #: What it would do in one sentence, the report's first: "Backup would write one.zip".
     headline: str = ""
     lines: tuple[PlanLine, ...] = ()
-    #: What `names` are: the first files, or the old backups it would delete.
     named: str = FIRST_FILES
     names: tuple[str, ...] = ()
-    #: How many more there are than the names shown.
     more: int = 0
-    #: Why a part could not run on this device now, each in its own sentence.
     refusals: tuple[str, ...] = ()
 
     def note(self) -> str:
@@ -187,23 +158,15 @@ class DryReport:
 class Plan:
     """What a run would do, worked out and not done."""
 
-    #: How many things the run would work on, each counted once however many parts want it. Zero
-    #: is a run with nothing to do.
+    #: Each counted once however many parts want it.
     files: int
-    #: The same, part by part, in the order the task declares them.
     lines: tuple[PlanLine, ...] = ()
-    #: The first things it would do, by name. Files the person could not see are counted and never
-    #: named.
+    #: Files the person could not see are counted and never named.
     names: tuple[str, ...] = ()
-    #: Why a part could not run on this device now, in its own sentence; empty when all can.
     refusals: tuple[str, ...] = ()
-    #: What it would do, after the task's name, where "would work on 12 files" is not it.
     doing: str | None = None
-    #: What `names` are, as the report heads them.
     named: str = FIRST_FILES
-    #: How many there are to name in all; `files` when that is what the names are drawn from.
     nameable: int | None = None
-    #: What a plan with nothing to do says after the task's name.
     idle: str = NOTHING_TO_MAKE
 
     def report(self, title: str) -> str:
@@ -262,6 +225,5 @@ def _shortened(name: str) -> str:
     return name[: keep - keep // 3] + "..." + name[-(keep // 3) :]
 
 
-#: Works out what a task's run would do for a selection, as the viewer who pressed. The same step
-#: the run itself starts from, so a dry run and a real one cannot come to different answers.
+#: The same step the run starts from, so a dry run and a real one cannot disagree.
 Planner = Callable[[Selection, Viewer], Awaitable[Plan]]

@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Get to know Sift pane's words, and what somebody can type to find it.
- *
- * The paths and their goals carry the server's own words (see `your-path.ts`); this adds the one
- * sentence that says what the section is for. */
+/* The Get to know Sift pane's words, and what somebody can type to find it. */
 import type { Searchable } from './search';
 
 export const COPY = {

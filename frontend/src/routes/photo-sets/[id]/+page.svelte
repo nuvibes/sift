@@ -1,12 +1,5 @@
 <script lang="ts">
-	/*
-	 * One photo set: its cover and name, the pictures in it, and what else those pictures reach.
-	 *
-	 * The same shape a person's page has (one frame, one scrolling region, and the tabs inline with
-	 * the heading), because it is the same kind of page: a thing, and several walls that are all
-	 * about it. The pictures come back in the set's own order rather than newest-first, since a shoot
-	 * was numbered and showing it shuffled is showing something else.
-	 */
+	/* One photo set: its cover and name, the pictures in it, and what else those pictures reach. */
 	import type { Crumb } from '$lib/components/common';
 	import { coverBody, type Frame } from '$lib/entity/cover-frame';
 	import { leaveFor } from '$lib/shell/navigation.svelte';
@@ -89,28 +82,21 @@
 	const fileWords = new TabWords();
 
 	/* The subject, and the three flags that go with fetching it, shared with every other entity
-	 * detail page rather than written out here. See `EntitySubject` for what it decides, which is
-	 * one thing: a placeholder belongs on a screen with nothing on it, so re-reading this album
-	 * leaves this album on screen.
-	 *
-	 * `follow` takes both subscriptions, so a name, a heart or a cover that has moved is re-read
-	 * rather than left until somebody reloads the page.
-	 */
+	 * detail page rather than written out here. */
 	const subject = new EntitySubject<PhotoSet>((id) => api.get<PhotoSet>(`/photo-sets/${id}`));
 	subject.follow(() => setId);
 	/* Read through a `const` so the markup keeps its narrowing (see the person page). */
 	const set = $derived(subject.value);
 
 	/* The two boxes the rename and the notes are typed into, kept in step with whatever is on
-	   screen. An effect on the row itself follows a re-read as well as a first load; the shared
-	   fetch knows nothing about this page's form. */
+	   screen. */
 	$effect(() => {
 		renamed = set?.name ?? '';
 		noted = set?.notes ?? '';
 	});
 
-	/* Everything the record is made of, in one place: the summary under the name, the panel beside
-	   it and the form are three surfaces over the same facts. See the person's page. */
+	/* Everything the record is made of, in one place: the summary under the name, the panel
+	   beside it and the form are three surfaces over the same facts. */
 	const recordValues = $derived({
 		name: set?.name ?? '',
 		details: set?.notes ?? '',
@@ -121,31 +107,19 @@
 	let busy = $state(false);
 	let confirmDelete = $state(false);
 
-	/* Sharing a set shares the shoot, and keeps doing so as more of it arrives, which is the point
-	   of sharing a subject rather than a folder: it reaches next month's pictures without anybody
-	   going back to it. */
+	/* Sharing a set shares the shoot, and keeps doing so as more of it arrives, which is the
+	   point of sharing a subject rather than a folder: it reaches next month's pictures without
+	   anybody going back to it. */
 	let shareOpen = $state(false);
 	let reachOpen = $state(false);
 	const shareTarget = $derived<ShareTarget | null>(
 		set ? { type: 'photo_set', id: set.id, label: set.name } : null
 	);
-	/*
-	 * The numbers beside the tab words.
-	 *
-	 * `follow` asks for all of them in one request the moment the page settles on a subject, so the
-	 * strip opens complete rather than filling in as somebody presses each tab. `saw` is what the
-	 * wall on screen actually found, which is the fresher of the two and wins. Both come from the
-	 * same listings, so they are one population and not two.
-	 */
+	/* The numbers beside the tab words. */
 	const counts = new TabCounts();
 	let editing = $state(false);
 
-	/* What this page can do to this album, behind the one door every entity page wears.
-	 *
-	 * Delete is declared HERE rather than left to the header, which appends its own only when a page
-	 * hands over `ondelete`. This one asks its own question, in its own words, about an album whose
-	 * files are not touched, so it stays the page's to word.
-	 */
+	/* What this page can do to this album, behind the one door every entity page wears. */
 	const options = $derived<Verb[]>(
 		session.isAdmin
 			? [
@@ -155,10 +129,7 @@
 						icon: 'group' as const,
 						run: () => (shareOpen = true)
 					},
-					/* What the sharing above it comes to. Share is where a decision is made; this
-					   reports who can actually reach this, however the reach was arranged: through
-					   a folder, a tag, a set, or the network above a label, none of which are
-					   written here. */
+					/* What the sharing above it comes to. */
 					{
 						id: 'visibility',
 						label: 'Visibility',
@@ -178,12 +149,7 @@
 	/** Whether the picture chooser is open. Opened by the pencil on the cover. */
 	let pickingPicture = $state(false);
 
-	/* WHO MADE IT, for the line under the name. Read on its own rather than off the row: the row's
-	   shape is the WALL's too, so a maker on it would be filled here and null there with nothing to
-	   say which meaning the null had. See `makerOf`.
-
-	   Guarded by the id it was asked for, like every other per-entity read on these screens: a
-	   slower answer for a Photo Set navigated away from must not land under this heading. */
+	/* WHO MADE IT, for the line under the name. */
 	let madeBy = $state<Maker | null>(null);
 	let madeByFor = $state('');
 	$effect(() => {
@@ -215,9 +181,7 @@
 	/* The strip's numbers follow the library as its walls do: History has no wall to report one. */
 	reloadOnLibraryChange(() => counts.refresh());
 
-	/* How many files the Files tab holds while picks filter it (null: nothing picked). Asked of
-	   the same listing the tab reads, once per change of the picks, with a sequence number so a
-	   slower answer for picks moved away from cannot land over the current one. */
+	/* How many files the Files tab holds while picks filter it (null: nothing picked). */
 	let narrowedFiles = $state<number | null>(null);
 	let narrowedAsk = 0;
 	$effect(() => {
@@ -240,8 +204,7 @@
 			files: narrowedFiles ?? set?.item_count
 		}),
 		/* And it wears its number: the strip is a MAP of what this page can show, and one bare
-		   word on a row of numbered ones reads as a tab nobody has looked at yet. It is the
-		   length of the very thread the pane draws, read beside the strip (`readThread`). */
+		   word on a row of numbered ones reads as a tab nobody has looked at yet. */
 		{
 			id: HISTORY,
 			label: 'History',
@@ -251,9 +214,7 @@
 		}
 	]);
 
-	/* This account's own opinion of the set, not the set's. The store puts a failed write back on
-	   its own, so all these have to do is say so. Silence would be a heart that springs back with
-	   nothing on screen to explain it. */
+	/* This account's own opinion of the set, not the set's. */
 	async function heart(favorite: boolean) {
 		if (!set) return;
 		try {
@@ -290,9 +251,7 @@
 		}
 	}
 
-	/* What somebody wrote about the shoot. Its own field rather than part of the rename form: a
-	   name is shared vocabulary and a note is a paragraph, and putting them in one form would make
-	   saving one of them save the other. */
+	/* What somebody wrote about the shoot. */
 	async function saveNotes(event: SubmitEvent) {
 		event.preventDefault();
 		if (!set || busy) return;
@@ -311,8 +270,7 @@
 	}
 
 	/* The cover, chosen from the set itself, which is the only place it can honestly be chosen
-	   from, since a cover is a picture of what is inside. The same control the collection page
-	   carries, in the same slot on the same menu. */
+	   from, since a cover is a picture of what is inside. */
 	async function useAsCover(
 		assetId: string,
 		atMs: number | null = null,
@@ -329,10 +287,8 @@
 		}
 	}
 
-	/* A picture from OUTSIDE the album, which is the one thing "chosen from the set itself" above
-	   could not answer: an album of a shoot may have no single picture that stands for it. The
-	   refusal is deliberately not caught: the sheet shows the server's own sentence, which is the
-	   half that knows whether the file was too big or was not readable as a picture. */
+	/* A picture from OUTSIDE the album, which is the one thing "chosen from the set itself"
+	   above could not answer: an album of a shoot may have no single picture that stands for it. */
 	async function uploadCover(file: File) {
 		if (!set) return;
 		const form = new FormData();
@@ -341,9 +297,8 @@
 		toasts.show("That's the cover now", { tone: 'success' });
 	}
 
-	/* Taking a picture out of the set. It leaves the grouping and stays exactly where it is on disk,
-	   which is what the wording has to say. Next to a Delete on the same menu, anything vaguer
-	   reads as the other thing. */
+	/* Taking a picture out of the set. It leaves the grouping and stays exactly where it is on
+	   disk, which is what the wording has to say. */
 	async function takeOut(assetId: string, forget: (id: string) => void) {
 		if (!set) return;
 		try {
@@ -471,15 +426,7 @@
 			{/snippet}
 		</PageFrame>
 	{:else if showingHistory}
-		<!--
-			The thread, in the frame every other screen uses. Not a wall: nothing to select, nothing
-			to page and nothing to count, so the grid's furniture would be furniture with no work
-			behind it. The identity band stays: this is a different view OF the set, not a
-			different page.
-
-			WITHOUT `measure`: that bounds the line AND centres it, and the thread belongs at the
-			page's own left edge where the tabs and the title are.
-		-->
+		<!-- The thread, in the frame every other screen uses. -->
 		<!-- History draws the identity and the tab strip in the shape every other tab does
 		     (`PageAbove`, then the strip as the heading row), so the strip stands at one height
 		     on every tab. -->

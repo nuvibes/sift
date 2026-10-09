@@ -1,9 +1,7 @@
 <script lang="ts">
-	/* Settings > Faces: the sheet behind Choose people on the export row, which says who a file of
-	 * facial fingerprints carries: the people Sift can recognize, then the people waiting for a
-	 * matching face. Two ways, chosen at its head and remembered for the account: everyone ticked
-	 * and the picks left out, or nobody ticked and only the picks sent. Read when it opens.
-	 */
+	/* Settings > Faces: the sheet behind Choose people on the export row, which says who a file
+	 * of facial fingerprints carries: the people Sift can recognize, then the people waiting for
+	 * a matching face. */
 	import {
 		ChoiceCard,
 		ChoiceGroup,
@@ -67,8 +65,8 @@
 		}
 	}
 
-	/* Who is ticked as the sheet opens: the ticks are who goes in, so everyone where a press leaves
-	   out, and nobody where a press puts in. */
+	/* Who is ticked as the sheet opens: the ticks are who goes in, so everyone where a press
+	   leaves out, and nobody where a press puts in. */
 	async function tickedAtFirst(): Promise<Record<string, 'all'>> {
 		return way === 'except'
 			? Object.fromEntries(sendable.map((one) => [one.id, 'all' as const]))

@@ -1,14 +1,4 @@
-/* The tags on one person, or one site, and the answer that arrives after you have left the page.
- *
- * The generation counter is the whole reason this is a store rather than a fetch inside a
- * component. A detail page navigated away from has a request in the air, and its answer lands
- * after the next page has asked for its own. So the previous person's tags appear under this
- * person's name, and taking one off there removes a tag from somebody else.
- *
- * `tagMany` is here for the opposite reason: it is deliberately NOT on the store, because every
- * write to the store replaces the whole set with the server's answer, and a bulk write through it
- * would leave the chips of whichever row answered last standing under somebody else's name.
- */
+/* The tags on one person, or one site, and the answer that arrives after you have left the page. */
 
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -26,9 +16,7 @@ import type { components } from '$lib/api/schema';
    from the first, `null` is not assignable and the whole file stops type-checking. */
 type Chip = components['schemas']['TagOnEntity'];
 
-/* A colour NAME rather than a hex value. Every colour in this client comes from a token, and the
-   gate that says so reads test files too, correctly, since a fixture carrying a raw hex is where
-   the next one gets copied from. */
+/* A colour NAME rather than a hex value. */
 const RED: Chip = { id: 't-1', name: 'Red' };
 const BLUE: Chip = { id: 't-2', name: 'Blue' };
 
@@ -49,8 +37,8 @@ afterEach(() => {
 });
 
 it('asks the endpoint for the kind, because the two are two addresses', async () => {
-	// Not a flag the server reads. `/people/{id}/tags` and `/sites/{id}/tags` share only the
-	// shape of the answer.
+	// Not a flag the server reads. `/people/{id}/tags` and `/sites/{id}/tags` share only the shape
+	// of the answer.
 	mocks.get.mockResolvedValue([RED]);
 
 	await entityTags.load('sites', 's-1');
@@ -61,7 +49,7 @@ it('asks the endpoint for the kind, because the two are two addresses', async ()
 
 it('draws nothing rather than refusing the page when the tags cannot be read', async () => {
 	// A screen that will not draw because a secondary fetch failed is worse than one missing a row
-	// of chips. The rest of the record is still readable.
+	// of chips.
 	mocks.get.mockResolvedValue([RED]);
 	await entityTags.load('people', 'p-1');
 	mocks.get.mockRejectedValue(new Error('no'));

@@ -3,20 +3,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/*
- * A glyph inside the button's words is centred against them.
- *
- * There are two legitimate ways to put an icon on this button. `icon={...}` makes the glyph a
- * sibling of the label in the button's own flex row. Writing `<Icon />` before the words inside the
- * children puts it inside the label span, which is how many call sites write an icon whose name or
- * `filled` depends on the caller; there it must be centred against the text rather than sitting on
- * its baseline.
- *
- * A source test rather than a rendered one, like `pills.test.ts`: the failure is a missing
- * declaration, and jsdom lays nothing out, so a mounted button reports the same geometry with the
- * rule and without it. The rendered half is `e2e/page-alignment.spec.ts`, which photographs
- * controls and counts the rows holding ink.
- */
+/* A glyph inside the button's words is centred against them. A source test, like pills.test.ts:
+ * jsdom lays nothing out; e2e/page-alignment.spec.ts is the rendered half. */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SOURCE = readFileSync(join(HERE, 'Button.svelte'), 'utf8');
@@ -35,34 +23,24 @@ describe('a glyph handed in as children', () => {
 	it('is laid out in a row and centred, rather than sitting on the text baseline', () => {
 		const rule = ruleFor(SELECTOR);
 
-		/* Written WITH the semicolon, for the reason `pills.test.ts` gives: `align-items: center;`
-		   contains the characters of a check for `align-items: cent`, and a check for the text alone
-		   passes against a value it exists to refuse. */
+		/* With the semicolon, so a longer value starting the same cannot pass (pills.test.ts). */
 		expect(rule, 'the label is not a flex row').toContain('display: inline-flex;');
 		expect(rule, 'the glyph is not centred against the words').toContain('align-items: center;');
 	});
 
 	it('is spaced from the words by the button own gap, not by the whitespace around it', () => {
-		/*
-		 * A whitespace-only text node is not a flex item, so once the label is a flex row the space
-		 * between the mark and the word vanishes. A gap is declared here, the same one `.btn` uses,
-		 * so a glyph handed in this way sits at the same distance from its word as one through
-		 * `icon=`.
-		 */
+		/* A flex row drops the space between mark and word, so a gap is declared, as `.btn`'s. */
 		expect(ruleFor(SELECTOR)).toContain('gap: var(--space-2);');
 		expect(ruleFor('.btn')).toContain('gap: var(--space-2);');
 	});
 
 	it('leaves a label of plain words alone', () => {
-		/* Scoped with `:has`, deliberately. Every label as a flex row would make each run of inline
-		   content its own flex item, so a sentence with an emphasis in it would gain a gap in the
-		   middle of itself. */
+		/* Scoped with :has, or a sentence with an emphasis would gain a gap. */
 		expect(SOURCE).toContain('\n\t.label {\n\t\tdisplay: inline-block;\n\t}');
 	});
 });
 
-/* The link tone's underline is its mark of being pressable, and a decoration does not reach into an
-   inline-block box: were the label one, no link button anywhere would draw its underline. */
+/* A link's underline does not reach into an inline-block label. */
 describe('a link', () => {
 	it('keeps its words inline, so its underline is drawn under them', () => {
 		const rule = ruleFor('.link > .label:not(:has(> :global(.icon)))');
@@ -71,8 +49,7 @@ describe('a link', () => {
 	});
 });
 
-/* A strip's end arrows stand the strip's whole height: square, they would be a small box beside a row
-   three times their height. The square gives way only on `tall`, never on an ordinary glyph button. */
+/* A strip's end arrows stand its whole height; only `tall` gives up the square. */
 describe('a tall glyph button', () => {
 	it('takes the height of what holds it, and keeps the square width', () => {
 		const rule = ruleFor('.btn.icon-only.tall');

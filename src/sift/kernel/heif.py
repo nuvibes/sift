@@ -1,36 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""HEIF stills (a phone's HEIC, and an AVIF photograph): the whole picture, read by libheif.
+"""HEIF stills (a phone's HEIC, an AVIF): the whole picture, read by libheif in a child process.
 
-**ffmpeg reads one tile of a phone's photograph, not the photograph.** A phone does not code a
-photograph as one picture: it codes a grid of tiles (commonly 512 pixels square) and
-adds an item that names the tiles in order and says how big the whole picture is. ffprobe lists
-each tile as a video stream of its own and the grid as a "stream group" beside them, and every
-command Sift runs asks for the first video stream. Read that way, a 4032 x 3024 photograph is a
-640 x 896 picture (the size of the tile ffprobe lists first): its size, its tile, its faces and its
-description are all one tile of it. The same container carries AVIF
-photographs, which can be gridded the same way.
-
-**libheif assembles the grid, and is the one door for a HEIF still.** Through pillow-heif for HEIC
-and through Pillow's own AVIF reader (libavif, which assembles a grid the same way) for AVIF. The
-whole picture is decoded ONCE, turned upright by the file's own rotation, and written as a JPEG:
-the readable copy. Everything after that (the probe's size, the tile, the faces, the description,
-the fingerprints) reads that copy through `media.resolve_decodable`, the door every stage already
-takes, and needs no branch for the format; the animated WebP's MP4 is the same shape.
-
-**The copy is also what a browser draws when it cannot draw the original.** Chromium has no HEIC
-decoder, so a HEIC opened in the viewer is served the original, fails to draw, and is shown this
-copy instead (`/api/assets/{id}/rendition`). An AVIF needs none: every browser draws AVIF.
-
-**The decode runs in a process of its own.** A decoder handed a malformed file is the last thing
-that should be able to take the server down with it: ffmpeg is a subprocess for exactly that
-reason (see `media`), and libheif is held to the same rule. The child is the bundled Python with a
-dozen lines of script, under the background priority's memory limit and a time limit, so a file
-that makes the decoder spin or balloon costs one refused copy and nothing else.
-
-**The copy carries no metadata.** It is written from the pixels alone: no EXIF, so no place a
-camera wrote, and no orientation note, because the pixels are already upright. The colour profile
-is kept, so a wide-gamut photograph is drawn in its own colours.
-"""
+ffmpeg reads one tile of a gridded photograph; this writes an upright JPEG copy with no metadata."""
 
 from __future__ import annotations
 
@@ -49,32 +20,21 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: The stills this door reads: a HEIC photograph and an AVIF one. Named by MIME, which the ingress
-#: gate sets from the file's own brands the moment the row exists, so it is there while the probe
-#: runs (the container column is the probe's own and is still empty then).
+#: By MIME, which the ingress gate sets before the probe fills the container column.
 HEIF_MIMES = frozenset({"image/heic", "image/avif"})
 
-#: The ones a browser may not draw, and so the only ones whose copy is offered to a browser. Every
-#: browser draws AVIF; only Safari draws HEIC.
+#: Only Safari draws HEIC; every browser draws AVIF.
 BROWSER_MAY_NOT_DRAW = frozenset({"image/heic"})
 
-#: What the copy is written as. A JPEG because every browser and every decoder here reads one, and
-#: at a quality a phone's own camera writes: this is the photograph somebody looks at full screen.
+#: A JPEG every reader takes, at a phone camera's own quality.
 COPY_EXTENSION = "jpg"
 COPY_QUALITY = 90
 
-#: A 48-megapixel photograph decodes and encodes in a few seconds. Generous, because this runs in
-#: the background on a file being imported, and bounded, because a malformed file can make a
-#: decoder spin.
+#: Bounded, as a malformed file can make a decoder spin.
 DECODE_TIMEOUT_SECONDS = 120
 
-#: The child. It imports the two readers and nothing of Sift's, so it starts in a fraction of a
-#: second, and it reads only the formats this door exists for: `formats` stops Pillow from offering
-#: a file that is not HEIF to every other decoder it carries.
-#:
-#: `exif_transpose` is the turn: libheif applies a HEIC's rotation while it decodes and resets the
-#: orientation note, and libavif leaves an AVIF's rotation to the note, so asking the note after
-#: the decode turns both upright exactly once.
+#: Imports no Sift code and reads only HEIF formats; `exif_transpose` turns both kinds upright
+#: exactly once.
 _DECODE = """
 import json, sys
 import pillow_heif
@@ -94,10 +54,7 @@ with Image.open(source, formats=["HEIF", "AVIF"]) as opened:
 
 
 class HeifError(Exception):
-    """The picture could not be decoded, or the decoder could not be run at all.
-
-    Carries the decoder's own last words where there are any: the person reading a job's error
-    column is the one who needs them."""
+    """The picture could not be decoded, or the decoder could not run; carries its last words."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,11 +67,7 @@ class Decoded:
 
 
 def is_heif_still(asset: Asset) -> bool:
-    """Whether this is a HEIF photograph, read through this door rather than by ffmpeg.
-
-    A still only. An animated AVIF or HEIC is filed as a GIF and is a sequence of whole frames,
-    which ffmpeg reads correctly; its question is which stream moves (see `Probed.picture_stream`).
-    """
+    """Whether this is a HEIF still, read through this door; an animated one is filed as a GIF."""
     return asset.media_type == "image" and (asset.mime or "") in HEIF_MIMES
 
 
@@ -154,20 +107,14 @@ async def decode(source: Path, destination: Path) -> Decoded:
 async def readable_copy(
     store: ContentStore, asset: Asset, original: Path, *, settings: Settings
 ) -> Path:
-    """The path every decoder should read for this photograph, making it first if it is not there.
-
-    Kept as a derivative beside the tiles, so it is swept with them and made again from the
-    original the same way: the cache is disposable by design, and a photograph whose copy is
-    swept gets it back on the next thing that asks.
-    """
+    """The path every decoder should read for this photograph, making the copy if it is gone."""
     for existing in await store.derivatives(asset.id):
         if existing.kind is DerivativeKind.RENDITION:
             if (on_disk := await store.derivative_at(existing.rel_cache_path)) is not None:
                 return on_disk
             break
 
-    # The system's temporary directory rather than the cache: a file under the cache would be
-    # offered for removal by the maintenance sweep while the decode writing it is still running.
+    # Not the cache, whose sweep would offer the file while the decode still writes it.
     with tempfile.TemporaryDirectory(prefix="sift-heif-") as workspace:
         built = await decode(original, Path(workspace) / f"whole.{COPY_EXTENSION}")
         size = await asyncio.to_thread(lambda: built.path.stat().st_size)
@@ -175,8 +122,7 @@ async def readable_copy(
             asset.id, DerivativeKind.RENDITION, extension=COPY_EXTENSION, size_bytes=size
         )
         destination = settings.cache_dir / derivative.rel_cache_path
-        # Moved into place rather than written there: a half-written file under a path a row
-        # already names is a copy every later reader treats as finished.
+        # Moved into place, as a half-written file under a named path reads as finished.
         await asyncio.to_thread(_place, built.path, destination)
 
     log.info("heif.readable_copy", asset_id=asset.id, width=built.width, height=built.height)

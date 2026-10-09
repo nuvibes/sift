@@ -1,10 +1,4 @@
-/* The board, held between visits, and the one request two callers share.
- *
- * What is under test is the asymmetry rather than the caching: `ensure` joins whatever is in
- * flight because it only fills in a crumb, and `refresh` never joins because a screen calling it
- * has just written a decision and must see that write. A store where both joined would be one
- * request fewer and a board redrawn as it was before the decision.
- */
+/* The board, held between visits, and the one request two callers share. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

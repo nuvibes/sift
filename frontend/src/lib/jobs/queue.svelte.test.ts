@@ -3,15 +3,7 @@ import { isFinished, OLDER_KINDS, Queue, QUEUE_PAGE } from './queue.svelte';
 import type { JobsPage } from './family';
 import { imports } from '$lib/library/imports.svelte';
 
-/* Where the screen's numbers come from, and (the part worth guarding) when it stops asking.
- *
- * There is no timer and no connection of its own here. The default view is a page of families
- * (`?fold=true`); choosing a state asks for the families whose row shows it, folded too. Both are
- * asked when the connection says the queue has moved, which is why an idle library costs nothing.
- *
- * The default view is not the busy indicator's page: the indicator counts every step, this screen
- * draws families, so these tests hold the fold.
- */
+/* Where the screen's numbers come from, and (the part worth guarding) when it stops asking. */
 
 const EMPTY: JobsPage = {
 	jobs: [],
@@ -110,9 +102,9 @@ describe('the default view', () => {
 
 describe('choosing a state', () => {
 	it('asks the server that question rather than filtering what it already has', async () => {
-		/* Filtering the fifty rows in hand would put a number above the table that disagrees with
-		   it: the tallies describe the whole queue, so "Failed 61" over the three failures that
-		   happened to be in the last fifty rows is a screen that lies quietly. */
+		/* Filtering the fifty rows in hand would put a number above the table that disagrees
+		   with it: the tallies describe the whole queue, so "Failed 61" over the three failures
+		   that happened to be in the last fifty rows is a screen that lies quietly. */
 		const queue = new Queue();
 		queue.setFilter('failed');
 		await vi.waitFor(() => expect(fetched.some((url) => url.includes('state=failed'))).toBe(true));
@@ -121,8 +113,7 @@ describe('choosing a state', () => {
 	});
 
 	/* One universe for every tab: All counts families, so a state's tab lists the families whose
-	   row shows that state and its number counts them. Flat steps under a tab counted in
-	   families would read Done and Failed together as more than All. */
+	   row shows that state and its number counts them. */
 	it('asks for the families whose row shows the state, folded like All', async () => {
 		const queue = new Queue();
 		queue.setFilter('failed');
@@ -132,8 +123,7 @@ describe('choosing a state', () => {
 		expect(queue.folded).toBe(true);
 	});
 
-	/* The tallies and the task rows above the list read the held page. Emptied on every press, the
-	   whole tab would blank for a read and the screen jump to its top under the reader. */
+	/* The tallies and the task rows above the list read the held page. */
 	it('keeps the page it has until the new filter has its own, and only the list waits', async () => {
 		const queue = new Queue();
 		await queue.refresh();
@@ -161,8 +151,8 @@ describe('choosing a state', () => {
 });
 
 describe('choosing a kind of task', () => {
-	/* The list's Type narrowing. A kind asks flat, even under All: a step of an import is a task of
-	   its own kind, and a folded page counts only families that START with that kind. */
+	/* The list's Type narrowing. A kind asks flat, even under All: a step of an import is a task
+	   of its own kind, and a folded page counts only families that START with that kind. */
 	it('asks for that kind flat, with the state beside it when one is chosen', async () => {
 		const queue = new Queue();
 		await queue.setKind('preview');
@@ -287,9 +277,8 @@ describe('whether a job is over', () => {
 	});
 });
 
-/* THE LIST IS PAGED BY NUMBER, so every page of a big import's queue can be reached: a
-   page is a fixed fifty, so the pager under it can name its pages, and a new filter starts at the
-   first. */
+/* THE LIST IS PAGED BY NUMBER, so every page of a big import's queue can be reached: a page is a
+   fixed fifty, so the pager under it can name its pages, and a new filter starts at the first. */
 describe('the pages of the list', () => {
 	it('reads the page it is turned to, at a fixed size', async () => {
 		serveFetch(page({ total: 3068 }));

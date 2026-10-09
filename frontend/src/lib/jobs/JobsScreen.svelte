@@ -15,7 +15,6 @@
 		Problem,
 		ProgressBar,
 		Select,
-		SettingLink,
 		Skeleton
 	} from '$lib/components/common';
 	import { openAssetInstead } from '$lib/player/asset-view';
@@ -32,16 +31,11 @@
 		ACTIVITY_CARD_ACTIONS,
 		ACTIVITY_COLUMNS,
 		chores,
-		nowState,
 		pile,
 		passes,
 		shownState,
-		stepsLeft,
 		stepsLine,
-		type ChoreView,
-		type Job,
-		type Pass,
-		type PassPart
+		type Job
 	} from './family';
 	import { canCancel, canRetry, offeredWhileViewing, startsIn } from './labels';
 	import { OWNED, addressOf, landingFor, type ActivityTab } from './tabs';
@@ -58,22 +52,21 @@
 	import SectionHeading from '$lib/components/common/SectionHeading.svelte';
 	import Note from '$lib/components/common/Note.svelte';
 	import { QUEUE_PAGE, Queue, type JobState, type Which } from './queue.svelte';
-	import { pressTasks, taskList } from './tasks.svelte';
+	import { taskList } from './tasks.svelte';
 	import { leftOut } from './left-out.svelte';
-	import TasksLeftOut from '$lib/settings-ui/TasksLeftOut.svelte';
 	import { kindChoices } from './kinds';
 	import Pager from '$lib/components/common/Pager.svelte';
+	import ActivitySummary from './ActivitySummary.svelte';
+	import { consequenceFor, doingOf, fileOf, subjectOf, whyOf } from './row-words';
 
-	/* Settings > Tasks and Activity: when each task runs, what Sift is doing, what happened and what
-	 * the program wrote down. Admin-only by its endpoints, not by this screen. The tabs filter in
-	 * place (this pane is inside the Settings sheet); which one an address opens is `tabs.ts`. */
+	/* Settings > Tasks and Activity: when each task runs, what Sift is doing, what happened and
+	 * what the program wrote down. */
 	const landed = landingFor(
 		typeof location === 'undefined' ? '' : location.search,
 		typeof location === 'undefined' ? '' : location.hash
 	);
 	let tab = $state<ActivityTab>(landed.tab);
-	/* The act History opens filtered to, where a door asked for one. History is keyed on it, so a
-	   second door asking for another act opens a fresh list rather than a stale one. */
+	/* The act History opens filtered to, where a door asked for one. */
 	let historyVerb = $state<string | undefined>(landed.verb);
 	/* And whether it opens on the decisions alone, keyed the same way. */
 	let historyDecisions = $state(landed.decisions ?? false);
@@ -84,9 +77,7 @@
 		{ id: 'log', label: COPY.tabs.log }
 	];
 
-	/** Show a tab, and put its address in the bar so a refresh or a copied link comes back to it.
-	 *  `replaceState` and not a push: the panel is one stop in the history, and which of its tabs
-	 *  was showing is not a place somebody navigated to: the rule `showSettingsSection` keeps. */
+	/** Show a tab, and put its address in the bar so a refresh or a copied link comes back to it. */
 	function choose(next: ActivityTab, verb?: string) {
 		tab = next;
 		historyVerb = next === 'history' ? verb : undefined;
@@ -101,9 +92,7 @@
 	}
 
 	/* EVERY KEY DRAWN ON A TAB IS OWNED BY THAT TAB, through the frame's own mechanism: a deep
-	   link asks the key's owner to open its place before it hunts for the row (`revealSetting`).
-	   So a link to the download switch, the older address of "How long tasks take", or a search
-	   result for "Saved to a device" lands on the right tab, filtered, and rings. */
+	   link asks the key's owner to open its place before it hunts for the row (`revealSetting`). */
 	onMount(() => {
 		/* Tasks draws a row per task, from the server, so no table lists them: a key on this
 		   section no other tab owns is a Tasks row, and a link to one opens Tasks first. */
@@ -128,9 +117,7 @@
 
 	const queue = new Queue();
 
-	// The clock the ages are measured against. A row saying "2m ago" is only true for a minute, and a
-	// list that only re-reads its clock when the server pushes would sit at "2m ago" for an hour if
-	// the queue went quiet.
+	// The clock the ages are measured against.
 	let now = $state(Math.floor(Date.now() / 1000));
 
 	let compact = $state(false);
@@ -140,8 +127,8 @@
 	/* Read when its tab opens, and again when the connection says the queue moved while it shows. */
 	whenChanged(jobChanges, () => void (tab === 'tasks' && queue.refresh()));
 
-	/* A slow beat while anything is outstanding: the counts are the library's and the estimate the
-	   ledger's, and neither moves the queue, so the socket alone would leave them stale. */
+	/* A slow beat while anything is outstanding: the counts are the library's and the estimate
+	   the ledger's, and neither moves the queue, so the socket alone would leave them stale. */
 	const ASK_EVERY_MS = 5000;
 
 	onMount(() => {
@@ -170,9 +157,7 @@
 	/* From the rail's own read, so a press there answers here immediately too. Activity is an admin's. */
 	const eco = $derived(currentTurboMode(true));
 
-	// Only the states that exist right now, so the row of tallies is not mostly zeroes. Ordered by the
-	// list rather than by the object's keys: what comes back from the server is a tally, and the order
-	// of its keys is not something to hang a stable UI on.
+	// Only the states that exist right now, so the row of tallies is not mostly zeroes.
 	const STATES: JobState[] = [
 		'running',
 		'queued',
@@ -183,19 +168,16 @@
 		'done'
 	];
 
-	/* The tab for "everything", which is the absence of a filter rather than a state. Named once
-	   here because the strip works in ids and the queue works in states, and the two meet on this
-	   one word. */
+	/* The tab for "everything", which is the absence of a filter rather than a state. */
 	const ALL = 'all';
-	/* The states that have something in them, and the one being looked at, even once it is empty.
-	   Left out, the tab you are on would vanish from under you the moment its last task finished,
-	   and the row would light nothing while the list underneath stayed filtered to it. */
+	/* The states that have something in them, and the one being looked at, even once it is
+	   empty. */
 	const present = $derived(
 		STATES.filter((state) => (shownCounts[state] ?? 0) > 0 || state === queue.filter)
 	);
 
 	/* THE TYPE NARROWING: one kind of task, or every kind, by the names the server declares and
-	   one "Older tasks" for every kind this version no longer runs. See `kinds.ts`. */
+	   one "Older tasks" for every kind this version no longer runs. */
 	const EVERY_KIND = 'all';
 	/* Every name a page has given a kind, so a chosen kind whose last row went keeps its words. */
 	const remembered: Record<string, string> = {};
@@ -234,53 +216,7 @@
 	$effect(() => leftOut.follow(queues.map((one) => one.moving).join()));
 	const chored = $derived(chores(queue.page, now));
 
-	/* The one list above the queue: a group heading, the group's rows, and under a pass of several
-	   kinds one row per kind. Keyed so a row keeps its place as the numbers tick. */
-	type Line =
-		| { kind: 'group'; id: string; title: string }
-		| { kind: 'pass'; id: string; pass: Pass }
-		| { kind: 'part'; id: string; pass: Pass; part: PassPart }
-		| { kind: 'chore'; id: string; chore: ChoreView };
-
-	/* A pass of several kinds folds its rows under an arrow and starts folded; a phone's card
-	   list has no arrow track, so there the kinds are always shown. */
-	let openPasses = $state<string[]>([]);
-	function togglePass(id: string): void {
-		openPasses = openPasses.includes(id)
-			? openPasses.filter((one) => one !== id)
-			: [...openPasses, id];
-	}
-
-	const lines = $derived<Line[]>([
-		{ kind: 'group', id: 'group:passes', title: COPY.groups.passes },
-		...queues.flatMap((pass): Line[] => [
-			{ kind: 'pass', id: `pass:${pass.id}`, pass },
-			...(phoneWidth.yes || openPasses.includes(pass.id) ? pass.parts : []).map((part): Line => ({
-				kind: 'part',
-				id: `part:${pass.id}:${part.type}`,
-				pass,
-				part
-			}))
-		]),
-		{ kind: 'group', id: 'group:housekeeping', title: COPY.groups.housekeeping },
-		...chored.map((chore): Line => ({ kind: 'chore', id: `chore:${chore.id}`, chore }))
-	]);
-
-	/* Run now here is the task's own Run now (`pressTasks`), one press with one sentence; a pass
-	   presses what the server says it is (`runs`), less a sub-task switched off. */
-	function pressesOf(one: Pass | ChoreView): { task: string; parts?: string[] }[] {
-		if ('runs' in one && one.runs.length > 0)
-			return one.runs.map((run) => ({ task: run.task, parts: run.parts ?? undefined }));
-		return one.task ? [{ task: one.task }] : [];
-	}
-
-	async function runNow(one: Pass | ChoreView): Promise<void> {
-		await pressTasks(pressesOf(one), 'now');
-		void queue.refresh();
-	}
-
-	/* PAUSE, RESUME AND CANCEL, on a pass, a sub-task and (on Options) the whole queue. A pause holds
-	   what starts next and lets what runs finish its step; Resume starts exactly what it held. */
+	/* PAUSE, RESUME AND CANCEL, on a pass, a sub-task and (on Options) the whole queue. */
 	async function doPause(which: Which, paused: boolean): Promise<void> {
 		try {
 			await queue.pause(which, paused);
@@ -310,59 +246,12 @@
 		}
 	}
 
-	/* The row's subject is the server's, resolved from the payload's ids, so a renamed file reads
-	   by its name now; whole-library work has none and leads with what it does. */
 	/* The row parked for the password, opened to its field, or null. */
 	let unlocking = $state<string | null>(null);
-
-	/* A row about its own file or folder is titled by it; any other is titled by what it does, and
-	   the one file its steps are about goes on the line under it. */
-	function subjectOf(job: Job): string {
-		return job.subject ?? job.name;
-	}
-
-	/** The file a finished row opens: its own. */
-	function fileOf(job: Job): string | null {
-		return job.subject_id ?? null;
-	}
-
-	/** Why a row failed, in one line with the file it was on: its family's newest failure on a
-	 *  folded row, its own reason on any other. */
-	function whyOf(job: Job): string | null {
-		const failure = job.steps?.failure;
-		if (failure) {
-			const on = failure.subject ? ` on ${failure.subject}` : '';
-			const tries = failure.attempts > 1 ? ` (tried ${failure.attempts} times)` : '';
-			return `${failure.name} failed${on}${tries}: ${failure.reason}`;
-		}
-		return job.reason ?? job.error ?? null;
-	}
-
-	/**
-	 * The second line: what is being done, a running or done job's note, and on a folded row what
-	 * is under it, a middle dot between. The doing is dropped when it is already the first line.
-	 */
-	function doingOf(job: Job, steps: string | null): string | null {
-		const doing = job.subject ? job.name : (job.steps?.subject ?? null);
-		const note = job.state === 'running' || job.state === 'done' ? job.note : null;
-		const said = [doing, note, steps].filter((one): one is string => Boolean(one));
-		return said.length > 0 ? said.join(' \u00b7 ') : null;
-	}
 
 	function ask(job: Job) {
 		confirming = job;
 		confirmOpen = true;
-	}
-
-	/* What a cancel calls off: a folded row's steps as the server counted them. */
-	function consequenceFor(job: Job): string {
-		if (job.type === 'performance_benchmark')
-			return "The tasks it paused start again, and the last benchmark's result stays. You can run it again afterwards.";
-		const kids = stepsLeft(job.steps);
-		const work = kids === 1 ? '1 task' : `${kids.toLocaleString()} tasks`;
-		return kids > 0
-			? `This cancels it and the ${work} it started that haven't finished. Work already done is kept, and you can run it again afterwards.`
-			: 'Work already done is kept, and you can run it again afterwards.';
 	}
 
 	async function doCancel() {
@@ -371,8 +260,8 @@
 		try {
 			await queue.cancel(job.id);
 		} catch {
-			// Never auto-dismissed, by the toaster's own rule: an action that did not happen is exactly
-			// the message worth not missing.
+			// Never auto-dismissed, by the toaster's own rule: an action that did not happen is
+			// exactly the message worth not missing.
 			toasts.show("Couldn't cancel that task", { tone: 'error' });
 		}
 	}
@@ -408,13 +297,11 @@
 	/* A failure that cannot succeed would otherwise stay until retried and failed twice. */
 	let clearingAll = $state(false);
 
-	/* Stopping the whole queue: for work nobody wants, not work gone wrong. Behind a confirmation,
-	   as the machine time already spent is not given back. */
+	/* Stopping the whole queue: for work nobody wants, not work gone wrong. */
 	let cancelingAll = $state(false);
 	let cancelAllOpen = $state(false);
 
-	/* Starting them again, rather than a folder scan that re-walks the library. Confirmed, as it can
-	   be hours of the machine. */
+	/* Starting them again, rather than a folder scan that re-walks the library. */
 	let startingCanceled = $state(false);
 	let startCanceledOpen = $state(false);
 
@@ -426,17 +313,16 @@
 		(shownCounts.queued ?? 0) + (shownCounts.running ?? 0) + (shownCounts.blocked ?? 0)
 	);
 	// `failures` rather than `failed`, which is what a queue's own tally of them is called a few
-	// lines up. Two things called the same word in one file is how the wrong one gets read.
+	// lines up.
 	const failures = $derived(counts.failed ?? 0);
 
-	/* A bulk action is offered for the pile being looked at, and its label names that pile and its
-	   number, so "them" always points at rows on screen. */
+	/* A bulk action is offered for the pile being looked at, and its label names that pile and
+	   its number, so "them" always points at rows on screen. */
 	function offeredFor(...states: JobState[]): boolean {
 		return queue.kind === null && offeredWhileViewing(queue.filter, ...states);
 	}
 
-	/* Which piles have an answer on the Options menu now. Named once, because the menu's groups
-	   are drawn only where they hold a row: a group with none would put a line under nothing. */
+	/* Which piles have an answer on the Options menu now. */
 	const failedOffered = $derived(offeredFor('failed') && failures > 0);
 	const outstandingOffered = $derived(
 		offeredFor('queued', 'running', 'blocked') && outstanding > 0
@@ -512,28 +398,6 @@
 		}
 	}
 </script>
-
-<!-- A pass's or a sub-task's pause (or resume) and cancel: glyph presses, named on the hover. -->
-{#snippet holdAndCancel(which: Which, title: string, paused: boolean)}
-	<Tooltip label={paused ? COPY.resume : COPY.pause}>
-		<Button
-			tone="ghost"
-			onclick={() => void doPause(which, !paused)}
-			aria-label="{paused ? COPY.resume : COPY.pause}: {title}"
-		>
-			<Icon name={paused ? 'play_arrow' : 'pause'} size={16} />
-		</Button>
-	</Tooltip>
-	<Tooltip label={COPY.cancel}>
-		<Button
-			tone="ghost"
-			onclick={() => askCancelPass(which, title)}
-			aria-label="{COPY.cancel}: {title}"
-		>
-			<Icon name="close" size={16} />
-		</Button>
-	</Tooltip>
-{/snippet}
 
 <!-- One row of the queue: a family's top row folded (its steps counted, one badge, failed if
      anything failed), a step under an opened family (`step`), or a step on a state's tab. -->
@@ -641,9 +505,7 @@
 		</span>
 	{/snippet}
 	{#snippet badge()}<Badge state={state as BadgeState} />{/snippet}
-	<!-- EACH COLUMN HOLDS WHAT ITS HEAD SAYS. Time left: a job waiting for a TIME says when it
-	     starts, the one time-left a row knows; without it a backup scheduled overnight reads as
-	     waiting beside work that really is stuck. -->
+	<!-- EACH COLUMN HOLDS WHAT ITS HEAD SAYS. -->
 	{#snippet startsAt()}
 		{#if startsIn(job.run_after, now)}
 			<!-- The moment it starts on the hover: a live list says how far away, and the whole
@@ -712,181 +574,15 @@
 {#snippet activity()}
 	<Problem message={queue.problem} />
 
-	<!-- One list for passes and housekeeping on the tab's columns (`ACTIVITY_COLUMNS`), so every
-	     status stands at one x; every row is listed, work or not, so none jumps as queues fill. -->
-	<!-- On a phone the same list as cards (`ACTIVITY_CARD`): a list reads its columns once, when
-	     it is made, so it is made again when the window crosses the phone's width. -->
-	{#key phoneWidth.yes}
-		<DataRows
-			items={lines}
-			key={(line: Line) => line.id}
-			label={COPY.summaryLabel}
-			columns={phoneWidth.yes ? ACTIVITY_CARD : ACTIVITY_COLUMNS}
-			actions={phoneWidth.yes ? undefined : ACTIVITY_ACTIONS}
-			folds={!phoneWidth.yes}
-			edges
-		>
-			{#snippet row(line: Line)}
-				{#if line.kind === 'group'}
-					<DataRow><SectionHeading>{line.title}</SectionHeading></DataRow>
-				{:else if line.kind === 'part'}
-					<!-- One kind of a pass that is several: under the pass, its own bar and count. The
-				     summed figure would count the library once per kind and describe none of them. -->
-					<DataRow
-						indent={1}
-						cells={phoneWidth.yes
-							? { card: partCard }
-							: { name: partName, bar: partBar, count: partCount }}
-						actions={phoneWidth.yes ? undefined : partActions}
-						{compact}
-					/>
-					{#snippet partCard()}
-						<span class="card">
-							<span class="card-head">{@render partName()}{@render partActions()}</span>
-							<span class="card-facts">{@render partCount()}</span>
-							{@render partBar()}
-						</span>
-					{/snippet}
-					<!-- A sub-task's own pause and cancel, as its pass has them. -->
-					{#snippet partActions()}
-						<span class="row-actions">
-							{@render holdAndCancel({ type: line.part.type }, line.part.label, line.part.paused)}
-						</span>
-					{/snippet}
-					{#snippet partName()}<span class="pass-title">{line.part.label}</span>{/snippet}
-					{#snippet partBar()}<ProgressBar
-							value={line.part.progress}
-							label={`${line.part.label} \u2014 ${line.part.count}`}
-						/>{/snippet}
-					{#snippet partCount()}<span class="pass-count">{line.part.count}</span>{/snippet}
-				{:else}
-					{@const one = line.kind === 'pass' ? line.pass : line.chore}
-					<DataRow
-						cells={phoneWidth.yes
-							? { card: lineCard }
-							: line.kind === 'pass'
-								? {
-										name: title,
-										status: nowWord,
-										left: timeLeft,
-										bar: passBar,
-										count: passCount
-									}
-								: { name: title, status: nowWord, left: timeLeft, bar: lastRun }}
-						spans={line.kind === 'chore' && !phoneWidth.yes ? { bar: 'count' } : undefined}
-						actions={phoneWidth.yes ? undefined : lineActions}
-						expanded={line.kind === 'pass' && line.pass.parts.length > 0 && !phoneWidth.yes
-							? openPasses.includes(line.pass.id)
-							: undefined}
-						ontoggle={line.kind === 'pass' && line.pass.parts.length > 0 && !phoneWidth.yes
-							? () => togglePass(line.pass.id)
-							: undefined}
-						toggleLabel="the kinds of {one.title}"
-						{compact}
-					/>
-					<!-- Run now, the task's own press; on a pass its pause and cancel after it. A chore that
-				     is not a task (a download, a transcode) has no Run now. On a phone they end the
-				     card's first line instead (`lineCard`), and the list has no actions track. -->
-					{#snippet lineActions()}
-						<span class="row-actions">
-							{#if pressesOf(one).length > 0}
-								<Button tone="link" size="small" onclick={() => void runNow(one)}
-									>{COPY.runNow}</Button
-								>
-							{/if}
-							{#if line.kind === 'pass'}
-								{@render holdAndCancel(
-									{ family: line.pass.id as Which['family'] },
-									one.title,
-									line.pass.paused
-								)}
-							{/if}
-						</span>
-					{/snippet}
-					<!-- The row as a card: the same cells, one under another, in the order they read
-				     across. The name with the row's one action at the card's end; the state, when
-				     and the count on one line, each its own words; the bar the card's full width,
-				     so every bar on the list is one length and reads against the next. -->
-					{#snippet lineCard()}
-						<span class="card">
-							<span class="card-head">{@render title()}{@render lineActions()}</span>
-							<span class="card-facts"
-								>{@render nowWord()}{@render timeLeft()}{#if line.kind === 'pass'}{@render passCount()}{:else}{@render lastRun()}{/if}</span
-							>
-							{#if line.kind === 'pass'}{@render passBar()}{/if}
-						</span>
-					{/snippet}
-					{#snippet title()}<span class="pass-title">{one.title}</span>{/snippet}
-					<!-- The state as a pill, the shape Done and Failed wear on the rows under it: up to
-				     date is done's, waiting on something is blocked's, work under way is the In
-				     progress chip the job rows under it wear (blue, its mark turning), anything else
-				     is quiet. -->
-					<!-- On the app's tooltip as well, as a column can cut the pill's words short; a failed
-				     pass's hover says why, and pressed it opens the failed ones below. -->
-					{#snippet nowWord()}
-						{#if line.kind === 'pass' && line.pass.why}
-							<Tooltip label={COPY.failedWhy(line.pass.why)} stretch>
-								<Button tone="quiet" onclick={showFailed}
-									><Badge state={nowState(one.tone)} label={one.now} /></Button
-								>
-							</Tooltip>
-						{:else if line.kind === 'pass' && line.pass.leftOut > 0}
-							<TasksLeftOut
-								products={leftOut.named(line.pass.leftOutOf)}
-								title={one.title}
-								tone="quiet"><Badge state={nowState(one.tone)} label={one.now} /></TasksLeftOut
-							>
-						{:else}
-							<Tooltip label={one.now} stretch
-								><Badge state={nowState(one.tone)} label={one.now} /></Tooltip
-							>
-						{/if}
-					{/snippet}
-					<!-- An estimate, or the reason there is not going to be one: "it cannot start" is an
-				     answer to "when will it be done". A switched-off pass links to where it is
-				     switched on. -->
-					{#snippet timeLeft()}
-						{#if line.kind === 'pass' && line.pass.settingLink}
-							<span class="pass-eta"><SettingLink section="importing">{one.when}</SettingLink></span
-							>
-						{:else}
-							<span class="pass-eta">{one.when}</span>
-						{/if}
-					{/snippet}
-					<!-- DONE OVER WHAT WANTS DOING, both counted from the library, so the bar is defined
-				     while nothing runs. A pass of several kinds draws its bars on the rows under it. -->
-					{#snippet passBar()}
-						{#if line.kind === 'pass' && (line.pass.parts.length === 0 || line.pass.moving)}
-							<ProgressBar
-								value={line.pass.progress}
-								label={`${one.title} \u2014 ${line.pass.done}`}
-							/>
-						{/if}
-					{/snippet}
-					{#snippet passCount()}
-						{#if line.kind === 'pass' && (line.pass.parts.length === 0 || line.pass.moving)}
-							<span class="pass-count">{line.pass.done}</span>
-						{/if}
-					{/snippet}
-					<!-- No bar for a chore: nothing counts the files that want a duplicate sweep, so the
-				     bar and count columns say how the last run went instead. -->
-					<!-- A run that failed says why on the hover, and the phrase opens the failed ones in
-				     the list below, where its row carries the whole of what went wrong. -->
-					{#snippet lastRun()}
-						{#if line.kind === 'chore' && line.chore.why}
-							<span class="pass-last">
-								<Tooltip label={COPY.failedWhy(line.chore.why)}>
-									<Button tone="link" size="small" class="failed-run" onclick={showFailed}
-										>{line.chore.last}</Button
-									>
-								</Tooltip>
-							</span>
-						{:else if line.kind === 'chore'}<span class="pass-last">{line.chore.last}</span>{/if}
-					{/snippet}
-				{/if}
-			{/snippet}
-		</DataRows>
-	{/key}
+	<ActivitySummary
+		{queue}
+		{queues}
+		{chored}
+		{compact}
+		onshowfailed={showFailed}
+		onpause={doPause}
+		oncancelpass={askCancelPass}
+	/>
 
 	<!-- Which pile is looked at: the strip every entity page draws, in its value mode (a link would
 	     tear down the page under the Settings sheet), in the badge's own words. -->
@@ -1011,8 +707,7 @@
 		<div class="stepping-back"><Note>{COPY.steppingBack(eco)}</Note></div>
 	{/if}
 
-	<!-- The one list the strip filters, whichever state it is in. On the same columns as the list
-	     above, so every status on the tab stands at one x. -->
+	<!-- The one list the strip filters, whichever state it is in. -->
 	<div id={listId} role="tabpanel" aria-label="Tasks">
 		<!-- Nothing read is not nothing there: a skeleton until a read lands, and the Problem above
 		     speaks for a read that failed (`Queue.refresh` keeps a good page). -->
@@ -1159,19 +854,6 @@
 		row-gap: var(--space-1);
 	}
 
-	/* The name at the start and the row's one action at the card's end, on one line. */
-	.card-head {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: var(--space-3);
-	}
-
-	/* Words on a card start where the name starts: the Done column's end edge is not there. */
-	.card .pass-last {
-		text-align: start;
-	}
-
 	.card .finished {
 		justify-content: flex-start;
 	}
@@ -1232,39 +914,6 @@
 		padding-block: var(--space-1);
 	}
 
-	.pass-title {
-		color: var(--sift-ink-2);
-		font: var(--text-body-sm);
-	}
-
-	/* How the last run went spans Progress and Done, ending on Done's edge as the counts do. */
-	.pass-last {
-		display: block;
-		text-align: end;
-		color: var(--sift-ink-3);
-		font: var(--text-body-sm);
-	}
-
-	/* A failed run's phrase in the failure's ink, dotted under: there is more behind it. */
-	.pass-last :global(.failed-run) {
-		font: inherit;
-		color: var(--sift-bad-text);
-		text-decoration: underline dotted;
-		text-underline-offset: 0.15em;
-	}
-
-	/* Words, so left: right-aligned sentences of different lengths have a ragged left edge. */
-	.pass-eta {
-		color: var(--sift-ink-3);
-		font: var(--text-body-sm);
-	}
-
-	/* The count column is declared `end`; this is only its colour and face. */
-	.pass-count {
-		color: var(--sift-ink-3);
-		font: var(--text-data);
-	}
-
 	/* The field a row parked for the password opens, under the sentence that asks for it. */
 	.unlock-here,
 	.unlock-door {
@@ -1289,13 +938,6 @@
 		justify-content: flex-end;
 		flex-wrap: wrap;
 		column-gap: var(--space-2);
-	}
-
-	/* A row's presses together at its end: Run now, then the glyphs. */
-	.row-actions {
-		display: inline-flex;
-		align-items: center;
-		gap: var(--space-1);
 	}
 
 	.attempts,

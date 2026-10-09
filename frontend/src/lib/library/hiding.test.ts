@@ -2,11 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '$lib/api/client';
 import { setHidden } from '$lib/library/hiding';
 
-/* Putting things in the vault, from wherever the menu is.
- *
- * Each kind has its own endpoint and everything around the write is the same, so it lives in one
- * place: a wall that grows a Hide item gets the refusal and the one press back whole.
- */
+/* Putting things in the vault, from wherever the menu is. */
 
 const shown = vi.hoisted(() => vi.fn());
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: shown } }));
@@ -79,9 +75,8 @@ describe('hiding something', () => {
 });
 
 describe('when it is refused', () => {
-	/* The PIN is the only thing that opens the vault again, so hiding something without one is not
-	 * hiding it. It is losing it. The server refuses, and this is the one failure worth its own
-	 * sentence: every other one is "that did not work", and this one says what to do. */
+	/* The PIN is the only thing that opens the vault again, so hiding something without one is
+	 * not hiding it. */
 	it.each([401, 409])('says to set a PIN rather than that it broke (%i)', async (status) => {
 		const set = vi.fn().mockRejectedValue(new ApiError(status, 'nope'));
 
@@ -112,8 +107,8 @@ describe('when it is refused', () => {
 	});
 
 	it('still reports what got through before it stopped', async () => {
-		// Half a hide is a real state on the server, and pretending otherwise leaves somebody with no
-		// way back to the rows that did move.
+		// Half a hide is a real state on the server, and pretending otherwise leaves somebody with
+		// no way back to the rows that did move.
 		const set = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('down'));
 
 		const moved = await setHidden(['a', 'b'], true, { noun: 'file', set });
@@ -122,13 +117,8 @@ describe('when it is refused', () => {
 	});
 });
 
-/*
- * A KIND WHOSE ENDPOINT TAKES A LIST.
- *
- * Files have one; the five named kinds do not, so the loop above stays for them. What is asserted
- * here is that the selection goes in ONE request, that the undo goes back the same way, and what a
- * partial answer (how many were left out, never which) is allowed to do to the screen.
- */
+/* A KIND WHOSE ENDPOINT TAKES A LIST. Files have one; the five named kinds do not, so the loop
+ * above stays for them. */
 describe('a kind that can be hidden a selection at a time', () => {
 	const answered = {
 		changed: 2,
@@ -164,8 +154,7 @@ describe('a kind that can be hidden a selection at a time', () => {
 	});
 
 	/* The hide was made with Hidden locked, so the Undo is refused: the server resolves a hidden
-	 * thing only for a session that has proved the PIN. The Undo asks for it in the one shared
-	 * prompt and then tries once more, so one press and one PIN bring it back. */
+	 * thing only for a session that has proved the PIN. */
 	it('asks for the PIN when Undo meets a locked Hidden, then puts it back', async () => {
 		const setMany = vi.fn().mockResolvedValue(answered);
 		await setHidden(['a'], true, { noun: 'file', set: vi.fn(), setMany });
@@ -276,20 +265,7 @@ describe('a kind that can be hidden a selection at a time', () => {
 	});
 });
 
-/*
- * ONE COPY OF THE SENTENCE, and a ratchet at zero other copies.
- *
- * The mechanism above is shared and the walls all go through it; a hand-written copy of the vault's
- * refusal on an entity page drifts: naming a Settings section by an old name, reading only the
- * 409 and so saying "that could not be changed" for the 401 that means the same thing to whoever is
- * standing in front of it, and offering no way back. Every page goes through `setHidden`, so there
- * is no allowed list to keep short and no entry for the next copy to be added beside. The sentence
- * lives in `hiding.ts` and in nothing else.
- *
- * The first expectation is the known positive, and it is the half that matters: this walk answers
- * "no copies" and "the rule has stopped being written" with the same silence, so the check has to
- * insist on finding the one real copy before it is entitled to refuse any others.
- */
+/* ONE COPY OF THE SENTENCE, and a ratchet at zero other copies. */
 describe('the vault refusal', () => {
 	const A_SECOND_COPY = /Set a PIN in /;
 	const THE_ONE_PLACE = 'lib/library/hiding.ts';

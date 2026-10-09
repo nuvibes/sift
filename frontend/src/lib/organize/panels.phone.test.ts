@@ -1,8 +1,5 @@
-/*
- * The contact sheets, which a phone's width does not draw: the queues whose work is a whole group
- * laid side by side. The queues that are one question at a time stay, and a phone answers those
- * well, so the list is exact rather than "everything under Faces".
- */
+/* The contact sheets, which a phone's width does not draw: the queues whose work is a whole
+ * group laid side by side. */
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { needsWiderWindow } from './panels';

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* The Playback pane's words, and what somebody can find on it that is not a registry setting.
- *
- * ONE COPY MODULE PER PANE: `Playback.svelte` draws every word it adds from `COPY`, and the search
- * entry below is built from the same object, so the row and its result cannot be worded apart. The
- * registry's rows (Playback's own and Theater's, which this pane draws as a group of its own) are
- * indexed from their declarations. */
+/* The Playback pane's words, and what somebody can find on it that is not a registry setting. */
 import type { Searchable } from './search';
 
 export const COPY = {

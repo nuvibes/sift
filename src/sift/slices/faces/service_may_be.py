@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The "these groups may be her" cards: which unnamed groups look like a person or sit in her
-folder, and the Yes and the No that answer for a whole group.
-"""
+"""The "these groups may be her" cards: unnamed groups that look like a person or sit in her
+folder, and the Yes and the No that answer for a whole group."""
 
 from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -35,20 +34,10 @@ log = get_logger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class ToCheckView:
-    """One press's worth of work on the review list, whichever of the two questions it asks.
+    """One press's worth of work on the review list; `kind` says which card to draw.
 
-    ONE list, because the thing somebody is deciding between is not "shall I answer a proposal or
-    a group": it is which press settles the most faces. So the two questions are ranked together
-    and drawn as one column, and `kind` is what says which card to draw. See `ToCheckKind`.
-
-    `size` is what the press settles, counted as this viewer may see it: a person's standing
-    proposals, or the faces in a pile. `best` belongs to a proposal alone (a pile carries no
-    measurement of who it might be) and `status` to a pile alone.
-
-    `person_id` is filled in for a MISMATCH alone, and it is there because that is the one kind
-    whose `id` is not a person: the row is about a FILE, and the person on it is a second fact the
-    two answers both need. On the other two kinds the person either IS the id or does not exist
-    yet, so a field repeating it would be a second place for it to be wrong.
+    `size` is what the press settles as this viewer may see it; `person_id` is set for a MISMATCH
+    alone, whose `id` is a file.
     """
 
     kind: ToCheckKind
@@ -70,21 +59,13 @@ class ToCheckView:
 
 #: Why a group may be somebody: the group as a whole comes close to their pictures.
 LIKENESS_REASON = "likeness"
-#: The third kind: the person is known by a stash-box's starter pictures alone, so "looks like
-#: her" means "looks like the box's pictures of her", said with the boxes by name (`box_names`),
-#: because it is weaker evidence.
+#: The person is known by a stash-box's starter pictures alone: weaker, so the boxes are named.
 STARTER_REASON = "stash-box"
 
 
 @dataclass(frozen=True, slots=True)
 class GroupReason:
-    """One reason a group may be somebody, as one viewer may be told it.
-
-    `kind` is `likeness` (the group's middle against their pictures: the group's own `likeness`
-    carries the number), the folder reader's `folder`, with the folder and the two file counts its
-    sentence needs, counted as this viewer may see them (`proposals_for`), or `STARTER_REASON`
-    with its `box_names` (empty where the pictures predate a starter recording its box). Each kind
-    leaves the others' fields absent."""
+    """One reason a group may be somebody, as one viewer may be told it; `kind` picks the fields."""
 
     kind: str
     folder_id: str | None = None
@@ -98,12 +79,8 @@ class GroupReason:
 class GroupMayBe:
     """One unnamed group on a "these groups may be her" card.
 
-    `size` is the group's unnamed faces this viewer may see. `likeness` is how close the group's
-    middle comes to the person's pictures, on the group scale (`tuning.GROUP_ASK`), and None where
-    it could not be measured: a group proposed by her folder with too few faces, or one whose
-    faces two models described. `ticked` is whether the card starts with it chosen: at or above
-    `tuning.GROUP_TICK`, or proposed for a reason that is not a likeness. `faces` are the ones the
-    card shows, and the ones a Yes confirms.
+    `likeness` is on the group scale (`tuning.GROUP_ASK`), None where it could not be measured;
+    `ticked` is whether the card starts with it chosen.
     """
 
     pile_id: str
@@ -127,13 +104,8 @@ class _MayBe:
 def _closeness(
     gallery: matching.Gallery, middles: Sequence[Vector]
 ) -> tuple[tuple[str, ...], list[list[float]]]:
-    """How close each group's middle comes to each person: `(people, grid)`, one row per middle
-    and one column per person, the best of that person's gallery rows: the product
-    `matching.likeness` takes for one face, taken for every group in one go.
-
-    Plain lists out, so the caller holds no array type; the arithmetic is one matrix product, run
-    off the loop by the caller because it grows with groups times people.
-    """
+    """How close each group's middle comes to each person: `(people, grid)`, one row per middle,
+    the best of each person's gallery rows, in one matrix product."""
     # Imported here: the face service names numpy only for signatures, and `matching` has it loaded.
     import numpy as np
 
@@ -146,27 +118,20 @@ def _closeness(
     return people, best.tolist()
 
 
-#: The reasons a likeness IS the evidence for: the group's middle against her own pictures, or a
-#: stash-box's pictures of her. Every other reason (her folder) is one the number does not measure.
+#: The reasons a likeness measures; any other reason (her folder) the number does not.
 _MEASURED_REASONS = frozenset({LIKENESS_REASON, STARTER_REASON})
 
 
 def _ticked(group: _MayBe) -> bool:
-    """Whether a group starts chosen on its card: close enough by `tuning.GROUP_TICK`, or proposed
-    for a reason the likeness does not measure (her folder).
-
-    Not every reason other than `LIKENESS_REASON` is unmeasured: the stash-box reason is a likeness
-    too (to the box's pictures of her, the weaker kind), so it is held to the same line, or a
-    group offered on starters alone would start ticked at 38% as readily as at 80%.
-    """
+    """Whether a group starts chosen: close enough by `tuning.GROUP_TICK`, or proposed for a
+    reason the likeness does not measure. Starters are held to the line too."""
     if any(reason.kind not in _MEASURED_REASONS for reason in group.reasons):
         return True
     return group.likeness is not None and group.likeness >= tuning.GROUP_TICK
 
 
 def _closest_first(group: _MayBe) -> tuple[float, int, str]:
-    """The order a card lists its groups in, and the cards are ranked by their first: the closest
-    first, a group with no measurement last, then the larger, then the id so the order is stable."""
+    """A card's order for its groups: closest, unmeasured last, then larger, then the id."""
     return (
         -(group.likeness if group.likeness is not None else -2.0),
         -len(group.faces),
@@ -212,34 +177,11 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         faces_per_group: int = tuning.FACES_PER_GROUP,
         who: frozenset[str] | None = None,
     ) -> tuple[list[ToCheckView], int]:
-        """One card per person ("these groups may be her"), listing the unnamed groups that may be
-        them, closest first. A page of cards, and how many cards there are.
+        """One card per person listing the unnamed groups that may be them, closest first.
 
-        **The one question here asked of a whole group.** Everything else on the review list
-        compares one face with a person, so a group whose faces each fall just short of the ask line
-        would never come up at all, and the groups close to somebody typically hold no face that
-        clears the ask line on its own. The group's middle, compared with the person's pictures, is
-        what says the group as a whole looks like her; see `tuning.GROUP_ASK` for the measurement
-        and why the single-face lines cannot be borrowed.
-
-        Three kinds of reason reach one card, so one press answers all of them: the likeness, the
-        folder reader's proposal (`proposals_for`: most of a folder filed as her is this group),
-        and whatever kind comes next: the shape leaves `GroupReason.kind` open.
-
-        **Always asked, never attached**, whatever the number: a group
-        is up to hundreds of faces nobody has looked at, and naming them all on an average is
-        exactly the silent decision this feature keeps to one face at a time.
-
-        A group is offered to its CLOSEST person over the line (one card, not every card it is
-        near), leaving out anybody most of its faces were refused as, which is the rule
-        `matching.best_match` keeps for one face: a refused person is removed before the closest is
-        chosen, so the next one can be offered. A folder's proposal is added beside that, for the
-        person the folder names. The person must be one this viewer may be told about and the group
-        one they may see a face of, or the card is absent rather than nameless: the rule the
-        look-alike cards follow.
-
-        Re-read on every read of the list, which is what keeps it current without a scheduler: a
-        naming, a refusal, a regrouping and a new picture all move one of the reads underneath.
+        A page of cards and their total. A group's middle is compared with the person, since its
+        faces may each fall short; always asked, never attached; offered to its closest person not
+        refused, beside any folder proposal. A person or group this viewer may not see is absent.
         """
         if not await self.enabled():
             return [], 0
@@ -275,12 +217,10 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
             views.append(
                 ToCheckView(
                     kind=ToCheckKind.MAY_BE,
-                    # The PERSON, as a PERSON card's is: the card is about her, and the press is
-                    # made about her. `kind` tells the two apart. See `ToCheckKind.MAY_BE`.
+                    # The person, as a PERSON card's is; `kind` tells the two apart.
                     id=person_id,
                     size=sum(group.size for group in drawn),
-                    # One face of each group, so a reader that draws any card by its first faces
-                    # (the board's strip) has a picture of every group on this one.
+                    # One face of each group, for a reader that draws a card by its first faces.
                     faces=[group.faces[0] for group in drawn if group.faces],
                     person_name=name,
                     best=next((one.likeness for one in groups if one.likeness is not None), None),
@@ -292,13 +232,8 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     async def _may_be_cards(
         self, viewer: Viewer, *, only: str | None = None
     ) -> tuple[list[tuple[str, str, list[_MayBe]]], dict[str, bool]]:
-        """Every "these groups may be her" card this viewer may be shown, in order, with the
-        groups each lists and every face of theirs this viewer may see, and `_shown_of`'s answer
-        for those faces' files, so a drawing knows which are locked. See `groups_that_may_be`.
-
-        `only` narrows to one person, which is what a press re-reads: the groups it may act on are
-        the ones this same rule offers NOW, never a list the page sent back.
-        """
+        """Every may-be card this viewer may be shown, in order, and `_shown_of`'s answer for
+        its faces. `only` narrows to one person, as a press re-reads it."""
         configured = await self.configuration()
         gallery = await self._gallery_for(configured.groups, configured.recognizer)
         middles = (
@@ -318,16 +253,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
             row, column = row_of.get(pile_id), column_of.get(person_id)
             return None if row is None or column is None else float(grid[row][column])
 
-        # Who each group is near, closest first: only the people over the line.
-        near: dict[str, list[str]] = {}
-        for pile_id, row in row_of.items():
-            over = [
-                (float(grid[row][column]), person_id)
-                for column, person_id in enumerate(people)
-                if grid[row][column] >= tuning.GROUP_ASK
-            ]
-            if over:
-                near[pile_id] = [person_id for _score, person_id in sorted(over, reverse=True)]
+        near = _near_people(people, grid, row_of)
         proposed = await self.proposals_for(viewer, await self._store.proposed_piles())
         asked = sorted(set(near) | set(proposed))
         held = await self._store.tracks_in_piles(asked)
@@ -339,40 +265,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
             return faces == 0 or refusals > faces * tuning.GROUP_REFUSED_SHARE
 
         reason_of = await self._likeness_reasons(near, gallery.starters_only)
-        found: dict[str, dict[str, _MayBe]] = {}
-        for pile_id, candidates in near.items():
-            for person_id in candidates:
-                if answered_no(pile_id, person_id):
-                    continue
-                found.setdefault(person_id, {})[pile_id] = _MayBe(
-                    pile_id=pile_id,
-                    likeness=likeness(pile_id, person_id),
-                    reasons=[reason_of[person_id]],
-                    faces=[],
-                )
-                break
-        for pile_id, proposals in proposed.items():
-            for one in proposals:
-                if answered_no(pile_id, one.person_id):
-                    continue
-                entry = found.setdefault(one.person_id, {}).setdefault(
-                    pile_id,
-                    _MayBe(
-                        pile_id=pile_id,
-                        likeness=likeness(pile_id, one.person_id),
-                        reasons=[],
-                        faces=[],
-                    ),
-                )
-                entry.reasons.append(
-                    GroupReason(
-                        kind=one.reason,
-                        folder_id=one.folder_id,
-                        folder_name=one.folder_name,
-                        in_folder=one.in_folder,
-                        group_files=one.group_files,
-                    )
-                )
+        found = _gathered(near, proposed, likeness, answered_no, reason_of)
         if only is not None:
             found = {only: found[only]} if only in found else {}
         names = await self._names_for(viewer, list(found))
@@ -385,29 +278,13 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
                 for track in held.get(pile_id, [])
             ],
         )
-        cards: list[tuple[str, str, list[_MayBe]]] = []
-        for person_id, groups in found.items():
-            name = names.get(person_id)
-            if name is None:
-                continue
-            kept: list[_MayBe] = []
-            for entry in groups.values():
-                entry.faces = [
-                    track for track in held.get(entry.pile_id, []) if track.asset_id in shown
-                ]
-                if entry.faces:
-                    kept.append(entry)
-            if kept:
-                kept.sort(key=_closest_first)
-                cards.append((person_id, name, kept))
-        cards.sort(key=lambda card: (_closest_first(card[2][0]), card[1].casefold(), card[0]))
+        cards = _cards_of(found, names, held, shown)
         return cards, shown
 
     async def _likeness_reasons(
         self, near: Mapping[str, Sequence[str]], starters_only: frozenset[str]
     ) -> dict[str, GroupReason]:
-        """Why each person a group is near may be it (`STARTER_REASON` or `LIKENESS_REASON`), with
-        the starter pictures' boxes read once for everyone rather than once per group."""
+        """Why each person a group is near may be it, the starters' boxes read once for all."""
         everyone = {person_id for candidates in near.values() for person_id in candidates}
         boxes = await self._store.starter_boxes(sorted(everyone & starters_only))
         return {
@@ -418,13 +295,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         }
 
     async def _groups_standing(self, viewer: Viewer, person_id: str) -> dict[str, _MayBe]:
-        """The groups one person's card offers NOW, by id, every one of them (not the card's page).
-
-        What both answers act on, narrowed to the ids the press sent: a group answered since the
-        card was drawn, one somebody else's card holds, and an id that never existed are one case
-        (not offered, so not acted on), and none of them can widen the press. The rule
-        `_narrowed` keeps for a person's own faces.
-        """
+        """The groups one person's card offers now, by id: what an answer may act on."""
         cards, _shown = await self._may_be_cards(viewer, only=person_id)
         return {one.pile_id: one for _id, _name, groups in cards for one in groups}
 
@@ -433,23 +304,8 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     ) -> RunAnswered:
         """Yes, these groups are her: the faces shown are confirmed, the rest are offered.
 
-        **Both halves of naming a group from its card, through the door that already does it**
-        (`name_with_their_group`): the faces somebody LOOKED AT are confirmed (they become
-        references and teach Sift), and the rest of each group is offered as questions about her
-        (`_offer_their_groups`), which a re-match scores and keeps asking (a whole group is always
-        asked, never attached). Confirming all of every group would put faces nobody saw into the
-        gallery she is recognized by, which is the one thing that door refuses to do.
-
-        `track_ids` are the faces the card showed, and only those inside a group the card still
-        offers are confirmed (`_groups_standing`), on files this user may act on. Their groups are
-        the ones offered on: a group whose shown faces were all out of reach is not named at all.
-
-        A folder's proposal about a group answered here is settled as accepted, so the folder
-        reader never asks it again (`Store.settle_pile_proposal`).
-
-        One receipt for the press, whose Undo takes the name off every face it touched and puts them
-        back into groups (`unname_groups`), and puts a folder's proposal it accepted back to asking
-        (`Store.reopen_accepted_proposal`), the state it held before the press.
+        Only faces in a group the card still offers are confirmed; a folder proposal answered here
+        is accepted. One receipt, undone by `unname_groups`.
         """
         await self._require_enabled()
         if not await self.may_see_person(viewer, person_id):
@@ -462,8 +318,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         naming = list(actionable.allowed)
         if not naming:
             return RunAnswered(changed=0)
-        # The proposals are settled inside, before the receipt is written, so it can name the ones
-        # this press accepted and its Undo can put them back to asking.
+        # Proposals are settled inside, before the receipt, so its Undo can reopen them.
         return await self._name_groups_recorded(
             viewer,
             person_id,
@@ -476,16 +331,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     async def name_groups(
         self, viewer: Viewer, track_ids: Sequence[str], person_id: str
     ) -> RunAnswered:
-        """Name these faces and offer the rest of their groups, with the receipt a group's Yes writes.
-
-        What naming a group from its own card under Unnamed faces does. It writes the same receipt a
-        "these groups may be her" card writes (one act, one receipt, the shape `confirm_groups`
-        writes, `NAMED_GROUPS`), so Undo takes the name off every face the press touched and
-        groups them again (`unname_groups`); the History lines alone cannot be taken back.
-
-        Faces in no group name only themselves (`name_with_their_group` offers nothing for them);
-        a press over such faces has no group to take back and writes no group receipt.
-        """
+        """Name these faces and offer the rest of their groups, with a group Yes's receipt."""
         await self._require_enabled()
         piles = sorted(
             {
@@ -511,14 +357,8 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         groups: int,
         proposals: Sequence[str] = (),
     ) -> RunAnswered:
-        """Both halves of naming groups, and the one receipt for them. See `confirm_groups`.
-
-        `proposals` are the groups whose folder proposal a Yes answers: settled as accepted once
-        a face is confirmed, and the ones that moved are written into the receipt.
-        """
-        # Every unnamed face of those groups, read BEFORE anything is written, so the receipt can
-        # say which of them this press offered: afterwards they carry her and nothing else tells
-        # them from a question put last week.
+        """Both halves of naming groups and their one receipt; `proposals` settle as accepted."""
+        # Read before any write, so the receipt can say which faces this press offered.
         before = await self._store.tracks_in_piles(list(piles))
         every = [track.id for tracks in before.values() for track in tracks]
         pictures = await self._store.reference_count(person_id)
@@ -543,8 +383,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
             and now.person_id == person_id
             and now.attribution is Attribution.SUGGESTED
         ]
-        # A folder's proposal about a group answered here is settled as accepted, so the folder
-        # reader never asks it again; only a proposal still asking moves (`settle_pile_proposal`).
+        # Only a proposal still asking moves (`settle_pile_proposal`).
         accepted = [
             pile_id
             for pile_id in (proposals if confirmed else ())
@@ -575,18 +414,8 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     ) -> RunAnswered:
         """No, these groups are not her: every face of theirs this user may act on is refused.
 
-        **Refused face by face, through `reject`**: the one door a "not her" goes through, and
-        the bulk No's shape (`_refuse_run`). That is what makes the answer outlast a regrouping: a
-        refusal is kept per face (and across a rescan, `face_rejected`), so a group rebuilt from
-        these faces under a new id is still mostly refused as her and is not offered again
-        (`tuning.GROUP_REFUSED_SHARE`). The groups themselves stay where they were, under Faces to
-        name, for somebody to say who they are.
-
-        A folder's proposal about a group answered here is settled as refused, so the folder reader
-        never makes it again even after the group is rebuilt (`Store.propose_pile` reads the
-        refusals too).
-
-        One receipt, whose Undo forgets the refusals (`unrefuse_groups`).
+        Refused face by face through `reject`, so the answer outlasts a regrouping; a folder
+        proposal is settled as refused. One receipt, undone by `unrefuse_groups`.
         """
         await self._require_enabled()
         if not await self.may_see_person(viewer, person_id):
@@ -617,19 +446,10 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         *,
         made: Mapping[str, Sequence[str]] | None = None,
     ) -> int:
-        """Take back a Yes on a "these groups may be her" card. Returns how many faces came back.
+        """Take back a Yes on a may-be card. Returns how many faces came back.
 
-        Each face goes back to nobody (which is where every one of them was before the press), and
-        only if it still stands as the press left it: confirmed as her, or a question about her. A
-        face somebody has answered since carries the newer decision and is left alone (the guard
-        `Store.restate` keeps). A confirmed face's remembered decision and the references it filed
-        go with the name, as `unteach` does, or the next scan would put her back: the rows the
-        receipt says the press created (`made`), or by the face's pictures for a receipt that
-        kept none (`_take_references_back`).
-
-        Then the loose faces are grouped again (incrementally): naming emptied their groups and an
-        empty group is dropped, so without it they would sit in no group at all (on no screen)
-        until something else asked for a grouping.
+        Only faces still as the press left them go back to nobody, with what they filed; the loose
+        faces are then grouped again.
         """
         await self._require_enabled()
         took = set(confirmed)
@@ -657,17 +477,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         return len(landed)
 
     async def unrefuse_groups(self, person_id: str, track_ids: Sequence[str]) -> int:
-        """Take back a No on a "these groups may be her" card. Returns how many faces came back.
-
-        The refusals are forgotten and nothing else moves: the faces were nobody's before the
-        press and are nobody's after it. A face somebody has since named is left alone: its
-        refusal belongs to the newer decision now.
-
-        A folder's proposal the No settled comes back too: the refusal is what settled it, so
-        taking the refusal back puts it back under Needs your input with its folder reason (the
-        likeness reason comes back on its own, on the next read of the list), or the undo would be
-        half done.
-        """
+        """Take back a No on a may-be card, reopening any folder proposal it settled. How many."""
         await self._require_enabled()
         found = await self._store.tracks(list(dict.fromkeys(track_ids)))
         back: list[str] = []
@@ -699,11 +509,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         taught: Taught | None = None,
         accepted: Sequence[str] = (),
     ) -> str:
-        """The receipt for a Yes on a "these groups may be her" card. See `unname_groups`.
-
-        With what the press filed, gave and retired (`Taught`), and the groups whose folder
-        proposal it accepted, so the Undo puts back exactly those.
-        """
+        """The receipt for a Yes on a may-be card, with what it taught and proposals accepted."""
         if self._recorder is None or not confirmed:
             return ""
         name = await self.name_of(viewer, person_id)
@@ -723,8 +529,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
         subjects: list[Subject] = [Subject(kind="person", id=person_id)]
         subjects += [Subject(kind="asset", id=asset_id) for asset_id in dict.fromkeys(assets)]
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it, never one receipt short.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             return await self._recorder.record_on(
                 connection,
@@ -745,7 +550,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
                         "person_id": person_id,
                         "track_ids": list(confirmed),
                         "offered": list(offered),
-                        # The faces this press CONFIRMED; the offered ones were asked, not answered.
+                        # The faces this press confirmed; the offered ones were only asked.
                         RECEIPT_FACES: answered,
                         **learned,
                         **({"proposals": list(accepted)} if accepted else {}),
@@ -770,8 +575,7 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
             for asset_id in dict.fromkeys(track.asset_id for track in refusing)
         ]
         async with self._store.database.write() as connection:
-            # Rung on the receipt's own commit, so a tab that re-read on the press's earlier bell
-            # reads again with this receipt in it, never one receipt short.
+            # Rung on the receipt's own commit, so a re-read tab finds it.
             announce(EVERY_ADMIN, About.LIBRARY)
             return await self._recorder.record_on(
                 connection,
@@ -802,17 +606,8 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
     ) -> dict[str, list[GroupProposalView]]:
         """What is proposed about these groups, as this viewer may be told it, keyed by group.
 
-        The stored proposal is the folder reader's conclusion (`Store.pile_proposals`); what is
-        answered here is its sentence ("41 of the 47 files in this group are in the folder Nadia
-        Vance"), counted again as THIS viewer may see it. The counts the pass stored cover every
-        file, including ones this viewer may not be told exist, so they are never sent.
-
-        A proposal is left out entirely when its person or its folder is not one this viewer may
-        see, or when none of the group's files in that folder is: a sentence naming either is a
-        statement that they exist, which is what concealment is for.
-
-        The folder's own files are asked of the kernel's tree, never of these tables (the rule
-        `evidence.py` states), once per folder however many groups it proposed.
+        Counted again as this viewer may see; a proposal whose person, folder or files they may
+        not see is left out.
         """
         if not pile_ids or not await self.enabled():
             return {}
@@ -852,3 +647,90 @@ class MayBeMixin(DecisionsMixin, GroupingMixin, VisibilityMixin):
                 )
             )
         return found
+
+
+def _near_people(
+    people: Sequence[str], grid: list[list[float]], row_of: Mapping[str, int]
+) -> dict[str, list[str]]:
+    """The people over the ask line for each group, closest first."""
+    near: dict[str, list[str]] = {}
+    for pile_id, row in row_of.items():
+        over = [
+            (float(grid[row][column]), person_id)
+            for column, person_id in enumerate(people)
+            if grid[row][column] >= tuning.GROUP_ASK
+        ]
+        if over:
+            near[pile_id] = [person_id for _score, person_id in sorted(over, reverse=True)]
+    return near
+
+
+def _gathered(
+    near: Mapping[str, list[str]],
+    proposed: Mapping[str, list[GroupProposalView]],
+    likeness: Callable[[str, str], float | None],
+    answered_no: Callable[[str, str], bool],
+    reason_of: Mapping[str, GroupReason],
+) -> dict[str, dict[str, _MayBe]]:
+    """The groups each person may be, by likeness to the closest not refused and by proposal."""
+    found: dict[str, dict[str, _MayBe]] = {}
+    for pile_id, candidates in near.items():
+        for person_id in candidates:
+            if answered_no(pile_id, person_id):
+                continue
+            found.setdefault(person_id, {})[pile_id] = _MayBe(
+                pile_id=pile_id,
+                likeness=likeness(pile_id, person_id),
+                reasons=[reason_of[person_id]],
+                faces=[],
+            )
+            break
+    for pile_id, proposals in proposed.items():
+        for one in proposals:
+            if answered_no(pile_id, one.person_id):
+                continue
+            entry = found.setdefault(one.person_id, {}).setdefault(
+                pile_id,
+                _MayBe(
+                    pile_id=pile_id,
+                    likeness=likeness(pile_id, one.person_id),
+                    reasons=[],
+                    faces=[],
+                ),
+            )
+            entry.reasons.append(
+                GroupReason(
+                    kind=one.reason,
+                    folder_id=one.folder_id,
+                    folder_name=one.folder_name,
+                    in_folder=one.in_folder,
+                    group_files=one.group_files,
+                )
+            )
+    return found
+
+
+def _cards_of(
+    found: Mapping[str, dict[str, _MayBe]],
+    names: Mapping[str, str | None],
+    held: Mapping[str, list[StoredTrack]],
+    shown: Mapping[str, bool],
+) -> list[tuple[str, str, list[_MayBe]]]:
+    """The cards with a name and a face this viewer may see, groups and cards closest first."""
+    cards: list[tuple[str, str, list[_MayBe]]] = []
+    for person_id, groups in found.items():
+        name = names.get(person_id)
+        if name is None:
+            continue
+        kept: list[_MayBe] = []
+        for entry in groups.values():
+            entry.faces = [
+                track for track in held.get(entry.pile_id, []) if track.asset_id in shown
+            ]
+            if entry.faces:
+                kept.append(entry)
+        if kept:
+            kept.sort(key=_closest_first)
+            cards.append((person_id, name, kept))
+    cards.sort(key=lambda card: (_closest_first(card[2][0]), card[1].casefold(), card[0]))
+    return cards

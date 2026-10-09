@@ -1,13 +1,4 @@
-/* The two questions asked before a backend exists, and what each answer does.
- *
- * The questions are Sift's own screens, served under the shell's scheme like `/connect`, so what
- * is tested here is the part that is not a screen: where the library would go, the machine's own
- * folder dialog, whether a folder can be written to, and which question is still outstanding.
- *
- * `firstRunRoute` is the one with teeth. It decides, twice per launch, whether setup is finished,
- * and a wrong answer either loops somebody on a screen they have already answered or starts a
- * backend with nowhere to put a database.
- */
+/* The two questions asked before a backend exists, and what each answer does. */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -45,9 +36,7 @@ describe('suggestedDataLocation', () => {
 		expect(suggestedDataLocation().dataDir.endsWith(path.join('Local', 'Sift', 'data'))).toBe(true);
 	});
 
-	/* Beside it rather than inside it. The cache can be deleted safely and the data cannot, so a
-	 * cache nested under the data folder would make "delete the cache" a gesture that could take the
-	 * library with it. */
+	/* Beside it rather than inside it. */
 	it('keeps the cache beside the data rather than inside it', () => {
 		const { dataDir, cacheDir } = suggestedDataLocation();
 		expect(path.dirname(cacheDir)).toBe(path.dirname(dataDir));
@@ -64,9 +53,7 @@ describe('pickDataLocation', () => {
 		});
 	});
 
-	/* Cancelling is not the same as agreeing to the default. Somebody who opened the picker wanted a
-	 * different folder, and silently keeping the suggestion would put their library where they had
-	 * just declined to put it, so this answers nothing and the screen stays where it was. */
+	/* Cancelling is not the same as agreeing to the default. */
 	it('treats a cancelled picker as no answer at all', async () => {
 		folderAnswers.push(null);
 		expect(await pickDataLocation()).toBeNull();
@@ -82,8 +69,7 @@ describe('firstRunRoute', () => {
 		expect(firstRunRoute({ ...load(), mode: 'standalone' })).toBe('/library-location');
 	});
 
-	/* Client mode has no local library to place, so there is no second question. A route here would
-	 * be a screen asking where to put a database that is never going to exist. */
+	/* Client mode has no local library to place, so there is no second question. */
 	it('has nothing more to ask in client mode', () => {
 		expect(firstRunRoute({ ...load(), mode: 'client' })).toBeNull();
 	});
@@ -93,8 +79,7 @@ describe('firstRunRoute', () => {
 	});
 
 	/* The two have to agree in both directions: a route means there is a question, and no route
-	 * means there is not. They are read at different moments (one at startup, one after each
-	 * answer), and a disagreement is either a loop or a backend started with nowhere to write. */
+	 * means there is not. */
 	it('answers a route exactly when first run is not finished', () => {
 		const settings = [
 			load(),
@@ -122,8 +107,7 @@ describe('assertWritable', () => {
 		expect(fs.existsSync(where)).toBe(true);
 	});
 
-	/* A path that cannot be a folder because a FILE is already sitting on the name. Reachable, and
-	 * platform-independent, unlike a permissions test, which Windows does not honour. */
+	/* A path that cannot be a folder because a FILE is already sitting on the name. */
 	it('names the folder it could not write to', () => {
 		const blocked = path.join(profile, 'in-the-way');
 		fs.writeFileSync(blocked, 'not a folder', 'utf8');
@@ -144,8 +128,7 @@ describe('offeredDataLocation', () => {
 		expect(offered.locations).toEqual(suggestedDataLocation());
 	});
 
-	/* A library in the default folder with no record of it. Offered as "Default", the next screen
-	   is that library's sign-in, which reads as a fresh install landing on a login. */
+	/* A library in the default folder with no record of it. */
 	it('offers a library already in the default folder as the library it is', async () => {
 		const { dataDir } = suggestedDataLocation();
 		fs.mkdirSync(dataDir, { recursive: true });

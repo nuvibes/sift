@@ -25,6 +25,7 @@ from sift.kernel.jobs import (
     JobState,
     WorkerPool,
     register_handler,
+    registry,
     worker_pool,
 )
 from sift.testing.fixtures import LibraryRoot
@@ -132,7 +133,7 @@ class _CardStopped(Exception):
 async def test_a_job_the_machine_cannot_run_just_now_waits_without_spending_an_attempt(
     job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch, raised: str
 ) -> None:
-    monkeypatch.setattr(worker_pool, "_HOLDS", {})
+    monkeypatch.setattr(registry, "_HOLDS", {})
     worker_pool.hold_on(_CardStopped, seconds=60)
 
     async def lost_card(context: JobContext) -> None:

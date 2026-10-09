@@ -1,7 +1,5 @@
-/*
- * The maths of framing a cover: the window stays the box's shape, stays inside the picture, and
- * names itself on the address the same way the server does.
- */
+/* The maths of framing a cover: the window stays the box's shape, stays inside the picture, and
+ * names itself on the address the same way the server does. */
 import { describe, expect, it } from 'vitest';
 import { coverUrl, wholeCoverUrl } from '$lib/entity/art';
 import {
@@ -70,7 +68,7 @@ describe('the window', () => {
 
 describe("the handshake with the picture editor's crop control", () => {
 	/* The window is dragged by `edit/CropStage` and the editor's own arithmetic, on a box in the
-	   units `coverSpace` lends it. These are the two translations and the one cover rule. */
+	   units `coverSpace` lends it. */
 	const space = coverSpace(WIDE);
 
 	it("lends square units, ten thousand tall, so the editor's ratio lock is the box shape", () => {

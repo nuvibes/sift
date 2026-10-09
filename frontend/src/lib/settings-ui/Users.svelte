@@ -2,25 +2,7 @@
 	/* DRESSED BY: .item, .ui-menu (the shared ContextMenu and ContextMenuItem style the rows and the
 	   surface this file hands them, with `:global` from their own files). */
 
-	/*
-	 * The users who may sign in, and where they come from. Called Users on screen and in the code,
-	 * so that nothing on screen calls them an "account": the name somebody goes by on a site is a
-	 * "username", and that is the only other word near this one. An address naming the older
-	 * section still lands here. See `MOVED_TO` in `sections.ts`.
-	 *
-	 * There is no sign-up, no invitation and no email anywhere in Sift, which makes this screen the
-	 * only door: an admin types a name and a first password, says the password out loud, and that
-	 * is the whole bootstrap. It is deliberately not a token flow: a token would need somewhere
-	 * to send it, and the point of a local install is that nothing leaves the machine.
-	 *
-	 * The first password is not forced to change. The guest can change it from their own profile
-	 * whenever they like, with the password they already have, and the reset below is what an admin
-	 * does when they cannot.
-	 *
-	 * Only guests are managed here. The install's admin is listed, because leaving the user that
-	 * made the instance off its own user list would be strange, but nothing here acts on them,
-	 * and the server refuses regardless of what this screen draws.
-	 */
+	/* The users who may sign in, and where they come from. */
 	import { onMount } from 'svelte';
 	import { api, ApiError } from '$lib/api/client';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
@@ -53,12 +35,8 @@
 
 	let newUsername = $state('');
 	let newPassword = $state('');
-	/* Typed twice, and that is not ceremony.
-	 *
-	 * An admin types this password blind and then says it out loud to somebody else. A typo does
-	 * not fail here: it creates a user whose password nobody in the room knows, and the only
-	 * way out is to reset it, which they cannot do until they notice.
-	 */
+	/* Typed twice, and that is not ceremony. An admin types this password blind and then says it
+	 * out loud to somebody else. */
 	let newPasswordAgain = $state('');
 	let creating = $state(false);
 	let nameError = $state<string | undefined>(undefined);
@@ -73,22 +51,11 @@
 	let resetPasswordAgain = $state('');
 	let resetError = $state<string | undefined>(undefined);
 
-	/* Who is being removed, and whether the question is on screen: two things rather than one.
-	 *
-	 * Deriving the dialog's open state from "is there an user being removed" looks tidier and is
-	 * wrong: the dialog owns that flag while it is up, and a one-way prop means pressing Cancel
-	 * closes it inside the dialog while this file still believes it is open. The user outlives
-	 * the answer on purpose, so the title can still name them through the closing animation.
-	 */
+	/* Who is being removed, and whether the question is on screen: two things rather than one. */
 	let removing = $state<User | null>(null);
 	let removeOpen = $state(false);
 
-	/* The one-click guest, and the password it was given.
-	 *
-	 * Held here only for as long as the card is on screen. Nothing stores it, no later read hands it
-	 * back, and it is never logged, so if this is dismissed before it is written down, the user
-	 * has to be reset. The card says so.
-	 */
+	/* The one-click guest, and the password it was given. */
 	let generated = $state<{ user: User; password: string } | null>(null);
 	let generating = $state(false);
 
@@ -114,7 +81,7 @@
 	async function copyPassword() {
 		if (!generated) return;
 		// Through the app's own helper rather than the browser clipboard API, which is absent on a
-		// plain-http origin, which is what Sift is on a home network. See `$lib/shell/clipboard`.
+		// plain-http origin, which is what Sift is on a home network.
 		const copied = await copyText(generated.password);
 		toasts.show(copied ? 'Password copied' : "Couldn't copy the password. Write it down instead.", {
 			tone: copied ? 'success' : 'error'
@@ -138,14 +105,7 @@
 			if (user.id === session.viewer?.id) await session.load();
 			toasts.show('Renamed', { tone: 'success' });
 		} catch (error) {
-			/* The server's own words, not a sentence written here.
-			 *
-			 * The refusal differs by who is asking, and only the server knows: an admin is told
-			 * plainly that a name is taken, because they can read the user list on the screen
-			 * they are standing on, and a guest is told only that the name cannot be used,
-			 * because "that one exists" is an answer they could ask about any name they liked. A
-			 * canned line here would override both.
-			 */
+			/* The server's own words, not a sentence written here. */
 			if (error instanceof ApiError && error.status === 409)
 				renameError = error.detail ?? "That name can't be used.";
 			else renameError = "That couldn't be saved.";
@@ -156,16 +116,7 @@
 
 	const guests = $derived(users.filter((user) => user.role === 'guest'));
 
-	/*
-	 * Everything that can be done to a guest's user, declared once.
-	 *
-	 * As data rather than rows written into a hand-built menu, so they carry their icons and the
-	 * line in front of the one that deletes somebody, which every other destructive row in the app
-	 * has.
-	 *
-	 * The first row reverses rather than being two rows, exactly as the heart on a file does: what
-	 * it does depends on the state the user is in, so it says its whole instruction.
-	 */
+	/* Everything that can be done to a guest's user, declared once. */
 	function userVerbs(user: User): Verb[] {
 		return [
 			{
@@ -212,8 +163,7 @@
 		void load();
 	});
 	/* A user made, turned off, removed or given a new role in another window or by another admin
-	   is said on the settings bell (the auth service's `_say`); the list follows it. Nothing on it
-	   holds an unsent edit but the new user's form, which a re-read of the list leaves alone. */
+	   is said on the settings bell (the auth service's `_say`); the list follows it. */
 	whenChanged(settingChanges, () => void load());
 
 	async function load() {
@@ -245,17 +195,8 @@
 			await load();
 			toasts.show('Guest created', { tone: 'success' });
 		} catch (error) {
-			// The conflict is the one refusal worth saying plainly. This is not a sign-in screen: the
-			// admin can see every user on the same page, so pretending the name might be free would
-			// leave them retyping it.
-			/* The server's own words, not a sentence written here.
-			 *
-			 * The refusal differs by who is asking, and only the server knows: an admin is told
-			 * plainly that a name is taken, because they can read the user list on the screen
-			 * they are standing on, and a guest is told only that the name cannot be used,
-			 * because "that one exists" is an answer they could ask about any name they liked. A
-			 * canned line here would override both.
-			 */
+			// The conflict is the one refusal worth saying plainly.
+			/* The server's own words, not a sentence written here. */
 			if (error instanceof ApiError && error.status === 409)
 				nameError = error.detail ?? "That name can't be used.";
 			else if (error instanceof ApiError && error.status === 422)
@@ -515,8 +456,8 @@
 />
 
 <style>
-	/* The invented credentials, set apart from the form above them: this is something to read and
-	   copy rather than something to fill in, and it is on screen once. */
+	/* The invented credentials, set apart from the form above them: this is something to read
+	   and copy rather than something to fill in, and it is on screen once. */
 	.generated {
 		display: flex;
 		flex-direction: column;
@@ -528,7 +469,7 @@
 	}
 
 	/* The new guest's username: a value to read out, not a heading over the card: the group's
-	   heading above already says what this is. At the rows' size, never smaller than them. */
+	   heading above already says what this is. */
 	.username {
 		margin: 0;
 		font: var(--text-body);
@@ -536,9 +477,7 @@
 		color: var(--sift-ink);
 	}
 
-	/* Selectable in one gesture, with tabular figures. Somebody is about to read this out loud or
-	   copy it by hand, and digits that shift width as they are scanned are digits that get misread.
-	   The body face carries them; see the type block in app.css for why there is no monospace. */
+	/* Selectable in one gesture, with tabular figures. */
 	.password {
 		margin: 0;
 		font: var(--text-body);
@@ -567,9 +506,7 @@
 		color: var(--sift-ink-3);
 	}
 
-	/* The row's one control, dressed. A `<Button>` nobody styles is drawn by the operating
-	   system (a grey slab with an outset border, unmistakable on a dark interface), and it
-	   only appears when there are guests, because a row nobody has is a button nobody draws. */
+	/* The row's one control, dressed. */
 	/* A blocked user is dimmed rather than hidden. Somebody who blocked a guest last month and
 	   is wondering why they cannot get in needs to find the row, not lose it. */
 	.who.off .name {

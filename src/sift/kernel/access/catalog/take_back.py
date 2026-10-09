@@ -401,19 +401,25 @@ async def holds_nothing_on(connection: Connection, kind: str, row_id: str) -> bo
         return False
     if await (await connection.execute(_SHELL_ITSELF[kind], (row_id,))).fetchone() is None:
         return False
-    for other, statement in _HOLDING[table]:
-        if not await _here(connection, other):
-            continue
-        if await (await connection.execute(statement, (row_id,))).fetchone() is not None:
-            return False
-    for _table, statement in _ALSO_HOLDING.get(table, ()):
-        if await (await connection.execute(statement, (row_id,))).fetchone() is not None:
-            return False
+    if await _held(connection, table, row_id):
+        return False
     if await _here(connection, "workbench_decisions"):
         for statement in _TOUCHED_BY_A_PERSON:
             if await (await connection.execute(statement, (kind, row_id))).fetchone() is not None:
                 return False
     return True
+
+
+async def _held(connection: Connection, table: str, row_id: str) -> bool:
+    for other, statement in _HOLDING[table]:
+        if not await _here(connection, other):
+            continue
+        if await (await connection.execute(statement, (row_id,))).fetchone() is not None:
+            return True
+    for _table, statement in _ALSO_HOLDING.get(table, ()):
+        if await (await connection.execute(statement, (row_id,))).fetchone() is not None:
+            return True
+    return False
 
 
 async def remove_shell_on(

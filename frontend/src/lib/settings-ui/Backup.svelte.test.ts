@@ -120,8 +120,7 @@ vi.mock('./panel.svelte', () => ({
 
 vi.mock('$lib/settings-ui/settings-view', () => ({ showSettingsSection: vi.fn() }));
 
-/* The backup task's row reads the shared task list; nothing here fetches it. Its last run is
-   filled only by the test that asks about it. */
+/* The backup task's row reads the shared task list; nothing here fetches it. */
 const backupRow = vi.hoisted(() => ({
 	last: null as null | { ended_at: number; outcome: string; said: string | null },
 	running: false,
@@ -181,8 +180,8 @@ it('draws the Database Switcher as its own section, after restoring', async () =
 	expect(headings.indexOf('backup.switcher')).toBeGreaterThan(headings.indexOf('backup.restore'));
 });
 
-/* A browser is not told to go to the app: the switcher asks the SERVER, which is on the
-   computer holding the libraries wherever the page is read from. */
+/* A browser is not told to go to the app: the switcher asks the SERVER, which is on the computer
+   holding the libraries wherever the page is read from. */
 it('draws the switcher in a browser too, reading the list from the server', async () => {
 	await draw();
 
@@ -215,8 +214,8 @@ it('groups the count of what a backup holds, as every other count is', async () 
 
 it('draws how many to keep and where, editable, while the cadence under Tasks is off', async () => {
 	/* The cadence is edited under Tasks. A row here greyed by a choice made there reads as a
-	   broken control, so the two rows about the file stay live and the line above them says where
-	   the cadence is. */
+	   broken control, so the two rows about the file stay live and the line above them says
+	   where the cadence is. */
 	declared.rows = true;
 	await draw();
 

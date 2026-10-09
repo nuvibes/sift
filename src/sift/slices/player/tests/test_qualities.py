@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from sift.slices.player import policy
-from sift.slices.player.router import Quality, _qualities
+from sift.slices.player.qualities import Quality, _qualities
 from sift.slices.player.tests.conftest import asset
 
 pytestmark = pytest.mark.unit

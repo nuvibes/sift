@@ -1,9 +1,4 @@
-/*
- * The panes about the computer Sift runs on, at a phone's width: read only. Every row still says
- * what it is set to; nothing on the pane changes it. A row's control stands in a disabled fieldset,
- * which stops every button, box and switch inside answering whatever it is made of, and a row whose
- * control is a press draws no press.
- */
+/* The panes about the computer Sift runs on, at a phone's width: read only. */
 import { afterEach, describe, expect, it } from 'vitest';
 import { flushSync, mount, unmount } from 'svelte';
 import { phoneWidth } from '$lib/components/common/phone-width.svelte';

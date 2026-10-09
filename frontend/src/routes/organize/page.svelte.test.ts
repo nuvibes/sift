@@ -1,10 +1,4 @@
-/* The board: what it draws, and the two states that must never share a code path.
- *
- * "Still looking" and "nothing needs you" are different answers and look nothing alike, and a
- * check that measured this screen before its data landed would find the second one and pass,
- * which is why the empty state is asserted against a screen that has genuinely answered rather
- * than one that has not been asked yet.
- */
+/* The board: what it draws, and the two states that must never share a code path. */
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,21 +25,17 @@ const mocks = vi.hoisted(() => ({
 	post: vi.fn(),
 	undo: vi.fn(),
 	waiting: { count: 0, check: vi.fn(), forget: vi.fn() },
-	/* Replaced by the factory below, which is the only place state the component can subscribe to
-	   can be declared. Here so the tests have a handle to clear it between them. */
+	/* Replaced by the factory below, which is the only place state the component can subscribe
+	   to can be declared. */
 	held: { found: null } as { found: unknown }
 }));
 
 vi.mock('$lib/organize/organize.svelte', async (importOriginal) => {
-	/* Built ON the real module rather than instead of it, so an export nobody here thought about is
-	   still the real one instead of being absent. A stand-in short of one export never looks like
-	   what it is: a screen that never answers, or the whole file failing to mount naming neither the
-	   export nor the double. */
+	/* Built ON the real module rather than instead of it, so an export nobody here thought about
+	   is still the real one instead of being absent. */
 	const real = await importOriginal<Record<string, unknown>>();
 	/* The board is HELD in a store, so this stands in for the store rather than for the request:
-	   `found` is what the screen draws, `refresh` is what fills it. It has to be REACTIVE state or
-	   the screen reads null forever and every test here measures a page that never answered, and a
-	   .test.ts file cannot declare state itself, which is what the helper is for. */
+	   `found` is what the screen draws, `refresh` is what fills it. */
 	const { reactiveProps } = await import('$lib/design/testing.svelte');
 	const held = reactiveProps<{ found: unknown }>({ found: null });
 	mocks.held = held;
@@ -66,8 +56,7 @@ vi.mock('$lib/organize/organize.svelte', async (importOriginal) => {
 		undo: mocks.undo,
 		decided: vi.fn(),
 		/* The screen reloads when this moves. A double missing it leaves the component reading
-		   `undefined.stamp`, which is not a wrong answer on screen. It is the whole file failing to
-		   mount. */
+		   `undefined.stamp`, which is not a wrong answer on screen. */
 		answered: { stamp: 0, changed: vi.fn() }
 	};
 });
@@ -78,9 +67,8 @@ vi.mock('$lib/library/changes.svelte', async () => ({
 	reloadOnLibraryChange: () => {}
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
-/* The API itself, so the one thing worth asserting about the board's writes can be: that it makes
-   none. Built on the real module: `ApiError` is thrown by this file's own refusal test and is not
-   something a stand-in should be inventing. */
+/* The API itself, so the one thing worth asserting about the board's writes can be: that it
+   makes none. */
 vi.mock('$lib/api/client', async (importOriginal) => {
 	const real = await importOriginal<Record<string, unknown>>();
 	return { ...real, api: { ...(real.api as object), post: mocks.post } };
@@ -116,17 +104,14 @@ function queue(over: Record<string, unknown> = {}) {
 		title: 'Folders that look like somebody',
 		decision: 'Say whether a folder is the person its name suggests.',
 		/* The phrase after the count. The card leads with the number, so this is the half that
-		   says what was counted: a fixture without one draws a bare figure. Both wordings, because
-		   the card picks by the number it draws and a pile of one is a pile on its way out. */
+		   says what was counted: a fixture without one draws a bare figure. */
 		verb: 'folders to name',
 		verb_one: 'folder to name',
 		icon: 'folder',
 		count: 3,
 		/* What the card says the pile is for: one sentence, declared by the queue. */
 		purpose: 'Folders whose names look like a person, for you to confirm.',
-		/* The band, which is what the board sorts by. Declared by the queue on the server; a
-		   fixture that leaves it out lands in the last band, which is the documented fallback for a
-		   client meeting a band it has never heard of. */
+		/* The band, which is what the board sorts by. */
 		band: 'decision',
 		group: null,
 		pending: true,
@@ -156,9 +141,9 @@ beforeEach(() => {
 	mocks.post.mockReset();
 	mocks.undo.mockReset();
 	mocks.waiting.count = 0;
-	/* The real store is one object for the life of the tab, so a board left over from the last test
-	   would be on screen before this one's request is answered, which is the behaviour the store
-	   exists for, and useless as a starting point for a test. */
+	/* The real store is one object for the life of the tab, so a board left over from the last
+	   test would be on screen before this one's request is answered, which is the behaviour the
+	   store exists for, and useless as a starting point for a test. */
 	mocks.held.found = null;
 	/* The card body's press navigates, and the stand-in is one function for the whole file: left
 	   alone it would carry the last test's call into the next one's assertion. */
@@ -192,7 +177,7 @@ describe('before the answer arrives', () => {
 describe('when nothing is waiting', () => {
 	it('says so over the cards, and every pile keeps its card, each saying it has nothing', async () => {
 		/* A pile at nought stays on the wall: a pile that left could not be told from one never
-		   turned on. Each card says it has nothing to review, and the board says it over them. */
+		   turned on. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -265,10 +250,7 @@ describe('when nothing is waiting', () => {
 describe('when something is waiting', () => {
 	it('leads with the count and says what it counts', async () => {
 		/* "4 folders to name" rather than "Folders 4": the two facts read as one sentence, and
-		   the join is not always the obvious one: the Duplicates card counts GROUPS.
-
-		   The describing sentence is the title's tooltip here and is on screen in full on the
-		   queue's own page; on the card it would take the room the work uses. */
+		   the join is not always the obvious one: the Duplicates card counts GROUPS. */
 		mocks.board.mockResolvedValue(answer({ queues: [queue()], waiting: 3 }));
 
 		await render();
@@ -281,9 +263,7 @@ describe('when something is waiting', () => {
 
 	it('and a pile down to its last one reads in the singular', async () => {
 		/* The state every emptying pile passes through, and with one wording the card would read
-		   "1 folders to name" in it ("1 shoots to agree", "1 groups that look alike"). The words
-		   are the queue's, both of them; the number is the card's; picking between them is the
-		   only part that happens here. */
+		   "1 folders to name" in it ("1 shoots to agree", "1 groups that look alike"). */
 		mocks.board.mockResolvedValue(answer({ queues: [queue({ count: 1 })], waiting: 1 }));
 
 		await render();
@@ -317,10 +297,7 @@ describe('when something is waiting', () => {
 
 describe('the piles that are a record rather than a question', () => {
 	it('are not cards at all: they are reached through their own page', async () => {
-		/* A count that never goes down cannot sit on a screen whose promise is that it empties.
-		 * It is a TAB beside the pile it was settled from, which is where somebody who has just
-		 * set a group aside goes looking for it.
-		 */
+		/* A count that never goes down cannot sit on a screen whose promise is that it empties. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -344,8 +321,7 @@ describe('the piles that are a record rather than a question', () => {
 	});
 
 	it('and do not stop the screen reading as finished', async () => {
-		/* A record queue holds things that have been dealt with. If it counted, the screen would
-		 * never say it was finished on any library anybody had ever used. */
+		/* A record queue holds things that have been dealt with. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -396,9 +372,7 @@ describe('the bands', () => {
 	});
 
 	it('puts a band it has never heard of at the end rather than dropping it', async () => {
-		/* A newer server can send a band this build does not know. That is the same situation as a
-		 * queue it cannot draw, and the answer is the same: fall back rather than throw. Dropping
-		 * it would make an older client silently disagree with the server about what exists. */
+		/* A newer server can send a band this build does not know. */
 		mocks.board.mockResolvedValue(
 			answer({ queues: [queue({ name: 'later', title: 'Something newer', band: 'invented' })] })
 		);
@@ -444,9 +418,9 @@ describe('the piles with nothing waiting', () => {
 	});
 
 	it('and a pile at nought asks nothing even where a question still comes with it', async () => {
-		/* Nothing on a card decides anything, so a question sent beside a pile at nought (an older
-		   server's Shoots offering to look now) has nowhere to be asked: the card says it has
-		   nothing to review and offers its page. */
+		/* Nothing on a card decides anything, so a question sent beside a pile at nought (an
+		   older server's Shoots offering to look now) has nowhere to be asked: the card says it
+		   has nothing to review and offers its page. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [queue({ name: 'shoots', title: 'Shoots', count: 0, first: { id: 'look-now' } })]
@@ -477,11 +451,9 @@ describe('what it will not do', () => {
 
 describe('what was lately decided', () => {
 	it("is History's Decisions, one link away in the header, and not a list here", async () => {
-		/* Every answer given here and every filing Sift made by itself is a line of History, each
-		 * with its Undo, so the record is History narrowed to Decisions rather than a screen of
-		 * its own: one place to look. The header keeps the way there, so the door is still on
-		 * Organize; the History side is `Ledger.svelte.test.ts`.
-		 */
+		/* Every answer given here and every filing Sift made by itself is a line of History,
+		 * each with its Undo, so the record is History narrowed to Decisions rather than a
+		 * screen of its own: one place to look. */
 		mocks.board.mockResolvedValue(answer({ queues: [queue()] }));
 		session.viewer = { role: 'admin' } as Viewer;
 
@@ -512,10 +484,7 @@ describe('what was lately decided', () => {
 
 describe('the stand-in for the store', () => {
 	it('answers for everything the real one exports', async () => {
-		/* What holds this is the stand-in being built on the real module. This is the check that it
-		 * stays that way: take the spread out and an export nobody here reads goes missing. Nothing
-		 * type-checks a double, so the question is asked of the module itself. It cannot say the
-		 * behaviour matches, only that nothing is MISSING, which is the half that goes wrong. */
+		/* What holds this is the stand-in being built on the real module. */
 		const real = await vi.importActual<Record<string, unknown>>('$lib/organize/organize.svelte');
 		const stand = await import('$lib/organize/organize.svelte');
 
@@ -526,11 +495,7 @@ describe('the stand-in for the store', () => {
 
 it('draws a strip where two folders share the same picture', async () => {
 	/* One still per folder, and two folders holding the same file have the same still, which is
-	   ordinary enough that a whole feature exists for finding it.
-
-	   Keyed on the picture's id alone that is a DUPLICATE KEY, and a duplicate key does not draw
-	   the thing twice: it throws, the screen never leaves "Looking...", and nothing on Organize is
-	   reachable. */
+	   ordinary enough that a whole feature exists for finding it. */
 	mocks.board.mockResolvedValue(
 		answer({
 			queues: [
@@ -555,7 +520,7 @@ it('draws a strip where two folders share the same picture', async () => {
 
 describe('how a card is laid out', () => {
 	/* Every card the same order: the name, what the pile is for, the count, the stills, then the
-	   one button at the foot. Which rule draws each is `BoardCard.svelte.test.ts`'s. */
+	   one button at the foot. */
 	function blocks(): string[] {
 		return [...(host.querySelector('.board-card .panel')?.children ?? [])].map(
 			(one) => one.classList[0] ?? ''
@@ -580,8 +545,7 @@ describe('how a card is laid out', () => {
 
 	it('draws two rows of stills, twelve at most, each a picture and never a link', async () => {
 		/* Two rows of six on every card: enough to recognize a pile, and the same on every
-		   queue, because this file knows which queue it is holding only by name. A still is a
-		   picture even where the queue sent an address: every press on a card opens its page. */
+		   queue, because this file knows which queue it is holding only by name. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -605,8 +569,8 @@ describe('how a card is laid out', () => {
 	});
 
 	it('and a still that cannot be drawn leaves the strip for the next one', async () => {
-		/* A picture not made yet, or refused, drawn as a blank square reads as a row of hidden or
-		   broken files. It leaves, and the next still the queue sent takes its place. */
+		/* A picture not made yet, or refused, drawn as a blank square reads as a row of hidden
+		   or broken files. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -679,8 +643,8 @@ describe('how a card is laid out', () => {
 	});
 
 	it('and cannot be pressed at all where this version cannot open the queue', async () => {
-		/* The same rule the way in follows. A press that silently did nothing would read as the card
-		   being broken rather than as a screen this build has no drawing for. */
+		/* The same rule the way in follows. A press that silently did nothing would read as the
+		   card being broken rather than as a screen this build has no drawing for. */
 		mocks.board.mockResolvedValue(
 			answer({ queues: [queue({ name: 'from-a-later-version', title: 'Something newer' })] })
 		);
@@ -694,7 +658,7 @@ describe('how a card is laid out', () => {
 
 	it('names the way in with the GROUP, because the card is the page and not the lead', async () => {
 		/* The card wears the group's title as its name, the way in, never the first queue's own
-		   name. The count is every queue on the card added up, and it is the card's lead. */
+		   name. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -724,7 +688,6 @@ describe('how a card is laid out', () => {
 		expect(goto).toHaveBeenCalledWith('/organize/duplicates');
 		expect(host.querySelector('.n')?.textContent).toBe('52');
 		// The parts count different things, so the sum says what they share: they are waiting.
-		// And no chips: the parts are the tabs of the page the card opens.
 		expect(host.querySelector('.verb')?.textContent).toBe('waiting');
 		expect(host.querySelector('.parts, .chip')).toBeNull();
 	});
@@ -732,9 +695,7 @@ describe('how a card is laid out', () => {
 
 describe('nothing on the board decides', () => {
 	it('asks no question and offers no answer, even where the server still sends one', async () => {
-		/* An older server sends the first question of each pile. The card draws none of it: the
-		   question was about one named person or file and described none of the pile, and
-		   deciding happens on the pile's page. One button, and it only opens the page. */
+		/* An older server sends the first question of each pile. */
 		mocks.board.mockResolvedValue(
 			answer({
 				queues: [
@@ -769,15 +730,8 @@ describe('nothing on the board decides', () => {
 	});
 });
 
-/*
- * THE BOARD FILLS THE FRAME, as many columns as fit, one on a phone: the wall's rules
- * (`CardWall`, the board's narrower column), read with its stylesheet in place. The unit environment lays nothing out, so the column count is
- * worked out from the rule itself: the widths below are the frame's content box (the frame less
- * its inset) as the DOM reports them at 1280, 1600 and 1920 wide, and a grid of
- * `auto-fill` columns at least `--board-column-min` wide with `--space-4` between them holds
- * floor((width + gap) / (min + gap)) of them. The phone rule is read again with its condition
- * swapped for `screen`, which is the stylesheet a 390-wide window applies.
- */
+/* THE BOARD FILLS THE FRAME, as many columns as fit, one on a phone: the wall's rules
+ * (`CardWall`, the board's narrower column), read with its stylesheet in place. */
 describe('the wall', () => {
 	const PHONE = '@media (max-width: 767px)';
 	const RULE = 'repeat(auto-fill, minmax(min(var(--wall-column), 100%), 1fr))';
@@ -840,10 +794,8 @@ describe('the wall', () => {
 	});
 });
 
-/*
- * THE CARD'S LEAD: the figure is the sum of the chips that carry a number, and a record riding on
- * a grouped card is named without one.
- */
+/* THE CARD'S LEAD: the figure is the sum of the chips that carry a number, and a record riding
+ * on a grouped card is named without one. */
 describe('every card one size', () => {
 	it('gives every row the height of the tallest card, the last row of one included', async () => {
 		mocks.board.mockResolvedValue(answer({ queues: [queue()] }));

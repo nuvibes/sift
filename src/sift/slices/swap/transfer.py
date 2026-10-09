@@ -266,14 +266,10 @@ def strip_jpeg(data: bytes) -> bytes:
     orientation: int | None = None
     placed = False
     while at < size:
-        if data[at] != 0xFF:
-            raise CannotStrip("a JPEG segment did not start where it should")
-        while at < size and data[at] == 0xFF:
-            at += 1
-        if at >= size:
+        found_marker = _next_marker(data, at, size)
+        if found_marker is None:
             break
-        marker = data[at]
-        at += 1
+        marker, at = found_marker
         if marker == 0xD9:
             out += b"\xff\xd9"
             return bytes(out)
@@ -287,36 +283,70 @@ def strip_jpeg(data: bytes) -> bytes:
         if length < 2 or end > size:
             raise CannotStrip("a JPEG segment runs past the file")
         payload = data[at + 2 : end]
-        if 0xE0 <= marker <= 0xEF:
-            if marker == 0xE1 and orientation is None:
-                orientation = _orientation(payload)
-            if _segment_ok(marker, payload):
-                out += bytes((0xFF, marker)) + data[at:end]
-        elif marker != 0xFE:
-            # The first segment that is not an APPn or a comment is where the picture's own
-            # tables begin: the orientation goes in just before it, where an EXIF block sits.
-            if not placed and orientation is not None and orientation != 1:
-                out += _orientation_only(orientation)
-            placed = True
-            out += bytes((0xFF, marker)) + data[at:end]
+        orientation, placed = _keep_segment(
+            out, marker, data[at:end], payload, orientation=orientation, placed=placed
+        )
         at = end
         if marker == 0xDA:
-            scan = at
-            while True:
-                found = data.find(b"\xff", scan)
-                if found < 0 or found + 1 >= size:
-                    raise CannotStrip("a JPEG ends inside its picture")
-                following = data[found + 1]
-                if following == 0x00 or 0xD0 <= following <= 0xD7:
-                    scan = found + 2
-                    continue
-                if following == 0xFF:
-                    scan = found + 1
-                    continue
-                break
+            found = _end_of_scan(data, at, size)
             out += data[at:found]
             at = found
     raise CannotStrip("a JPEG has no end")
+
+
+def _next_marker(data: bytes, at: int, size: int) -> tuple[int, int] | None:
+    """The next segment's marker and where its body starts, or None at the end of the data."""
+    if data[at] != 0xFF:
+        raise CannotStrip("a JPEG segment did not start where it should")
+    while at < size and data[at] == 0xFF:
+        at += 1
+    if at >= size:
+        return None
+    marker = data[at]
+    at += 1
+    return marker, at
+
+
+def _keep_segment(
+    out: bytearray,
+    marker: int,
+    segment: bytes,
+    payload: bytes,
+    *,
+    orientation: int | None,
+    placed: bool,
+) -> tuple[int | None, bool]:
+    """Add one segment to `out` if it is kept; answers the orientation and whether it is placed."""
+    if 0xE0 <= marker <= 0xEF:
+        if marker == 0xE1 and orientation is None:
+            orientation = _orientation(payload)
+        if _segment_ok(marker, payload):
+            out += bytes((0xFF, marker)) + segment
+    elif marker != 0xFE:
+        # The first segment that is not an APPn or a comment is where the picture's own
+        # tables begin: the orientation goes in just before it, where an EXIF block sits.
+        if not placed and orientation is not None and orientation != 1:
+            out += _orientation_only(orientation)
+        placed = True
+        out += bytes((0xFF, marker)) + segment
+    return orientation, placed
+
+
+def _end_of_scan(data: bytes, at: int, size: int) -> int:
+    """Where the entropy-coded picture after a start-of-scan ends: the next real marker."""
+    scan = at
+    while True:
+        found = data.find(b"\xff", scan)
+        if found < 0 or found + 1 >= size:
+            raise CannotStrip("a JPEG ends inside its picture")
+        following = data[found + 1]
+        if following == 0x00 or 0xD0 <= following <= 0xD7:
+            scan = found + 2
+            continue
+        if following == 0xFF:
+            scan = found + 1
+            continue
+        return found
 
 
 #: The PNG chunks drawing needs: the picture, its palette and transparency, its color, and the
@@ -665,31 +695,51 @@ def _heif_meta(data: bytes, at: int, header: int, end: int) -> tuple[bytes, list
     locations, in_file, in_idat = _heif_locations(data[one + head : stop], dropped)
     rebuilt = bytearray()
     for one, head, stop, kind in children:
-        body = data[one + head : stop]
-        if kind == b"iinf":
-            count_size = 2 if body[0] == 0 else 4
-            body = body[:4] + len(items).to_bytes(count_size, "big") + b"".join(items)
-        elif kind == b"iloc":
-            body = locations
-        elif kind == b"iref":
-            body = _heif_references(body, dropped)
-        elif kind == b"idat":
-            held = bytearray(body)
-            for offset, length in in_idat:
-                if offset + length > len(held):
-                    raise CannotStrip("a HEIF metadata item runs past its data")
-                held[offset : offset + length] = bytes(length)
-            body = bytes(held)
-        elif kind == b"iprp":
-            props = bytearray()
-            for inner, inner_head, inner_stop, inner_kind in _boxes(body, 0, len(body)):
-                inner_body = body[inner + inner_head : inner_stop]
-                if inner_kind == b"ipma":
-                    inner_body = _heif_associations(inner_body, dropped)
-                props += _box(inner_kind, inner_body)
-            body = bytes(props)
+        body = _heif_child(kind, data[one + head : stop], items, locations, in_idat, dropped)
         rebuilt += _box(kind, body)
     return _box(b"meta", data[at + header : start] + bytes(rebuilt)), in_file
+
+
+def _heif_child(
+    kind: bytes,
+    body: bytes,
+    items: list[bytes],
+    locations: bytes,
+    in_idat: list[tuple[int, int]],
+    dropped: set[int],
+) -> bytes:
+    """One child of `meta` with the metadata items taken out of it."""
+    if kind == b"iinf":
+        count_size = 2 if body[0] == 0 else 4
+        body = body[:4] + len(items).to_bytes(count_size, "big") + b"".join(items)
+    elif kind == b"iloc":
+        body = locations
+    elif kind == b"iref":
+        body = _heif_references(body, dropped)
+    elif kind == b"idat":
+        body = _heif_zeroed(body, in_idat)
+    elif kind == b"iprp":
+        body = _heif_properties(body, dropped)
+    return body
+
+
+def _heif_zeroed(body: bytes, in_idat: list[tuple[int, int]]) -> bytes:
+    held = bytearray(body)
+    for offset, length in in_idat:
+        if offset + length > len(held):
+            raise CannotStrip("a HEIF metadata item runs past its data")
+        held[offset : offset + length] = bytes(length)
+    return bytes(held)
+
+
+def _heif_properties(body: bytes, dropped: set[int]) -> bytes:
+    props = bytearray()
+    for inner, inner_head, inner_stop, inner_kind in _boxes(body, 0, len(body)):
+        inner_body = body[inner + inner_head : inner_stop]
+        if inner_kind == b"ipma":
+            inner_body = _heif_associations(inner_body, dropped)
+        props += _box(inner_kind, inner_body)
+    return bytes(props)
 
 
 def _emptied(out: bytearray, at: int, header: int, end: int) -> None:

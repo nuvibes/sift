@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * Who sees a folder, and what may leave this device from it, as the rows every folder menu draws (Browse, the folder tree and the library
- * rows in `Settings > Folders`, the ground inside a folder), so a folder offers the same verbs in
- * the same words wherever it is right-clicked. Alphabetical within the part; a verb with no handler is not offered, as on the walls (`entity/verbs.ts`).
- */
+/* Who sees a folder, and what may leave this device from it, as the rows every folder menu draws
+ * (Browse, the folder tree and the library rows in `Settings > Folders`, the ground inside a
+ * folder), so a folder offers the same verbs in the same words wherever it is right-clicked. */
 
 import type { components } from '$lib/api/schema';
 import { menuGroups, type Verb } from '$lib/components/common/verbs';
@@ -86,9 +84,9 @@ export function folderVerbs(context: FolderVerbsContext): Verb[] {
 			run: () => visibility()
 		});
 	}
-	/* WHAT MAY LEAVE THIS DEVICE, the entity pages' two rows in their words and glyphs: an admin's,
-	   since the mark is read by every pass and every swap, and it reaches every file under the
-	   folder. Their own part, as on a person's page. */
+	/* WHAT MAY LEAVE THIS DEVICE, the entity pages' two rows in their words and glyphs: an
+	   admin's, since the mark is read by every pass and every swap, and it reaches every file
+	   under the folder. */
 	if (isAdmin && keepLocal) {
 		verbs.push({
 			id: 'keep-local',
@@ -146,11 +144,8 @@ export interface FolderMarks {
 	keepFromSwaps: (kept: boolean) => void;
 }
 
-/**
- * The two marks on one folder, read off its row and written through the same doors as a person's
- * (`setKeptLocal`, `setKeptFromSwaps`), so every folder menu presses them one way. `after` reads
- * the folders again, so the row and its menu say the new state.
- */
+/** The two marks on one folder, read off its row and written through the same doors as a person's
+ * (`setKeptLocal`, `setKeptFromSwaps`), so every folder menu presses them one way. */
 export function folderMarks(folder: FolderMarked, after: () => void): FolderMarks {
 	return {
 		keptLocal: folder.keep_local === true,

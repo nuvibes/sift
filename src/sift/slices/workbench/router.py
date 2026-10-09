@@ -1,17 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The workbench endpoints. Admin-only, and the server is what says so.
-
-`require_admin` sits on every route here. Deciding what a library says about the people in it is
-admin work, whole, so this is refused outright rather than answered with an empty board. A control
-a guest cannot see but can still ask for directly is not access control.
-
-Necessary and not sufficient: each queue resolves what it reports against the user asking as
-well, because an admin can conceal things from themselves, and a count built for "an admin" rather
-than for THIS admin would hand back what they hid.
-
-Nothing here applies anything on its own. The board is a read, and the one write is taking a
-decision back.
-"""
+"""The workbench endpoints, admin-only on the server; each queue also scopes to the asking admin."""
 
 from __future__ import annotations
 
@@ -86,34 +74,13 @@ def _service(request: Request) -> WorkbenchService:
 
 @dataclass(frozen=True, slots=True)
 class _Tokens:
-    """The token every picture in one answer is addressed by, minted once for the whole reply.
-
-    **Here and not in the queues, and that is the whole design of it.** A token is what lets a
-    browser keep a picture for a week rather than asking about every card on every visit, and it is
-    the same rule for every queue: what the picture currently is, folded with how many times what
-    this user may see has changed. Twenty-odd places mint a `Preview` across eight areas, so a
-    token filled in at each of them is a token forgotten at one, and a card whose picture quietly
-    goes back to being re-checked is not a thing anybody can see. Filled where a `Preview` becomes
-    the thing on the wire instead, a queue written next year inherits it without knowing it exists.
-
-    A face needs no read at all: its crop is written once when the face is found and never
-    rewritten, so the whole of its token is the user's stamp. See `face_version`. A file's is
-    read through the same view the grid draws its tiles from, so the address a card builds and the
-    address the wall builds for the same file are one address and the browser holds one copy.
-
-    A kind this version has no token for gets none, and that is the safe direction: the address is
-    left bare, and a bare address is re-checked on every use.
-    """
+    """The token every picture in one answer is addressed by, minted once here for every queue."""
 
     face: str
     files: Mapping[str, str | None]
-    #: The files among them the vault is holding back from this viewer: drawn as nothing at all,
-    #: because a card has no locked tile to put in their place.
+    #: Files the vault holds back from this viewer: a card has no locked tile, so it draws nothing.
     withheld: frozenset[str] = frozenset()
-    #: The files among them whose picture has not been made yet: a card leaves them out rather than
-    #: drawing a box that waits for an address with nothing behind it. Read from the same answer as
-    #: the rest, so it costs no read of its own, and it is every queue's together for the reason the
-    #: token is: a queue written next year cannot forget it.
+    #: Files whose picture is not made yet, left off the card; read from the same answer.
     unmade: frozenset[str] = frozenset()
 
     def of(self, one: Preview) -> str | None:
@@ -124,9 +91,7 @@ class _Tokens:
         return None
 
     def shows(self, one: Preview) -> bool:
-        """Whether this picture's file may be spoken of at all: one this viewer may be shown and
-        the vault is not holding back. A queue resolves its own previews; this is the lock on the
-        way out."""
+        """Whether this picture's file may be spoken of: visible, and not held by the vault."""
         return one.kind != ASSET or (one.id in self.files and one.id not in self.withheld)
 
     def draws(self, one: Preview) -> bool:
@@ -135,13 +100,7 @@ class _Tokens:
 
 
 async def _tokens(access: Repository, viewer: Viewer, pictures: Iterable[Preview]) -> _Tokens:
-    """Read what the pictures of one answer are addressed by, in one go.
-
-    Scoped, like every read of a file: `assets_of` answers only about files this user may be
-    shown, so a picture it may not have simply carries no token and is asked about every time. That
-    is a second lock on a door the queues already lock (each of them resolves its own previews
-    against the viewer) and the cheaper of the two mistakes if either ever stops.
-    """
+    """Read what the pictures of one answer are addressed by, in one scoped read."""
     wanted = [one.id for one in pictures if one.kind == ASSET]
     seen = await access.assets_of(viewer, wanted) if wanted else {}
     return _Tokens(
@@ -196,12 +155,7 @@ async def board(
     viewer: Annotated[Viewer, Depends(require_admin)],
     only: Annotated[list[str] | None, Query()] = None,
 ) -> BoardView:
-    """What needs somebody. What was decided is the feed's, narrowed to Decisions.
-
-    Only the queues with something behind them. A feature that is switched off, or whose source of
-    work has never run, is absent rather than present and empty: an empty panel reads as a broken
-    one, and it is the difference between a screen that is finished and a screen that is failing.
-    """
+    """What needs somebody; a queue with nothing behind it is absent, never empty."""
     found = await service.board(viewer, None if only is None else set(only))
     art = await _tokens(access, viewer, _pictures(found))
     return BoardView(
@@ -215,16 +169,12 @@ async def undo(
     service: Annotated[WorkbenchService, Depends(_service)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> UndoneView:
-    """Put back what one decision did, and only what it did.
-
-    Reversed from what the decision wrote down about itself at the time, so a person who already
-    existed is not deleted and an attribution that predates it is not detached.
-    """
+    """Put back what one decision did, and only what it did, from what it recorded."""
     try:
         undone = await service.undo(viewer, decision_id)
     except NotFound as refused:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(refused)) from refused
-    # The counts beside the yes, so a batch that went back only in part is said as that.
+    # The counts beside the yes, so a partial undo is said as that.
     return UndoneView(
         undone=undone.put_back > 0,
         put_back=undone.put_back,
@@ -236,38 +186,14 @@ async def undo(
 # There is no per-queue history route: the thread and its Undo live on Settings > History.
 
 
-# --- the ledger feed -----------------------------------------------------------------------------
-#
-# What the whole installation has been doing, newest first: the record that lives in Settings beside
-# Activity and Logs.
-#
-# A ROUTER OF ITS OWN rather than a path under `/workbench`, and the reason is what the address
-# means. `/api/workbench` is the Organize board (the work waiting on somebody) and this is not
-# that. It is everything that has already happened, most of it to nobody's queue, and a screen that
-# empties is the whole promise of the board: what was decided is read here, under Decisions, and
-# never on the board, where it would compete with the work. It lives in the workbench slice because the events are rows of
-# `workbench_decisions` widened, which is that slice's table; the address says what it is.
+# The ledger feed: everything that has happened, newest first, at an address of its own.
 
-#: The feed's own router. Mounted beside the board's in `sift/wiring/routes.py`.
 ledger_router = APIRouter(prefix="/ledger", tags=["ledger"])
 
-#: How many events one page holds unless the pane asks for another number.
-#:
-#: Smaller than the page ceiling on purpose: this is a column of sentences somebody reads DOWN, one
-#: day at a time, and "Show more" is the gesture. Two hundred lines is not a longer answer, it is
-#: the same answer with the newest of it pushed off the screen.
+#: Smaller than the ceiling: a column read down a day at a time, with "Show more".
 PAGE_OF_EVENTS = 50
 
-#: Where each kind of named thing lives in the client, as a format for its id.
-#:
-#: ON THE SERVER, and that is the same call `Preview.href` and a queue's `opens` already make: the
-#: area that knows WHAT is being named is the only one that can say which screen it means. A client
-#: assembling `/photo-sets/{id}` out of a kind and an id is a second vocabulary, and the day one of
-#: these paths moves it goes wrong quietly, on a screen nobody is looking at.
-#:
-#: A kind that is not here has no page and gets no link: a shoot, a stash-box, a grant. A setting
-#: has a ROW rather than a page, and is linked to it by `setting_href` below.
-#: Absent rather than a guess: an address that lands nowhere is worse than plain words.
+#: Where each named kind lives in the client, kept on the server; a kind not here gets no link.
 _ADDRESS = {
     "asset": "/asset/{0}",
     "person": "/people/{0}",
@@ -276,31 +202,16 @@ _ADDRESS = {
     "collection": "/collections/{0}",
     "photo_set": "/photo-sets/{0}",
     "song": "/songs/{0}",
-    # A USERNAME IS NOT HERE, and has no page. See `sentences.username_opens`, which sends a press
-    # on one to its person or to the files under it. A GROUP OF FACES opens where the Faces page
-    # draws one group: the address the client's own `face_pile` link uses
-    # (`components/common/history.ts`), never the retired `/organize/to-check/{0}`, which lands on
-    # "There is nothing of that name here".
+    # A username has no page (`sentences.username_opens`); a face group opens on the Faces page.
     "pile": "/organize/faces-to-name/{0}",
-    # A FOLDER is the Files wall filtered to it, and named by its ID: the address the folder
-    # browser writes when somebody opens one (`FolderExplorer.svelte`, `nameFor`), so a line here
-    # and a click land on one list. Never the PATH, which names nothing for a library folder's own
-    # folder (its path is empty: `/browse?in=`) and two folders at the same time where two library
-    # folders share a "2024". See `history_events._STILL_THERE`.
+    # A folder is the Files wall filtered by its id, as the folder browser writes it.
     "folder": "/browse?in={0}",
-    # A DOWNLOAD IS A ROW ON A QUEUE, so its address is the queue with that row picked out. The
-    # same shape a folder has and for the same reason: it has no page of its own, it has a place on
-    # one. The Downloads screen reads `row` and scrolls to it.
+    # A download is its queue with that row picked out.
     "download": "/downloads?row={0}",
 }
 
 
-#: WHICH SETTINGS PANE DRAWS EACH REGISTRY SECTION, as the client's address for it: the client's
-#: `REGISTRY_HOME` (`settings-ui/sections.ts`), which is the one join between the two lists of
-#: sections. Written here because a setting's line is linked on the server like every other named
-#: thing (see `_ADDRESS`), and held equal to the client's by `test_history_names_what_it_knows`,
-#: so a pane renamed on one side and not the other goes red rather than linking nowhere. The client
-#: follows its own redirects from there (`resolveAddress`: Logs is a tab of Tasks and Activity).
+#: Which Settings pane draws each registry section, held equal to the client's by a test.
 SETTINGS_PANES: Mapping[str, str] = {
     "Library": "library",
     "Importing": "importing",
@@ -326,20 +237,14 @@ SETTINGS_PANES: Mapping[str, str] = {
     "About": "about",
 }
 
-#: A Site's own settings are not registry settings: they are the Downloads pane's per-Site list,
-#: under its "Name template" group (`NamingTemplate.svelte`), keyed `site_options.<site>.<field>`.
+#: A Site's own settings live in the Downloads pane's per-Site list.
 SITE_OPTIONS_PREFIX = "site_options."
 _SITE_OPTIONS_ROW = "/settings/downloads#downloads.name_template"
 _DEFAULT_FOLDER = ("site_options.*default*.dest_folder_id", "Download folder")
 
 
 def setting_href(key: str) -> str | None:
-    """Where a line about a setting opens: its row in Settings, or None where it has no row.
-
-    A registered setting opens its own row, which the pane rings on arrival (`settings-anchor`);
-    a Site's own setting opens the Downloads pane's per-Site list. A key the registry no longer
-    knows (retired, removed) is plain words: there is no row to land on.
-    """
+    """Where a line about a setting opens: its row in Settings, or None where it has no row."""
     if key.startswith(SITE_OPTIONS_PREFIX):
         return _SITE_OPTIONS_ROW
     setting = get_registered(key)
@@ -348,36 +253,22 @@ def setting_href(key: str) -> str | None:
 
 
 def _href(kind: str, address: str | None) -> str | None:
-    """Where pressing one named thing goes, or None where there is nowhere.
-
-    None for two different reasons that are one answer on screen: a kind with no page, and a thing
-    that is no longer there. The caller cannot tell them apart and does not need to: both are a
-    name drawn as the plain words it already is.
-    """
+    """Where pressing one named thing goes, or None for no page or a thing that has gone."""
     shape = _ADDRESS.get(kind)
     if shape is None or address is None:
         return None
     return shape.format(quote(address, safe=""))
 
 
-#: Who each username on a page belongs to, for the usernames found still there.
 _USERNAME_PEOPLE = "SELECT id AS id, person_id AS person_id FROM usernames WHERE id IN (?*)"
 
 
 def _piece(view: LedgerThingView, *, ended_here: bool = False) -> say.Piece:
-    """One named thing as the piece a line places: a way there where the kind has a page and the
-    thing is still here; plain words, struck through, where it has gone; plain words otherwise.
-
-    A NAMED thing of a kind with a page and no way to it is one that has gone (`_href` answers None
-    for a kind with a page only when the thing was not found), and it is said the way every worded
-    line says it (`sentences.since_deleted`), unless the line is the act that ended it
-    (`ended_here`, `sentences.ENDS_ITS_THING`), which is why it is gone.
-    """
+    """One named thing as a line's piece: a link, struck-through words if gone, or plain words."""
     kind = say.LINKED_KINDS.get(view.kind)
     words = view.name or (say.A_GONE if view.gone else say.A_THING).get(view.kind, "something")
     if view.kind == "setting":
-        # A setting has a row rather than a page, so it is not one of the ledger's linked kinds
-        # (those are probed for being there); its way there is its row (`setting_href`).
+        # A setting's way there is its row (`setting_href`).
         return (
             say.thing("setting", view.id, words, href=view.href) if view.href else say.Piece(words)
         )
@@ -476,15 +367,7 @@ def _detail(said: say.Said) -> list[HistoryDetail]:
 
 
 def _one_fill(press: Press) -> LedgerEvent | None:
-    """The act a box's press on ONE thing is said by, where its two acts were one press.
-
-    Linking writes a bare link and the fill writes the fields, in the same second, so the press
-    folds to two acts on one person and one box, and the folded words count "1 person" and name
-    nothing it filled. That press is one act: the one of its two that recorded what was filled in.
-    Where both did (an answer applied twice over, the second the one in force) it is the newer;
-    where neither did, the newer says what is true of both (the box recognized them). A fold of
-    several things stays folded.
-    """
+    """The act a box's one-thing press is said by, where its link and fill were one press."""
     if press.folded != 2 or press.first is None or (press.event.verb or "") != "enriched":
         return None
     if len(press.subjects) != 1 or len(press.objects) > 1:
@@ -494,9 +377,7 @@ def _one_fill(press: Press) -> LedgerEvent | None:
 
 
 def _shown(press: Press) -> tuple[list[Thing], list[Thing]]:
-    """The things a folded press lists under its "Show each": what it was done with, and the newest
-    `FEED_FOLD_SHOWN` of each kind it was about. Only these are looked up: the counts are the
-    press's own, so a press over four thousand files asks after a hundred of them."""
+    """The things a folded press lists under "Show each", at most `FEED_FOLD_SHOWN` of each kind."""
     objects = [Thing(kind=one.kind, id=one.id, name=one.name) for one in press.objects]
     taken: Counter[str] = Counter()
     subjects: list[Thing] = []
@@ -545,12 +426,7 @@ def _with_fold(
 async def _username_hrefs(
     database: Database, present: Mapping[tuple[str, str], str]
 ) -> dict[str, str]:
-    """Where each username a page names opens, by the username's id. See `sentences.username_opens`.
-
-    One statement for the page, bounded by it, and none at all for a page that names no username:
-    the same budget `subjects_present` keeps. Asked only about the usernames that probe found, so a
-    username that has gone is still plain words rather than a link to nothing.
-    """
+    """Where each username a page names opens, by id, in one bounded statement."""
     ids = sorted(thing_id for (kind, thing_id) in present if kind == "username")
     if not ids:
         return {}
@@ -567,18 +443,7 @@ def _thing(
     named: Mapping[tuple[str, str], str],
     usernames: Mapping[str, str],
 ) -> LedgerThingView:
-    """One named thing as the feed draws it: what to call it, and where pressing it goes.
-
-    THE SNAPSHOT FIRST, ALWAYS: it is what the thing was called when the act was taken, and the
-    whole reason the ledger stores it. `named` is the fallback and only the fallback: rows from
-    before names were snapshotted carry none, and drawn bare they would read "a file", "a
-    username", "a tag": the record answering "what did Sift delete" with the word for a category.
-    See `history_names.names_now`.
-
-    `gone` is the third case and is a different sentence from either: nothing was written down, the
-    thing is of a kind Sift can look up, and it is not there, so the line says it has gone rather
-    than naming a category as though it were still on a shelf somewhere.
-    """
+    """One named thing as the feed draws it: the snapshot first, then today's name, else gone."""
     address = present.get((one.kind, one.id))
     if one.kind == "setting":
         return LedgerThingView(
@@ -599,27 +464,13 @@ def _thing(
 
 
 def _setting_label(key: str, snapshot: str | None = None) -> str:
-    """What a setting is called NOW, for a line about it.
-
-    The one kind whose name is read live rather than off the row, and it is the opposite of the
-    snapshot rule for a reason the rule itself gives: a snapshot is for a thing that can be renamed
-    or deleted, and a setting is neither: its key is fixed and its label is copy, which is edited.
-    Older rows snapshotted the KEY, so reading the label back is also what makes those rows read as
-    the label ("Volume") rather than as `playback.volume`.
-
-    A key the registry does not know falls back to the SNAPSHOT, then to the key. Two kinds of row
-    reach that branch: a setting since retired, whose snapshot is its last label (or, on an older
-    row, the key itself); and a Site's own setting, whose writer kept words like "Instagram's
-    name template". The default download folder is its row's name, whatever older rows kept.
-    """
+    """What a setting is called now, from the registry, else the snapshot, else the key."""
     if key == _DEFAULT_FOLDER[0]:
         return _DEFAULT_FOLDER[1]
     setting = get_registered(key)
     if setting is not None:
         return setting.label
-    # A key RETIRED into others is called by what answers it now; one REMOVED with nothing in its
-    # place by what it was last called, said to be gone: its snapshot can hold a word this
-    # application no longer says (`settings_registry.Removed`).
+    # A retired key is called by what answers it now; a removed one by its last name, as gone.
     became = label_of(key)
     if became is not None:
         return became
@@ -630,12 +481,7 @@ def _setting_label(key: str, snapshot: str | None = None) -> str:
 
 
 def _actor(event: LedgerEvent, names: Mapping[tuple[str, str], str]) -> LedgerActorView:
-    """Who took the act. Sift needs no lookup; the other two are read by the feed.
-
-    A row from before the ledger existed carries no actor kind at all. It is reported as Sift with
-    no pass, which is what the migration decided for it and is the honest reading: nothing recorded
-    a user, and inventing one would be indistinguishable from a real answer.
-    """
+    """Who took the act; a row from before the ledger is Sift with no pass."""
     kind = event.actor_kind or ACTOR_SIFT
     return LedgerActorView(
         kind=kind,
@@ -645,17 +491,7 @@ def _actor(event: LedgerEvent, names: Mapping[tuple[str, str], str]) -> LedgerAc
 
 
 def _receipt(event: LedgerEvent, bench: Workbench) -> LedgerReceiptView | None:
-    """The decision behind an event, where it was one.
-
-    Told by the queue, which is `LEDGER_QUEUE` on everything that was not a judgement: a name no
-    queue may claim, so the same lookup that offers an undo finds nothing for it.
-
-    `final` is asked of the registry rather than stored on the row, which is the call the per-file
-    history already makes (`_decision_events`): a queue that becomes reversible in a later version
-    says so about the decisions it already wrote. A queue this build does not have is NOT final:
-    the undo route refuses it with a sentence saying nothing here knows how, which is truer than a
-    button that is greyed out as though the decision itself could not be taken back.
-    """
+    """The decision behind an event, where it was one; `final` is asked of the registry."""
     if event.queue == LEDGER_QUEUE:
         return None
     queue = bench.reverser(event.queue)
@@ -672,14 +508,12 @@ def _receipt(event: LedgerEvent, bench: Workbench) -> LedgerReceiptView | None:
 
 
 def _taken_back(queue: object) -> str:
-    """What an undone decision's line says under it: its area's own sentence, else the one true of
-    every undo. See `kernel.workbench.TakenBack`."""
+    """What an undone decision's line says: its area's sentence, else the one true of every undo."""
     return queue.taken_back if isinstance(queue, TakenBack) else TAKEN_BACK
 
 
 def _things_of(presses: Sequence[Press]) -> list[Thing]:
-    """Every thing one page of presses names: each act's subjects and object, and what a folded
-    press lists under its "Show each" (`_shown`)."""
+    """Every thing one page of presses names, including what a folded press lists (`_shown`)."""
     things: list[Thing] = []
     for press in presses:
         event = press.event
@@ -701,11 +535,7 @@ def _named(things: Sequence[Thing]) -> dict[str, list[str]]:
 
 
 def _nameless(things: Sequence[Thing]) -> dict[str, list[str]]:
-    """Every thing one page names WITHOUT a name, gathered by kind, so each kind is asked once.
-
-    A setting is left out: its name is its label and is read from the registry, which is a lookup
-    with no database in it. See `_setting_label`.
-    """
+    """Every thing one page names without a name, by kind; a setting's name is its label."""
     wanted: dict[str, list[str]] = {}
     for one in things:
         if one.name is None and one.kind != "setting":
@@ -735,48 +565,20 @@ async def ledger(
     decisions: Annotated[bool, Query()] = False,
     access: Annotated[Repository | None, Depends(wiring.access)] = None,
 ) -> LedgerPage:
-    """Everything that has happened in this library, newest first.
-
-    Admin-only, like Activity and Logs beside it, and for the sharper reason: this is a picture of
-    the whole installation (every user's acts, every pass, every file) and no narrowing of it
-    would be a guest's own record. What a guest may be told about their own files is their file
-    histories, which are a different address and are scoped by the file.
-
-    Necessary and not sufficient. The read applies the vault to every event it hands back, because
-    an admin can conceal things from themselves and a feed built for "an admin" rather than for THIS
-    one would hand back what they hid.
-
-    `kind` narrows to the events that named a thing of that kind and `verb` to one act. A word
-    neither vocabulary knows matches nothing rather than being refused: the two lists live in the
-    kernel, and a copy of them here would be a second opinion about what a verb is. `decisions`
-    narrows to the acts a queue can take back: Organize's answers and Sift's own filings, each
-    with its Undo, which is the whole record of what was decided and has no list of its own. A
-    line there carries the picture its area draws for the decision (`still`), so the record can be
-    checked and not only read.
-
-    **No per-user "your year" here, and that is a decision rather than an omission.** A record of
-    what the installation did and a story about what one person did are different surfaces with
-    different audiences: this one is admin-only by its nature, and that one must not be. It gets
-    its own address when it is built.
-    """
-    # ONE LINE PER PRESS: a task's thousands of filings are one line that opens to them, and the
-    # pager counts lines (`history_feed.presses_recent`).
+    """Everything that has happened in this library, newest first; admin-only, vault applied.
+    `kind`, `verb` and `decisions` narrow it; an unknown word matches nothing."""
+    # One line per press, and the pager counts lines.
     presses, total = await presses_recent(
         database, viewer, limit=limit, offset=offset, kind=kind, verb=verb, decisions=decisions
     )
     found = [press.event for press in presses]
     things = _things_of(presses)
     present = await subjects_present(database, _named(things))
-    # What the rows that wrote no name down are called NOW. One read per kind that needs one, and
-    # none at all for a page whose rows all carry a snapshot. See `history_names.names_now`.
     called = await names_now(database, _nameless(things))
     called |= await own_filters(database, viewer, _nameless(things).get("saved_filter", []))
     names = await actor_names(database, _acted(found))
     usernames = await _username_hrefs(database, present)
-    # How sure Sift was of each face match, as the file's own line says it. See `face_sures`.
     sures = await face_sures(database, _face_pairs(found))
-    # What each stash-box press on the page filled in, every field with its values, as the thing's
-    # own History says it. See `history_boxes.named_of_events`.
     fills = {press.event.id: one for press in presses if (one := _one_fill(press)) is not None}
     named = await named_of_events(database, [*found, *fills.values()])
     boxed = await _removals_boxed(database, presses)
@@ -834,8 +636,7 @@ async def ledger(
 
 
 async def _removals_boxed(database: Database, presses: Sequence[Press]) -> dict[str, LedgerEvent]:
-    """A filing Sift took off on a stash-box's answer names the box, on a line of one act. A folded
-    line keeps "a stash-box": its acts may be several boxes'. See `history_removals.removals_named`."""
+    """A filing Sift took off on a box's answer names the box on a one-act line."""
     return {
         one.id: one
         for one in await removals_named(
@@ -845,8 +646,7 @@ async def _removals_boxed(database: Database, presses: Sequence[Press]) -> dict[
 
 
 async def _reports_among(runs: Ledger, found: Sequence[LedgerEvent]) -> set[str]:
-    """Which "ran" lines have a report: a pass over the library is a run on record; a task's own
-    run line names the task under the same subject kind and has none, so it offers no Report."""
+    """Which "ran" lines have a report: a library pass does, a task's own run line does not."""
     return await runs.recorded_among(
         [
             subject.id
@@ -861,15 +661,7 @@ async def _reports_among(runs: Ledger, found: Sequence[LedgerEvent]) -> set[str]
 async def _stills(
     bench: Workbench, access: Repository, viewer: Viewer, presses: Sequence[Press]
 ) -> dict[str, PreviewView]:
-    """The picture each decision on the page is about, keyed by its line: the first one its area
-    draws for the line's newest receipt that this viewer may see and that has been made.
-
-    Asked of the queue that wrote it, because only it knows what its payload names (a file, a
-    face, a folder's files): the shell learns nothing about any area, as the board's cards do not.
-    Together, and once for the page: one read per decision on the server, none from the browser.
-    A queue this build no longer has, or one that cannot answer, costs its line its picture and
-    nothing else, because what was decided still happened.
-    """
+    """The picture each decision on the page is about, asked of its queue, once per page."""
     asked = [press.event for press in presses if press.event.queue != LEDGER_QUEUE]
 
     async def pictures(event: LedgerEvent) -> tuple[Preview, ...]:
@@ -911,24 +703,7 @@ async def _decisions_worded(
     presses: Sequence[Press],
     items: list[LedgerEventView],
 ) -> list[LedgerEventView]:
-    """The page with every decision said in its area's own words.
-
-    A `decided` event's stored title (`sentences.feed_line`) is the words of the day it was taken:
-    "Kept your answer for Ada Byron", "A group of 90 faces discarded", "Created a Photo Set of 3
-    pictures posted together": no doer, and names that may have changed since. So the feed asks
-    the reader every History page asks (`kernel.access.worded`), which words a decision from what it
-    recorded: one decision, one sentence, on every screen. A fold keeps its count after the line. A
-    receipt its area cannot word keeps its title: an old row that recorded nothing else.
-
-    A RECEIPT IS A DECISION WHATEVER ITS VERB. A face match is recorded as `linked` and a filing as
-    `filed`, each with its decision card, and asking only the `decided` ones would leave
-    those in the feed's own composed words beside a card that said them another way ("Sift filed
-    x.jpg under ada" here, "... under ada on Instagram from its file name" on the card). Only a FOLD
-    of one of them keeps the feed's own line: a task's press folds across the different things it
-    acted on (`history_events._FOLD_KEY`), so "Sift filed 4,000 files under 7 usernames" is the
-    press, and one receipt's words with a count after them would name one username for all seven. A
-    `decided` press folds only over the same words, which is why its fold can take the count.
-    """
+    """The page with every decision, folded or not by verb, said in its area's own words."""
     asked = [
         (press, view)
         for press, view in zip(presses, items, strict=True)
@@ -969,14 +744,7 @@ async def undo_all(
     verb: Annotated[str | None, Query()] = None,
     decisions: Annotated[bool, Query()] = False,
 ) -> UndoneFoldView:
-    """Put back every decision a folded line of the feed stands for: its Undo all.
-
-    The line is a PRESS (`history_feed.presses_recent`), which the narrowing it was drawn under
-    decides, so the same `kind` and `verb` come back here and the press is read again the same
-    way (`decisions` included): what is undone is exactly the acts that line said. Each goes through its own receipt's
-    undo (`WorkbenchService.undo_each`), so one already undone is skipped and a queue that refuses
-    one does not cost the rest. A line whose acts were not decisions has nothing to undo, and says so.
-    """
+    """Put back every decision a folded feed line stands for, each through its own undo."""
     receipts = [
         one
         for one, queue in await press_of(

@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Deciding who a face belongs to, and grouping the ones nobody has named.
-
-The clustering test worth reading is the last one: **it must split too much rather than too
-little.** Two piles of one person is a merge away from being right. One pile of two people
-attributes somebody's files to a stranger, and nothing says so.
-"""
+"""Deciding who a face belongs to, and grouping the ones nobody has named; the grouping must
+split too much rather than too little."""
 
 from __future__ import annotations
 
@@ -74,11 +70,8 @@ def test_a_face_with_no_description_matches_nobody() -> None:
 
 
 def test_a_person_this_face_was_rejected_for_is_removed_before_the_best_is_chosen() -> None:
-    """Removed before, not after. Afterwards, a rejected person hides the real answer: the second
-    best is the one that should be offered, and it never would be."""
+    """Removed before choosing, or a rejected person hides the second best."""
     gallery = gallery_of(("ada", 0, 3), ("grace", 1, 3))
-    # Looks mostly like one and a fair amount like the other, which is the situation a rejection
-    # has to be able to see past.
     face = blend(0.8, 0.6)
 
     assert matching.best_match(face, gallery).person_id == "ada"  # type: ignore[union-attr]
@@ -111,21 +104,15 @@ def test_the_bar_drops_only_once_sift_knows_somebody_well() -> None:
 
 
 def test_what_a_strong_gallery_earns_is_a_relaxation_of_whatever_bar_is_in_force() -> None:
-    """The setting is the bar for an ordinary gallery, so this moves it rather than replacing it.
-
-    A fixed number would quietly ignore an admin who raised the bar: the one person whose
-    intention about it is on record.
-    """
+    """The setting is moved, not replaced, so an admin's raised bar is kept."""
     assert tuning.bar_for(0, bar=0.8) == 0.8
     assert tuning.bar_for(20, bar=0.8) == pytest.approx(0.75)
-    # And never below the line at which a match is offered at all: past it there is no third state
-    # left for a face to be in, so the relaxation would be turning suggestions into attachments.
+    # Never below the suggest line, or suggestions would become attachments.
     assert tuning.bar_for(20, bar=tuning.SUGGEST_CONFIDENCE) == tuning.SUGGEST_CONFIDENCE
 
 
 def test_a_bar_at_the_top_of_the_scale_is_a_choice_and_not_a_number() -> None:
-    """The setting's help says setting it to 100 is how somebody is always asked. A gallery cannot
-    earn its way past that: nothing is ever attached without asking at this setting."""
+    """At 100 somebody is always asked, however strong the gallery."""
     assert tuning.bar_for(500, bar=tuning.ALWAYS_ASK) == tuning.ALWAYS_ASK
 
 
@@ -143,8 +130,7 @@ def test_a_person_with_no_references_is_described_by_nothing() -> None:
 
 
 def test_keeping_several_descriptions_per_person_is_available_and_off() -> None:
-    """The machinery is built and defaulted off rather than dropped, because the reasoning behind
-    it is sound and only the arithmetic at ordinary gallery sizes disagrees."""
+    """Built and defaulted off, as only the arithmetic at ordinary sizes disagrees."""
     references = [reference("ada", 0, variant) for variant in range(3)]
     references += [reference("ada", 4, variant) for variant in range(3)]
 
@@ -166,8 +152,6 @@ def test_several_descriptions_per_person_find_both_of_two_distinct_looks() -> No
     second_look = person_vector(4, 1)
     assert matching.best_match(second_look, blended) is not None
     assert matching.best_match(second_look, grouped) is not None
-    # Against the grouped description the second look is recognized far more strongly, because it
-    # is compared with its own group rather than with an average of two unlike things.
     assert (
         matching.best_match(second_look, grouped).confidence  # type: ignore[union-attr]
         > matching.best_match(second_look, blended).confidence  # type: ignore[union-attr]
@@ -187,12 +171,7 @@ def test_faces_of_one_person_pile_up_together() -> None:
 
 
 def test_two_similar_people_never_land_in_one_pile_even_at_the_cost_of_extra_piles() -> None:
-    """The tuning decision, tested as the property it is.
-
-    Splitting one person into three piles is a merge away from being fixed. Merging two people
-    attributes somebody's files to a stranger, silently. So the threshold errs towards more piles
-    than there are people, and this asserts the direction rather than a count.
-    """
+    """The tuning decision as a property: more piles than people, never fewer."""
     first = [person_vector(0, variant) for variant in range(3)]
     second = [person_vector(1, variant) for variant in range(3)]
 
@@ -227,9 +206,7 @@ def test_a_batch_of_new_faces_is_placed_as_each_would_be_on_its_own() -> None:
 
 
 def test_a_rebuilt_pile_keeps_the_identity_of_the_old_pile_it_is_nearest() -> None:
-    """A full rebuild keeps identities, so a screen showing a pile keeps it. The middles are paired
-    off, best first, each side once; a rebuilt pile like no old one is new, and an old pile like no
-    rebuilt one is gone."""
+    """A full rebuild keeps identities: middles paired best first, each side once."""
     previous = [person_vector(0), person_vector(1), person_vector(2)]
     current = [person_vector(2, 1), person_vector(6), person_vector(0, 1)]
 
@@ -241,8 +218,7 @@ def test_a_rebuilt_pile_keeps_the_identity_of_the_old_pile_it_is_nearest() -> No
 
 
 def test_two_rebuilt_piles_near_one_old_pile_do_not_both_take_its_identity() -> None:
-    """Each side is used once. The second-best match for an old pile does not take it as well,
-    and the pairing carries on to the old pile that is still free."""
+    """Each side is used once; the pairing moves on to the old pile still free."""
     previous = [person_vector(0), person_vector(1)]
     # The free old pile's match comes LAST in likeness, after the taken pile's second-best.
     current = [person_vector(0, 1), person_vector(0, 2), person_vector(1, 3)]
@@ -257,15 +233,7 @@ def test_grouping_nothing_produces_nothing() -> None:
 
 
 def test_a_face_that_joined_nothing_is_still_shown() -> None:
-    """Piles of one are shown.
-
-    Withholding them would keep the review queue short, but most faces can join nothing, so the
-    screen whose entire job is to show what could not be placed would show a quarter of it, and
-    look exactly like a library with nothing left to identify.
-
-    Left as a test of the floor rather than deleted, because the floor is a real decision and a
-    future change to it should have to come through here.
-    """
+    """Piles of one are shown, or the screen of what could not be placed hides most of it."""
     assert clustering.worth_showing(1) is True
     assert clustering.worth_showing(tuning.MIN_PILE_SIZE) is True
     assert clustering.worth_showing(0) is False, "nothing at all is still nothing"
@@ -280,12 +248,7 @@ def test_grouping_can_be_capped_so_a_persons_references_yield_a_handful_of_group
 def compare_everything_with_everything(
     vectors: Sequence[Vector], *, join_above: float, most: int | None = None
 ) -> list[list[int]]:
-    """Grouping written the obvious way: compare every pair of groups, join the closest, repeat.
-
-    Kept here as the thing the real one has to agree with. It is roughly cubic in the number of
-    faces, which is why it is not what runs, but it is short enough to be read and believed, and
-    that is what makes it worth testing against.
-    """
+    """Grouping written the obvious, cubic way, which the real one has to agree with."""
     if not vectors:
         return []
     matrix = np.asarray(vectors, dtype=np.float32)
@@ -310,26 +273,14 @@ def compare_everything_with_everything(
 
 
 def scattered_faces(seed: int, count: int) -> list[Vector]:
-    """Descriptions pointing in every direction, so the grouping meets every case together.
-
-    Deliberately not built from `person_vector`: those are tidy, well separated, and group the same
-    way under almost any implementation. Random directions in a small number of dimensions sit
-    close together, so islands are large, merges are many, and near-ties between two candidate
-    merges actually happen, which is where two implementations would part company if they were
-    going to.
-    """
+    """Descriptions in every direction, so islands are large and near-ties actually happen."""
     generator = np.random.default_rng(seed)
     return [unit(row.tolist()) for row in generator.normal(size=(count, DIMENSION))]
 
 
 @pytest.mark.parametrize("seed", range(12))
 def test_the_fast_grouping_returns_exactly_what_comparing_everything_returns(seed: int) -> None:
-    """The claim the fast grouping rests on, checked rather than asserted.
-
-    Splitting the work into islands of linked faces and blending likenesses arithmetically is a
-    faster route to the obvious grouping's answer, not a different answer. Group for group, member for
-    member, in the same order.
-    """
+    """The fast grouping gives the obvious grouping's answer, group for group, in order."""
     vectors = scattered_faces(seed, 70)
 
     assert clustering.agglomerate(vectors, join_above=0.5) == compare_everything_with_everything(
@@ -341,8 +292,7 @@ def test_the_fast_grouping_returns_exactly_what_comparing_everything_returns(see
 def test_the_two_agree_at_every_threshold_including_the_ones_that_join_everything(
     floor: float,
 ) -> None:
-    """At a low bar the whole library is one island and the split buys nothing, which is the case
-    most likely to be got wrong, so it is tested rather than assumed away."""
+    """At a low bar the whole library is one island, the case most likely to go wrong."""
     vectors = scattered_faces(99, 60)
 
     assert clustering.agglomerate(vectors, join_above=floor) == compare_everything_with_everything(
@@ -352,9 +302,7 @@ def test_the_two_agree_at_every_threshold_including_the_ones_that_join_everythin
 
 @pytest.mark.parametrize("most", [1, 2, 3, 5])
 def test_the_two_agree_when_the_number_of_groups_is_capped(most: int) -> None:
-    """The capped route joins groups that are not close enough, to get the count down, and those
-    joins can reach between islands, so it does not use them. That it still matches is what says
-    the two routes have not drifted apart."""
+    """The capped route can join across islands, so it does not use them; it still agrees."""
     vectors = scattered_faces(7, 40)
 
     assert clustering.agglomerate(
@@ -363,12 +311,7 @@ def test_the_two_agree_when_the_number_of_groups_is_capped(most: int) -> None:
 
 
 def test_the_pair_search_finds_every_close_pair_and_nothing_else() -> None:
-    """The swap point, checked against the definition rather than against itself.
-
-    Whatever ends up behind `pairs_above` has to answer this, so the test is written in terms of
-    what a close pair *is*: every pair whose likeness clears the bar, low position first, none
-    missed and none invented.
-    """
+    """The swap point, checked against what a close pair is: none missed, none invented."""
     vectors = scattered_faces(3, 45)
     matrix = np.asarray(vectors, dtype=np.float32)
     likeness = matrix @ matrix.T
@@ -383,8 +326,7 @@ def test_the_pair_search_finds_every_close_pair_and_nothing_else() -> None:
 
 
 def test_the_pair_search_spans_more_than_one_block(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The blocking is what keeps the memory bounded, and a run small enough to fit in one block
-    never exercises it, so the block is made tiny and the answer must not change."""
+    """A tiny block exercises the blocking; the answer must not change."""
     vectors = scattered_faces(5, 50)
     expected = set(clustering.pairs_above(vectors, floor=0.3))
 
@@ -434,14 +376,7 @@ def test_one_description_on_its_own_is_one_group_under_a_cap_too() -> None:
 
 
 def test_a_large_island_is_worth_a_line_in_the_log(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Islands are small by construction, so a large one does not mean a large library: it means
-    something is matching far more than it should, and the usual cause is a bad crop that resembles
-    everything. Grouping one costs its size squared, so it is worth being able to see.
-
-    The logger is recorded rather than the output read. This logger writes structured lines straight
-    to the stream, so it never reaches `caplog`, and reading the captured stream instead passes
-    alone and fails under a parallel run, which is the worst way for a test to be wrong.
-    """
+    """A large island is logged; the logger is recorded, as the stream fails under xdist."""
     said: list[tuple[str, int]] = []
     monkeypatch.setattr(clustering, "_LARGE_ISLAND", 2)
     monkeypatch.setattr(

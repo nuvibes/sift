@@ -1,30 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The lock on a swap's connection: TLS 1.3 keyed by the token's secret, and nothing else.
-
-## A pre-shared key, and NO certificate on either side
-
-Both ends hold the same 32 random bytes (the host made them, the guest read them from the token),
-so TLS can be keyed by them directly (`set_psk_server_callback` / `set_psk_client_callback`,
-identity `sift-swap-1`). A connection that completes the handshake is one whose other end holds
-the secret. That is the whole proof: there is no certificate to check, pin or get wrong.
-
-!! THE SERVER CONTEXT MUST NOT HOLD A CERTIFICATE. With CPython 3.13 and OpenSSL 3.5, a server
-context that loads a certificate as well as the key lets a client with NO key in (it simply takes
-the certificate handshake instead) and gives even a right-key client a certificate session. So
-nothing here loads one, and `tests/test_lock.py` refuses any call that would (a scan of this slice's
-source) as well as proving a keyless client is turned away.
-
-## The rest of the lock
-
-TLS 1.3 at minimum: a PSK over 1.2 is a different and weaker construction, and the standard
-library would otherwise offer it. The ciphers are the library's own TLS 1.3 set; nothing narrows
-them. A handshake not complete within ten seconds is a failed connection.
-
-**Proof of connection is the completed handshake, never a proxy's "200".** A tunnel provider's
-CONNECT can answer "200" immediately for a port nobody is listening on.
-`dial` reads the proxy's answer only to know whether to go on; whether anybody is THERE is decided
-by the handshake that follows.
-"""
+"""The lock on a swap's connection: TLS 1.3 keyed by the token's secret, with no certificate."""
 
 from __future__ import annotations
 
@@ -38,7 +13,7 @@ from sift.kernel.log import get_logger
 
 log = get_logger(__name__)
 
-#: The PSK identity both ends name. Versioned, so a later lock can be told apart by its identity.
+#: Versioned, so a later lock can be told apart by its identity.
 IDENTITY = "sift-swap-1"
 
 #: A handshake not complete in this long is a failed connection.
@@ -48,9 +23,7 @@ HANDSHAKE_SECONDS = 10.0
 _PROXY_REPLY_CAP = 8 * 1024
 
 
-#: Whether this interpreter can key TLS with a pre-shared key at all. The callbacks arrived in
-#: CPython 3.13 and need an OpenSSL built with PSK; the shipped build is 3.13 (with OpenSSL 3.5). On
-#: anything older a swap is refused with `NOT_HERE`, never attempted some other way.
+#: PSK callbacks need CPython 3.13 and an OpenSSL with PSK; elsewhere a swap is refused.
 PSK_AVAILABLE = sys.version_info >= (3, 13) and hasattr(ssl.SSLContext, "set_psk_server_callback")
 
 NOT_HERE = "This copy of Sift can't lock a swap. Update Sift, then try again."
@@ -67,14 +40,13 @@ def _require_key(secret: bytes) -> bytes:
 
 
 def server_context(secret: bytes) -> ssl.SSLContext:
-    """The host's context: the key and nothing else. See the module docstring for why."""
+    """The host's context, the key alone: a certificate here would let a keyless client in."""
     key = _require_key(secret)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_3
 
     def answer(identity: str | None) -> bytes:
-        # An unknown identity gets an empty key, which OpenSSL treats as "no such identity" and
-        # the handshake fails, never a fall back to anything else.
+        # An unknown identity gets an empty key, so the handshake fails rather than falling back.
         return key if identity == IDENTITY else b""
 
     _server_key(context, answer)
@@ -160,11 +132,7 @@ async def dial(
     *,
     seconds: float = HANDSHAKE_SECONDS,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """Dial the host as the guest and lock the connection. Raises `LockFailed`.
-
-    `proxy` is the guest's own tunnel (`http://127.0.0.1:<port>`). None dials directly, and only
-    a test does that: `session.py` refuses a swap whose guest has no tunnel before it gets here.
-    """
+    """Dial the host as the guest and lock the connection. Raises `LockFailed`."""
     context = client_context(secret)
     try:
         if proxy is None:

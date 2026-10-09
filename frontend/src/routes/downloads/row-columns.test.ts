@@ -4,14 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { checkColumns } from '$lib/components/common/DataRows.svelte';
 import { DOWNLOAD_ACTIONS, PHONE_ACTIONS, downloadColumns } from './DownloadRow.svelte';
 
-/*
- * EVERY DOWNLOAD ROW'S COLUMNS STAND AT THE SAME X, AND THE LIST DECLARES THEM.
- *
- * The state, the size and the moment are three columns a person reads down, not one cell stacked
- * two lines deep at the row's end; the fix stands against the row's actions rather than floating
- * between the name and a band of hidden buttons. The list declares the tracks once (`DataRows`) and
- * every row lays its cells into them, so what one row holds cannot move where a column is.
- */
+/* EVERY DOWNLOAD ROW'S COLUMNS STAND AT THE SAME X, AND THE LIST DECLARES THEM. */
 
 const source = readFileSync('src/routes/downloads/DownloadRow.svelte', 'utf8');
 const markup = source.slice(source.lastIndexOf('</script>'), source.indexOf('<style>'));

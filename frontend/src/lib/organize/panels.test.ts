@@ -3,14 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { chainHref, pileHref } from './addresses';
 import { canOpen, detailFor, itemMovedTo, movedTo, panelFor, wayIn } from './panels';
 
-/*
- * Which component draws which queue, and where a card goes when it is pressed.
- *
- * The second of those is what this file is for. `canOpen` (can this build DRAW the queue's panel)
- * answers "where does this card go" only for a queue whose way in is its panel. A report whose
- * way in is somewhere else (the browse wall, say) and that has no panel would come out, decided by
- * `canOpen`, with a disabled heading and a dead body. So the server may declare the way in.
- */
+/* Which component draws which queue, and where a card goes when it is pressed. */
 
 describe('which component draws a queue', () => {
 	it('knows the queues this build ships with', () => {
@@ -64,8 +57,7 @@ describe('where a card goes', () => {
 
 	it('opens a queue that declares an address THERE, panel or no panel', () => {
 		// Nothing ships declaring one today. The capability stays, because a report whose way in is
-		// genuinely a wall is a real shape. And a card with no way in at all is the fault this
-		// replaced.
+		// genuinely a wall is a real shape.
 		expect(wayIn({ name: 'a-report', opens: '/browse?q=enriched%3Afilename' })).toBe(
 			'/browse?q=enriched%3Afilename'
 		);
@@ -93,9 +85,8 @@ describe('the addresses held here rather than assembled by their callers', () =>
 	});
 
 	it('carries the tab a group was opened from, and only when there is one', () => {
-		/* One screen draws a group whichever tab it was reached through, so the origin has to
-		   travel with it: otherwise a group pressed on Ignored opens a trail through Faces to
-		   name and cannot get back to Ignored at all. */
+		/* One screen draws a group whichever tab it was reached through, so the origin travels
+		   with it. */
 		expect(pileHref({ id: 'p1' }, 'discarded-faces')).toBe(
 			'/organize/faces-to-name/p1?via=discarded-faces'
 		);
@@ -104,9 +95,7 @@ describe('the addresses held here rather than assembled by their callers', () =>
 });
 
 describe('a queue that has been renamed', () => {
-	/* An address outlives the screen it opened. The four faces queues became two, and the three
-	   addresses that went are in links, in bookmarks and in whatever somebody has open in another
-	   tab, so they move rather than dying, and this is the one place that says where to. */
+	/* An address outlives the screen it opened. */
 	it('sends each old address to the tab that holds what it held', () => {
 		// Not all of them to the front of the group: a link into the ignored groups that landed on
 		// the suggestions would be a redirect that works and is wrong.
@@ -119,8 +108,8 @@ describe('a queue that has been renamed', () => {
 	});
 
 	it('sends the one list those three briefly became to the page they are tabs of', () => {
-		// `to-check` WAS all three, so there is no one tab it meant, and the group's own page
-		// is where those tabs are.
+		// `to-check` WAS all three, so there is no one tab it meant, and the group's own page is
+		// where those tabs are.
 		expect(movedTo('to-check')).toBe('faces');
 	});
 

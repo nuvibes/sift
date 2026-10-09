@@ -1,27 +1,5 @@
 <script lang="ts">
-	/* Search by meaning: the switch, what it runs on, and the two jobs it can be asked to do.
-	 *
-	 * Three things this screen must not overstate, because each is a sentence somebody would rely
-	 * on:
-	 *
-	 * **Some machines cannot do this at all.** The index needs an add-on that SQLite has to be able
-	 * to load, and a build without that will never run this however the switch is set. So
-	 * `supported` is drawn first and, when it is false, the switch is not offered: a control that
-	 * cannot work is worse than an absent one, because pressing it teaches nothing.
-	 *
-	 * **Sift ships no models.** Switched on is not the same as able to run: the files are fetched by
-	 * whoever runs it, from their publisher, on their terms. That is why `ready` is its own line
-	 * rather than folded into the switch: a fresh install that read as broken would send people
-	 * looking for a fault that is not there.
-	 *
-	 * **Turning it off keeps the index.** Deliberate: somebody switching it off for a week has not
-	 * asked to spend hours rebuilding it afterwards. Which is exactly why the control that removes
-	 * it is here, separate, and says what it costs to press.
-	 *
-	 * The controls themselves are drawn from what the feature declared rather than written out
-	 * again. Every one has a label and an explanation registered beside it in the code that owns it,
-	 * and a second copy of those words here would be a second thing to keep true.
-	 */
+	/* Search by meaning: the switch, what it runs on, and the two jobs it can be asked to do. */
 	import { onMount, onDestroy } from 'svelte';
 	import { ConfirmDialog, Problem, ProgressBar, SettingLink } from '$lib/components/common';
 	import {
@@ -42,8 +20,7 @@
 		semanticStatus,
 		type SemanticStatus
 	} from '$lib/search/semantic.svelte';
-	// The two runs are followed OUTSIDE this component. See the module. A watcher held here would
-	// die with the pane, leaving somebody who pressed it no idea whether it worked.
+	// The two runs are followed OUTSIDE this component.
 	import { describing, modelFetch } from '$lib/jobs/semantic-runs.svelte';
 	import { indexRemoval } from '$lib/jobs/watch-removal.svelte';
 	import { describeWait } from '$lib/jobs/waiting';
@@ -62,13 +39,7 @@
 
 	const MODEL_KEY = 'semantic.model';
 
-	/* Which settings belong on the More settings page, and the order they read in.
-	 *
-	 * Written out rather than matched on the `semantic.` prefix: the prefix is a detail of the key
-	 * and would drag in anything later named that way. The page itself holds only the consent and
-	 * when it runs; which models and what to run them on are for somebody tuning it. Smart Search
-	 * has no dial for how thorough it is, and none is invented here.
-	 */
+	/* Which settings belong on the More settings page, and the order they read in. */
 	const FIELDS = [MODEL_KEY, DEVICE_KEY];
 
 	let entries = $state<Map<string, SettingEntry>>(new Map());
@@ -76,9 +47,7 @@
 	let status = $state<SemanticStatus | null>(null);
 	let loadFailed = $state(false);
 	let removing = $state(false);
-	/* Describing the library is no button of this pane's. It is the Smart Search task's Run now,
-	   on Tasks where every press lives, and it runs the Build for the Meaning product, so there is
-	   one way to start it and it is the same everywhere. */
+	/* Describing the library is no button of this pane's. */
 	let generation = 0;
 
 	onMount(() => {
@@ -91,9 +60,7 @@
 	});
 
 	/* And again when a setting moves somewhere else: this account in a browser, a second window,
-	 * or another admin changing one the installation shares. Every control on this pane writes on
-	 * the press and holds nothing unsaved, so a re-read can only put the same value back; see
-	 * `scripts/check_settings_followed.js`, which holds every pane to this. */
+	 * or another admin changing one the installation shares. */
 	whenChanged(settingChanges, () => void load());
 
 	onDestroy(() => {
@@ -126,8 +93,7 @@
 		try {
 			await saveSettings({ [key]: value });
 			// Every one of these changes what the feature can report about itself: turning it on
-			// does not make it ready, and changing the models makes every described file stale. So
-			// the status is re-read rather than guessed at.
+			// does not make it ready, and changing the models makes every described file stale.
 			status = await semanticStatus();
 		} catch (error) {
 			if (entry) entries.set(key, { ...entry, value: previous });
@@ -157,9 +123,7 @@
 		}
 	}
 
-	/* Where Smart Search stands, in one line under the switch. Off is a status and not a blank: a
-	   page that says nothing with the switch off reads the same as one that failed to load. The words
-	   are shared with the switch on Importing; a run followed here has the fresher counts. */
+	/* Where Smart Search stands, in one line under the switch. */
 	const line = $derived(
 		semanticStatusLine(
 			status,
@@ -244,9 +208,7 @@
 		{/snippet}
 		{#snippet setup()}
 			{#if needsModels || (enabled && status?.supported && modelFetch.running)}
-				<!-- Three states, and they must be three. A bar with no percentage says only that
-				     something is happening, and a button that goes back to looking exactly as it did
-				     before the press says nothing about whether the press worked. -->
+				<!-- Three states, and they must be three. -->
 				<ActionRow
 					id="semantic.download"
 					label={COPY.models.heading}
@@ -271,9 +233,7 @@
 
 				<!--
 					The bar measures FILES DESCRIBED, not files queued: the run only puts work in the
-					queue and finishes in seconds, while the describing goes on for hours. So this
-					counts the thing itself, from two numbers the server already computes, which is
-					also what makes it survive leaving the screen.
+					queue and finishes in seconds, while the describing goes on for hours.
 				-->
 				{#if describing.running && describing.fraction !== null}
 					<ProgressBar value={describing.fraction * 100} label="Describing your library" />
@@ -297,9 +257,6 @@
 					{/if}
 					<!--
 						Stopped is not finished, and it must not read as either progress or completion.
-						Switching the feature off cancels the queued work, and switching back on does
-						not bring it back, so the honest screen says how many were left and what to
-						press. What to press is the task's Run now, on Tasks, where every press lives.
 					-->
 					{#if describing.stopped}
 						<p>
@@ -354,8 +311,8 @@
 />
 
 <style>
-	/* The percentage beside the bar. Tabular figures so the number does not jitter sideways as it
-	   climbs, which is the whole reason a progress reading is hard to read. */
+	/* The percentage beside the bar. Tabular figures so the number does not jitter sideways as
+	   it climbs, which is the whole reason a progress reading is hard to read. */
 	.status {
 		color: var(--sift-ink-2);
 		font: var(--text-data);

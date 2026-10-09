@@ -1,12 +1,4 @@
-/*
- * Add to on a folder: the declared door, every row aimed at the files under the folder.
- *
- * What a pick from a folder's menu must do is what the same pick over a selection does, with the
- * folder's files as the selection: so asserted here is that each row keeps its words and its
- * list, that the list's own write is handed the folder's files (read once, from the folder's
- * whole subtree), and that a folder bigger than one press takes writes nothing and says why
- * rather than writing the first thousand and calling that the folder.
- */
+/* Add to on a folder: the declared door, every row aimed at the files under the folder. */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const get = vi.fn();
@@ -121,8 +113,8 @@ describe('Add to aimed at a folder', () => {
 });
 
 describe('Person and Site on a folder', () => {
-	/* The folder's own act, through the route the folder's own naming questions press: the
-	   pick names the folder, so the reader learns what it missed and a folder of any size is covered. */
+	/* The folder's own act, through the route the folder's own naming questions press: the pick
+	   names the folder, so the reader learns what it missed and a folder of any size is covered. */
 	function places(): { door: Verb; filed: VerbPick } {
 		const filed = place();
 		return {

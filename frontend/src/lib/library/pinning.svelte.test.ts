@@ -1,14 +1,4 @@
-/* Keeping a thing at the top of its wall, on all five named kinds and on a file.
- *
- * The write lives in one place because a pin is the same write on all five walls and only the word
- * in the address differs. The heart beside it is written four different ways across those same
- * walls, which is how the four came to differ in whether they put a failed write back, whether they
- * say anything, and whether they clear the selection: drift nobody can see until they press the
- * one that behaves differently.
- *
- * So what these hold is the part that is shared: the address, the body, and what a set that fails
- * part-way leaves on screen.
- */
+/* Keeping a thing at the top of its wall, on all five named kinds and on a file. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -22,9 +12,7 @@ import {
 } from '$lib/library/pinning.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
 
-/* The REQUESTS are stood in for and nothing else is. A mock built from scratch would leave out
-   `ApiError`, which the refusal path reaches for the moment a write fails, so the one test about a
-   failing write would die on the mock rather than on the behaviour. */
+/* The REQUESTS are stood in for and nothing else is. */
 vi.mock('$lib/api/client', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/api/client')>()),
 	api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn() }
@@ -41,9 +29,7 @@ describe('the address a pin is written to', () => {
 	const KINDS: Pinnable[] = ['people', 'sites', 'collections', 'tags', 'photo-sets'];
 
 	it.each(KINDS)('is the wall-s own word for %s', async (kind) => {
-		/* Five walls and one write. A sixth cannot arrive by accident: a username carries no pin
-		   for the same reason it carries no heart, and loops, Favorites and Hidden are walls of
-		   media rather than of named things. */
+		/* Five walls and one write. */
 		mocked.put.mockResolvedValue({ pinned: true });
 
 		await pinAll(kind, ['x1'], true, () => {});
@@ -72,8 +58,8 @@ describe('the address a pin is written to', () => {
 
 describe('a whole selection', () => {
 	it('moves immediately and settles onto what the server ended up holding', async () => {
-		/* Optimistic, like every other opinion in Sift: a control that waits for a round trip before
-		   it changes reads as broken, and the round trip is nearly always a success. */
+		/* Optimistic, like every other opinion in Sift: a control that waits for a round trip
+		   before it changes reads as broken, and the round trip is nearly always a success. */
 		const settled: [string, boolean][] = [];
 		mocked.put.mockResolvedValue({ pinned: true });
 
@@ -90,9 +76,7 @@ describe('a whole selection', () => {
 
 	it('puts every row back when any one of them fails, and says so once', async () => {
 		/* All or nothing ON SCREEN, deliberately: a wall showing three of five pinned after one
-		   press is a wall nobody can reason about. The rows that DID land stay landed on the server
-		   (the next read shows them), because a second write undoing somebody's data because a
-		   third one timed out is worse than a screen that is briefly behind. */
+		   press is a wall nobody can reason about. */
 		const settled: [string, boolean][] = [];
 		mocked.put.mockResolvedValueOnce({ pinned: true }).mockRejectedValueOnce(new Error('no'));
 
@@ -116,8 +100,7 @@ describe('what the verb offers over a set of rows', () => {
 
 	it('reads a MIXED set as not pinned, so the press pins the lot', () => {
 		/* The other reading (unpin, because one of them is pinned) takes away something somebody
-		   set, from a press whose label said nothing about it. And toggling each into whatever it
-		   was not leaves the selection more mixed than it started. */
+		   set, from a press whose label said nothing about it. */
 		expect(allPinned([true, false])).toBe(false);
 		expect(allPinned([false, true])).toBe(false);
 	});
@@ -139,8 +122,7 @@ describe('what the verb offers over a set of rows', () => {
 describe('a selection of files', () => {
 	it('goes in ONE request, not one per file', async () => {
 		/* One request, not one per file: a hundred and thirty-four pins awaited one after
-		   another would be a hundred and thirty-four round trips. The single write above stays
-		   for one tile: it has nothing to batch and settles onto that file's own opinion. */
+		   another would be a hundred and thirty-four round trips. */
 		mocked.post.mockResolvedValue({
 			changed: 2,
 			skipped: 0,

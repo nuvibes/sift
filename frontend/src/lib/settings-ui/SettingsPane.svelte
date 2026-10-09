@@ -1,23 +1,5 @@
 <script lang="ts">
-	/*
-	 * Which section is showing, and whether a sub-page is open over it.
-	 *
-	 * One place, because settings is reached two ways (as a page at its own address, and as a panel
-	 * over whatever screen somebody was on), and the two must not each hold their own list of what
-	 * a section id renders. A second copy is a section that exists in one of them and is a blank
-	 * panel in the other, and nothing says which is right.
-	 *
-	 * The admin-only checks here are a courtesy, not the control: every endpoint behind these
-	 * refuses on its own, and would refuse a request this never made. What they prevent is offering
-	 * somebody a door that will not open.
-	 *
-	 * ## The sub-page
-	 *
-	 * A group of settings answering one question draws one control and an Edit. See `PresetGroup`.
-	 * Pressing it puts a page over this one, and this is where that is decided, because the thing
-	 * being replaced is the pane and the groups are inside it. See `drilldown.svelte.ts` for why the
-	 * pane is HIDDEN rather than unmounted while it is up.
-	 */
+	/* Which section is showing, and whether a sub-page is open over it. */
 	import { Empty } from '$lib/components/common';
 	import { session } from '$lib/shell/session.svelte';
 	import JobsScreen from '$lib/jobs/JobsScreen.svelte';
@@ -54,15 +36,10 @@
 
 	let { section }: { section: string } = $props();
 
-	/* A retired address renders what inherited its work. Followed HERE rather than at each caller,
-	   so the page, the panel and a deep link cannot disagree about where `/settings/connections`
-	   goes. */
+	/* A retired address renders what inherited its work. */
 	const showing = $derived(settledSection(section));
 
-	/* Whether this account may open the section at all, from the one list that says so.
-	 *
-	 * A section nobody declared is not openable either: nothing matches and this is false, which
-	 * lands on the placeholder rather than on a pane chosen by a name that means nothing. */
+	/* Whether this account may open the section at all, from the one list that says so. */
 	const mayOpen = $derived(
 		SETTINGS_SECTIONS.some((one) => one.id === showing && (!one.admin || session.isAdmin))
 	);
@@ -74,37 +51,21 @@
 	sectionPlace(() => here?.label ?? labelFor(section));
 
 	/* A pane about the computer Sift runs on is read only on a phone: every row inside asks this
-	   pane, so the rule is made once. See `read-only.ts` for each section's reason. */
+	   pane, so the rule is made once. */
 	holdPane(() => showing);
 	const held = $derived(heldHere(showing));
 
-	/* Leaving a section closes whatever was open over it. Without this, pressing Edit on one pane
-	   and then choosing another section in the list shows the new section's title with the old
-	   section's sub-page still on top of it. */
+	/* Leaving a section closes whatever was open over it. */
 	$effect(() => {
 		void showing;
 		drilldown.close();
 	});
 </script>
 
-<!--
-	Who may see a section is decided ONCE, by the declaration, and read here.
-
-	Restating it here (`{:else if section === 'privacy' && session.isAdmin}` beside a list that says
-	privacy is open to everybody) lets the two disagree: the list decides what appears in the
-	sidebar and this decides what draws, so a guest would see Privacy, click it, and get "Nothing
-	here yet": their PIN, their idle timers and their whole Hidden surface on the other side of
-	it, on a pane whose own comments say it is theirs.
-
-	Nothing to keep in step: `mayOpen` asks the one list.
--->
+<!-- Who may see a section is decided ONCE, by the declaration, and read here. -->
 <!--
 	The TITLE is drawn here, for every section, from the section's declaration: no pane writes one.
-	See `SettingsTitle`. A section this account may not open keeps the placeholder, which titles
-	itself; everything else gets the frame's title and then its pane.
-
-	`section-stack` marks this as one page of groups, so the group headings inside it know which of
-	them is first. DRESSED BY: .section-stack (SectionHeading reads it; it draws nothing itself)
+	DRESSED BY: .section-stack (SectionHeading reads it; it draws nothing itself)
 -->
 <div
 	class="section-body section-stack"
@@ -175,9 +136,7 @@
 		{:else if showing === 'general'}
 			<General />
 		{:else}
-			<!-- A declared section with no pane yet. Its title is already drawn above, in its own name:
-			     on a phone the section list is off screen, so a page titled "Settings" would make every
-			     unbuilt section look identical. -->
+			<!-- A declared section with no pane yet. -->
 			<Empty scope="block">Nothing here yet.</Empty>
 		{/if}
 	{/if}
@@ -186,14 +145,7 @@
 <DrilldownPage behind={labelFor(section)} />
 
 <style>
-	/*
-	 * Hidden, not unmounted. The sub-page draws a snippet that belongs to a component inside this
-	 * pane, so unmounting the pane would destroy the very thing being shown, along with every
-	 * loaded value and anything half-typed behind it.
-	 *
-	 * `display: none` rather than a visual trick: it takes the pane out of the tab order and out of
-	 * the accessibility tree, so nothing behind the sub-page can be reached by keyboard or read out.
-	 */
+	/* Hidden, not unmounted. */
 	/* Not `.pane`: the shell's scrolling section already is one, and an e2e locator needs one match. */
 	.section-body.away {
 		display: none;
@@ -205,12 +157,8 @@
 		margin-block-end: var(--space-4);
 	}
 
-	/*
-	 * Reading has a maximum measure, and a pane's prose takes the row help's: the lede under the
-	 * title, a group's note, a foot line. One rule here, for every pane and the sub-page drawn over
-	 * it, so a paragraph a pane forgot to bound does not run the width of the window. `:where`
-	 * keeps it weightless, so a pane that sets a narrower measure on its own paragraph keeps it.
-	 */
+	/* Reading has a maximum measure, and a pane's prose takes the row help's: the lede under the
+	 * title, a group's note, a foot line. */
 	:global(:where(.section-body, .sub-page) p) {
 		max-inline-size: var(--reading-measure);
 	}

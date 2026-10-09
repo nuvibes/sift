@@ -1,23 +1,11 @@
 <script module lang="ts">
-	/*
-	 * The least room this bar is worth drawing in. It lives here because it is a fact about the bar
-	 * rather than about the wall that decides whether to draw one.
-	 *
-	 * Written as the sum of its parts. The bar shrinks (see `StageBar`'s `.controls`), so nothing
-	 * is clipped at any width; this answers when it stops being useful, which is when the controls
-	 * come below what the transport, the sound, the drawer and the ways out need.
-	 *
-	 * The numbers at the start of the controls' row are wider on a wall of nine than a wall of two:
-	 * 112 is the two-column figure. A wider picker folds into one press where the bar runs out.
-	 */
+	/* The least room the bar is worth drawing in, as the sum of its parts (two-column picker). */
 
-	/** What the controls need for all of it: the transport, the sound, the drawer, the ways out. */
 	const LEAST_FOR_THE_CONTROLS = 400;
-	/** The picker of numbers at the start of the row, on the wall Sift opens with. Measured. */
+	/** Measured. */
 	const LEADING_EDGE = 112;
-	/** The bar's own padding either side, the gap after the picker, and its hairline. */
 	const THE_BAR_ITSELF = 24 + 12 + 2;
-	/** How far the bar stays clear of the wall's own edges. `--space-8`, doubled. */
+	/** `--space-8`, doubled. */
 	const CLEAR_OF_THE_EDGES = 32;
 
 	export const LEAST_FOR_THE_BAR =
@@ -30,30 +18,9 @@
 	   (the bar, the buttons, the player bar) is on the gallery. */
 
 	/*
-	 * One bar for the whole wall, while the window is filled.
-	 *
-	 * ## Why one
-	 *
-	 * Every cell carries the player's own bar: a scrubber, the transport, a clock, the volume and a
-	 * drawer of eleven controls. That is right in a window, where a cell is a picture with chrome
-	 * on it. Filling the screen with four of them would put four copies of the same bar on one
-	 * screen, and the bar wants about four hundred pixels, which a wall of four does not have to
-	 * give, so each cell would draw a cut-down version of it. While this bar is up a cell draws no
-	 * chrome at all, the step arrows included.
-	 *
-	 * ## The picker
-	 *
-	 * A row of numbers after the transport on the controls' row, `All` first. Pointing at one marks the cell
-	 * it belongs to on the wall behind, with the accent wash the application draws over anything a
-	 * drag is aimed at.
-	 *
-	 * ## Its width does not move
-	 *
-	 * Pressing a number must not resize the bar under the hand pressing it. Two things would: a
-	 * head saying what the cell is playing, which is as long as the query, and numbers as wide as
-	 * their own digits. So nothing on the bar names the cell's filter, and the numbers are a fixed
-	 * square. The filter is not on this bar: Filter on the bar above the
-	 * wall chooses what the chosen cell plays, and so does the cell's own menu (What it plays).
+	 * One bar for the whole wall while the window is filled; the cells draw no chrome then. A
+	 * picker of numbers marks its cell with the accent wash, fixed squares so the bar never resizes
+	 * under the hand.
 	 */
 	import { Button } from '$lib/components/common';
 	import ContextMenuItem from '$lib/components/common/ContextMenuItem.svelte';
@@ -70,43 +37,28 @@
 
 	interface Props {
 		wall: Wall;
-		/** Whether there is a wall to control at all. */
 		up: boolean;
-		/**
-		 * Gone quiet with the rest of the wall's chrome.
-		 *
-		 * Handed in rather than read off the shell, because a wall is drawn on three surfaces with
-		 * three different clocks and only the thing drawing it knows which one applies. See
-		 * `TheaterWall`, which is where that is answered once for the bar and the cells together.
-		 */
+		/** Handed in: only the thing drawing a wall knows which clock applies (`TheaterWall`). */
 		quiet?: boolean;
-		/** How tall the bar has come out, so the wall can keep the strip clear of it. */
 		tall?: number;
 	}
 
 	let { wall, up, quiet = false, tall = $bindable(0) }: Props = $props();
 
-	/* Which cell the bar is acting on: the one the keyboard is on, which the numbers below set. One
-	   answer rather than a second selection of this bar's own: a bar that could be pointed at cell
-	   two while the keys talked to cell three would be two answers to one question. */
+	/* The cell the keyboard is on: one answer, not a second selection. */
 	const chosen = $derived(Math.min(wall.focused, wall.cells.length - 1));
 	const cell = $derived(wall.cells[chosen]);
 
-	/* Nothing is being aimed at after the bar goes, or the wall would keep a wash on a cell nobody is
-	   pointing at: leaving fullscreen with the pointer over a number is exactly how that happens.
-	   The bar fading counts as going: it is `inert` while it is quiet, so the pointer never leaves
-	   the number it was on and the wash would stay lit under a bar that is no longer there. */
+	/* No wash survives the bar going, faded included. */
 	$effect(() => {
 		if (!up || quiet) wall.aiming = null;
 	});
 
-	/* Which phones are driving this wall, in words, or nothing while none is. */
 	const controlled = $derived(
 		screenOffer.wallControlled ? controlledWords(screenOffer.controlledBy) : ''
 	);
 
-	/* The numbers fold into one press when the row wants more than the bar can grow to; folded, they
-	   stay laid out out of sight, so the width they want is still known. */
+	/* Folded, they stay laid out out of sight, so their width is still known. */
 	let room = $state(0);
 	let numbersWide = $state(0);
 	let foldWide = $state(0);
@@ -116,12 +68,9 @@
 	const foldNames = $derived(wall.everyCell ? 'all cells' : `cell ${onCell}`);
 </script>
 
-<!-- Quiet when the rest of the chrome is. `stage.barHidden` is the one clock a filled screen runs;
-     a second one here would be a bar that went away at its own moment. -->
+<!-- Quiet on the one clock a filled screen runs (`stage.barHidden`). -->
 <StageBar open={up && cell !== undefined} {quiet} bind:tall bind:room label="The wall's controls">
 	{#if cell}
-		<!-- The cell's own bar, unchanged, at the width it was designed for, with the numbers at the
-		     start of its controls' row. -->
 		<CellControls
 			{wall}
 			{cell}
@@ -135,11 +84,7 @@
 	{/if}
 </StageBar>
 
-<!--
-	BEING REMOTE CONTROLLED, at the head of the numbers: the Remote's own glyph in the accent while
-	a phone is driving this wall, gone when it lets go. A mark, not a button, as the cell's own waiting
-	mark is: the words are the shared tooltip, and there is nothing to press.
--->
+<!-- A phone is driving this wall: a mark, not a button. -->
 {#snippet controlledMark()}
 	<span class="controlled">
 		<Tooltip label={controlled} placement="top">
@@ -148,27 +93,14 @@
 	</span>
 {/snippet}
 
-<!--
-	The cell picker, on the controls' row after the transport, under the timeline.
-
-	The scrubber is what somebody reaches for constantly and the numbers are pressed once in a
-	while, so the timeline runs the width of the bar over them: beside it, on a wall of nine, they
-	would push the timeline's start a third of the way across the bar.
--->
+<!-- Under the timeline, which is reached for constantly. -->
 {#snippet picker(beside: number)}
 	{@const folded = folds(beside)}
 	<div class="picker">
 		<!--
-		EVERY CELL AS ONE ROW OF NUMBERS, on the controls' line.
-
-		Not in the WALL'S OWN SHAPE (a two-by-two block of numbers for a two-by-two wall, with the
-		strip's five in a row underneath). That is a good property and it is given up deliberately:
-		a picker in the shape of a wall of nine is three rows tall, which makes the bar three rows
-		tall, and the thing it would mirror is on screen directly above it anyway.
-
-		One row, spread evenly, however many there are, so two look like two and nine look the same
-		way. The bar grows with them because this sits in the row rather than over it.
-	-->
+		Every cell as one row of numbers, not in the wall's shape, which would make the bar three
+		rows tall.
+		-->
 		<div
 			class="numbers"
 			class:folded
@@ -180,18 +112,8 @@
 		>
 			{#if controlled}{@render controlledMark()}{/if}
 			<!--
-				EVERY CELL TOGETHER, at the head of the numbers: it is one of them.
-
-				The wall's own verbs reach all of it (stop everything, silence everything), and without
-				this nothing else would: "next file in all four" and "five seconds back in all four" could
-				not be said at all, and "mute this one" and "mute everything" would be a modifier apart
-				with no way to see which you were about to do. It is a SELECTION rather than a second set of controls, so
-				the row beside it does not change: pick this, and every verb on the bar lands on the whole
-				wall.
-
-				A word rather than a digit, so it is wider than the numbers beside it, and fixed, so the
-		row does not move when it is pressed.
-		-->
+			All, a SELECTION: every verb on the bar then lands on the whole wall. A fixed word.
+			-->
 			<Tooltip label={ACTS.everyCell} placement="top" shortcut={keyOf('everyCell', 'theater')}>
 				<Button
 					size="small"
@@ -258,10 +180,7 @@
 {/snippet}
 
 <style>
-	/*
-	 * Square whatever the digit, so the row is one width whichever cell is chosen. `:global`: the
-	 * class lands on the shared button's element.
-	 */
+	/* Square whatever the digit; `:global` for the shared button. */
 	.picker :global(.pick) {
 		min-inline-size: 28px;
 		inline-size: 28px;
@@ -270,7 +189,6 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* One row, evenly spaced, whatever the wall holds; the bar grows to hold it until it folds. */
 	.numbers,
 	.fold {
 		display: flex;
@@ -284,7 +202,6 @@
 		display: flex;
 	}
 
-	/* Out of sight and spilling toward the start, which adds nothing to the row's measured width. */
 	.numbers.folded {
 		position: absolute;
 		inset-inline-end: 0;
@@ -298,28 +215,19 @@
 		padding-inline: var(--space-2);
 	}
 
-	/* The accent, and the whole mark: it states a fact about the wall, so it is lit, not dimmed. */
 	.controlled {
 		display: inline-flex;
 		color: var(--sift-accent-text);
 	}
 
-	/* A word, wider than the squares, and fixed, so pressing it moves nothing. */
 	.numbers :global(.pick.every) {
 		min-inline-size: 44px;
 		inline-size: 44px;
 	}
 
 	/*
-	 * The one being controlled: the app's own selected ground, and an accent edge.
-	 *
-	 * Not the shared button's `primary` tone, a solid accent block, which in this app means "the
-	 * thing to press" rather than "the one selected". Not an accent wash either: a wash is
-	 * translucent, and this bar floats on a scrim over moving pictures, so the chip would take its
-	 * colour from whatever frame was behind it.
-	 *
-	 * `--sift-accent-bg` is the token layer's answer: an opaque surface, "the ground under an
-	 * active nav row, a selected chip", which reads the same over any frame.
+	 * The selected ground (`--sift-accent-bg`), opaque, since a wash takes the colour of the frame
+	 * behind.
 	 */
 	.picker :global(.pick.on) {
 		border: 1px solid var(--sift-accent);

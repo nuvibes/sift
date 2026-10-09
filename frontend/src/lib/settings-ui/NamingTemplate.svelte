@@ -1,23 +1,6 @@
 <script lang="ts">
 	/* Where a download lands, what downloads it, and what the file is called, for everything,
-	 * and per Site.
-	 *
-	 * THREE ANSWERS, ONE ROW, AND THEY FALL BACK INDEPENDENTLY. A Site given a folder of its own
-	 * still follows the shared template; one given a tool still follows the shared folder.
-	 * Treating a row as an all-or-nothing override is how setting one thing quietly undoes
-	 * another.
-	 *
-	 * The default answers come first in this block, because they are what almost everybody sets
-	 * and never returns to. The per-Site list below is empty until somebody singles one out.
-	 *
-	 * !! The folder alone is written by `saveDownloadFolder`, which Add and the Downloads screen
-	 * share; it sends the row back whole, so a field added here goes there.
-	 *
-	 * !! And `$lib/library/DownloadFolderOffer.svelte`, which proposes a Downloads
-	 * folder the moment a library gains its first folder. It reads the row at the moment it
-	 * writes and sends the naming rule and the tool back as they are: a field added to the row
-	 * goes there too.
-	 */
+	 * and per Site. */
 	import { onMount } from 'svelte';
 	import { settingChanges, whenChanged } from '$lib/library/changes.svelte';
 	import SettingGroup from './SettingGroup.svelte';
@@ -40,9 +23,7 @@
 	type SiteOption = components['schemas']['SiteOptionItem'];
 	type SiteOptions = components['schemas']['SiteOptionsResponse'];
 
-	/* `SupportedSite`, which is what `/supported-sites` actually returns. `SiteChoice` carries
-	   two fields of the eight, and this screen needs `names_creators` and `supported`: a type
-	   that omits the field a screen depends on is a type that cannot warn about it. */
+	/* `SupportedSite`, which is what `/supported-sites` actually returns. */
 	type SupportedSite = components['schemas']['SupportedSite'];
 	type Downloader = components['schemas']['DownloaderChoice'];
 
@@ -51,8 +32,7 @@
 	/** What "nothing chosen" is on the wire. A `Select` deals in strings, so it needs a value. */
 	const UNSET = '';
 
-	/** The rule for every address Sift has no Site for. `null` and EMPTY both keep the name there:
-	 *  there is no Site whose name Sift could use instead. */
+	/** The rule for every address Sift has no Site for. */
 	let template = $state<string | null>(null);
 	let destination = $state(UNSET);
 	let tokens = $state<Record<string, string>>({});
@@ -64,11 +44,7 @@
 	let sites = $state<SiteOption[]>([]);
 	let known = $state<SupportedSite[]>([]);
 	let problem = $state<string | null>(null);
-	/** Which Site the "give one its own" chooser is pointed at.
-	 *
-	 * Undefined rather than an empty string, and the difference is visible: the chooser treats an
-	 * empty string as a chosen value, so with no option carrying one it would draw its own
-	 * internal stand-in text where the prompt should be. */
+	/** Which Site the "give one its own" chooser is pointed at. */
 	let adding = $state<string | undefined>(undefined);
 
 	/* The template as the server last said it, so a re-read can tell a box somebody is typing in
@@ -102,21 +78,10 @@
 		})();
 	});
 	/* A Site's rule or the default saved in another window, or by another admin, is said on the
-	   settings bell (`site_options`); the pane follows it. Every row saves on its own press, and a
-	   template being typed is kept (see `storedTemplate`). */
+	   settings bell (`site_options`); the pane follows it. */
 	whenChanged(settingChanges, () => void readOptions());
 
-	/* The folders Sift may write into, named and then told apart.
-	 *
-	 * The name is the label and beside it goes only as much path as tells two folders of one name
-	 * apart: the same rule the Add panel and the Move sheet use. A whole path in the label
-	 * reads as nine identical rows wherever a library repeats a folder name.
-	 *
-	 * What goes ABOVE them differs by level, and that is the point: for everything it is "Not
-	 * set: each download asks" ("Sift" there would look like a folder called Sift, and be a
-	 * download the server would refuse); for one Site it is the default, named. See
-	 * `followsDefault`.
-	 */
+	/* The folders Sift may write into, named and then told apart. */
 	const placed = $derived(
 		disambiguate(
 			movable.folders.map((folder) => ({
@@ -127,25 +92,13 @@
 		)
 	);
 
-	/* The first row is handed in whole rather than as a label, so the one that names the default can
-	   carry the same quiet phrase `disambiguate` gave that folder further down the list. */
+	/* The first row is handed in whole rather than as a label, so the one that names the default
+	   can carry the same quiet phrase `disambiguate` gave that folder further down the list. */
 	function destinations(first: { label: string; detail?: string }) {
 		return [{ value: UNSET, ...first }, ...placed];
 	}
 
-	/*
-	 * What "follow the default" says on a Site's own chooser, and it NAMES the folder.
-	 *
-	 * Never "Default download location", which says there is one and not where it goes, and
-	 * where it goes is the whole of what somebody is deciding on that row. Never "default" either:
-	 * on a Site's card it would mean three different things (this folder, Sift's name, Sift's
-	 * downloader), so it says which row it follows and names the folder beside it.
-	 *
-	 * From `destination`, which is this panel's own copy of the default's folder, rather than from a
-	 * second read: the chooser above writes it and this is drawn from the same value, so the row
-	 * cannot go on naming a folder the default has stopped pointing at. Where nothing is set there
-	 * is no name to give and it falls back to saying what it does.
-	 */
+	/* What "follow the default" says on a Site's own chooser, and it NAMES the folder. */
 	const followsDefault = $derived.by(() => {
 		/* Nothing set for everything, and none for this Site: the same honest phrase the default row
 		   wears, because "Default download folder" there would promise a folder that does not exist. */
@@ -163,51 +116,25 @@
 		return known.find((site) => site.key === scope)?.name ?? scope;
 	}
 
-	/** What Sift names a Site's files when it has no rule of its own, EMPTY for keep. The
-	 *  catalog's answer, sent on the Sites list, so the row and the download cannot disagree. */
+	/** What Sift names a Site's files when it has no rule of its own, EMPTY for keep. */
 	function shippedOf(scope: string): string {
 		return known.find((site) => site.key === scope)?.default_naming ?? '';
 	}
 
-	/** The words a Site can fill, in the order to offer them. Every word where the Sites list does
-	 *  not name this scope, which is only ever a Site since removed from the catalog. */
+	/** The words a Site can fill, in the order to offer them. */
 	function wordsOf(scope: string): string[] {
 		return known.find((site) => site.key === scope)?.name_words ?? Object.keys(tokens);
 	}
 
-	/*
-	 * What can be given its own answers, and what deliberately cannot.
-	 *
-	 * A Site Sift only RECOGNISES (listed so its traffic can be given a way out, with nothing
-	 * about downloading from it looked at or tried) has no download behaviour to configure. A
-	 * folder, a tool and a template for it are three questions about something that is not claimed
-	 * to work, and answering them teaches that it does.
-	 *
-	 * A Site that already HAS a row is never hidden, whatever it is now. Settings somebody
-	 * stored are shown so they can be seen and undone; a row that vanishes from the screen and goes
-	 * on applying is the worse of the two.
-	 */
+	/* What can be given its own answers, and what deliberately cannot. */
 	const addable = $derived(
 		known
 			.filter((site) => site.supported && !sites.some((one) => one.scope === site.key))
 			.map((site) => ({ value: site.key, label: site.name }))
 	);
 
-	/*
-	 * One write, and it carries ALL THREE fields.
-	 *
-	 * They are stored in one row, so sending one and leaving the others out is not a partial save.
-	 * It is a save of the missing ones as empty: leaving the naming box would write a blank
-	 * destination over whatever was there, every time. A third answer in the row is a third way to
-	 * make that same mistake.
-	 *
-	 * The name is sent AS IT IS. `null` is no rule and EMPTY is keep the name (two answers the
-	 * server stores apart), so turning every empty box into `null` would make "keep the name"
-	 * impossible to choose for a Site. The field decides which one an empty box means.
-	 *
-	 * A refusal is said in the server's own words (a `{creator}` on a Site that never names one
-	 * says which Site and why), and it answers false so the row can go back to what is stored.
-	 */
+	/* One write, and it carries ALL THREE fields. They are stored in one row, so sending one and
+	 * leaving the others out is not a partial save. */
 	async function store(
 		scope: string,
 		naming: string | null,
@@ -240,13 +167,7 @@
 		if (!(await saveDownloadFolder(id || null, named))) destination = previous;
 	}
 
-	/* Choosing a folder that is not in the list yet. The desktop opens the operating system's own
-	   picker, which is the consent as well as the choice; a browser cannot open that, so there the
-	   press opens the folder picker over the folders Sift has, as Add a folder and the backup
-	   folder (`FolderChoice`) do. Never a typed path: a free text box would take a half-typed
-	   path, a path on another machine and a typo alike, refused only on save. Either way
-	   `folderFor` makes the place a library folder first, where it is not one, because the server
-	   files a download into a library folder by its id. */
+	/* Choosing a folder that is not in the list yet. */
 	const canPick = bridge.canChooseFolder();
 	let choosing = $state(false);
 	const picker = new Picker();
@@ -401,20 +322,16 @@
 		{#if sites.length === 0}
 			<p class="lede">{COPY.noneYet}</p>
 		{:else}
-			<!-- One card per Site, with the SAME three answers the default has, in the same
-			     order. An unlabelled box on a settings pane is a box nobody can tell the
-			     purpose of. -->
+			<!--
+				One card per Site, with the SAME three answers the default has, in the same order.
+			-->
 			<ul class="sites">
 				{#each sites as site (site.scope)}
 					<li>
-						<!-- Folded, because a Site's answers are three controls AND the whole name
-						     builder: four Sites open together is a pane nobody can find anything on.
-						     The pane's one fold, `Fold`, and a row of the pane rather than a card:
-						     a Site's rows are the pane's rows, a hairline between two Sites.
-
-						     The button is in the BODY and not the summary: anything clickable
-						     inside a summary is also a click on the summary, so putting it
-						     there would collapse the fold as a side effect of pressing it. -->
+						<!--
+							Folded, because a Site's answers are three controls AND the whole name
+							builder: four Sites open together is a pane nobody can find anything on.
+						-->
 						<Fold summary={nameOf(site.scope)}>
 							<div class="who">
 								<p class="after">{COPY.afterReset(nameOf(site.scope))}</p>
@@ -465,8 +382,7 @@
 
 		{#if addable.length > 0}
 			<LabelledRow label={COPY.addSite}>
-				<!-- Drawn again for every Site added, so it goes back to asking. Held, it would keep
-				     the answer just taken, and, that answer having left its list, show the Site's key. -->
+				<!-- Drawn again for every Site added, so it goes back to asking. -->
 				{#key sites.length}
 					<Select
 						value={adding}
@@ -496,9 +412,7 @@
 		padding: 0;
 	}
 
-	/* A Site per row of the pane: its fold, and under it its answers. The line between two Sites
-	   is drawn by the lower one, as between two rows; no card, since a form on a pane is the
-	   pane's rows. */
+	/* A Site per row of the pane: its fold, and under it its answers. */
 	.sites li {
 		padding-block: var(--space-3);
 	}

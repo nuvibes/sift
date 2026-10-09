@@ -1,14 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/*
- * The Logs page's one list: the library's lines and the app's own, in the order they were written.
- *
- * Two ordered runs merged rather than sorted, so a line with no time of its own (a traceback's
- * continuation) stays after the line it followed in its own file; on a tie the library's is first.
- *
- * ONE SPAN OF TIME FOR BOTH. A read as long as it was asked for may have older lines it did not
- * send, so nothing of the other log older than its oldest line is kept: a quiet app's lines from
- * last week would otherwise sit above a busy library's last minutes with nothing saying so.
- */
+/* The Logs page's one list: the library's lines and the app's own, in the order they were
+ * written. */
 import type { components } from '$lib/api/schema';
 
 type LogRecord = components['schemas']['LogLine'];

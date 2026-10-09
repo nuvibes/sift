@@ -1,31 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Asking a VPN provider for a public port, through the tunnel itself (NAT-PMP, RFC 6886).
+"""Asking a VPN provider for a public port through the tunnel itself (NAT-PMP, RFC 6886).
 
-A swap is hosted on a port the VPN provider opens on ITS server's public address and forwards down
-the tunnel to Sift. Nothing on the home router changes and the home address is never in the answer,
-which is the point. The asking is NAT-PMP: a twelve-byte UDP question to the provider's gateway
-inside the tunnel, carried there by the tunnel client's own `[UDPProxyTunnel]` section from a
-loopback port on this device (`process.Listener`). So every question here goes to `127.0.0.1` and
-nowhere else.
-
-What the protocol asks and answers, through a real provider:
-
-- **The public address** (opcode 0): two bytes out; twelve back (version, opcode 128, a result
-  code, the seconds since the gateway's epoch, and the four bytes of the address).
-- **A TCP mapping** (opcode 2): twelve bytes out (the inside port, the public port wanted, the
-  lifetime in seconds); sixteen back (the same header, the inside port, the public port GIVEN and
-  the lifetime granted). The provider honours the inside port it is asked for and chooses the public
-  one itself, so Sift asks for `(its inside port, 0)` and advertises what comes back. The
-  documentation's own example, `1 0`, maps the public port to inside port 1, where nothing listens.
-- **A lease runs out**, so it is renewed: every 45 seconds against a 60-second lifetime, so one
-  lost renewal is not a lapse. Each answer is read afresh (a provider may hand back another port),
-  and a renewal that fails ends the hosting.
-
-A reply comes back in tens of milliseconds. A question is asked three times, waiting half a second,
-then one, then two (the protocol's doubling, cut short at three tries): a lost datagram costs half a
-second, and a provider that never answers (a server that does not forward ports) is known to be
-one in three and a half seconds rather than the protocol's full minute.
-"""
+Asked of `127.0.0.1`, relayed by the client; three tries over three and a half seconds, renewed."""
 
 from __future__ import annotations
 
@@ -36,7 +12,6 @@ import struct
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-#: The protocol's version. There has only ever been one.
 _VERSION = 0
 _OP_PUBLIC_ADDRESS = 0
 _OP_MAP_TCP = 2
@@ -45,17 +20,15 @@ _REPLY = 128
 _PUBLIC_REPLY_SIZE = 12
 _MAP_REPLY_SIZE = 16
 
-#: How long the first try waits for a reply. Each later try waits twice as long as the one before.
+#: The first try's wait, doubling on each later try.
 FIRST_WAIT_SECONDS = 0.5
-#: How many times a question is asked before the provider is taken not to be answering.
+#: Tries before the provider is taken not to be answering.
 TRIES = 3
-#: How long a mapping is asked to last.
 LEASE_SECONDS = 60
-#: How often a mapping is renewed: well inside its lifetime, so one lost renewal is not a lapse.
+#: Well inside the lease, so one lost renewal is not a lapse.
 RENEW_EVERY_SECONDS = 45.0
 
-#: The protocol's result codes, in words for the log line a failed hosting leaves. None of them
-#: carries an address.
+#: The protocol's result codes in words for the log; none carries an address.
 _RESULTS = {
     1: "unsupported version",
     2: "not authorized",
@@ -71,16 +44,14 @@ class NatPmpError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Mapped:
-    """What the provider gave: its public address, the public port that reaches the inside port
-    Sift asked for, and how many seconds the provider will keep it."""
+    """What the provider gave: its public address, the public port and the seconds it keeps it."""
 
     public: str
     external_port: int
     lifetime: int
 
     def same_place(self, other: Mapped) -> bool:
-        """Whether a guest would dial the same address and port for both. The lifetime is not
-        part of that: a provider may count it down between renewals."""
+        """Whether a guest would dial the same address and port for both; lifetime aside."""
         return (self.public, self.external_port) == (other.public, other.external_port)
 
 
@@ -94,17 +65,12 @@ class _Replies(asyncio.DatagramProtocol):
         self.received.put_nowait(data)
 
     def error_received(self, exc: Exception) -> None:
-        # Nothing on the port yet, which Windows reports on the NEXT receive as a reset. The same as
-        # silence for this purpose: the try waits out its time and the next one asks again.
+        # Windows reports an empty port as a reset on the next receive; treated as silence.
         return None
 
 
 class NatPmp:
-    """The questions Sift asks one tunnel's provider, through the loopback port its client relays.
-
-    `host` and the waits are parameters for the tests, which answer from a fake on loopback; the
-    application always asks `127.0.0.1` on the port the tunnel was started with.
-    """
+    """The questions Sift asks one tunnel's provider, through its client's loopback relay."""
 
     def __init__(
         self,
@@ -128,13 +94,7 @@ class NatPmp:
     async def map_tcp(
         self, internal_port: int, external_requested: int = 0, lifetime: int = LEASE_SECONDS
     ) -> Mapped:
-        """Ask for a public TCP port reaching `internal_port` inside the tunnel.
-
-        `external_requested` is 0 ("any") when a hosting starts, and the port already held when
-        it is renewed, which is how the protocol asks to keep it. Whatever the provider gives back
-        is the answer either way; a reply for another inside port, or one granting nothing, is not
-        a mapping and is refused rather than advertised.
-        """
+        """Ask for a public TCP port reaching `internal_port`; refusing a reply mapping nothing."""
         public = await self.public_address()
         question = struct.pack(
             "!BBHHHI", _VERSION, _OP_MAP_TCP, 0, internal_port, external_requested, lifetime
@@ -167,12 +127,7 @@ class NatPmp:
 
     @staticmethod
     async def _answer(replies: _Replies, opcode: int, size: int, wait: float) -> bytes | None:
-        """The reply to this question within `wait` seconds, or None.
-
-        A datagram that is not an answer to it (too short, another version, another opcode) is
-        passed over rather than believed. A refusal IS an answer, and a final one: asking again
-        would be asked the same way.
-        """
+        """The reply within `wait`, or None; a non-answer is skipped, a refusal is final."""
         try:
             async with asyncio.timeout(wait):
                 while True:
@@ -187,20 +142,14 @@ class NatPmp:
             return None
 
 
-#: Told the new answer when a renewal comes back with a different address or port.
+#: Told the new answer when a renewal returns another address or port.
 Moved = Callable[[Mapped], Awaitable[None]]
-#: Told why when a renewal fails. The renewal has stopped by the time it is called.
+#: Told why a renewal failed, after it has stopped.
 Failed = Callable[[NatPmpError], Awaitable[None]]
 
 
 class Renewal:
-    """Keeps one mapping alive for as long as a swap is hosted.
-
-    Every `every` seconds it asks for the port it holds again. An answer naming another address or
-    port replaces the one held and is passed on (`on_moved`); a failed renewal is passed on
-    (`on_failed`) and ends the renewal, because a mapping that is not being renewed lapses on its
-    own within the minute and a swap should not find that out from a silent guest.
-    """
+    """Keeps one mapping alive while a swap is hosted, passing on moves and ending on a failure."""
 
     def __init__(
         self,
@@ -234,11 +183,7 @@ class Renewal:
             self._task = asyncio.create_task(self._run(), name="natpmp-renewal")
 
     async def stop(self) -> None:
-        """Stop renewing. The lease then lapses on its own inside a minute, which is the intent.
-
-        Called from inside the renewal itself when a failure ends the hosting, and that call must
-        not cancel the very task it is running in.
-        """
+        """Stop renewing and let the lease lapse; never cancels the task it is called from."""
         task, self._task = self._task, None
         if task is None or task is asyncio.current_task():
             return

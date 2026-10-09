@@ -1,8 +1,6 @@
 <script lang="ts">
-	/*
-	 * Signing in. Sends anybody who arrives at a fresh instance to setup instead: there is no
-	 * account to sign in to yet, and a login form that can only fail is a dead end.
-	 */
+	/* Signing in. Sends anybody who arrives at a fresh instance to setup instead: there is no
+	 * account to sign in to yet, and a login form that can only fail is a dead end. */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { needsSetup, session } from '$lib/shell/session.svelte';
@@ -10,12 +8,8 @@
 
 	let checked = $state(false);
 
-	/*
-	 * Whether somebody is already signed in is not known yet when this mounts: the layout asks the
-	 * server and the answer arrives after. Sampling it in `onMount` therefore always reads "signed
-	 * out", and a signed-in person who refreshes this address or opens it from a bookmark is shown a
-	 * sign-in form. Watching it instead means the redirect happens whenever the answer lands.
-	 */
+	/* Whether somebody is already signed in is not known yet when this mounts: the layout asks
+	 * the server and the answer arrives after. */
 	$effect(() => {
 		if (session.isSignedIn) void goto('/browse', { replaceState: true });
 	});

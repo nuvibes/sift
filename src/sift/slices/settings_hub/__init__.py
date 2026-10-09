@@ -1,16 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Settings: the tables, the read/write API, and the screen the app's preferences live on.
-
-This feature owns *storing* settings and the screen that edits them. What settings *exist* is the
-kernel registry's job (`sift.kernel.settings_registry`): every feature, this one included, declares
-its preferences there with `register_setting`, and this screen is generated from what has been
-declared. Reading a setting from another feature is done through the service held on `app.state`,
-not by importing this package.
-
-Importing this package registers the `settings` schema and two settings no one feature owns:
-whether a guest is shown a Save button, which defaults off (a capability no admin has turned on
-is a capability nobody has) and whether a path names the account Sift runs as.
-"""
+"""Settings: storing preferences and the screen that edits them; the registry declares them."""
 
 from __future__ import annotations
 
@@ -25,9 +14,7 @@ from sift.slices.settings_hub.service import (
     UnknownSetting,
 )
 
-# A guest can always watch what an admin has shared with them. This decides whether they are
-# offered Save to device. It is friction, not protection: a file a guest plays is streamed to them
-# whole, so it is off by default and an admin turns it on deliberately.
+# Friction, not protection: a file a guest plays is streamed whole, so it is off by default.
 register_setting(
     key="guests.can_save_to_device",
     scope="app",
@@ -44,9 +31,7 @@ register_setting(
     ),
 )
 
-# Read wherever a screen says where a file is (`kernel.where`). Only an admin is ever shown a full
-# path, so it changes nothing for a guest. The name is taken out on the server, so it never reaches
-# the page; the page draws the gap it leaves as a blur.
+# Only an admin sees a full path; the name is removed on the server, never just blurred.
 register_setting(
     key=HIDE_ACCOUNT_NAME_KEY,
     scope="user",

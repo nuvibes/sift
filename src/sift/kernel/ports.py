@@ -1,20 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Who is listening on a port on this machine, and ending a process Sift itself left behind.
+"""Who is listening on a port here, and ending a process Sift itself left behind.
 
-A tunnel client can outlive the Sift that started it (a hard kill of the whole tree leaves a
-grandchild standing) and hold its ports, so every boot finds the port taken and cannot tell its
-own orphan from a stranger. **Sift owns what it spawns.**
-
-**"Its own" is proved by a token, not a port.** A port says where a process listens and nothing
-about who started it: two Sifts on one device can describe each other's clients by port and end each
-other's as leftovers. What the caller matches is a token only its own clients carry
-(`kernel/tunnels/process.TunnelProcess`); this module only answers who is listening, and ends a
-process when asked.
-
-Both answers come from the operating system's own tools rather than a library: the question is
-asked about the two ports of each tunnel start, and a process-table dependency for that would be a
-dependency for one question.
-"""
+Ownership is proved by a token on the command line by the caller, never by the port."""
 
 from __future__ import annotations
 
@@ -31,18 +18,16 @@ from sift.kernel.subprocess import SubprocessError, run
 
 log = get_logger(__name__)
 
-#: How long the lookup may take. A PowerShell start is a fraction of a second; a machine under
-#: load may make it several, and a tunnel start can wait for that.
+#: A loaded machine can take several seconds to start PowerShell.
 _LOOKUP_TIMEOUT = 15.0
 
-#: Decided at import from the platform's name rather than narrowed on `sys.platform`, so both
-#: halves below are ordinary code the checker reads on every platform.
+#: Decided at import, so the checker reads both platforms' halves.
 _ON_WINDOWS = sys.platform.startswith("win")
 
 
 @dataclass(frozen=True, slots=True)
 class PortHolder:
-    """A process listening on a port: its id, the name of its program, and how it was started."""
+    """A process listening on a port: its id, program name, and command line."""
 
     pid: int
     name: str
@@ -50,12 +35,7 @@ class PortHolder:
 
 
 def _windows_query(port: int) -> str:
-    """One PowerShell program: the listener on the port, then the process behind it.
-
-    The port is an integer checked by the caller, which is the whole of what makes composing a
-    program text acceptable here; nothing else a person typed reaches it. Tab-separated, because
-    a command line can hold any other character.
-    """
+    """The PowerShell program for one port, composed only from a checked integer; tab-separated."""
     return (
         f"$c = Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue "
         "| Select-Object -First 1; "
@@ -92,7 +72,7 @@ def parse_ss(text: str) -> tuple[str, int] | None:
 
 
 def _command_line_of(pid: int) -> str:
-    """How a process was started, read off the process filesystem. Empty when it cannot be."""
+    """How a process was started, from the process filesystem; empty when it cannot be read."""
     try:
         raw = Path(f"/proc/{pid}/cmdline").read_bytes()
     except OSError:
@@ -101,11 +81,7 @@ def _command_line_of(pid: int) -> str:
 
 
 async def holder_of(port: int) -> PortHolder | None:
-    """The process listening on this port, or None when nothing is or it cannot be told.
-
-    None is the honest answer for both, and the caller treats it the same way: a port that is
-    taken by something this cannot name is reported as taken by something it could not name.
-    """
+    """The process listening on this port, or None when nothing is or it cannot be told."""
     if not 0 < port < 65536:
         raise ValueError(f"{port} is not a port")
     try:
@@ -135,11 +111,7 @@ async def holder_of(port: int) -> PortHolder | None:
 
 
 async def end_process(pid: int) -> bool:
-    """End a process by its id. True when the request was accepted; the port frees a moment later.
-
-    Only ever called on a process `holder_of` named and the caller PROVED is Sift's own: by a
-    token on its command line that no other process carries, never by the port it holds.
-    """
+    """End a process the caller proved is Sift's own by its token; True when accepted."""
     if pid <= 0:
         return False
     try:

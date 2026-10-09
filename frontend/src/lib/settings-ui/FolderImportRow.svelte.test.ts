@@ -1,7 +1,5 @@
-/*
- * The folder of people is imported as a task: the press hands Sift the folder and answers
- * immediately, and the row follows the task to its report.
- */
+/* The folder of people is imported as a task: the press hands Sift the folder and answers
+ * immediately, and the row follows the task to its report. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
