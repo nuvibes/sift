@@ -24,7 +24,7 @@ vi.mock('$lib/shell/session.svelte', () => ({ session: { isAdmin: true } }));
 
 import type { FacetQuestion } from './facet-counts.svelte';
 
-const { FacetCountStore, columnQuery, rememberedColumns, columnsKey } =
+const { FacetCountStore, columnQuery, rememberedColumns, columnsKey, RE_ASKED_EVERY_MS } =
 	await import('./facet-counts.svelte');
 const { libraryChanges } = await import('$lib/library/changes.svelte');
 const { vault } = await import('$lib/shell/vault.svelte');
@@ -92,17 +92,48 @@ describe('asking', () => {
 
 describe('the live feed', () => {
 	it('re-asks on a bell and keeps the old numbers drawn until the new ones land', async () => {
-		const store = new FacetCountStore();
-		store.ask(question());
-		await settle();
-		sent.count = 9;
-		libraryChanges.generation += 1;
-		const open = held();
-		store.ask(question());
-		expect(store.answerTo(question())?.media?.[0]?.count).toBe(7);
-		open();
-		await settle();
-		expect(store.answerTo(question())?.media?.[0]?.count).toBe(9);
+		vi.useFakeTimers();
+		try {
+			const store = new FacetCountStore();
+			store.ask(question());
+			await vi.advanceTimersByTimeAsync(0);
+			sent.count = 9;
+			libraryChanges.generation += 1;
+			const open = held();
+			store.ask(question());
+			await vi.advanceTimersByTimeAsync(RE_ASKED_EVERY_MS);
+			expect(store.answerTo(question())?.media?.[0]?.count).toBe(7);
+			open();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(store.answerTo(question())?.media?.[0]?.count).toBe(9);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('bells within ten seconds of an answer ask once more, at the end of the ten', async () => {
+		vi.useFakeTimers();
+		try {
+			const store = new FacetCountStore();
+			store.ask(question());
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sent.asked).toEqual(['media:null', 'tags:null']);
+			for (let bell = 0; bell < 5; bell++) {
+				libraryChanges.generation += 1;
+				store.ask(question());
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			expect(sent.asked).toHaveLength(2);
+			await vi.advanceTimersByTimeAsync(RE_ASKED_EVERY_MS);
+			expect(sent.asked).toHaveLength(4);
+			libraryChanges.generation += 1;
+			store.ask(question());
+			await vi.advanceTimersByTimeAsync(0);
+			expect(sent.asked).toHaveLength(4);
+			store.reset();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('never draws counts taken with the vault open once it has locked', async () => {

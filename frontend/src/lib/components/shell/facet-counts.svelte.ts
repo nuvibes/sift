@@ -114,7 +114,16 @@ function bells(): string {
 interface Held {
 	counts: Record<string, FacetValue[]>;
 	bells: string;
+	/** When the answer landed (`Date.now`), so the bells of an import re-ask it at a walking pace. */
+	at: number;
 }
+
+/**
+ * How soon a question answered may be asked again for a bell: an import rings every second and
+ * each column is a count over the whole library (969 asks in ten minutes on one library, 626 ms
+ * each), so the bells within this window ask once, at its end.
+ */
+export const RE_ASKED_EVERY_MS = 10_000;
 
 /** How many questions are kept, oldest out first: a tab's walls and their recent filters. */
 const KEEP_AT_MOST = 24;
@@ -125,6 +134,9 @@ export class FacetCountStore {
 	/** The question being asked now, as key and bells, and the newest one waiting behind it. */
 	#asking: string | null = null;
 	#waiting: FacetQuestion | null = null;
+	/** The newest question a bell asked too soon, and the timer that asks it at the window's end. */
+	#later: FacetQuestion | null = null;
+	#timer: ReturnType<typeof setTimeout> | null = null;
 
 	/** The counts held for this question, current or about to be replaced; none if never asked. */
 	answerTo(question: FacetQuestion): Record<string, FacetValue[]> | undefined {
@@ -140,7 +152,21 @@ export class FacetCountStore {
 		if (question.facets.length === 0) return;
 		const key = keyOf(question);
 		const now = bells();
-		if (this.#held[key]?.bells === now || this.#asking === `${key}|${now}`) return;
+		const held = this.#held[key];
+		if (held?.bells === now || this.#asking === `${key}|${now}`) return;
+		if (held !== undefined && Date.now() - held.at < RE_ASKED_EVERY_MS) {
+			this.#later = question;
+			this.#timer ??= setTimeout(
+				() => {
+					this.#timer = null;
+					const next = this.#later;
+					this.#later = null;
+					if (next !== null) this.#ask(next);
+				},
+				held.at + RE_ASKED_EVERY_MS - Date.now()
+			);
+			return;
+		}
 		if (this.#asking !== null) {
 			this.#waiting = question;
 			return;
@@ -166,7 +192,7 @@ export class FacetCountStore {
 					}
 				})
 			);
-			this.#keep(key, { counts: Object.fromEntries(answers), bells: now });
+			this.#keep(key, { counts: Object.fromEntries(answers), bells: now, at: Date.now() });
 		} finally {
 			this.#asking = null;
 			const next = this.#waiting;
@@ -191,6 +217,9 @@ export class FacetCountStore {
 		this.#order = [];
 		this.#asking = null;
 		this.#waiting = null;
+		this.#later = null;
+		if (this.#timer !== null) clearTimeout(this.#timer);
+		this.#timer = null;
 	}
 }
 

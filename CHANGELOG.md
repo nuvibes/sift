@@ -115,6 +115,10 @@ version's section, dated, when that version is published.
 - **A cache folder is listed at most once a minute, in one pass.** At one library's ceiling
   every new picture listed 10,000 kept copies again, 7.8 s a time, five times a minute; the
   listing is one pass (10,000 copies 882 to 314 ms) and a minute apart.
+- **The filter columns are counted again at a walking pace during an import.** Every bell of
+  an import asked every column's count over the whole library again (969 asks in ten
+  minutes on one library, 626 ms each); the bells within ten seconds of an answer ask once,
+  at the end of the ten.
 - **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
   which opens the files with why each was left out, or "Up to date"; the time left is blank under
   a minute of work; a running Identify or Smart Search pass shows its window instead of "Not
