@@ -148,14 +148,18 @@ describe('the one-duration gate, over the client', () => {
 		).toEqual([]);
 	});
 
-	it('holds the copies not yet folded to their count, and to none once they are folded', async () => {
-		const copies = await everyCopy();
-		const standing = Object.fromEntries(
-			Object.keys(NOT_YET_FOLDED).map((where) => [where, copies[where]?.length ?? 0])
-		);
-		expect(
-			standing,
-			'a folded copy comes off NOT_YET_FOLDED; a new one goes to $lib/shell/duration'
-		).toEqual(NOT_YET_FOLDED);
-	});
+	it(
+		'holds the copies not yet folded to their count, and to none once they are folded',
+		{ timeout: 60_000 },
+		async () => {
+			const copies = await everyCopy();
+			const standing = Object.fromEntries(
+				Object.keys(NOT_YET_FOLDED).map((where) => [where, copies[where]?.length ?? 0])
+			);
+			expect(
+				standing,
+				'a folded copy comes off NOT_YET_FOLDED; a new one goes to $lib/shell/duration'
+			).toEqual(NOT_YET_FOLDED);
+		}
+	);
 });

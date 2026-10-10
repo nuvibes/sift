@@ -125,6 +125,11 @@ _ENQUEUERS = frozenset(
 #: keyword would fail open, reading a type as wired that is not.
 _WIRING_KEYWORDS = frozenset({"follow_on", "settles_into", "also_if_asked"})
 
+#: Calls that queue a batch of `(job_type, payload)` pairs built up first. The pairs are read from
+#: the module that makes the call, so a module that builds pairs and never hands them in counts
+#: nothing.
+_BATCH_ENQUEUERS = frozenset({"enqueue_children", "_enqueue_children", "enqueue_many"})
+
 #: A `ScheduledTask` hands its job type to the clock, which queues it on its timer and on Run now.
 #: The constructor and the keyword together, since `job_type=` on a read is not an enqueue.
 _SCHEDULERS = frozenset({"ScheduledTask"})
@@ -162,6 +167,25 @@ def _first_argument_names(source: str, called: frozenset[str] | set[str]) -> set
         if name not in called:
             continue
         first = node.args[0]
+        if isinstance(first, ast.Name):
+            found.add(first.id)
+        elif isinstance(first, ast.Attribute):
+            found.add(first.attr)
+    return found
+
+
+def _batched_names(source: str) -> set[str]:
+    """Job types in `(TYPE, payload)` pairs a module builds for a batch enqueue: the first element
+    of every two-tuple appended, extended or listed, in a module that calls a batch enqueuer."""
+    tree = ast.parse(source)
+    calls = {_called_name(node) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    if not calls & _BATCH_ENQUEUERS:
+        return set()
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Tuple) or len(node.elts) != 2:
+            continue
+        first = node.elts[0]
         if isinstance(first, ast.Name):
             found.add(first.id)
         elif isinstance(first, ast.Attribute):
@@ -216,6 +240,7 @@ def _across_the_tree(root: Path, called: frozenset[str] | set[str]) -> set[str]:
         found |= _first_argument_names(source, called)
         if called is not _REGISTRARS:
             found |= _wired_through_keywords(source)
+            found |= _batched_names(source)
     return found
 
 
@@ -358,3 +383,19 @@ def test_the_boot_excuses_are_all_still_declared_job_types() -> None:
         + "\n  ".join(stale)
         + "\n"
     )
+
+
+@pytest.mark.regression
+def test_a_pair_built_for_a_batch_enqueue_counts_and_one_never_handed_in_does_not() -> None:
+    batched = textwrap.dedent("""
+        children = []
+        children.append((FINGERPRINT_FILE, {"asset_id": asset_id}))
+        children.extend([(jobs.THUMBNAIL, {})])
+        await context.queue.enqueue_children(context.job.id, children)
+    """)
+    assert _batched_names(batched) == {"FINGERPRINT_FILE", "THUMBNAIL"}
+    unhanded = textwrap.dedent("""
+        children = [(FINGERPRINT_FILE, {"asset_id": asset_id})]
+        return children
+    """)
+    assert _batched_names(unhanded) == set()

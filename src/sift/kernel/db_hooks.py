@@ -46,13 +46,12 @@ def before_commit(work: Callable[[aiosqlite.Connection], Awaitable[None]]) -> No
 
 
 def after_commit(work: Callable[[], None]) -> None:
-    """Run once the write in progress has committed, and not at all if it does not."""
+    """Run once the write in progress has committed; dropped when it rolls back."""
     pending = _AFTER_COMMIT.get()
     if pending is None:
         raise DatabaseError(
-            "after_commit() was called outside a write(): there is no transaction for this to "
-            "belong to, so it would run at a moment the caller did not choose. Open the write "
-            "first, or do the work directly."
+            "after_commit() was called outside a write(). Nothing is committing, so the work "
+            "would run at a moment nobody chose. Open the write first, or do the work directly."
         )
     pending.append(work)
 

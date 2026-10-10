@@ -214,6 +214,7 @@ from sift.kernel.db_statistics import (
 from sift.kernel.db_statistics import (
     stale_tables as stale_tables,
 )
+from sift.kernel.db_upkeep import _INSIDE_A_WRITE, LogUpkeep
 from sift.kernel.db_writer import (
     CHECKPOINT_INTERVAL_SECONDS,
     RECLAIM_WORTH_SAYING_BYTES,
@@ -348,7 +349,7 @@ def readers_for(workers: int) -> int:
     return max(DEFAULT_READERS, workers + READER_HEADROOM)
 
 
-class Database:
+class Database(LogUpkeep):
     """The handle: one write connection behind a lock, plus a pool of readers. Kernel only: a
     direct read of assets walks past the access layer's permission checks."""
 
@@ -617,59 +618,6 @@ class Database:
         """Whether a write block is open or waited for right now."""
         return self._write_lock.locked()
 
-    async def copy_the_log_back(self) -> tuple[int, int]:
-        """Copy the write-ahead log into the database. Returns (pages in the log, pages copied).
-
-        A passive copy gives up at the oldest reader rather than wait. Most of it runs on a
-        connection of its own beside the writer, holding no write back; then what the writer added
-        meanwhile is copied under its guard, a short step, so that the next write starts the log
-        over rather than grow it: under a steady stream of commits the log is never otherwise all
-        copied at the moment a write begins.
-        """
-        async with self._folder_lock:
-            if self._folder is None:
-                self._folder = await self._open()
-            pages, copied = await _copy_back(self._folder)
-            # Again while the writer added much during the last copy, so the guarded step is short;
-            # skipped for a later look if it would not be, unless the log has grown past its cap.
-            added = pages
-            for _ in range(_MOST_LOG_COPIES):
-                more, copied = await _copy_back(self._folder)
-                added, pages = more - pages, more
-                if added <= _COPY_UNDER_GUARD_PAGES:
-                    break
-            if added > _COPY_UNDER_GUARD_PAGES and pages < _LOG_CAP_PAGES:
-                log.debug("db.log_copied", pages=pages, copied=copied, guarded=False)
-                return pages, copied
-            async with self.write() as writer:
-                pages, copied = await _copy_back(writer)
-            log.debug("db.log_copied", pages=pages, copied=copied, guarded=True, added=added)
-            return pages, copied
-
-    async def fold_the_log_back(self) -> tuple[bool, int]:
-        """Fold the write-ahead log back into the database. Returns (did it, pages still there).
-
-        The reset needs a moment with no reader in it, which a busy pool never has on its own, so
-        the log would only grow. `TRUNCATE` gives up rather than waits, which makes it safe on a
-        timer. The pages are copied first without the lock (`copy_the_log_back`), so the reset
-        under the writer's guard has little left to copy. Through the guard, since run at the
-        connection under another transaction it answers "table is locked" and silently does
-        nothing.
-        """
-        await self.copy_the_log_back()
-        async with self.write() as writer:
-            cursor = await writer.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            try:
-                row = await cursor.fetchone()
-            finally:
-                await cursor.close()
-        if row is None:  # pragma: no cover (the pragma always answers)
-            return False, 0
-        # (busy, log pages, pages copied): on success TRUNCATE reports zero for both counts, so all
-        # this can say is whether it got in.
-        busy, remaining = int(row[0]), int(row[1])
-        return busy == 0, remaining
-
     async def close(self) -> None:
         for connection in self._open_connections:
             _STEP_CELLS.pop(id(connection), None)
@@ -705,11 +653,7 @@ class Database:
         """
         connection = self._require_writer()
         if _IN_WRITE.get():
-            raise DatabaseError(
-                "write() cannot be opened inside another write(): it would wait for a lock this "
-                "task already holds and never return. Pass the connection you already have down to "
-                "whatever needs it, so the whole write is one transaction."
-            )
+            raise DatabaseError(_INSIDE_A_WRITE)
         pending: list[Callable[[], None]] = []
         asked = time.perf_counter()
         async with self._write_lock:

@@ -50,10 +50,10 @@ class Recorded:
 def said(monkeypatch: pytest.MonkeyPatch) -> Recorded:
     """The lines the check wrote: the logger is recorded rather than the output read, which writes
     structured lines straight to the stream, never `caplog`, and fails under a parallel run."""
-    from sift.kernel import db_writer
+    from sift.kernel import db_capabilities, db_writer
 
     recorded = Recorded()
-    for spoken in (db_module.log, db_writer.log):
+    for spoken in (db_module.log, db_writer.log, db_capabilities.log):
         monkeypatch.setattr(
             spoken, "info", lambda event, **fields: recorded.info.append((event, fields))
         )

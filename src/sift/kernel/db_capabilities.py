@@ -67,7 +67,7 @@ def check_sqlite_capabilities(
     *,
     announce: bool = True,
 ) -> SqliteCapabilities:
-    """Refuse to run on a SQLite that cannot do what Sift needs, and record what it can.
+    """Refuse to run on a SQLite missing what Sift needs, and record what it has.
 
     A capability rather than a version: what matters is how the machine's SQLite was built. Only
     FTS5 stops a boot, since search is made of it; extension loading is recorded. Once at boot.
@@ -77,11 +77,10 @@ def check_sqlite_capabilities(
 
     if not found.fts5:
         raise DatabaseError(
-            f"Sift needs a SQLite built with FTS5, and the one it found ({found.version}) does "
-            "not have it.\n"
-            "FTS5 is the full-text index every search runs against, so without it there is no "
-            "search at all.\n"
-            "It is a build option and not a version, so a newer SQLite is not necessarily a fix. "
+            f"Sift needs a SQLite built with FTS5, and the one it found ({found.version}) lacks "
+            "it.\n"
+            "FTS5 is the full-text index every search runs against: without it, no search.\n"
+            "A build option rather than a version, so a newer SQLite may still lack it. "
             "The container image ships one that has it."
         )
 
@@ -98,8 +97,8 @@ def check_sqlite_capabilities(
         log.warning(
             "sqlite.no_extension_loading",
             detail=(
-                "This SQLite cannot load extensions. Everything Sift does today works without "
-                "them; features that are built on one will not."
+                "This SQLite refuses to load extensions. Everything Sift does today works without "
+                "them; a feature built on one would fail here."
             ),
         )
     return found

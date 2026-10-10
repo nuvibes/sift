@@ -8,6 +8,7 @@ import re
 import sqlite3
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import aiosqlite
@@ -127,12 +128,20 @@ def _steps_taken(timing: Timing) -> int | None:
     return steps
 
 
+#: Set while the database keeps its own log: those statements are nobody's press, so the ledger
+#: never hears them and the log names their stage.
+_MAINTENANCE: ContextVar[bool] = ContextVar("db_maintenance", default=False)
+
+
 @contextmanager
 def _judged(
     stage: str, statement: str | PointRead, sql: str, params: Params = ()
 ) -> Iterator[Timing]:
     """Time one statement, judge it against its own usual cost, and remember what it cost: the
     record is told the NAME, and a statement that FAILED is not a reading at all."""
+    maintenance = _MAINTENANCE.get()
+    if maintenance:
+        stage = "db.maintenance"
     name = statement_name(statement)
     steps: int | None = None
     with timing_hook(
@@ -145,7 +154,7 @@ def _judged(
     _BUDGET.observed(
         name,
         timing.ran_ms,
-        None if steps is None else StatementRun(stage, name, steps, sql, params),
+        None if steps is None or maintenance else StatementRun(stage, name, steps, sql, params),
     )
 
 

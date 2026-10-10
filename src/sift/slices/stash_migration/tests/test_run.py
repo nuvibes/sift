@@ -484,7 +484,7 @@ def _brought_in(client: TestClient, database: Path) -> dict[str, Any]:
 
 
 #: What a run keeps about itself, which a second run adds to by being a second run.
-_THE_RUNS_OWN = ("jobs", "work_runs", "schema_version", "sqlite_sequence")
+_THE_RUNS_OWN = ("jobs", "job_family_tallies", "work_runs", "schema_version", "sqlite_sequence")
 
 #: The ledger, counted without the one line each finished task writes about itself ("ran"), which
 #: is the run's own record in the same sense as the tables above.

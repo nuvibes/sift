@@ -89,6 +89,7 @@ rules:
         - src/sift/kernel/db_statistics.py
         - src/sift/kernel/db_capabilities.py
         - src/sift/kernel/db_hooks.py
+        - src/sift/kernel/db_upkeep.py
         - src/sift/kernel/db_library.py
         - src/sift/kernel/db_readers.py
         - src/sift/kernel/db_judged.py

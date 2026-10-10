@@ -622,7 +622,7 @@ _cov_db() {
     src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \
     src/sift/kernel/tests/test_baseline_refusal.py src/sift/kernel/tests/test_db_inline_schema.py \
     --cov=sift.kernel.db --cov=sift.kernel.db_base --cov=sift.kernel.db_library \
-    --cov=sift.kernel.db_readers --cov=sift.kernel.db_schema --cov=sift.kernel.db_judged --cov=sift.kernel.db_statistics --cov=sift.kernel.db_capabilities --cov=sift.kernel.db_hooks
+    --cov=sift.kernel.db_readers --cov=sift.kernel.db_schema --cov=sift.kernel.db_judged --cov=sift.kernel.db_statistics --cov=sift.kernel.db_capabilities --cov=sift.kernel.db_hooks --cov=sift.kernel.db_upkeep
 }
 # What Sift writes down about itself, which is the only thing anybody has to go on when it is
 # misbehaving on a machine nobody can log in to. Two halves are load-bearing and neither shows when

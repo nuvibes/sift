@@ -46,7 +46,7 @@
 		"src/sift/kernel/archives.py": 6,
 		"src/sift/kernel/config.py": 5,
 		"src/sift/kernel/content/library.py": 7,
-		"src/sift/kernel/db.py": 13,
+		"src/sift/kernel/db.py": 7,
 		"src/sift/kernel/db_readers.py": 1,
 		"src/sift/kernel/db_schema.py": 1,
 		"src/sift/kernel/jobs/queue_settle.py": 1,
@@ -105,7 +105,6 @@
 	"phrasing": {
 		"src/sift/kernel/access/merged.py": 1,
 		"src/sift/kernel/access/sentences_means.py": 1,
-		"src/sift/kernel/db.py": 1,
 		"src/sift/slices/download/sources/argv.py": 2,
 		"src/sift/slices/watermarks/service.py": 1,
 		"src/sift/slices/workbench/models.py": 1
