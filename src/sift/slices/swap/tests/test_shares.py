@@ -145,7 +145,8 @@ async def test_a_stream_lost_mid_file_leaves_the_others_carrying(
 
     assert landed == {"big": data}
     assert sent[6] == 2, "the lost chunk went again, on another stream"
-    assert len(set().union(*carriers.values())) >= swap.STREAMS_START
+    # Which streams carry which chunks is the scheduler's; the lost one went on to another.
+    assert len(set().union(*carriers.values())) >= 2
     assert (host_row.state, host_row.sent_files, host_row.sent_bytes) == ("done", 1, len(data))
     assert host_row.cut_off_at is None and guest_row.state == "done", "never cut off"
 

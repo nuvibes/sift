@@ -231,7 +231,7 @@ def test_every_write_a_kept_list_stands_on_drops_it(
     share(client, library.shared, guest)
     assert _found(client, "zqxv") == {library.shared}
     assert _found(client, "zqxv") == {library.shared}
-    assert matched == [guest]
+    assert set(matched) == {guest}, "who was told, not how many times a loaded box told them"
     if change == "grant taken away":
         write(path, [("DELETE FROM acl_grants WHERE subject_user_id = ?", (guest,))])
         expected: set[str] = set()

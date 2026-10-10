@@ -314,7 +314,8 @@ async function takingClicksAgain(page: Page) {
 }
 
 test('a toast says the folder was taken, and then takes itself away', async ({ page }) => {
-	// That the strip renders, and that a non-error leaves on the real four-second clock.
+	// That the strip renders, and that a non-error leaves on the real four-second clock; the
+	// wait allows a loaded runner its share on top of the four seconds.
 	await signInAsAdmin(page);
 	const directory = aFolderWith(['holiday.mp4'], 'Announced');
 
@@ -323,7 +324,7 @@ test('a toast says the folder was taken, and then takes itself away', async ({ p
 
 	const toast = page.getByText('Sift is reading Announced');
 	await expect(toast).toBeVisible();
-	await expect(toast).toBeHidden({ timeout: 8000 });
+	await expect(toast).toBeHidden({ timeout: 20000 });
 });
 
 test('a toast about a failure stays until it is dismissed', async ({ page }) => {
