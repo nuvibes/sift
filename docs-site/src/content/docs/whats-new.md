@@ -109,6 +109,11 @@ What's new lists what each release of Sift changes for you, newest first. To see
 - **A person's strength bar rates the recognizer.** It is now the share of the faces Sift named
   as them that were right by your answers; a face still awaiting your answer no longer counts
   against them (a person with 3,191 faces named and 572 awaiting read 85% before, now 100%).
+- **Tasks wait for the screens only while a screen's own statement runs.** Before, every
+  statement of every task waited up to a tenth of a second whenever any page was being
+  answered; with the Tasks screen open a page was being answered 91% of the time, so a file
+  probe with 39 statements lost about 3 s of its 3.3 s and the tasks ran one at a time. The
+  wait is now on each task's record.
 - **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
   which opens the files with why each was left out, or "Up to date"; the time left is blank under
   a minute of work; a running Identify or Smart Search pass shows its window instead of "Not

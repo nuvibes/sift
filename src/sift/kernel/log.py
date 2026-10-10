@@ -453,12 +453,13 @@ def _union(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
 
 
 #: The figures of a job's summary that are times, beside its stages, each its own spans.
-_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL = (
+_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL, _SCREENS_WAIT = (
     "writer_wait_ms",
     "writer_held_ms",
     "read_ms",
     "storage_wait_ms",
     "tool_ms",
+    "screens_wait_ms",
 )
 
 
@@ -526,7 +527,8 @@ class JobCost:
         self.began = time.perf_counter() if began is None else began
         self.stages: dict[str, _Spent] = {}
         self.timed: dict[str, _Spent] = {
-            name: _Spent() for name in (_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL)
+            name: _Spent()
+            for name in (_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL, _SCREENS_WAIT)
         }
         self.writes = 0
         self.reads = 0
@@ -560,6 +562,12 @@ class JobCost:
             self.timed[_WRITER_WAIT].add(asked, got)
             self.timed[_WRITER_HELD].add(got, ended)
             self._covered.add(asked, ended)
+
+    def yielded(self, start: float, end: float) -> None:
+        """A statement stood aside for a screen's (`foreground.screens_first`)."""
+        with self._lock:
+            self.timed[_SCREENS_WAIT].add(start, end)
+            self._covered.add(start, end)
 
     def waited_for_storage(self, start: float, end: float) -> None:
         """A wait for a place in a storage's lane."""
@@ -608,6 +616,7 @@ class JobCost:
             "read_ms": timed[_READ],
             "reads": self.reads,
             "storage_wait_ms": timed[_STORAGE_WAIT],
+            "screens_wait_ms": timed[_SCREENS_WAIT],
             "launches": self.launches,
             "tool_ms": timed[_TOOL],
             "tool_read_bytes": self.tool_read_bytes,

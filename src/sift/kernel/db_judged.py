@@ -14,6 +14,7 @@ from typing import Any
 import aiosqlite
 from aiosqlite.context import contextmanager as _a_result
 
+from sift.kernel import foreground
 from sift.kernel.db_base import Params
 from sift.kernel.db_readers import (
     _SQL_COMMENT,
@@ -144,9 +145,12 @@ def _judged(
         stage = "db.maintenance"
     name = statement_name(statement)
     steps: int | None = None
-    with timing_hook(
-        stage, sql=sql, statement=name, level="debug", slow_ms=_BUDGET.threshold_ms(name)
-    ) as timing:
+    with (
+        foreground.a_requests_statement(),
+        timing_hook(
+            stage, sql=sql, statement=name, level="debug", slow_ms=_BUDGET.threshold_ms(name)
+        ) as timing,
+    ):
         try:
             yield timing
         finally:

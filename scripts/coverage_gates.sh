@@ -907,6 +907,7 @@ COV_LABELS=(
   "coverage: view rule gate"
   "coverage: database kernel gate"
   "coverage: logging kernel gate"
+  "coverage: listener gate"
   "coverage: diagnostics kernel gate"
   "coverage: folder tree gate"
   "coverage: package settings gate"
@@ -1042,6 +1043,7 @@ COV_FNS=(
   _cov_view_rule
   _cov_db
   _cov_log
+  _cov_listener
   _cov_diagnostics
   _cov_tree
   _cov_package
