@@ -297,9 +297,12 @@ async def test_a_cache_is_walked_when_its_counted_bytes_say_over_budget_and_once
     await job_queue.enqueue(thumbnails, {"asset_id": "owed"})
     walks: list[Path] = []
     listing = identity_places._cached
-    monkeypatch.setattr(
-        identity_places, "_cached", lambda directory: walks.append(directory) or listing(directory)
-    )
+
+    def counted_listing(directory: Path) -> list[tuple[float, int, Path]]:
+        walks.append(directory)
+        return listing(directory)
+
+    monkeypatch.setattr(identity_places, "_cached", counted_listing)
 
     # Over budget with nothing but owed copies: walked, then not again within the minute.
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, new)

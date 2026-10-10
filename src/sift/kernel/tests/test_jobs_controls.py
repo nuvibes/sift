@@ -1373,6 +1373,34 @@ async def test_a_cancel_of_a_pass_stops_its_types_and_nothing_else(job_queue: Jo
     assert (await job_queue.get(kept)).state is JobState.QUEUED  # type: ignore[union-attr]
 
 
+async def test_a_cancel_of_a_product_stops_only_the_steps_making_nothing_else(
+    job_queue: JobQueue,
+) -> None:
+    only = await job_queue.enqueue("media_step", {"products": ["thumbs"]}, require_handler=False)
+    shared = await job_queue.enqueue(
+        "media_step", {"products": ["thumbs", "previews"]}, require_handler=False
+    )
+    plain = await job_queue.enqueue("media_step", {"n": 1}, require_handler=False)
+
+    assert await job_queue.cancel_types([], ["thumbs"]) == 1
+
+    assert (await job_queue.get(only)).state is JobState.CANCELED  # type: ignore[union-attr]
+    for one in (shared, plain):
+        assert (await job_queue.get(one)).state is JobState.QUEUED  # type: ignore[union-attr]
+
+
+async def test_a_chunk_already_finished_when_its_stop_lands_is_passed_over(
+    job_queue: JobQueue,
+) -> None:
+    finished = await job_queue.enqueue("other_kind", {}, require_handler=False)
+    await _state(job_queue, finished, "done")
+    told: list[list[str]] = []
+    job_queue.listen_for_stops(lambda ids: told.append(list(ids)))
+
+    assert await job_queue._cancel_rows([finished], settled=True) == []
+    assert told == []
+
+
 @pytest.mark.integration
 async def test_a_big_stop_stops_running_work_first_and_writes_a_chunk_at_a_time(
     job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch

@@ -27,7 +27,7 @@ from sift.kernel.jobs import (
 from sift.kernel.photo_sets import MIN_PICTURES
 from sift.kernel.tunnels import EgressRouter, ListenPorts, TunnelProcess, TunnelSpec
 from sift.kernel.tunnels import client as tunnel_client
-from sift.slices.download import attempt, jobs
+from sift.slices.download import attempt, jobs, landing
 from sift.slices.download.jobs import download
 from sift.slices.download.service import DownloadService, PasteChoices
 from sift.slices.download.site_options import SiteOptions
@@ -1493,3 +1493,26 @@ async def test_a_retried_album_lets_in_only_what_its_earlier_attempt_did_not(
 
     assert let_in == ["one.png", "two.png"], "the first file was let in twice"
     assert landed is not None and landed.arrived == ["asset-one.png", "asset-two.png"]
+
+
+@pytest.mark.parametrize(
+    ("note", "read"),
+    [
+        ('["a.mp4", ["01A", true]]', {}),
+        ("not json", {}),
+        (
+            '{"a.mp4": ["01A", true], "b.mp4": "01B", "c.mp4": ["01C"]}',
+            {"a.mp4": ("01A", True)},
+        ),
+    ],
+)
+def test_a_landing_note_that_does_not_read_as_files_lets_nothing_in_unseen(
+    tmp_path: Path, note: str, read: dict[str, tuple[str, bool]]
+) -> None:
+    """What an earlier attempt let in is believed only file by file: a note of another shape is
+    no note, and the job takes every file through the gate again."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    (tmp_path / "landed.json").write_text(note, encoding="utf-8")
+
+    assert landing._landed_before(staging) == read

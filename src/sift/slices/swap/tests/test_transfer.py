@@ -11,7 +11,7 @@ import struct
 import zlib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -796,3 +796,41 @@ async def test_a_copy_the_location_door_cannot_read_is_refused_as_holding_a_plac
         )
 
     assert list((tmp_path / "out").iterdir()) == []
+
+
+def test_a_staged_file_removed_by_another_stream_has_nothing_to_sync(tmp_path: Path) -> None:
+    transfer.sync_file(tmp_path / "gone.part")
+    assert not (tmp_path / "gone.part").exists()
+
+
+async def test_a_file_dropped_while_its_chunks_were_synced_is_not_written_down(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another stream can fail the file during the sync: its chunks are not recorded after it."""
+    from sift.slices.swap.live import _Incoming
+    from sift.slices.swap.receiving import _Receiving
+
+    staged = tmp_path / "a.part"
+    staged.write_bytes(b"x")
+    state = _Incoming(path=staged, size=1, digest="d", count=1, missing=set())
+    recorded: list[object] = []
+
+    async def record_done(*args: object) -> None:
+        recorded.append(args)
+
+    def dropped_meanwhile(_path: Path) -> None:
+        state.dropped = True
+
+    monkeypatch.setattr(transfer, "sync_file", dropped_meanwhile)
+    half = _Receiving.__new__(_Receiving)
+    half.live = cast(
+        Any,
+        SimpleNamespace(
+            id="s1",
+            owner=SimpleNamespace(
+                store=SimpleNamespace(record_done=record_done), now=lambda: 0, clock=lambda: 0.0
+            ),
+        ),
+    )
+    await half._record(state, "k", final=True)
+    assert recorded == []

@@ -472,3 +472,54 @@ async def test_an_unmeasured_machine_seeks_the_strip_and_leaves_the_fingerprints
     )
     asset = await content_store.get(asset_id)
     assert asset is not None and asset.phash is None
+
+
+@pytest.mark.parametrize(
+    "way", ["seeking_is_quicker", "unplanned", "decode_refused", "fingerprints_refused"]
+)
+async def test_a_single_decode_that_cannot_serve_the_fingerprints_still_gives_the_strip(
+    way: str,
+    ingested_video: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Seeking priced quicker, moments that cannot be planned, a decode the tool refuses, or
+    fingerprints that fail to record: the strip is built either way and the fingerprints are left
+    to the file's own job."""
+    asset_id = ingested_video.asset.id
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    decode_fps = 0.001 if way == "seeking_is_quicker" else 600.0
+
+    async def measured(_path: Path) -> media.ReadRates:
+        return media.ReadRates(decode_fps=decode_fps, seek_seconds=0.04)
+
+    def unplanned(_probed: Any) -> list[media.FrameRequest]:
+        raise ValueError("no moment to read")
+
+    async def refused(*_args: Any, **_kwargs: Any) -> Any:
+        raise ffmpeg.FFmpegError("the tool refused the file")
+
+    async def unrecorded(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("the fingerprint could not be written")
+
+    if way == "unplanned":
+        monkeypatch.setattr(fingerprints, "fingerprint_requests", unplanned)
+    elif way == "decode_refused":
+        monkeypatch.setattr(media, "decode_once", refused)
+    elif way == "fingerprints_refused":
+        monkeypatch.setattr(fingerprints, "fingerprint_one", unrecorded)
+    await jobs.sprite(
+        await context_for("sprite", {"asset_id": asset_id}),
+        settings=settings,
+        hardware=hardware,
+        read_rates=measured,
+    )
+
+    assert await content_store.lacking_derivative(DerivativeKind.SPRITE, [asset_id]) == set()
+    asset = await content_store.get(asset_id)
+    assert asset is not None and asset.phash is None

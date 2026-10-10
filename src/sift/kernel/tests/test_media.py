@@ -456,10 +456,12 @@ class _Store:
         asset: Asset | None,
         locations: list[Location],
         paths: dict[str, Path | Exception],
+        kept: Path | None = None,
     ) -> None:
         self._asset = asset
         self._locations = locations
         self._paths = paths
+        self._kept = kept
 
     async def get(self, asset_id: str) -> Asset | None:
         return self._asset
@@ -468,7 +470,7 @@ class _Store:
         return self._locations
 
     async def local_copy(self, asset_id: str) -> Path | None:
-        return None
+        return self._kept
 
     async def path_of(self, location: Location) -> Path:
         answer = self._paths[location.id]
@@ -504,6 +506,15 @@ async def test_the_first_copy_that_opens_is_the_one_used(tmp_path: Path) -> None
     assert found.path == second
     assert found.original == second
     assert found.location.id == "second"
+
+
+async def test_a_kept_local_copy_is_read_in_place_of_the_share(tmp_path: Path) -> None:
+    kept = tmp_path / "kept.mp4"
+    store = _store(asset=_asset(), locations=[_location("one")], paths={}, kept=kept)
+
+    found = await media.resolve(store, "01HX0000000000000000000A01")
+
+    assert (found.path, found.original, found.location.id) == (kept, kept, "one")
 
 
 async def test_a_copy_already_known_to_be_missing_is_not_even_tried(tmp_path: Path) -> None:
@@ -627,6 +638,7 @@ async def test_a_member_whose_archive_drops_mid_read_waits_and_a_broken_one_is_r
 
     assert isinstance(await refused_with(OSError("the share dropped")), media_sources.CopiesAway)
     assert isinstance(await refused_with(BadZipFile("not a zip")), JobFailedPermanently)
+    assert type(await refused_with(ValueError("a bug"))) is ArchiveRefused
     full = await refused_with(OSError(errno.ENOSPC, "No space left on device"))
     assert isinstance(full, WaitingForSpace) and held_for(full) == ROOM_WAIT
 

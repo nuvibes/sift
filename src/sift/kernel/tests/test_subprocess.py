@@ -1477,6 +1477,64 @@ async def test_a_long_lived_launch_cancelled_while_it_starts_ends_what_it_made(
     assert child.poll() is not None, "the child of a cancelled launch was left running"  # type: ignore[attr-defined]
 
 
+async def test_a_capture_cancelled_while_its_tool_starts_ends_the_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    made: list[object] = []
+    starting = threading.Event()
+    real_hold = sp._hold_then_start
+
+    def slow_hold(process: object, priority: sp.Priority, paused: int) -> None:
+        made.append(process)
+        starting.set()
+        time.sleep(0.3)
+        real_hold(process, priority, paused)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sp, "_hold_then_start", slow_hold)
+    task = asyncio.ensure_future(
+        sp.capture([REAL_PYTHON, "-c", "import time; time.sleep(60)"], time_limit=60)
+    )
+    await asyncio.to_thread(starting.wait, 10)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    (child,) = made
+    assert child.poll() is not None, "the child of a cancelled capture was left running"  # type: ignore[attr-defined]
+
+
+async def test_a_capture_whose_tool_cannot_be_held_ends_it_and_says_why(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    made: list[object] = []
+
+    def refuses(process: object, priority: sp.Priority, paused: int) -> None:
+        made.append(process)
+        raise OSError("no job for this tool")
+
+    monkeypatch.setattr(sp, "_hold_then_start", refuses)
+    with pytest.raises(OSError, match="no job"):
+        await sp.capture([REAL_PYTHON, "-c", "import time; time.sleep(60)"], time_limit=60)
+
+    (child,) = made
+    assert child.poll() is not None  # type: ignore[attr-defined]
+
+
+def test_only_a_tool_started_paused_is_let_go(monkeypatch: pytest.MonkeyPatch) -> None:
+    let_go: list[object] = []
+    monkeypatch.setattr(sp, "step_aside", lambda *args: None)
+    monkeypatch.setattr(sp, "_contain", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sp, "_let_go", let_go.append)
+
+    sp._hold_then_start("running", sp.Priority.NORMAL, 0)  # type: ignore[arg-type]
+    sp._hold_then_start("paused", sp.Priority.NORMAL, sp._PAUSED)  # type: ignore[arg-type]
+
+    assert let_go == ["paused"]
+
+
 # --- what a failed capture says, and what each tool cost the job it ran for ------------------------
 
 

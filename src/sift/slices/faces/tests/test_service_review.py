@@ -559,6 +559,70 @@ async def test_agreeing_together_leaves_a_face_answered_since_it_was_read(
     assert await store.reference_count(person) == 1
 
 
+async def test_agreeing_when_every_face_was_answered_since_it_was_read_lands_none(
+    service: FaceService, store: Store, temp_db: Database, clip: Ingested
+) -> None:
+    person = await make_person(temp_db, "Orla Finch")
+    other = await make_person(temp_db, "Marlo Venn")
+    (only,) = await _proposed_appearances(
+        store, clip, person, [(_described(0, quality=0.9, vector=person_vector(0)),)]
+    )
+    read = await store.tracks([only])
+    await store.attribute(only, other, confidence=1.0, attribution=Attribution.CONFIRMED)
+
+    assert await service._confirm_together([read[only]], taught=None) == []
+    assert (await store.tracks([only]))[only].person_id == other
+    assert await store.reference_count(person) == 0
+
+
+async def test_a_face_of_a_file_with_no_pass_on_record_is_named_but_files_no_picture(
+    service: FaceService, store: Store, temp_db: Database, clip: Ingested
+) -> None:
+    """A reference carries the recognizer that measured it, read from the file's pass: with no
+    pass to read it from, the face is still named and nothing is filed."""
+    person = await make_person(temp_db, "Orla Finch")
+    (only,) = await _proposed_appearances(
+        store, clip, person, [(_described(0, quality=0.9, vector=person_vector(0)),)]
+    )
+    read = await store.tracks([only])
+    await temp_db.execute("DELETE FROM face_scans WHERE asset_id = ?", (clip.asset.id,))
+
+    landed = await service._confirm_together([read[only]], taught=None)
+
+    assert [one.id for one in landed] == [only]
+    assert (await store.tracks([only]))[only].attribution is Attribution.CONFIRMED
+    assert await store.reference_count(person) == 0
+
+
+async def test_an_appearance_files_its_clearest_pictures_up_to_what_one_appearance_files(
+    service: FaceService,
+    store: Store,
+    temp_db: Database,
+    clip: Ingested,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Taken a face a round, clearest first, until the appearance has filed its share."""
+    monkeypatch.setattr(tuning, "REFERENCES_PER_APPEARANCE", 2)
+    person = await make_person(temp_db, "Orla Finch")
+    (only,) = await _proposed_appearances(
+        store,
+        clip,
+        person,
+        [
+            (
+                _described(0, quality=0.7, vector=person_vector(0)),
+                _described(500, quality=0.9, vector=person_vector(0)),
+                _described(900, quality=0.8, vector=person_vector(0)),
+            )
+        ],
+    )
+    read = await store.tracks([only])
+
+    chosen = await service._references_to_file([read[only]])
+
+    assert [one["quality"] for one in chosen[only]] == pytest.approx([0.9, 0.8])
+
+
 async def test_a_poor_crop_is_named_but_never_becomes_a_reference(
     service: FaceService,
     store: Store,

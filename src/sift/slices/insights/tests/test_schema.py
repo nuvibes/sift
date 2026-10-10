@@ -124,3 +124,11 @@ async def test_a_departure_never_claims_viewers_it_could_not_read(world: World) 
     assert await _departure(world, first) == (0, [])
     await world.run("DELETE FROM assets WHERE id = ?", (second,))
     assert await _departure(world, second) == (1, [world.user])
+
+
+async def test_version_seven_adds_a_column_a_database_from_before_lacks(world: World) -> None:
+    await world.run("ALTER TABLE recaps DROP COLUMN metrics_version")
+    async with world.db.write() as connection:
+        await schema.initialize(connection, 6)
+    columns = await world.db.fetch_all("SELECT name FROM pragma_table_info('recaps')")
+    assert "metrics_version" in {str(one["name"]) for one in columns}

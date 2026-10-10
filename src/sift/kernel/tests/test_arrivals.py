@@ -158,3 +158,45 @@ async def test_file_names_say_the_title_first_and_skip_a_file_that_is_gone(
         "a-plain": "plain.mp4",
     }
     assert await arrivals.file_names(database.fetch_all, []) == []
+
+
+async def _downloaded(
+    database: Database, asset_id: str, finished_at: int, *, by: str | None, size: int
+) -> None:
+    await _run(database, "UPDATE assets SET size_bytes = ? WHERE id = ?", (size, asset_id))
+    await _run(
+        database,
+        "INSERT INTO downloads (id, url, url_hash, state, asset_id, created_at, finished_at,"
+        " requested_by) VALUES (?, ?, ?, 'done', ?, 1, ?, ?)",
+        (
+            "d-" + asset_id,
+            "https://example.invalid/" + asset_id,
+            asset_id,
+            asset_id,
+            finished_at,
+            by,
+        ),
+    )
+
+
+async def test_the_downloads_counted_are_this_users_and_their_bytes_what_is_still_here(
+    database: Database,
+) -> None:
+    for asset_id in ("a-seen", "a-hidden", "a-theirs", "a-yesterday"):
+        await _file(database, asset_id, 10, hidden=None)
+    await _downloaded(database, "a-seen", 150, by=USER, size=1000)
+    await _downloaded(database, "a-hidden", 160, by=None, size=500)
+    await _downloaded(database, "a-theirs", 170, by=OTHER, size=7)
+    await _downloaded(database, "a-yesterday", 50, by=USER, size=9)
+    for asset_id in ("a-seen", "a-theirs", "a-yesterday"):
+        await _verdict(database, asset_id, hidden=False)
+    await _verdict(database, "a-hidden", hidden=True)
+
+    (done,) = await arrivals.downloads_finished(
+        database.fetch_all, user_id=USER, start=100, end=200
+    )
+    (size,) = await arrivals.download_bytes(database.fetch_all, user_id=USER, start=100, end=200)
+
+    assert (done["whole"], done["hidden"]) == (2, 1)
+    assert (size["whole"], size["hidden"]) == (1500, 500)
+    assert await arrivals.download_bytes(database.fetch_all, user_id=USER, start=0, end=10) == []

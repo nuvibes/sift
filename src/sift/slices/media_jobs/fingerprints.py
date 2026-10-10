@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from sift.kernel import heif, media
+from sift.kernel import media
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -109,9 +109,7 @@ async def probed_of(
             ffmpeg.probe_args(source.path, settings=settings), reads=source.path
         )
         probed = ffmpeg.parse_probe(payload)
-    # The kept answer describes the file a decoder reads, but a HEIF photograph's own bytes.
-    if not (heif.is_heif_still(source.asset) and source.path != source.original):
-        await media.remember_reading(source.path, payload)
+    await media.remember_reading(source.path, payload)
     return probed
 
 

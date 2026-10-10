@@ -1759,3 +1759,30 @@ async def test_the_listening_word_is_said_once_the_socket_is_up() -> None:
     main.say_when_listening(quiet, said.append)
     await quiet.startup()
     assert said == []
+
+
+async def test_the_loops_failure_handler_hands_a_closed_listener_to_the_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from sift.kernel import listener
+    from sift.wiring import lifespan as lifespan_module
+
+    heard: list[str] = []
+
+    def hears(_loop: object, context: dict[str, object]) -> bool:
+        heard.append(str(context.get("message")))
+        return True
+
+    monkeypatch.setattr(listener, "accept_failed", hears)
+    loop = asyncio.get_running_loop()
+    before = loop.get_exception_handler()
+    try:
+        lifespan_module._quieten_a_reset_at_teardown()
+        loop.call_exception_handler(
+            {"message": listener.ACCEPT_FAILED, "exception": OSError(64, "gone")}
+        )
+        assert heard == [listener.ACCEPT_FAILED]
+    finally:
+        loop.set_exception_handler(before)

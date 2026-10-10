@@ -305,3 +305,35 @@ def test_address_is_public_is_the_one_policy_the_pin_and_the_prewalk_share() -> 
     assert url_guard.address_is_public("169.254.169.254") is False
     assert url_guard.address_is_public("::1") is False
     assert url_guard.address_is_public("not-an-ip") is False
+
+
+class _Socket:
+    """A datagram socket whose connect fails for the families in `dead`."""
+
+    def __init__(self, dead: set[int], family: int, *_args: object) -> None:
+        self.dead, self.family = dead, family
+
+    def __enter__(self) -> _Socket:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def connect(self, _address: tuple[str, int]) -> None:
+        if self.family in self.dead:
+            raise OSError("Network is unreachable")
+
+
+@pytest.mark.parametrize(
+    ("dead", "way_out"),
+    [
+        ({socket.AF_INET}, True),
+        ({socket.AF_INET, socket.AF_INET6}, False),
+    ],
+)
+def test_a_way_out_is_any_family_with_a_route(
+    monkeypatch: pytest.MonkeyPatch, dead: set[int], way_out: bool
+) -> None:
+    """An IPv6-only machine still has a way out; one with neither route has none."""
+    monkeypatch.setattr(socket, "socket", lambda family, *rest: _Socket(dead, family, *rest))
+    assert url_guard._has_a_route() is way_out

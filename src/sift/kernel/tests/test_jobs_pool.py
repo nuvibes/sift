@@ -564,6 +564,23 @@ def test_a_failure_is_classified_before_its_retry_is_spent() -> None:
     assert not retrying.cannot_change(ToolFailed("exit code 1", returncode=1, said="moov atom"))
 
 
+def test_a_full_disk_waits_for_room_and_is_looked_for_only_so_deep() -> None:
+    from sift.kernel.jobs import held_for
+
+    assert held_for(retrying.WaitingForSpace("the cache disk is full")) == retrying.ROOM_WAIT
+    deep: BaseException = OSError(28, "No space left on device")
+    for _ in range(8):
+        wrapper = RuntimeError("wrapped")
+        wrapper.__cause__ = deep
+        deep = wrapper
+    assert retrying.is_disk_full(deep) is False, "past eight links the chain is not followed"
+    assert retrying.is_disk_full(deep.__cause__) is True  # type: ignore[arg-type]
+
+
+def test_an_error_never_raised_has_no_frame_to_name() -> None:
+    assert worker_pool._where(RuntimeError("never raised")) is None
+
+
 @pytest.mark.integration
 async def test_broken_bytes_fail_once_and_a_busy_database_waits(job_queue: JobQueue) -> None:
     import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error class only)

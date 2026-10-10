@@ -250,3 +250,42 @@ def test_the_caps_are_wide_enough_for_a_real_shoot_and_narrow_enough_to_matter()
     assert a_big_shoot * a_raw_frame <= archives.MAX_TOTAL_BYTES
     # A real gallery sits near a ratio of 1, a bomb in the thousands.
     assert 1 < archives.MAX_RATIO < 1_000
+
+
+def _fstat_saying(monkeypatch: pytest.MonkeyPatch, **changed: int) -> None:
+    """`os.fstat` in the copy answering with these fields changed, as another file would."""
+    real = os.fstat
+
+    def saying(fd: int) -> os.stat_result:
+        found = real(fd)
+        values = list(found)
+        for field, value in changed.items():
+            values[{"st_mode": 0, "st_size": 6}[field]] = value
+        times = {
+            name: getattr(found, name) for name in ("st_atime_ns", "st_mtime_ns", "st_ctime_ns")
+        }
+        return os.stat_result(values, times)
+
+    monkeypatch.setattr("sift.kernel.archives.os.fstat", saying)
+
+
+def test_a_copy_of_a_pipe_is_refused_before_a_byte_is_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "pipe"
+    source.write_bytes(b"x" * 10)
+    _fstat_saying(monkeypatch, st_mode=0o010644)
+    with pytest.raises(archives.CopyChanged, match="not a regular file"):
+        archives.copy_settled(source, tmp_path / "out", size=10)
+    assert not (tmp_path / "out").exists()
+
+
+def test_a_file_that_shrinks_while_it_is_copied_leaves_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "one.mp4"
+    source.write_bytes(b"x" * 10)
+    _fstat_saying(monkeypatch, st_size=20)
+    with pytest.raises(archives.CopyChanged, match="still being written"):
+        archives.copy_settled(source, tmp_path / "out.mp4", size=20)
+    assert [one.name for one in tmp_path.iterdir()] == ["one.mp4"]

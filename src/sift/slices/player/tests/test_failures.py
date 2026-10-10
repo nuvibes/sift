@@ -12,7 +12,7 @@ import asyncio
 import shutil
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -347,3 +347,24 @@ def test_a_file_already_below_the_ceiling_that_still_cannot_keep_up_is_not_scale
 
     assert plan.streamable is False
     assert plan.scale_height is None, "there is nothing above the ceiling to bring down"
+
+
+async def test_a_file_deleted_while_its_plan_is_made_is_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from importlib import import_module
+
+    from fastapi import HTTPException
+
+    from sift.kernel.media_sources import MissingAsset
+
+    # The package exports the APIRouter under the module's name.
+    router = import_module("sift.slices.player.router")
+
+    async def deleted(*_args: object) -> Any:
+        raise MissingAsset("asset a1 no longer exists")
+
+    monkeypatch.setattr(router, "resolve", deleted)
+    with pytest.raises(HTTPException) as raised:
+        await router._unreadable(cast(Any, None), "a1")
+    assert raised.value.status_code == 404

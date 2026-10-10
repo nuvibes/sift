@@ -1678,6 +1678,16 @@ async def test_small_files_are_read_whole_at_the_width_the_ladder_chose(
     assert curve.ceiling == 75.0
 
 
+async def test_small_files_with_no_time_left_are_not_read() -> None:
+    from sift.slices.performance.budget import Deadline
+
+    async def read_level(*_args: object, **_kwargs: object) -> selftest.StorageLevel:
+        raise AssertionError("read past the deadline")
+
+    one = selftest.StorageToMeasure(storage="s", label="x", remote=True, roots=(Path("."),))
+    assert await selftest._small([Path("p0")], 2, read_level, one, Deadline("small", 0.0)) is None
+
+
 def test_a_storage_never_measured_has_no_ceiling() -> None:
     assert a_share().ceiling is None
     assert a_share(a_storage_level(1, 20), a_storage_level(2, 23)).ceiling == 23.0

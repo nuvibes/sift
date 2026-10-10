@@ -426,3 +426,51 @@ async def test_the_keeper_copies_a_grown_log_and_folds_only_while_the_writer_is_
         await asyncio.wait_for(keeper, timeout=1.0)
     finally:
         await database.close()
+
+
+async def test_a_log_the_writer_keeps_growing_is_copied_again_without_the_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each copy finds the writer added more: copied again beside the writer up to the cap of
+    tries, and left for a later look rather than taken under the lock while under the page cap."""
+    from sift.kernel import db_upkeep
+
+    database = Database(tmp_path / "test.sqlite3")
+    await database.connect()
+    try:
+        pages = iter([100, 600, 1_100])
+
+        async def growing(_connection: object) -> tuple[int, int]:
+            return next(pages), 100
+
+        monkeypatch.setattr(db_upkeep, "_copy_back", growing)
+        monkeypatch.setattr(db_upkeep, "_MOST_LOG_COPIES", 2)
+        monkeypatch.setattr(db_upkeep, "_COPY_UNDER_GUARD_PAGES", 10)
+        assert await database.copy_the_log_back() == (1_100, 100)
+    finally:
+        await database.close()
+
+
+async def test_a_look_under_the_copy_point_copies_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = Database(tmp_path / "test.sqlite3")
+    await database.connect()
+    copies: list[int] = []
+
+    async def counted() -> tuple[int, int]:
+        copies.append(1)
+        return 0, 0
+
+    monkeypatch.setattr(database, "copy_the_log_back", counted)
+    stop = asyncio.Event()
+    try:
+        keeper = asyncio.create_task(
+            keep_the_log_folded(database, stop, interval=10.0, look=0.01, copy_at=10**12)
+        )
+        await asyncio.sleep(0.1)
+        stop.set()
+        await keeper
+        assert copies == []
+    finally:
+        await database.close()

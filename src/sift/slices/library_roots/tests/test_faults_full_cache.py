@@ -137,3 +137,25 @@ async def test_a_copy_that_fails_for_another_reason_is_left_for_the_next_pass(
 
     assert await _assets(temp_db) == 0
     assert _scratch(settings) == []
+
+
+async def test_a_copys_folder_refused_for_another_reason_is_an_error_not_a_wait(
+    share: None, root_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from sift.slices.library_roots.walking import Walked
+
+    _picture(root_path)
+
+    def refused(*_args: Any, **_kwargs: Any) -> Any:
+        raise PermissionError(errno.EACCES, "Access is denied")
+
+    monkeypatch.setattr(tempfile, "mkdtemp", refused)
+    picture = root_path / "in" / "accepted.jpg"
+    item = Walked("in/accepted.jpg", picture, picture.stat().st_size, 0)
+    context: Any = SimpleNamespace(payload={})
+
+    with pytest.raises(PermissionError):
+        async with taking_in._read_once(context, item, settings=settings):
+            pass

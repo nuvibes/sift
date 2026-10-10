@@ -651,6 +651,34 @@ async def test_a_stills_tile_and_fingerprint_come_from_one_decode(
         await context_for(jobs.FINGERPRINT_FILE, {"asset_id": asset_id}), settings=settings
     )
     assert started == []
+    again = await content_store.get(asset_id)
+    assert again is not None and not await thumbnails._fingerprint_wanted(asset_id, again, None)
+
+
+async def test_a_stills_fingerprint_that_fails_leaves_the_tile_and_the_fingerprint_job(
+    ingested_picture: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asset_id = ingested_picture.asset.id
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+
+    async def refused(*_args: object, **_kwargs: object) -> None:
+        raise OSError("the frame could not be read")
+
+    monkeypatch.setattr(fingerprints, "fingerprint_one", refused)
+    await jobs.thumbnail(
+        await context_for("thumbnail", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+
+    assert await content_store.lacking_derivative(DerivativeKind.THUMB, [asset_id]) == set()
+    asset = await content_store.get(asset_id)
+    assert asset is not None and asset.phash is None
 
 
 async def test_a_stills_read_asks_the_tool_once(

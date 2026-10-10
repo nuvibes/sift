@@ -137,6 +137,22 @@ async def test_the_checks_run_off_the_event_loop(
     assert on_loop == [False]
 
 
+async def test_a_starter_picture_that_does_not_decode_is_reported_as_unreadable(
+    monkeypatch: pytest.MonkeyPatch, auditor: Auditor
+) -> None:
+    """Bytes from a stash-box that are no picture get the same finding as a folder's file."""
+
+    async def nothing(_blob: bytes, _settings: Settings) -> None:
+        return None
+
+    monkeypatch.setattr("sift.slices.faces.frames.decode_picture_bytes", nothing)
+
+    candidate = await auditor.examine_bytes(b"not a picture", Path("starter picture 1"))
+
+    assert candidate.findings == (Finding.UNREADABLE,)
+    assert candidate.usable is False
+
+
 async def test_an_unreadable_file_is_reported_rather_than_crashing(
     monkeypatch: pytest.MonkeyPatch, auditor: Auditor
 ) -> None:

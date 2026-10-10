@@ -236,7 +236,7 @@ _cov_wiring() { _cov src/sift/kernel/tests/test_wiring.py src/sift/kernel/tests/
 # The country names a nationality is said by, on the server: the client has the same list and a
 # gate holds the two equal, so the server copy is read by the disagreement words and that gate.
 _cov_countries() { _cov src/sift/slices/stash_boxes/tests/test_disagreement_words.py tests/gates/test_country_names_agree.py --cov=sift.kernel.countries; }
-_cov_content() { _cov src/sift/kernel/tests/test_pipeline_certainty.py src/sift/kernel/tests/test_a_bar_counts_one_set_of_files.py src/sift/kernel/tests/test_content.py src/sift/kernel/tests/test_content_derivatives.py src/sift/kernel/tests/test_content_places.py src/sift/kernel/tests/test_content_tables.py src/sift/kernel/tests/test_content_user_state.py src/sift/kernel/tests/test_content_stamps.py src/sift/kernel/tests/test_duplicates.py src/sift/kernel/tests/test_content_schema_baseline.py src/sift/kernel/tests/test_migration_helpers.py src/sift/kernel/tests/test_song_sources.py src/sift/kernel/tests/test_backlog_counts.py src/sift/kernel/tests/test_counts_held.py src/sift/kernel/tests/test_placeless.py --cov=sift.kernel.content.identity --cov=sift.kernel.content.placeless --cov=sift.kernel.content.backlog --cov=sift.kernel.content.identity_arrivals --cov=sift.kernel.content.identity_counts --cov=sift.kernel.content.identity_derivatives --cov=sift.kernel.content.identity_fields --cov=sift.kernel.content.identity_models --cov=sift.kernel.content.identity_paths --cov=sift.kernel.content.identity_places --cov=sift.kernel.content.identity_probes --cov=sift.kernel.content.identity_store --cov=sift.kernel.content.identity_verdicts --cov=sift.kernel.content.hashing --cov=sift.kernel.content.schema --cov=sift.kernel.content.user_state --cov=sift.kernel.content.entity_state --cov=sift.kernel.content.duplicates --cov=sift.kernel.content.presence --cov=sift.kernel.migrations; }
+_cov_content() { _cov src/sift/kernel/tests/test_pipeline_certainty.py src/sift/kernel/tests/test_a_bar_counts_one_set_of_files.py src/sift/kernel/tests/test_content.py src/sift/kernel/tests/test_content_derivatives.py src/sift/kernel/tests/test_content_places.py src/sift/kernel/tests/test_local_copies.py src/sift/kernel/tests/test_content_tables.py src/sift/kernel/tests/test_content_user_state.py src/sift/kernel/tests/test_content_stamps.py src/sift/kernel/tests/test_duplicates.py src/sift/kernel/tests/test_content_schema_baseline.py src/sift/kernel/tests/test_migration_helpers.py src/sift/kernel/tests/test_song_sources.py src/sift/kernel/tests/test_backlog_counts.py src/sift/kernel/tests/test_counts_held.py src/sift/kernel/tests/test_placeless.py --cov=sift.kernel.content.identity --cov=sift.kernel.content.placeless --cov=sift.kernel.content.backlog --cov=sift.kernel.content.identity_arrivals --cov=sift.kernel.content.identity_counts --cov=sift.kernel.content.identity_derivatives --cov=sift.kernel.content.identity_fields --cov=sift.kernel.content.identity_models --cov=sift.kernel.content.identity_paths --cov=sift.kernel.content.identity_places --cov=sift.kernel.content.identity_probes --cov=sift.kernel.content.identity_store --cov=sift.kernel.content.identity_verdicts --cov=sift.kernel.content.hashing --cov=sift.kernel.content.schema --cov=sift.kernel.content.user_state --cov=sift.kernel.content.entity_state --cov=sift.kernel.content.duplicates --cov=sift.kernel.content.presence --cov=sift.kernel.migrations; }
 # The library store decides what a root may be and moves real folders on disk. Its refusals (a
 # root that overlaps another, or that sits inside a directory Sift writes to) are the difference
 # between reading a person's files and writing into them.
@@ -271,6 +271,7 @@ _cov_access() {
   _cov $(_access_tests) src/sift/slices/people/tests/test_site_merge.py \
     src/sift/slices/people/tests/test_merge.py src/sift/slices/people/tests/test_enrich.py \
     src/sift/slices/people/tests/test_facets.py src/sift/slices/sharing/tests/test_sharing.py \
+    src/sift/slices/sharing/tests/test_sharing_filed.py \
     src/sift/slices/swap/tests/test_weight.py src/sift/slices/swap/tests/test_refusal.py \
     src/sift/slices/stash_boxes/tests/test_creator_studios.py \
     src/sift/slices/stash_boxes/tests/test_api_links.py \
@@ -489,7 +490,7 @@ _cov_related() { _cov src/sift/slices/related/tests --cov=sift.slices.related; }
 # The first thing Sift ingests that it cannot verify by DECODING. Every refusal here (zip-slip, a
 # bomb, an encrypted member, an index that lies about a size) is the only thing standing between a
 # stranger's archive and the cache directory, and an untested branch is one of those not firing.
-_cov_archives() { _cov src/sift/kernel/tests/test_archives.py --cov=sift.kernel.archives; }
+_cov_archives() { _cov src/sift/kernel/tests/test_archives.py src/sift/kernel/tests/test_local_copies.py --cov=sift.kernel.archives; }
 # Folder-led attribution writes People, aliases and attributions off a folder NAME, which is the
 # weakest evidence anything in Sift acts on. An untested branch here is either a wrong attribution
 # nobody is auditing or a suggestion that named something concealed.
@@ -617,7 +618,7 @@ _cov_workbench() { _cov src/sift/slices/workbench/tests --cov=sift.slices.workbe
 # `copy_library_aside` are this module's, and with only `test_db.py` run the gate would read both
 # of them as dead code.
 _cov_db() {
-  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_upkeep.py src/sift/kernel/tests/test_db_statistics_stale.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
+  _cov src/sift/kernel/tests/test_db.py src/sift/kernel/tests/test_db_upkeep.py src/sift/kernel/tests/test_db_readers_in_turn.py src/sift/kernel/tests/test_db_statistics_stale.py src/sift/kernel/tests/test_db_lead_and_inline_reads.py \
     src/sift/kernel/tests/test_db_writer_held.py --cov=sift.kernel.db_writer \
     src/sift/kernel/tests/test_db_steps.py \
     src/sift/kernel/tests/test_library_preflight.py src/sift/kernel/tests/test_db_blocking.py \

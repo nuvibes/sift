@@ -667,6 +667,16 @@ async def test_a_clip_nothing_can_measure_is_left_alone_rather_than_failing_the_
     assert previews._clip_length_ms(tmp_path / "not-a-video.mp4") is None
 
 
+@pytest.mark.parametrize("boxes", [b"\x00\x00\x00\x08free", b"\x00\x00\x00\x08moov"])
+def test_a_clip_with_no_index_or_no_movie_header_has_no_length(
+    boxes: bytes, tmp_path: Path
+) -> None:
+    """Well-formed boxes that never say how long the clip runs: no length, and no raise."""
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(boxes)
+    assert previews._clip_length_ms(clip) is None
+
+
 async def test_a_source_whose_streams_cannot_be_read_is_clipped_from_its_first_stream(
     tmp_path: Path, settings: Settings
 ) -> None:

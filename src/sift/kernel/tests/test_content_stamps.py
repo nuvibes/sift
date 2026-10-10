@@ -217,6 +217,31 @@ async def test_what_the_tool_said_is_kept_beside_the_fields_read_out_of_it(
     assert asset["audio_sample_rate"] == 48_000
 
 
+async def test_a_kept_answer_is_handed_back_whole_and_a_file_never_kept_has_none(
+    store: ContentStore, temp_db: Database
+) -> None:
+    kept = await _one_video(temp_db)
+    never = await _one_video(temp_db)
+    await store.record_probe(kept, keep=ProbeKeep(body=b"compressed", tool="ffprobe"))
+
+    assert await store.kept_probe(kept) == b"compressed"
+    assert await store.kept_probe(never) is None
+
+
+async def test_only_the_files_never_read_are_unread_among_those_asked_about(
+    store: ContentStore, temp_db: Database
+) -> None:
+    read = await _one_video(temp_db)
+    unread = new_id()
+    async with temp_db.write() as connection:
+        await connection.execute(
+            "INSERT INTO assets (id, identity, media_type, added_at) VALUES (?, ?, 'video', ?)",
+            (unread, f"digest-{unread}", _EPOCH),
+        )
+
+    assert await store.unread_among([read, unread, new_id()]) == {unread}
+
+
 async def test_a_kept_answer_goes_when_the_file_does(
     store: ContentStore, temp_db: Database
 ) -> None:

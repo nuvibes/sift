@@ -378,6 +378,8 @@ async def test_a_still_plans_no_frames_for_either_product(
     assert await one_pass.fingerprint_frames(still) == []
     assert one_pass.sprite_tile_frames(still) == []
     assert one_pass.sprite_tile_frames(facts_of(video, ingested_video, duration_ms=0)) == []
+    assert one_pass.thumbnail_frames(still) == []
+    assert one_pass.thumbnail_frames(facts_of(video, ingested_video, duration_ms=0)) == []
 
 
 async def test_a_file_that_is_not_a_video_is_left_to_the_products(

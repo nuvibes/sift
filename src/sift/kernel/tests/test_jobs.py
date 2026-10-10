@@ -1280,6 +1280,67 @@ async def test_a_retry_wakes_every_idle_worker(job_queue: JobQueue) -> None:
     assert told == [1]
 
 
+async def test_a_listener_stopped_twice_is_stopped_once(job_queue: JobQueue) -> None:
+    told: list[int] = []
+    stop = job_queue.listen_for_anything(lambda: told.append(1))
+    stop()
+    stop()
+    job_queue._work_arrived_unknown()
+    assert told == []
+
+
+def test_quiet_hours_closed_hold_back_their_work_and_only_theirs(job_queue: JobQueue) -> None:
+    from sift.kernel.jobs.queue_core import Arrival
+    from sift.kernel.jobs.quiet_hours import AT_QUIET
+    from sift.kernel.jobs.switchboard import QuietHold
+
+    job_queue._quiet_seen = (0, QuietHold(open=False, types=frozenset({"nightly"})))
+
+    assert not job_queue._claimable_now(Arrival("nightly", "f", None, None))
+    assert not job_queue._claimable_now(Arrival("daily", "f", AT_QUIET, None))
+    assert job_queue._claimable_now(Arrival("daily", "f", None, None))
+    assert job_queue._claimable_now(Arrival("nightly", "f", AT_NOW, None)), "pressed: now"
+
+
+async def test_a_kept_read_past_its_time_is_answered_old_and_read_again_behind(
+    job_queue: JobQueue,
+) -> None:
+    """A failed read again keeps the answer it had."""
+    from sift.kernel.jobs.queue_core import _Kept
+
+    kept = job_queue._kept.setdefault(("dear",), _Kept())
+    kept.answer, kept.cost, kept.taken = "old", 1.0, time.monotonic() - 3600
+
+    async def new() -> str:
+        return "new"
+
+    async def broken() -> str:
+        raise RuntimeError("the read failed")
+
+    assert await job_queue._kept_read(("dear",), new) == "old"
+    assert kept.refreshing is not None
+    await kept.refreshing
+    assert kept.answer == "new"
+
+    kept.cost, kept.taken = 1.0, time.monotonic() - 3600
+    assert await job_queue._kept_read(("dear",), broken) == "new"
+    assert kept.refreshing is not None
+    await kept.refreshing
+    assert kept.answer == "new"
+
+
+async def test_no_children_hands_out_nothing(job_queue: JobQueue) -> None:
+    parent = await job_queue.enqueue(noop_handler())
+    assert await job_queue.enqueue_children(parent, []) == []
+
+
+async def test_a_pressed_settle_is_queued_as_the_person_pressed_it(job_queue: JobQueue) -> None:
+    sweep = noop_handler("sweep")
+    pressed = await job_queue.enqueue_when_settled(sweep, requested_by="acct-1")
+    job = await job_queue.get(pressed)
+    assert job is not None and job.requested_by == "acct-1"
+
+
 @pytest.mark.integration
 async def test_a_settle_asked_from_a_job_is_as_urgent_as_that_job(job_queue: JobQueue) -> None:
     """A pressed run's files ask for their whole-library passes at the run's urgency, so the pass

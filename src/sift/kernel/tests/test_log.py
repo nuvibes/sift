@@ -1513,6 +1513,13 @@ def test_spans_that_never_touch_stay_bounded_too_with_the_narrowest_gaps_closed(
     assert said["covered_ms"] == 100_000
 
 
+def test_a_statement_that_stood_aside_for_a_screen_is_on_the_record() -> None:
+    cost = log_module.JobCost(began=0.0)
+    cost.yielded(0.2, 0.3)
+    said = cost.summary(ended=1.0)
+    assert said["screens_wait_ms"] == 100 and said["covered_ms"] == 100
+
+
 def test_coarsening_closes_the_narrowest_gaps_first() -> None:
     spans = [(0.0, 1.0), (1.1, 2.0), (5.0, 6.0), (6.2, 7.0), (20.0, 21.0)]
     kept, closed = log_module._coarsened(spans, 3)

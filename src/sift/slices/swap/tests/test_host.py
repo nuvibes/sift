@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -701,3 +701,34 @@ async def test_a_hosting_lost_before_the_task_has_the_key_waits_for_the_key_to_h
         live.context = rig.context  # type: ignore[assignment]
         await _until(lambda: live.hosting)
         assert rig.hoster.target == live.port
+
+
+async def test_a_full_disk_on_a_stream_carrying_the_guests_files_ends_the_swap() -> None:
+    from types import SimpleNamespace
+
+    from sift.slices.swap.host import HostSession
+    from sift.slices.swap.transfer import DiskFull
+
+    ended: list[str] = []
+
+    async def receive(_conn: object) -> None:
+        raise DiskFull
+
+    async def end(reason: str, *, tell: bool = True) -> None:
+        ended.append(reason)
+
+    host = HostSession.__new__(HostSession)
+    host.other_way = None
+    host.receiving_half = lambda: SimpleNamespace(diff=object(), receive=receive)  # type: ignore[method-assign,assignment,return-value]
+    host.control = cast(Any, object())
+    host.id = "session-1"
+    host.short_id = "ession-1"
+    host.ended = asyncio.Event()
+    host.streams_in = set()
+    host.watchdog = cast(Any, SimpleNamespace(heard=lambda: None))
+    host.end = end  # type: ignore[method-assign]
+    task = cast("asyncio.Task[Any]", asyncio.current_task())
+
+    await host._stream_in(cast(Any, object()), {"session": "session-1"}, task)
+
+    assert ended == [swap.DISK_FULL]

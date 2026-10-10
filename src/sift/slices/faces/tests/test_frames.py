@@ -840,6 +840,39 @@ async def test_a_tall_portrait_is_read_whole_and_brought_down_on_its_long_side(
     assert picture.shape == (2048, 1366, 3)
 
 
+async def test_one_piece_of_a_picture_is_read_at_its_own_size(
+    settings: Settings, tmp_path: Path
+) -> None:
+    """A piece named by its edges as shares of the picture comes back as exactly those pixels of
+    the whole, not the whole brought down."""
+    target = tmp_path / "still.png"
+    subprocess.run(
+        [
+            settings.ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=800x600",
+            "-frames:v",
+            "1",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    whole = await frames_module.decode_image(target, settings)
+
+    piece = await frames_module.decode_image(target, settings, piece=(0.5, 0.5, 1.0, 1.0))
+
+    assert whole is not None and piece is not None
+    assert piece.shape == (300, 400, 3)
+    assert np.array_equal(piece, whole[300:, 400:])
+
+
 async def test_a_tall_starter_picture_is_read_whole_too(settings: Settings, tmp_path: Path) -> None:
     target = _tall_picture(settings, tmp_path / "tall.png")
 

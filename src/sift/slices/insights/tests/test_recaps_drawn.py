@@ -4,6 +4,7 @@ the hue a card takes from its top file's still."""
 
 from __future__ import annotations
 
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,10 +13,13 @@ from typing import Any, cast
 import pytest
 from PIL import Image
 
+from sift.kernel.access import Role, Viewer
+from sift.kernel.access.viewer import Concealment
 from sift.kernel.content import ContentStore, DerivativeKind
-from sift.slices.insights import recaps, recaps_draw, schema, store
-from sift.slices.insights.recaps_models import RecapCard
-from sift.slices.insights.recaps_periods import period_from_key
+from sift.slices.insights import recaps, recaps_cards, recaps_draw, recaps_recipes, schema, store
+from sift.slices.insights.recaps_cards import within
+from sift.slices.insights.recaps_models import KeptCard, NamedThing, RecapCard, Recipe
+from sift.slices.insights.recaps_periods import Period, PeriodKind, period_from_key, source
 from sift.slices.insights.recaps_recipes import wall_of
 from sift.slices.insights.tests.conftest import World, at
 from sift.slices.insights.tests.test_recaps import (
@@ -252,3 +256,69 @@ async def test_version_eight_gives_every_recap_an_empty_left_out(world: World) -
     await world.run("UPDATE recaps SET left_out = 'not a list'")
     again = await store.recap(world.db, world.user, kept.id)
     assert again is not None and again.left_out == ()
+
+
+_SEPT = Period(PeriodKind.MONTH, date(2026, 9, 1), date(2026, 9, 30))
+_HALVES = ((date(2026, 9, 1), date(2026, 9, 15)), (date(2026, 9, 16), date(2026, 9, 30)))
+_ONE = NamedThing(kind="person", id="P1", name="Orla Finch")
+_TWO = NamedThing(kind="person", id="P2", name="Marlo Venn")
+
+
+def test_a_card_with_nothing_true_to_say_is_not_said() -> None:
+    """Each card that needs two of something, or a figure above nought, says nothing without."""
+    today = date(2026, 10, 1)
+    one_file = source("sittings:file", "video:F1")
+    by_kind = {source("viewed_ms:kind", within("video", *half)): 0 for half in _HALVES}
+    by_person = {source("viewed_ms:person", within("P1", *half)): 0 for half in _HALVES}
+    file = NamedThing(kind="asset", id="F1", name="clip.mp4")
+
+    assert (
+        recaps_cards._mosaic(
+            {one_file: 3}, Recipe(sources={one_file: 3}, named=[file]), _SEPT, today
+        )
+        is None
+    )
+    assert recaps_cards._before_after({}, Recipe(), _SEPT, today) is None
+    assert recaps_cards._before_after({}, Recipe(sources=by_kind), _SEPT, today) is None
+    assert recaps_cards._race({}, Recipe(sources=by_person, named=[_ONE]), _SEPT, today) is None
+    assert (
+        recaps_cards._race({}, Recipe(sources=by_person, named=[_ONE, _TWO]), _SEPT, today) is None
+    )
+    assert recaps_cards._heatmap({}, Recipe(), _SEPT, today) is None
+
+
+def test_a_file_the_card_no_longer_names_is_not_the_cards_file() -> None:
+    recipe = Recipe(sources={source("sittings:file", "video:F9"): 1})
+
+    assert recaps_cards._file_named(recipe, "sittings:file") is None
+
+
+def test_the_first_moments_are_of_different_files() -> None:
+    moments = [(1, "F1"), (2, "F1"), (3, "F2"), (4, "F3")]
+
+    assert recaps_recipes._distinct(moments) == [(1, "F1"), (3, "F2")]
+
+
+def _unlocked() -> Viewer:
+    return Viewer(id="U1", role=Role.ADMIN, show_hidden=True, concealment=Concealment.PLACEHOLDER)
+
+
+def test_an_unlocked_reader_is_given_no_tile_for_a_card_with_nothing_to_say() -> None:
+    """A locked tile stands for what is hidden; with nothing hidden, the empty card is absent."""
+    kept = [KeptCard(id="heatmap", kind="heatmap", statement=[], recipe=Recipe())]
+
+    drawn = recaps_draw._draw(kept, _SEPT, _unlocked(), {}, date(2026, 10, 1))
+
+    assert drawn is not None and drawn.cards == []
+
+
+async def test_a_locked_tile_takes_no_colour() -> None:
+    kept = [KeptCard(id="headline", kind="headline", statement=[], accent_hue=40, accent_of="F1")]
+    cards = [
+        RecapCard(id="headline", kind="headline", statement=[]),
+        RecapCard(id="top_file", kind="top_file", statement=[], hidden=True),
+    ]
+
+    await recaps_draw._coloured(None, _unlocked(), date(2026, 10, 1), kept, cards, [])  # type: ignore[arg-type]
+
+    assert [card.accent_hue for card in cards] == [40, None]

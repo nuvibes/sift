@@ -71,3 +71,28 @@ async def test_any_other_failure_is_left_to_the_default_handler() -> None:
     assert not listener.accept_failed(
         asyncio.get_running_loop(), {"message": listener.ACCEPT_FAILED}
     )
+
+
+async def test_a_port_still_held_is_tried_again_and_then_given_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The closed socket may not have released its port yet: a short wait and another try."""
+    tries: list[int] = []
+
+    async def refuses(*_: Any, **__: Any) -> Any:
+        tries.append(1)
+        raise OSError(98, "address in use")
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(loop, "create_server", refuses)
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda _seconds: real_sleep(0))
+    monkeypatch.setattr(listener, "TRIES", 2)
+    server = uvicorn.Server(
+        uvicorn.Config(_app, host="127.0.0.1", port=1, lifespan="off", log_config=None)
+    )
+    server.config.load()
+    server.lifespan = server.config.lifespan_class(server.config)
+    server.servers = []
+    assert await listener.listen_again(server) is False
+    assert len(tries) == 2

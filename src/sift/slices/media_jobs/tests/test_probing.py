@@ -1473,3 +1473,23 @@ async def test_a_file_the_tool_refuses_is_kept_as_an_empty_answer_and_the_next_p
 
     assert await content_store.assets_lacking_probe_rows(10) == []
     assert asked == [jobs.KEEP_PROBES]
+
+
+async def test_a_probe_canceled_while_its_file_was_read_records_nothing(
+    ingested_video: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+) -> None:
+    from sift.kernel.jobs import STOP_TO_CANCEL, JobCanceled
+
+    asset_id = ingested_video.asset.id
+    context = await context_for("probe", {"asset_id": asset_id})
+    context.told_to_stop(STOP_TO_CANCEL)
+
+    with pytest.raises(JobCanceled):
+        await jobs.probe(context, settings=settings, hardware=hardware)
+
+    asset = await content_store.get(asset_id)
+    assert asset is not None and asset.probed_at is None

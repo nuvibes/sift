@@ -645,3 +645,18 @@ def test_the_version_eleven_step_puts_an_old_refusal_back_on_the_token(
     # Twice is once.
     _step(client, 10)
     assert _cells(client)[0] == "-in:holiday media:video"
+
+
+async def test_a_database_with_no_theater_walls_has_no_cells_to_bring_forward(
+    tmp_path: Path,
+) -> None:
+    from sift.kernel.db import Database
+    from sift.slices.search import schema
+
+    database = Database(tmp_path / "bare.sqlite3")
+    await database.connect()
+    try:
+        async with database.read() as connection:
+            assert await schema._cells_by_id(connection) == (0, 0)
+    finally:
+        await database.close()

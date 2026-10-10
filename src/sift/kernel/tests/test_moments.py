@@ -198,6 +198,27 @@ async def test_the_pictures_remembered_are_bounded_and_the_oldest_is_forgotten_f
     assert len(media._PICTURES) == 2
 
 
+async def test_a_reading_the_probe_kept_spares_the_tool_and_a_gone_file_keeps_nothing(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def refuses(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("the tool was asked again")
+
+    monkeypatch.setattr(media, "_PICTURES", {})
+    monkeypatch.setattr(media, "run_json", refuses)
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"clip")
+    said = {
+        "streams": [{"codec_type": "video", "width": 3840, "height": 2160, "pix_fmt": "yuv420p"}]
+    }
+
+    await media.remember_reading(tmp_path / "gone.mp4", said)
+    assert media._PICTURES == {}
+    await media.remember_reading(source, said)
+
+    assert await media.picture_of(source, settings=settings, priority=Priority.BACKGROUND) == UHD
+
+
 async def test_a_read_is_cut_into_chunks_that_fit_the_memory_planned_for_it(
     tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1180,6 +1201,16 @@ async def test_a_refused_chunk_of_stills_is_cut_a_moment_at_a_time_and_loses_onl
 
     assert calls == ["3", "1", "1", "1"]
     assert [one is not None for one in cut] == [True, False, True]
+
+
+async def test_stills_that_were_not_prepared_are_cut_by_the_tool_as_before(
+    tmp_path: Path, settings: Settings
+) -> None:
+    with media.prepared(media.PreparedFrames()):
+        cut, calls = await _stills(tmp_path, settings, most=99)
+
+    assert calls == ["3"]
+    assert all(one is not None for one in cut)
 
 
 async def test_no_moments_cuts_no_stills_and_launches_nothing(

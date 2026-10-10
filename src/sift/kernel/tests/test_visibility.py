@@ -1127,3 +1127,14 @@ async def test_a_share_that_changes_no_answer_rewrites_no_row(
         written = list(await connection.execute_fetchall("SELECT n FROM rows_written"))
         assert written[0][0] > 0
     await _nothing_differs(temp_db)
+
+
+async def test_a_boot_before_the_filing_existed_has_nothing_deferred_to_file(
+    temp_db: Database,
+) -> None:
+    async with temp_db.write() as connection:
+        await visibility_settled.file_what_is_deferred(connection)
+        tables = await connection.execute_fetchall(
+            "SELECT name FROM sqlite_master WHERE name LIKE 'visibility%'"
+        )
+    assert list(tables) == []

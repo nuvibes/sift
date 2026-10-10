@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -1493,3 +1493,21 @@ async def test_a_file_out_of_reach_is_left_without_fingerprints_for_the_catch_up
     assert settled == []
     after = await content_store.get(taken.asset.id)
     assert after is not None and after.phash is None
+
+
+async def test_a_kept_probe_that_cannot_be_read_is_not_trusted(tmp_path: Path) -> None:
+    """A kept answer that does not decompress is no answer: a caller that may not ask the tool
+    gets a reading with no picture rather than a raise."""
+    from types import SimpleNamespace
+
+    class _Kept:
+        async def kept_probe(self, _asset_id: str) -> bytes:
+            return b"not a compressed reading"
+
+    clip = tmp_path / "clip.mp4"
+    source: Any = SimpleNamespace(
+        asset=SimpleNamespace(id="a1", media_type="video"), path=clip, original=clip
+    )
+    store: Any = _Kept()
+    probed = await fingerprints.probed_of(store, source, settings=cast(Any, None), ask=False)
+    assert probed.vcodec is None

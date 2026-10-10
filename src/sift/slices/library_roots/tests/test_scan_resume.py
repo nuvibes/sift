@@ -7,7 +7,8 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -514,3 +515,72 @@ async def test_a_restart_decides_again_only_what_the_cut_claim_could_have_opened
         ("p4.png", "read"),
         ("p5.png", "read"),
     ]
+
+
+class _EndedPass:
+    """A walk's pass reduced to what its ending reads: one file started, not finished, read."""
+
+    def __init__(self, stopping: str | None, location: Any) -> None:
+        async def location_at(_root_id: str, _rel_path: str) -> Any:
+            return location
+
+        async def unread_among(_owed: list[str]) -> set[str]:
+            return set()
+
+        self.context: Any = SimpleNamespace(
+            stopping=lambda: stopping,
+            content=SimpleNamespace(location_at=location_at, unread_among=unread_among),
+            queue=None,
+        )
+        self.root_id = "root"
+        self.to_probe: list[str] = []
+        self.to_check: list[str] = []
+        self.started = [0]
+        self.done = {0: False}
+        self.decided = {0: ("seen", "gone.png", taking_in.Verdict.READ)}
+        self.taken_in: list[str] = []
+        self.handed_out = 0
+        self.indexed = 0
+
+    async def hand_out(self) -> None:
+        self.handed_out += 1
+
+    async def index_arrivals(self) -> None:
+        self.indexed += 1
+
+
+@pytest.mark.parametrize(("error", "handed"), [(RuntimeError("held"), 1), (KeyboardInterrupt(), 0)])
+async def test_a_walk_ended_without_a_cancel_hands_out_only_when_it_failed(
+    error: BaseException, handed: int
+) -> None:
+    one = _EndedPass(None, None)
+    await canceling.ask_again_after_cancel(cast(Any, one), error)
+    assert (one.handed_out, one.indexed) == (handed, handed)
+
+
+async def test_a_cancel_owes_nothing_for_a_file_read_that_left_no_place() -> None:
+    one = _EndedPass(STOP_TO_CANCEL, None)
+    await canceling.ask_again_after_cancel(cast(Any, one), JobCanceled("stopped"))
+    assert one.taken_in == []
+    assert one.indexed == 1
+
+
+def test_a_slice_given_no_content_store_listens_for_no_canceled_walk(
+    clean_handlers: None,
+    settings: Settings,
+    service: LibraryService,
+    reindexer: RecordingReindexer,
+) -> None:
+    from sift.kernel.jobs.registry import registered_handlers
+
+    heard: list[object] = []
+    queue: Any = SimpleNamespace(listen_for_settled=lambda *args: heard.append(args))
+    jobs.register_handlers(
+        settings=settings,
+        service=service,
+        reindexer=reindexer,
+        queue=queue,
+        preferences=cast(Any, None),
+    )
+    assert heard == []
+    assert jobs.SCAN in registered_handlers()

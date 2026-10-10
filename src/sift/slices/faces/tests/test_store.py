@@ -1067,6 +1067,28 @@ async def test_a_pile_with_nothing_unclaimed_left_in_it_is_dropped(
     assert await store.pile_of(made[0]) is None
 
 
+async def test_a_pile_that_gains_an_unclaimed_face_after_it_was_found_empty_is_kept(
+    store: Store, temp_db: Database, clip: Ingested, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Found empty by the read, it holds a face nobody named by the time its write comes: the
+    question is open again and the pile stays."""
+    await record(store, clip.asset.id, count=1)
+    tracks = await store.tracks_of(clip.asset.id)
+    made = await store.replace_piles([(tuple(0.0 for _ in range(8)), [tracks[0].id])])
+    swept = temp_db.sweep_all
+
+    async def found_empty(sql: str, *args: object, **kwargs: object) -> list[object]:
+        if sql == store_grouping._EMPTIED_PILES:
+            return [{"id": made[0]}]
+        return list(await swept(sql, *args, **kwargs))  # type: ignore[arg-type]
+
+    monkeypatch.setattr(temp_db, "sweep_all", found_empty)
+
+    assert await store.drop_empty_piles() == 0
+    assert await store.pile_of(made[0]) is not None
+    assert (await store.tracks_of(clip.asset.id))[0].pile_id == made[0]
+
+
 async def test_an_emptied_pile_of_many_named_faces_goes_a_few_faces_a_write(
     store: Store, temp_db: Database, clip: Ingested, monkeypatch: pytest.MonkeyPatch
 ) -> None:

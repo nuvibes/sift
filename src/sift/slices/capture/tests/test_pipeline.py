@@ -10,10 +10,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PIL import Image
 
+# The ledger writes a decision into the workbench's own table: imported for the registration, so
+# this file passes on its own and not only beside another that imports it.
+import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore, FolderRow, Root
 from sift.kernel.db import Database
@@ -716,3 +720,81 @@ async def test_a_file_landed_on_a_share_keeps_its_local_bytes_for_the_passes(
     assert (settings.cache_dir in read.path.parents) is remote
     assert read.path.read_bytes() == source.read_bytes()
     assert source.is_file(), "the caller's own file is left where it was"
+
+
+class _Keeper:
+    """The content store's one door the share's local copy uses, recording what it was handed."""
+
+    def __init__(self) -> None:
+        self.kept: list[bytes] = []
+
+    async def keep_local_copy(self, _asset_id: str, copy: Path) -> None:
+        self.kept.append(copy.read_bytes())
+
+
+def _on_a_share(monkeypatch: pytest.MonkeyPatch) -> _Keeper:
+    from types import SimpleNamespace
+
+    from sift.kernel import lanes
+
+    monkeypatch.setattr(lanes, "storage_for", lambda _path: SimpleNamespace(remote=True))
+    return _Keeper()
+
+
+def _landed(kind: str, size: int) -> Any:
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id="a1", media_type=kind, size_bytes=size)
+
+
+@pytest.mark.parametrize(("kind", "kept"), [("video", False), ("image", True)])
+async def test_a_large_video_on_a_share_is_read_there_and_a_large_picture_is_kept(
+    kind: str, kept: bool, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from sift.slices.capture import pipeline
+
+    keeper = _on_a_share(monkeypatch)
+    source = tmp_path / "big.bin"
+    source.write_bytes(b"bytes")
+    landed = _landed(kind, pipeline.KEEP_VIDEOS_UP_TO + 1)
+    ctx: Any = SimpleNamespace(content=keeper)
+    await pipeline._kept_for_the_passes(
+        ctx, source, tmp_path / "share" / "big.bin", landed, settings
+    )
+    assert keeper.kept == ([b"bytes"] if kept else [])
+
+
+async def test_a_cache_with_no_room_for_its_folder_leaves_the_share_read(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from sift.slices.capture import pipeline
+
+    keeper = _on_a_share(monkeypatch)
+    settings.cache_dir.mkdir(parents=True, exist_ok=True)
+    (settings.cache_dir / "incoming").write_bytes(b"")
+    source = tmp_path / "a.jpg"
+    source.write_bytes(b"bytes")
+    ctx: Any = SimpleNamespace(content=keeper)
+    await pipeline._kept_for_the_passes(
+        ctx, source, tmp_path / "a.jpg", _landed("image", 5), settings
+    )
+    assert keeper.kept == []
+
+
+async def test_a_copy_that_fails_keeps_nothing_and_leaves_no_scratch(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from sift.slices.capture import pipeline
+
+    keeper = _on_a_share(monkeypatch)
+    ctx: Any = SimpleNamespace(content=keeper)
+    gone = tmp_path / "gone.jpg"
+    await pipeline._kept_for_the_passes(ctx, gone, gone, _landed("image", 5), settings)
+    assert keeper.kept == []
+    assert list((settings.cache_dir / "incoming").iterdir()) == []

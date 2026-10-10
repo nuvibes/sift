@@ -643,6 +643,42 @@ def test_a_run_stopped_partway_asks_the_boxes_again_only_for_what_it_had_not(
     assert len(newer.asked) == 4, "another read's answers are not this one's"
 
 
+def test_a_file_link_answered_on_an_earlier_run_is_counted_and_not_asked_again(
+    tmp_path: Path,
+) -> None:
+    from sift.slices.stash_migration import service_base as checkpoint
+
+    endpoint = "https://stash-box.example/graphql"
+    stashed = SimpleNamespace(
+        box_ids={"scene": [BoxId(1, endpoint, "s1")], "performer": [], "studio": [], "tag": []}
+    )
+    kept_before = {"read_at": 7, "done": {f"file 01A {endpoint} s1": "linked"}}
+    (tmp_path / checkpoint.CHECKPOINT_NAME).write_text(json.dumps(kept_before), encoding="utf-8")
+    doors, tally = _Doors(), Tally()
+
+    async def a_run() -> None:
+        kept = checkpoint.Checkpoint(tmp_path, 7)
+        await kept.load()
+        await _migration(doors=doors)._file_links(_Context(), stashed, tally, {1: "01A"}, kept)  # type: ignore[arg-type]
+
+    _run(a_run())
+    assert doors.asked == []
+    assert tally.file_links == {"linked": 1}
+
+
+def test_a_checkpoint_of_this_read_whose_answers_are_not_a_mapping_is_ignored(
+    tmp_path: Path,
+) -> None:
+    from sift.slices.stash_migration import service_base as checkpoint
+
+    (tmp_path / checkpoint.CHECKPOINT_NAME).write_text(
+        json.dumps({"read_at": 7, "done": ["file 01A"]}), encoding="utf-8"
+    )
+    kept = checkpoint.Checkpoint(tmp_path, 7)
+    _run(kept.load())
+    assert kept.went("file 01A") is None
+
+
 def test_a_moment_becomes_a_loop_of_its_own_length_even_where_its_tag_cannot_be_made() -> None:
     """A marker with no end is a Loop of the set length; the tag that says so is added where it
     can be made, and the Loop is made without it where it cannot."""

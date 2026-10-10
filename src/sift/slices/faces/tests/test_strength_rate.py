@@ -4,12 +4,15 @@ than people confirmed."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 import sift.slices.workbench.schema  # noqa: F401 (the receipts' table)
 from sift.kernel.content import Ingested
 from sift.kernel.db import Database
-from sift.slices.faces import tuning
+from sift.kernel.workbench import DOER, Named, Recorded
+from sift.slices.faces import store_strength, tuning
 from sift.slices.faces.models import Attribution
 from sift.slices.faces.models import Origin as FaceOrigin
 from sift.slices.faces.service import FaceService, Strength
@@ -99,7 +102,8 @@ async def test_her_reading_counts_her_pictures_by_origin_and_her_faces_by_outcom
     wall = (await service.reference_strengths()).people[person]
 
     assert strength.counted == Counted(imported=2, confirmed=1, matched=1, asked=1, yes=1, no=1)
-    assert (strength.rate, strength.verdict) == (pytest.approx(2 / 3), "fair")
+    assert strength.rate == pytest.approx(2 / 3)
+    assert strength.verdict == "fair"
     assert wall.counted == strength.counted
 
 
@@ -154,3 +158,67 @@ async def test_a_retired_pick_is_final_in_history() -> None:
     assert records.reversible is False
     assert await records.pictures_of(None, "{}") == ()  # type: ignore[arg-type]
     assert await records.reverse(None, "r1", "{}") is False  # type: ignore[arg-type]
+
+
+async def test_picks_already_gone_when_their_turn_comes_take_nothing_and_say_nothing(
+    service: FaceService, person: str, temp_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another write took them between the count and this one: no History line about none."""
+    service._recorder = WorkbenchStore(temp_db)
+
+    async def over() -> list[tuple[str, int]]:
+        return [(person, 2)]
+
+    async def nothing(*_args: object) -> list[str]:
+        return []
+
+    monkeypatch.setattr(service._store, "picks_over_cap", over)
+    monkeypatch.setattr(service._store, "retire_picks_on", nothing)
+
+    assert await service.settle_picks() == 0
+    said = await temp_db.fetch_all(
+        "SELECT title FROM workbench_decisions WHERE queue = ?", (PICKS_RETIRED_QUEUE,)
+    )
+    assert said == []
+
+
+def _retired(payload: object, detail: str = "") -> Recorded:
+    return Recorded(
+        id="01R",
+        queue=PICKS_RETIRED_QUEUE,
+        payload=json.dumps(payload),
+        title="",
+        detail=detail,
+        decided_at=0,
+    )
+
+
+def test_a_retired_pick_line_names_the_person_and_counts_the_faces() -> None:
+    records = RetiredPickRecords()
+
+    one = records.worded(_retired({"person_id": "01P", "references": ["r1"]}))
+    many = records.worded(
+        _retired({"person_id": "01P", "references": [f"r{n}" for n in range(1200)]}, "Kept.")
+    )
+
+    assert one is not None and one.more == ()
+    assert one.said == (
+        DOER,
+        " took 1 face it recognized as ",
+        Named(kind="person", id="01P"),
+        " out of their reference pictures",
+    )
+    assert many is not None and many.more == ("Kept.",)
+    assert many.said[1] == " took 1,200 faces it recognized as "
+    assert records.worded(_retired({"person_id": "01P", "references": []})) is None
+    assert records.worded(_retired({"references": ["r1"]})) is None
+
+
+def test_a_count_with_no_person_or_no_field_adds_to_nobody() -> None:
+    found: dict[str, dict[str, int]] = {}
+
+    store_strength._add(found, None, "matched", 3)
+    store_strength._add(found, "01P", None, 3)
+    assert found == {}
+    store_strength._add(found, "01P", "matched", 3)
+    assert found == {"01P": {"matched": 3}}

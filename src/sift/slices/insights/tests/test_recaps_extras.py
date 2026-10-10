@@ -10,9 +10,10 @@ from __future__ import annotations
 import io
 import shutil
 import struct
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -25,7 +26,16 @@ from sift.kernel.config import Settings
 from sift.kernel.media import Encoder
 from sift.kernel.wiring import provide
 from sift.slices.auth import csrf_protect, current_viewer, require_admin
-from sift.slices.insights import keep_router, session_router, store, video, video_router
+from sift.slices.insights import (
+    keep_router,
+    recaps_draw,
+    session_router,
+    store,
+    video,
+    video_router,
+)
+from sift.slices.insights.capture import THINGS
+from sift.slices.insights.recaps_models import CardKind, KeptCard, Recipe
 from sift.slices.insights.tests.conftest import World
 from sift.slices.insights.tests.test_recaps import HER, made, reader, row, september
 from sift.slices.insights.tests.test_recaps_year import a_year, year_recap
@@ -343,3 +353,72 @@ async def test_only_a_year_is_kept_as_collections(
     as_(app, reader(world, unlocked=True))
     answer = await client.get(f"/api/insights/recaps/{await made(world)}/keep")
     assert answer.status_code == 404
+
+
+async def test_a_film_is_encoded_on_the_graphics_card_where_there_is_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The card's encoder is asked through the accelerator, VAAPI given the render node, and the
+    work folder is gone after."""
+    asked: list[list[str]] = []
+
+    async def encoded(argv: list[str], **_kwargs: object) -> None:
+        asked.append(argv)
+        Path(argv[-1]).write_bytes(b"film on the card")
+
+    class Card:
+        async def run(
+            self, attempt: Callable[[Encoder, tuple[str, ...]], Awaitable[bytes]]
+        ) -> bytes:
+            return await attempt(Encoder.VAAPI, ())
+
+    monkeypatch.setattr(video, "run", encoded)
+
+    film = await video.encode(
+        [video.Frame(jpeg(10), 2)],
+        ffmpeg="ffmpeg",
+        accelerator=Card(),  # type: ignore[arg-type]
+        device="/dev/dri/renderD128",
+    )
+
+    assert film == b"film on the card"
+    (argv,) = asked
+    assert argv[argv.index("-vaapi_device") + 1] == "/dev/dri/renderD128"
+    assert not Path(argv[-1]).parent.exists()
+
+
+async def test_a_keep_sheet_with_nobody_names_no_file() -> None:
+    assert await keep_router._people_files(None, [], ["F1"]) == []  # type: ignore[arg-type]
+
+
+async def test_a_page_of_an_unknown_place_or_a_nameless_thing_is_not_drawn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def nameless(*_args: object) -> SimpleNamespace:
+        return SimpleNamespace(name="")
+
+    monkeypatch.setitem(THINGS, "person", nameless)
+
+    assert session_router._place("nowhere", "x") is None
+    assert await session_router._piece(None, None, "person", "P1") is None  # type: ignore[arg-type]
+
+
+def test_the_session_a_recap_is_about_is_read_from_its_session_card_alone() -> None:
+    def body(*cards: KeptCard) -> str:
+        return recaps_draw._CARDS.dump_json(list(cards)).decode()
+
+    def card(kind: CardKind, *sources: str) -> KeptCard:
+        return KeptCard(
+            id=kind, kind=kind, statement=[], recipe=Recipe(sources=dict.fromkeys(sources, 1))
+        )
+
+    assert (
+        session_router.session_of(body(card("session", "sittings|", "session_ms:session|S1")))
+        == "S1"
+    )
+    assert (
+        session_router.session_of(
+            body(card("session", "sittings|"), card("headline", "session_ms:session|S2"))
+        )
+        is None
+    )

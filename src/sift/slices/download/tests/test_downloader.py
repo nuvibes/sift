@@ -1247,3 +1247,20 @@ async def test_a_file_a_tool_skipped_for_its_size_says_the_skip_sentence(
 
     assert str(refused.value) == sentence
     assert len(runs) == 1
+
+
+@pytest.mark.parametrize(
+    ("tier", "worded"),
+    [
+        (1, "Sift couldn't download this. The server answered 410 Gone."),
+        (2, "The server answered 410 Gone."),
+    ],
+)
+def test_a_failure_read_from_its_code_alone_follows_the_types_words(tier: int, worded: str) -> None:
+    """Tier 1 is the status code and its phrase alone, said after the type's sentence; from tier
+    2 up the reading's own sentence says it all."""
+    from sift.slices.download.sources.failures import Failure
+
+    known = Failure(tier=tier, code="http-410", sentence="The server answered 410 Gone.")
+
+    assert downloader_mod._worded(known, "", "Sift couldn't download this.") == worded

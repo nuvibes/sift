@@ -851,6 +851,27 @@ async def test_a_combined_run_that_kept_up_changes_no_advice(
     assert runner.state.recommendations == selftest.recommend(a_measurement(), current={})
 
 
+async def test_a_combined_run_that_measured_nothing_changes_no_advice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _measured_more(monkeypatch)
+
+    async def nothing(*_args: Any, **_kwargs: Any) -> Any:
+        return None
+
+    runner = a_runner(tmp_path, await a_store(tmp_path), together=nothing)
+    await runner.run()
+    assert runner.state.recommendations == selftest.recommend(a_measurement(), current={})
+    kept = await runner.rates()
+    assert kept is not None and kept.together is None
+
+
+async def test_prices_with_nothing_kept_come_from_the_models_measured_here(
+    tmp_path: Path,
+) -> None:
+    assert await a_runner(tmp_path, await a_store(tmp_path)).prices() == {}
+
+
 def test_the_combined_run_round_trips_and_an_unreadable_one_is_none() -> None:
     kept = measurement_to_json(a_measurement(), together=a_together(behind=True))
     assert together_from_json(kept) == a_together(behind=True)
