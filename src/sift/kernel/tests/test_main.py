@@ -273,7 +273,9 @@ def test_the_pool_runs_a_share_of_the_device_while_somebody_is_at_the_keyboard(
     workers, _ = on_the_apps_loop(client, pool._read_config())
 
     assert workers == full
-    assert media.background_threads(settings) == max(1, cores // full)
+    # On the whole device a tool shares the cores with the tools actually running: none here, so
+    # the one about to start gets the machine (the threads follow what runs, not the worker count).
+    assert media.background_threads(settings) == cores
     assert tools.background_rate() is None
 
 

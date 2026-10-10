@@ -442,7 +442,12 @@ SILENT: dict[str, str] = {
     # session row's.
     "swap.store.put_manifest": "a received file's chunk ledger, which no screen lists; the session row carries the counts",
     "swap.store.adopt": "moves an unfinished chunk ledger onto a later session from the same device; no screen lists it",
-    "swap.store.mark_done": "one verified chunk appended to a ledger no screen lists; the session row carries the bytes",
+    "kernel.jobs.queue_plans.write_plan": "a walk's plan rows written 500 at a time; no screen draws a plan",
+    "kernel.jobs.queue_plans.settle_plan": "a walk's checkpoint mark; no screen draws it, the row's progress is its own write",
+    "kernel.jobs.queue_plans.refund_progressed": "an attempt handed back at boot to a walk that settled work; the row is read again at boot",
+    "swap.store.record_done": "the verified chunks appended to a ledger no screen lists, once per 64 chunks; the session row carries the bytes",
+    "kernel.jobs.queue_plans.drop_plan_from": "a finished walk's plan rows removed; no screen draws a plan",
+    "kernel.jobs.queue_plans.forget_plan": "a canceled or failed walk's plan rows removed; no screen draws a plan",
     "swap.store.drop_manifest": "a finished or abandoned file's chunk ledger removed; no screen lists it",
     "swap.ingest.record_folder": "the id of the folder a swap made, kept on its session row for the folder pass; no screen draws it",
     # Scheduled tasks.

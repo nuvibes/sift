@@ -67,7 +67,7 @@ UPDATE jobs
                                    OR (kind.timing IS NULL
                                        AND kind.type IN (SELECT value FROM json_each(:quiet))))
               UNION ALL
-              SELECT due.id FROM jobs AS due
+              SELECT due.id FROM jobs AS due INDEXED BY ix_jobs_queued_later
                WHERE due.state = 'queued' AND due.run_after IS NOT NULL AND due.run_after <= :now
                  AND due.type NOT IN (SELECT value FROM json_each(:capped))
                  AND (:open OR NOT (COALESCE(due.timing, '') = 'quiet'

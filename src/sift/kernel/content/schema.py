@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from sift.kernel.content import backlog
 from sift.kernel.db import Connection, register_schema_initializer
+from sift.kernel.migrations import column_exists
 
 LIBRARY_COMPONENT = "library"
 LIBRARY_VERSION = 7
@@ -437,7 +438,6 @@ _STEPS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (29, (_REREAD_THE_HEIF_STILLS,)),
     (30, _START_INDEXES),
     (31, _BACKLOG),
-    (32, (_ADD_TURN_APART,)),
 )
 
 
@@ -461,6 +461,9 @@ async def initialize_content(connection: Connection, on_disk: int) -> None:
         if 0 < on_disk < version:
             for statement in statements:
                 await connection.execute(statement)
+    # Version 32; checked, since a library built at an earlier version by this tree's CREATE has it.
+    if 0 < on_disk < 32 and not await column_exists(connection, "assets", "turn_apart"):
+        await connection.execute(_ADD_TURN_APART)
 
 
 async def initialize_user_state(connection: Connection, on_disk: int) -> None:

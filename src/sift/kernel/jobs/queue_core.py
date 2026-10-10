@@ -53,6 +53,8 @@ class _Kept:
     """One read's last answer: when it was taken and what it cost."""
 
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    #: The loop the lock belongs to: a lock used on another loop is replaced (the tests' loops).
+    loop: asyncio.AbstractEventLoop | None = None
     answer: Any = None
     taken: float = 0.0
     cost: float = 0.0
@@ -121,6 +123,9 @@ class QueueCore:
             ):
                 kept.refreshing = asyncio.create_task(_read_again(kept, read))
             return kept.answer
+        running = asyncio.get_running_loop()
+        if kept.loop is not running:
+            kept.lock, kept.loop = asyncio.Lock(), running
         async with kept.lock:
             if kept.cost < KEPT_FROM_SECONDS:
                 await _read_into(kept, read)

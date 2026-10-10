@@ -21,7 +21,8 @@ SOURCE = Path(__file__).resolve().parents[2] / "src" / "sift"
 #: which changes nothing on screen; both `execute` and `write()` are counted. The ledger's two are
 #: the wrapper itself and the row of fetched gallery pieces, which no screen draws.
 WATCHED = (
-    ("kernel/jobs/queue*.py", re.compile(r"self\._db\.(?:write\(\)|execute\()"), 1),
+    # The one, and the walk's plan rows and marks (queue_plans.py: five writes no screen draws).
+    ("kernel/jobs/queue*.py", re.compile(r"self\._db\.(?:write\(\)|execute\()"), 6),
     ("slices/download/service*.py", re.compile(r"self\._db\.execute\("), 2),
 )
 
