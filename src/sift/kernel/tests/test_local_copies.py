@@ -284,7 +284,7 @@ async def test_past_its_ceiling_even_a_copy_with_work_owed_goes_and_it_is_said(
     assert said and said[0]["owed"] == 1
 
 
-async def test_a_cache_that_could_drop_only_owed_copies_is_not_walked_again_for_a_minute(
+async def test_a_cache_is_walked_at_most_once_a_minute(
     content_store: ContentStore,
     job_queue: JobQueue,
     thumbnails: str,
@@ -305,7 +305,7 @@ async def test_a_cache_that_could_drop_only_owed_copies_is_not_walked_again_for_
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, new)
     idle = _held(cache, "idle", 400, 1_600_000_000)
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, idle)
-    assert len(walks) == 1, "the minute after a walk that found only owed copies, none"
+    assert len(walks) == 1, "the minute after a walk, none"
     assert idle.is_file()
 
     monkeypatch.setattr(identity_places, "KEEP_WALK_EVERY_SECONDS", 0.0)

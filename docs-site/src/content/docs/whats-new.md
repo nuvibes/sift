@@ -114,6 +114,9 @@ What's new lists what each release of Sift changes for you, newest first. To see
   answered; with the Tasks screen open a page was being answered 91% of the time, so a file
   probe with 39 statements lost about 3 s of its 3.3 s and the tasks ran one at a time. The
   wait is now on each task's record.
+- **A cache folder is listed at most once a minute, in one pass.** At one library's ceiling
+  every new picture listed 10,000 kept copies again, 7.8 s a time, five times a minute; the
+  listing is one pass (10,000 copies 882 to 314 ms) and a minute apart.
 - **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
   which opens the files with why each was left out, or "Up to date"; the time left is blank under
   a minute of work; a running Identify or Smart Search pass shows its window instead of "Not

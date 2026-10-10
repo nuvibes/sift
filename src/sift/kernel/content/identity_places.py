@@ -82,8 +82,8 @@ OWED_ANSWER_SECONDS = 30.0
 OWED_CEILING_TIMES = 8
 OWED_CEILING_FREE_SHARE = 4
 
-#: After a walk of a cache that could drop nothing but copies owed work, the next walk waits this
-#: long: at one library's ceiling every new picture walked 10,000 copies again.
+#: A cache folder is walked at most this often: at one library's ceiling every new picture walked
+#: 10,000 copies again, 7.8 s a walk, five times a minute.
 KEEP_WALK_EVERY_SECONDS = 60.0
 
 #: Each local copy handed out, and when (`time.monotonic`): for the whole process, as every store
@@ -414,17 +414,18 @@ class Places(StoreCore):
         self._owed_answer = (time.monotonic(), wanted, owed)
         return owed
 
-    #: Each cache folder whose last walk found only owed copies, and when (`time.monotonic`).
-    _only_owed_at: Mapping[str, float] = MappingProxyType({})
+    #: When each cache folder was last walked (`time.monotonic`).
+    _walked_at: Mapping[str, float] = MappingProxyType({})
 
     async def _keep(self, folder: Path | str, budget: int, keep: Path) -> None:
         """Hold a cache folder to its budget: never the copy just made, one handed out lately, or,
         up to a ceiling, one whose asset still has work owed (`_drop`)."""
         if (
-            time.monotonic() - self._only_owed_at.get(str(folder), float("-inf"))
+            time.monotonic() - self._walked_at.get(str(folder), float("-inf"))
             < KEEP_WALK_EVERY_SECONDS
         ):
             return
+        self._walked_at = {**self._walked_at, str(folder): time.monotonic()}
         directory = self._settings.cache_dir / folder
         # Timed: at one library's ceiling this walk was most of a probe's unrecorded time.
         with timing_hook("content.cache_keep", folder=str(folder)):
@@ -437,8 +438,6 @@ class Places(StoreCore):
             dropped, owed_dropped = await asyncio.to_thread(
                 _drop, directory, held, budget, keep, owed=owed, ceiling=ceiling
             )
-        if owed_dropped or dropped == 0:
-            self._only_owed_at = {**self._only_owed_at, str(folder): time.monotonic()}
         if owed_dropped:
             log.warning(
                 "content.cache_dropped_owed",
@@ -541,22 +540,27 @@ def _owed_ceiling(directory: Path, budget: int) -> int:
 
 
 def _cached(directory: Path) -> list[tuple[float, int, Path]]:
-    """Every whole file under a cache folder, with when it was last read and its size. Blocking."""
-    try:
-        files = [
-            path
-            for path in directory.rglob("*")
-            if path.is_file() and not path.name.endswith(PART_SUFFIX)
-        ]
-    except OSError:  # pragma: no cover (the directory was removed under us)
-        return []
+    """Every whole file under a cache folder, with when it was last read and its size. Blocking;
+    `scandir` carries each entry's figures, so a folder of 10,000 copies is one pass, not two."""
     held: list[tuple[float, int, Path]] = []
-    for path in files:
+    pending = [directory]
+    while pending:
+        folder = pending.pop()
         try:
-            stat = path.stat()
-        except OSError:  # pragma: no cover (it went away between listing and asking)
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            pending.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False) and not entry.name.endswith(
+                            PART_SUFFIX
+                        ):
+                            stat = entry.stat(follow_symlinks=False)
+                            held.append((stat.st_atime, stat.st_size, Path(entry.path)))
+                    except OSError:  # pragma: no cover (it went away between listing and asking)
+                        continue
+        except OSError:  # pragma: no cover (the directory was removed under us)
             continue
-        held.append((stat.st_atime, stat.st_size, path))
     return held
 
 
