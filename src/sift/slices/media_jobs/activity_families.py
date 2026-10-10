@@ -67,6 +67,8 @@ _HOLD: dict[str, object] = {"time_unknown": AFTER_THE_BENCHMARK, "for_task": Non
 NOT_KNOWN_UNTIL_COUNTED = "Not known until every folder is counted."
 #: What sets the pace of the read, by the library folders on the share.
 PACED_BY_SHARE = "Reading is limited by the network share that holds {folders}."
+#: The same, with what the share has given Sift over its last minutes of reading.
+PACED_BY_SHARE_AT = "Reading is limited by the network share that holds {folders}: {mbps} MB/s."
 #: A chore with work outstanding, none of it running, and some of it parked until somebody gives
 #: the password (`WaitingForPassword`): the row's own rows say which key, and the unlock bar asks.
 WAITING_FOR_UNLOCK = "Waiting for your password."
@@ -231,9 +233,17 @@ async def _families(
         if by_presses_alone:
             alone.add(family.value)
     answer = pictured_in_the_read(answer, alone)
-    if ledger is not None and pool is not None and not (unread and unread.uncounted):
+    if ledger is not None and pool is not None:
         answer = await priced_together(
-            answer, work, kinds or {}, ledger, pool.concurrency, pool_bound, alone, standing_of
+            answer,
+            work,
+            kinds or {},
+            ledger,
+            pool.concurrency,
+            pool_bound,
+            alone,
+            standing_of,
+            counting=bool(unread and unread.uncounted),
         )
     answer = not_before_the_read(answer, alone)
     answer = not_known_yet(answer, uncounted=0 if unread is None else unread.uncounted, pace=pace)
@@ -518,8 +528,9 @@ def not_before_the_read(
 def not_known_yet(
     answer: dict[str, FamilyOfWork], *, uncounted: int, pace: str | None = None
 ) -> dict[str, FamilyOfWork]:
-    """No time on the Scan row or any pass after it while a folder waits to be counted, and the
-    running read's pace where a share sets it."""
+    """No time on the Scan row or any pass after it while a folder waits to be counted, but the
+    least the files counted so far take where that is priced, and the running read's pace where a
+    share sets it."""
     scan = answer.get(Family.SCAN.value)
     if scan is not None and pace is not None and scan.outstanding > 0:
         answer[Family.SCAN.value] = scan.model_copy(update={"pace": pace})
@@ -527,7 +538,7 @@ def not_known_yet(
         return answer
     for family in (Family.SCAN, *_AFTER_THE_READ):
         row = answer.get(family.value)
-        if row is not None:
+        if row is not None and not (row.at_least and row.quick_seconds):
             answer[family.value] = row.model_copy(
                 update={
                     "quick_seconds": None,
@@ -594,7 +605,8 @@ async def _paced_by(library: LibraryStore | None) -> str | None:
     installed = lanes.installed()
     if installed is None:
         return None
-    busiest = _SHARE_WAITS.busiest(installed.readings(), time.monotonic())
+    readings = installed.readings()
+    busiest = _SHARE_WAITS.busiest(readings, time.monotonic())
     if busiest is None or library is None:
         return None
     names = sorted(
@@ -602,7 +614,12 @@ async def _paced_by(library: LibraryStore | None) -> str | None:
         for root in await library.roots()
         if lanes.storage_for(Path(root.abs_path) / "walk").key == busiest
     )
-    return PACED_BY_SHARE.format(folders=_joined(names)) if names else None
+    if not names:
+        return None
+    given = readings.get(busiest, {}).get("achieved_mb_per_second")
+    if isinstance(given, int | float):
+        return PACED_BY_SHARE_AT.format(folders=_joined(names), mbps=f"{given:g}")
+    return PACED_BY_SHARE.format(folders=_joined(names))
 
 
 def _run_type(chore: HousekeepingChore) -> str:

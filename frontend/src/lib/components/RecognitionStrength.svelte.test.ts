@@ -82,7 +82,7 @@ describe('how reliably one person can be recognized', () => {
 	});
 
 	it("draws the meter as the server's rate, and no picture count anywhere", async () => {
-		/* The bar is the share of her faces named without asking. The old thresholds of pictures
+		/* The bar is the share of the faces Sift named as her that were right. The old thresholds of pictures
 		   reach neither the bar nor anything a screen reader says. */
 		await draw(strength({ references: 6, floor: 4, strong: 12, target: 31, rate: 0.62 } as never));
 

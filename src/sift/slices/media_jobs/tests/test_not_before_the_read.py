@@ -210,6 +210,14 @@ def test_the_running_read_names_what_sets_its_pace() -> None:
     assert not_known_yet({"scan": idle}, uncounted=0, pace=said)["scan"].pace is None
 
 
+def test_while_a_folder_is_uncounted_a_floor_from_the_counted_files_is_kept() -> None:
+    read = _family("Scan", waiting=20, quick=30, slow=30).model_copy(update={"at_least": True})
+    blank = _family("Generate", waiting=20, quick=None, slow=None)
+    answer = not_known_yet({"scan": read, "generate": blank}, uncounted=2)
+    assert (answer["scan"].quick_seconds, answer["scan"].time_unknown) == (30, None)
+    assert answer["generate"].time_unknown == NOT_KNOWN_UNTIL_COUNTED
+
+
 def test_a_pass_with_no_row_is_left_out_while_a_folder_is_uncounted() -> None:
     read = _family("Scan", waiting=20, quick=30, slow=60)
     answer = not_known_yet({"scan": read}, uncounted=2)
@@ -244,6 +252,10 @@ async def test_the_share_setting_the_pace_is_named_by_its_folders(
         said = await ROUTER._paced_by(_Folders(*where))
         assert said == PACED_BY_SHARE.format(folders=folders)
     assert await ROUTER._paced_by(_Folders("/disk/Local")) is None
+    given = {"nas": {"remote": True, "achieved_mb_per_second": 23.04}}
+    monkeypatch.setattr(ROUTER.lanes, "installed", lambda: SimpleNamespace(readings=lambda: given))
+    said = await ROUTER._paced_by(_Folders(films))
+    assert said == "Reading is limited by the network share that holds Films: 23.04 MB/s."
 
 
 def test_a_pass_whose_task_is_not_registered_keeps_its_own_runs(

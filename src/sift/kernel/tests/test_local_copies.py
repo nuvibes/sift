@@ -284,6 +284,35 @@ async def test_past_its_ceiling_even_a_copy_with_work_owed_goes_and_it_is_said(
     assert said and said[0]["owed"] == 1
 
 
+async def test_a_cache_that_could_drop_only_owed_copies_is_not_walked_again_for_a_minute(
+    content_store: ContentStore,
+    job_queue: JobQueue,
+    thumbnails: str,
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(identity_places, "OWED_CEILING_TIMES", 1)
+    cache = settings.cache_dir / ContentStore.ARCHIVE_CACHE
+    _held(cache, "owed", 400, 1_500_000_000)
+    new = _held(cache, "new", 400, 1_700_000_000)
+    await job_queue.enqueue(thumbnails, {"asset_id": "owed"})
+    walks: list[Path] = []
+    listing = identity_places._cached
+    monkeypatch.setattr(
+        identity_places, "_cached", lambda directory: walks.append(directory) or listing(directory)
+    )
+
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, new)
+    idle = _held(cache, "idle", 400, 1_600_000_000)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, idle)
+    assert len(walks) == 1, "the minute after a walk that found only owed copies, none"
+    assert idle.is_file()
+
+    monkeypatch.setattr(identity_places, "KEEP_WALK_EVERY_SECONDS", 0.0)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, idle)
+    assert len(walks) == 2
+
+
 async def test_which_copies_are_owed_is_asked_of_the_queue_at_most_twice_a_minute(
     content_store: ContentStore, job_queue: JobQueue, thumbnails: str
 ) -> None:

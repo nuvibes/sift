@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Time left priced as the import's work over the pool, the range, its words and its record."""
+"""Time left priced as each family's own work at its own pace, the range, its words and its record."""
 
 from __future__ import annotations
 
@@ -35,37 +35,48 @@ def _job(**changed: object) -> Import:
     return Import(**asked)  # type: ignore[arg-type]
 
 
-def test_after_the_read_the_passes_take_their_work_over_every_worker() -> None:
-    assert time_left.seconds_left(_job(read={})) == (None, 30.0)
-    assert time_left.seconds_left(_job(read={}, passes={("preview", "video"): 1})) == (None, None)
-    assert time_left.seconds_left(_job(read={}, workers=0)) == (None, 300.0)
+def test_the_priced_part_leaves_out_a_kind_nobody_priced_and_says_so() -> None:
+    passes = {("thumbnail", "image"): 100, ("thumbnail", "video"): 50}
+    assert time_left.priced_part(passes, PRICES) == (300.0, True)
+    assert time_left.priced_part({**passes, ("preview", "video"): 1}, PRICES) == (300.0, False)
+    assert time_left.priced_part({**passes, ("preview", "video"): 0}, PRICES) == (300.0, True)
 
 
-def test_a_read_with_no_price_or_no_pace_says_nothing_of_either() -> None:
-    assert time_left.seconds_left(_job(read={("walk", "image"): 1})) == (None, None)
-    assert time_left.seconds_left(_job(read_pace=None)) == (None, None)
+def test_a_pass_goes_at_its_own_pace_and_then_at_its_share_of_the_reads_workers() -> None:
+    # 100 worker seconds at a half a second: 200 s alone; the read ends at 100 s with 50 left,
+    # which it then does at the half and the 2 the read hands it: 20 s more.
+    assert time_left.after_the_read(100.0, 0.5, 100.0, 2.0) == 120.0
+    assert time_left.after_the_read(40.0, 0.5, 100.0, 2.0) == 80.0
+    assert time_left.after_the_read(100.0, 0.0, 100.0, 2.0) == 150.0
+    assert time_left.after_the_read(100.0, 0.0, 100.0, 0.0) is None
+    assert time_left.after_the_read(0.0, 0.0, 100.0, 2.0) == 0.0
 
 
-def test_a_read_bound_by_its_share_is_its_own_pace_and_the_passes_follow_it() -> None:
+def test_a_read_with_no_price_or_no_pace_says_nothing() -> None:
+    assert time_left.read_seconds(_job(read={("walk", "image"): 1})) is None
+    assert time_left.read_seconds(_job(read_pace=None)) is None
+
+
+def test_a_read_bound_by_its_share_is_its_own_pace() -> None:
     # 200 worker seconds at 2 a second: 100 s; all the work over 10 workers: 50 s.
-    assert time_left.seconds_left(_job(pool_bound=False)) == (100.0, 100.0)
-    queued = _job(pool_bound=False, queued={"thumbnail": 30})
-    assert time_left.seconds_left(queued) == (100.0, 106.0)
+    assert time_left.read_seconds(_job(pool_bound=False)) == 100.0
+    assert time_left.read_seconds(_job(read_pace=20.0, passes={("preview", "video"): 3})) == 10.0
 
 
 def test_a_read_bound_by_the_pool_is_no_sooner_than_all_the_work_less_what_is_queued() -> None:
-    slow = _job(read_pace=20.0, queued={"thumbnail": 30})
-    assert time_left.seconds_left(slow) == (44.0, 50.0)
-    assert time_left.seconds_left(_job(read_pace=20.0)) == (50.0, 50.0)
+    assert time_left.read_seconds(_job(read_pace=20.0, queued={"thumbnail": 30})) == 44.0
+    assert time_left.read_seconds(_job(read_pace=20.0)) == 50.0
+    assert time_left.read_seconds(_job(read_pace=20.0, workers=0)) == 500.0
 
 
-def test_a_stalled_read_leaves_the_passes_their_own_work_over_the_pool() -> None:
-    assert time_left.seconds_left(_job(pool_bound=False, read_stalled=True)) == (100.0, 50.0)
-
-
-def test_passes_with_a_kind_unpriced_are_no_sooner_than_the_read_and_the_queue() -> None:
-    unpriced = {("preview", "video"): 3}
-    assert time_left.seconds_left(_job(passes=unpriced, queued={"thumbnail": 5})) == (100.0, 101.0)
+def test_a_rate_is_read_over_a_tenth_of_what_it_prices_within_the_minutes_held() -> None:
+    assert time_left.rate_over(60.0) == time_left.RATE_OVER
+    assert time_left.rate_over(20_000.0) == 2_000.0
+    assert time_left.rate_over(360_000.0) == 60.0 * time_left.RATE_MINUTES_HELD
+    long = _worked([(60.0, 120.0)] * 30 + [(60.0, 60.0)] * 10)
+    newest, hour = long.rate(6000.0), long.rate(6000.0, over=2400.0)
+    assert newest is not None and newest.per_second == pytest.approx(1.0)
+    assert hour is not None and hour.per_second == pytest.approx(1.75)
 
 
 def _worked(minutes: list[tuple[float, float]], *, at: float = 6000.0) -> time_left.Throughput:

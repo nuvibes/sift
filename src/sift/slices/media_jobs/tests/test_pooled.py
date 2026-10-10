@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""The read and the passes after it priced together at the read's measured pace, a pass with no
-read ahead at its own, "Measuring." before either, held steady, a stopped row said, each kept."""
+"""The read and each pass after it at its own measured pace, a pass taking its share of the read's
+workers once the read ends, "Measuring." before either, a floor while a walk counts or a kind is
+unpriced, held steady, a stopped row said, each kept."""
 
 from __future__ import annotations
 
@@ -79,16 +80,52 @@ async def _said(temp_db: Database) -> list[tuple[object, ...]]:
     return [tuple(row) for row in rows]
 
 
-async def test_the_read_and_the_passes_after_it_go_at_the_reads_measured_pace(
+async def test_the_read_and_each_pass_after_it_go_at_their_own_measured_pace(
+    temp_db: Database,
+) -> None:
+    book = await _book(temp_db, scan=2.0, generate=0.5)
+    answer = await priced_together(_answer(), WORK, KINDS, book, 4, False)
+
+    # 200 worker seconds of reading at 2 a second: 100 s. 100 of pictures at a half: 50 done when
+    # the read ends, the other 50 at the half and the read's 2: 120 s.
+    assert (answer["scan"].quick_seconds, answer["scan"].slow_seconds) == (62, 160)
+    assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (75, 192)
+    assert await _said(temp_db) == [(62, 160, 100, 0), (75, 192, 100, 0)]
+
+
+async def test_a_pass_with_no_pace_of_its_own_yet_works_with_the_reads_workers_after_it(
     temp_db: Database,
 ) -> None:
     book = await _book(temp_db, scan=2.0)
     answer = await priced_together(_answer(), WORK, KINDS, book, 4, False)
+    # 100 s of reading, then 100 worker seconds at the read's 2: 150 s.
+    assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (93, 240)
 
-    # 200 worker seconds of reading at 2 a second: 100 s; the passes the queued second after it.
-    assert (answer["scan"].quick_seconds, answer["scan"].slow_seconds) == (62, 160)
-    assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (63, 161)
-    assert await _said(temp_db) == [(62, 160, 100, 0), (63, 161, 100, 0)]
+
+async def test_a_kind_nobody_priced_makes_the_pass_a_floor_from_the_rest(
+    temp_db: Database,
+) -> None:
+    book = await _book(temp_db, scan=2.0, generate=0.5)
+    work = {**WORK, "preview": KindOfWork(done=0, outstanding=1, failed=0, waiting=5)}
+    answer = _answer()
+    answer["generate"] = answer["generate"].model_copy(update={"types": ["thumbnail", "preview"]})
+    priced = await priced_together(answer, work, KINDS, book, 4, False)
+    generate = priced["generate"]
+    assert (generate.quick_seconds, generate.slow_seconds, generate.at_least) == (75, 75, True)
+    # A floor is no window to score the finish against.
+    assert await _said(temp_db) == [(62, 160, 100, 0)]
+
+
+async def test_while_a_walk_counts_every_time_is_the_least_the_counted_files_take(
+    temp_db: Database,
+) -> None:
+    book = await _book(temp_db, scan=2.0, generate=0.5)
+    answer = await priced_together(_answer(), WORK, KINDS, book, 4, False, counting=True)
+    floors = {
+        key: (row.quick_seconds, row.slow_seconds, row.at_least) for key, row in answer.items()
+    }
+    assert floors == {"scan": (62, 62, True), "generate": (75, 75, True)}
+    assert await _said(temp_db) == []
 
 
 async def test_before_the_read_has_a_pace_every_row_says_measuring(temp_db: Database) -> None:
@@ -150,7 +187,7 @@ async def test_a_sub_task_switched_off_leaves_the_pass_priced_by_what_runs(
 
 
 async def test_a_row_that_has_stopped_says_so(temp_db: Database) -> None:
-    book = await _book(temp_db, scan=2.0)
+    book = await _book(temp_db, scan=2.0, generate=0.5)
     run = book.open_run(Family.SCAN)
     assert run is not None and run.last_done is not None
     run.last_done -= 200
@@ -160,8 +197,14 @@ async def test_a_row_that_has_stopped_says_so(temp_db: Database) -> None:
     answer = await priced_together(answer, WORK, KINDS, book, 4, False)
 
     assert (answer["scan"].quick_seconds, answer["scan"].time_unknown) == (None, STALLED)
-    # The read stopped: the passes are their own work over the pool, 300 / 4, not after the read.
-    assert await _said(temp_db) == [(None, None, 100, 1), (46, 120, 100, 0)]
+    # The read stopped: a pass is its own work at its own pace, with no floor from the read.
+    assert await _said(temp_db) == [(None, None, 100, 1), (125, 320, 100, 0)]
+    book._throughput.pop(Family.GENERATE)
+    pooled._STEADY.forget(Family.GENERATE)
+    stalled = _answer()
+    stalled["scan"] = stalled["scan"].model_copy(update={"running": 0})
+    alone = await priced_together(stalled, WORK, KINDS, book, 4, False)
+    assert (alone["generate"].time_unknown, alone["generate"].at_least) == (MEASURING, False)
 
 
 @pytest.mark.parametrize(

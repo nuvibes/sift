@@ -98,6 +98,15 @@ version's section, dated, when that version is published.
   and every browser was refused until a restart. The door is opened again on the spot. The
   busy moment itself is gone too: a long task's record of where its time went grew without
   bound and was sorted on every step (20,000 steps 68.6 s before, 0.03 s after).
+- **Time left is each task's own.** Every long task's time is its own work at its own measured
+  pace, read over enough of its run to hold steady; a task that runs after the scan is no
+  sooner than the scan and takes its share of the workers when the scan ends, instead of all
+  four sharing one figure. While folders are still being counted, Activity says at least what
+  the counted files take. On one library's eleven-hour day, replayed, the windows held the
+  later progress in 96 to 100% of samples for four of the five tasks (2 to 75% before).
+- **A person's strength bar rates the recognizer.** It is now the share of the faces Sift named
+  as them that were right by your answers; a face still awaiting your answer no longer counts
+  against them (a person with 3,191 faces named and 572 awaiting read 85% before, now 100%).
 - **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
   which opens the files with why each was left out, or "Up to date"; the time left is blank under
   a minute of work; a running Identify or Smart Search pass shows its window instead of "Not

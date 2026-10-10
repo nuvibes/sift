@@ -613,10 +613,13 @@ class Ledger(RunReads):
     def throughput(self, family: Family) -> Throughput:
         return self._throughput.setdefault(family, Throughput())
 
-    def rate(self, family: Family, of: int = time_left.ITEMS) -> Rate | None:
-        """What the family's work has finished per second it had work due, lately, or None."""
+    def rate(
+        self, family: Family, of: int = time_left.ITEMS, over: float = time_left.RATE_OVER
+    ) -> Rate | None:
+        """What the family's work has finished per second it had work due over its newest `over`
+        busy seconds, or None."""
         found = self._throughput.get(family)
-        return None if found is None else found.rate(time.monotonic(), of)
+        return None if found is None else found.rate(time.monotonic(), of, over)
 
     def life(self, family: Family) -> float | None:
         """Seconds the family's open run has gone, or None with none open."""

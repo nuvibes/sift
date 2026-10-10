@@ -42,8 +42,9 @@ class EntryHeld:
 
 @dataclass(frozen=True, slots=True)
 class Strength:
-    """How well Sift recognizes one person here: the share of her found faces named outright,
-    answers counted (`rate`), what it rests on, and the bands, so no screen bands it itself."""
+    """How well Sift recognizes one person here: of the faces it named as her, the share that
+    were right by the answers given (`rate`), what it rests on, and the bands, so no screen bands
+    it itself. A face still awaiting an answer is no part of it."""
 
     references: int
     target: int
@@ -60,9 +61,10 @@ class Strength:
 
     @property
     def rate(self) -> float | None:
-        """The share of her faces named outright, answers counted; None before any is found."""
-        seen = self.counted.matched + self.counted.asked + self.counted.yes + self.counted.no
-        return (self.counted.matched + self.counted.yes) / seen if seen else None
+        """Of the faces named as her, the share that were right by the answers: a match stands,
+        a Yes was right, a No was wrong; None before any. The awaiting ones are not counted."""
+        decided = self.counted.matched + self.counted.yes + self.counted.no
+        return (self.counted.matched + self.counted.yes) / decided if decided else None
 
     @property
     def fraction(self) -> float:

@@ -42,10 +42,11 @@ def _strength(references: int, **counted: int) -> Strength:
         (0, {}, "none"),
         (2, {"matched": 9}, "few"),
         (3, {}, "unseen"),
-        (3, {"matched": 4, "asked": 6}, "weak"),
-        (3, {"matched": 5, "asked": 5}, "fair"),
+        (3, {"matched": 4, "no": 6}, "weak"),
+        (3, {"matched": 5, "no": 5}, "fair"),
         (3, {"matched": 3, "yes": 3, "asked": 1, "no": 1}, "good"),
         (3, {"matched": 9, "asked": 1}, "strong"),
+        (3, {"matched": 9, "asked": 100}, "strong"),
     ],
 )
 def test_the_band_is_the_rate_above_the_floor(
@@ -54,11 +55,11 @@ def test_the_band_is_the_rate_above_the_floor(
     assert _strength(references, **counted).verdict == verdict
 
 
-def test_a_yes_counts_as_named_and_a_no_as_asked() -> None:
+def test_a_yes_counts_as_right_a_no_as_wrong_and_an_open_question_as_nothing() -> None:
     strength = _strength(5, matched=6, asked=2, yes=1, no=1)
 
-    assert strength.rate == pytest.approx(0.7)
-    assert strength.fraction == pytest.approx(0.7)
+    assert strength.rate == pytest.approx(7 / 8)
+    assert strength.fraction == pytest.approx(7 / 8)
     assert _strength(5).fraction == 0.0
 
 
@@ -98,7 +99,7 @@ async def test_her_reading_counts_her_pictures_by_origin_and_her_faces_by_outcom
     wall = (await service.reference_strengths()).people[person]
 
     assert strength.counted == Counted(imported=2, confirmed=1, matched=1, asked=1, yes=1, no=1)
-    assert (strength.rate, strength.verdict) == (0.5, "fair")
+    assert (strength.rate, strength.verdict) == (pytest.approx(2 / 3), "fair")
     assert wall.counted == strength.counted
 
 

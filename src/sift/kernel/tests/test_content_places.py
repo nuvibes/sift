@@ -919,3 +919,14 @@ async def test_the_moment_a_tiles_still_was_cut_at_is_kept_on_the_file(
 
     record = await content_store.get(clip.asset.id)
     assert record is not None and record.still_at_ms == 4_250
+
+
+def test_a_cached_copy_is_named_for_its_asset_without_pathlib_arithmetic(tmp_path: Path) -> None:
+    directory = tmp_path / "cache" / "archives"
+    held = [(0.0, 1, directory / f"asset-{n}" / "deep" / "copy.bin") for n in range(5)]
+    from sift.kernel.content.identity_places import _assets_of
+
+    assert _assets_of(directory, held) == frozenset(f"asset-{n}" for n in range(5))
+    assert _assets_of(directory, held) == frozenset(
+        path.relative_to(directory).parts[0] for _, _, path in held
+    )

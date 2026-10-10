@@ -35,13 +35,21 @@ _STEPS = ((1200.0, 300), (3600.0, 900), (21600.0, 3600), (172800.0, 10800), (mat
 
 def work(left: Mapping[Key, float], prices: Mapping[Key, float]) -> float | None:
     """Worker seconds of the items left, None where one has no price."""
+    worked, whole = priced_part(left, prices)
+    return worked if whole else None
+
+
+def priced_part(left: Mapping[Key, float], prices: Mapping[Key, float]) -> tuple[float, bool]:
+    """Worker seconds of the items left that have a price, and whether every one had."""
     total = 0.0
+    whole = True
     for (job_type, kind), n in left.items():
         price = prices.get((job_type, kind), prices.get((job_type, ANY_KIND)))
         if price is None:
-            return None
+            whole = whole and n <= 0
+            continue
         total += n * price
-    return total
+    return total, whole
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,27 +66,29 @@ class Import:
     read_pace: float | None = None
     #: False while the read waits on its share's places rather than on the pool's workers.
     pool_bound: bool = True
-    read_stalled: bool = False
 
 
-def seconds_left(job: Import) -> tuple[float | None, float | None]:
-    """The read's seconds left and the passes', each None where it cannot be priced."""
-    workers = max(1, job.workers)
-    passes = work(job.passes, job.prices)
-    if not job.read:
-        return None, None if passes is None else passes / workers
+def read_seconds(job: Import) -> float | None:
+    """The read's seconds left at its own pace, None where it cannot be priced; bound by the pool,
+    no sooner than all the work less what the passes have queued, over every worker."""
     read = work(job.read, job.prices)
-    own = None if read is None or not job.read_pace else read / job.read_pace
-    if own is None or read is None:
-        return own, None
-    queued = sum(n * job.prices.get((t, ANY_KIND), 0.0) for t, n in job.queued.items()) / workers
-    if passes is None:
-        # A kind nothing has priced yet: no sooner than the read and what is queued after it.
-        return own, own + queued
-    every = (read + passes) / workers
-    if job.pool_bound:
-        own = max(own, every - queued)
-    return own, every if job.read_stalled else max(every, own + queued)
+    if read is None or not job.read_pace:
+        return None
+    own = read / job.read_pace
+    passes = work(job.passes, job.prices)
+    if passes is None or not job.pool_bound:
+        return own
+    queued = sum(n * job.prices.get((t, ANY_KIND), 0.0) for t, n in job.queued.items())
+    return max(own, (read + passes - queued) / max(1, job.workers))
+
+
+def after_the_read(worked: float, pace: float, read: float, freed: float) -> float | None:
+    """A pass's seconds left: `worked` worker seconds at its own `pace` while the read runs for
+    `read` seconds, then at that and the `freed` worker seconds a second the read's end hands it."""
+    if worked <= pace * read:
+        return worked / pace if pace > 0 else 0.0
+    after = pace + freed
+    return None if after <= 0 else read + (worked - pace * read) / after
 
 
 #: What a rate is of: items finished, bytes read, or worker seconds of finished work.
@@ -106,6 +116,14 @@ BATCH_GAP_SECONDS = 120.0
 TICK_AT_MOST = 15.0
 #: What a row with work due says while no rate of its own has been measured yet.
 MEASURING = "Measuring."
+#: A rate is read over at most this share of the time it prices, within the minutes held: an hour
+#: of a day's work, not its newest ten minutes, whose swings would move the finish by hours.
+RATE_OVER_SHARE = 0.1
+
+
+def rate_over(seconds: float) -> float:
+    """The busy seconds a rate that prices this many seconds is read over."""
+    return min(60.0 * RATE_MINUTES_HELD, max(RATE_OVER, seconds * RATE_OVER_SHARE))
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,13 +170,13 @@ class Throughput:
         minute[3] += nbytes
         minute[4] += worked
 
-    def rate(self, now: float, of: int = ITEMS) -> Rate | None:
-        """The rate over the newest busy minutes, or None before there is one to quote."""
+    def rate(self, now: float, of: int = ITEMS, over: float = RATE_OVER) -> Rate | None:
+        """The rate over the newest `over` busy seconds, or None before there is one to quote."""
         self._now(now)
         busy = items = amount = 0.0
         rates: list[float] = []
         for minute in reversed(self._minutes):
-            if busy >= RATE_OVER:
+            if busy >= over:
                 break
             seconds = minute[1]
             busy += seconds

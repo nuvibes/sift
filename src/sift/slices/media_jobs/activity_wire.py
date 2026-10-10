@@ -253,8 +253,9 @@ class FamilyOfWork(Wire):
     )
     at_least: bool = Field(
         default=False,
-        description="The time left is the least the work takes, priced from the benchmark before "
-        "any run of this pass.",
+        description="The time left is the least the work takes: priced from the benchmark before "
+        "any run of this pass, from the files counted so far while a folder is still being "
+        "counted, or from the work that has a price while some of it has none yet.",
     )
     sample: int = Field(
         default=0,

@@ -110,6 +110,8 @@ class Said:
     slow: int | None
     unknown: str | None
     waiting: int
+    #: The time is the least the work takes, not a window.
+    at_least: bool = False
 
 
 async def _nothing(_context: object) -> None:
@@ -280,7 +282,15 @@ class _State:
             pool_bound=bound,
         )
         return [
-            Said(self.at, key, row.quick_seconds, row.slow_seconds, row.time_unknown, row.waiting)
+            Said(
+                self.at,
+                key,
+                row.quick_seconds,
+                row.slow_seconds,
+                row.time_unknown,
+                row.waiting,
+                row.at_least,
+            )
             for key, row in answer.items()
             if row.waiting > 0
         ]
@@ -323,11 +333,14 @@ def scored(record: Recording, said: list[Said]) -> dict[str, dict[str, float | N
             low, high = time_left.window_of(one.quick, one.slow)
             windows.append((low, high))
             third = thirds[min(2, int(3 * (one.at - counted) / (end - counted)))]
+            # A floor holds while the real finish is no sooner than it.
+            if one.at_least:
+                high = int(truth + time_left.TOLERANCE)
             right = low - time_left.TOLERANCE <= truth <= high + time_left.TOLERANCE
             third[0] += 1
             third[1] += right
             timed += 1
-            numbers += one.quick <= truth <= one.slow
+            numbers += one.quick <= truth <= (truth if one.at_least else one.slow)
             then = before.get(one.at - 60)
             if then is not None and then.slow:
                 moves.append(abs(one.slow - (then.slow - 60)) / then.slow)

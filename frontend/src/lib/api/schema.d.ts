@@ -12940,7 +12940,7 @@ export interface components {
         FamilyOfWork: {
             /**
              * At Least
-             * @description The time left is the least the work takes, priced from the benchmark before any run of this pass.
+             * @description The time left is the least the work takes: priced from the benchmark before any run of this pass, from the files counted so far while a folder is still being counted, or from the work that has a price while some of it has none yet.
              * @default false
              */
             at_least: boolean;

@@ -123,7 +123,7 @@
 	function rateSaid(now: Reading): string {
 		const floor = `Drawn once Sift has ${many(now.floor, 'picture', 'pictures')} of them.`;
 		if (now.rate === null || now.rate === undefined) return floor;
-		return `${Math.round(now.rate * 100)}% of their faces named without asking, counting your answers. ${floor}`;
+		return `${Math.round(now.rate * 100)}% of the faces Sift named as them were right, by your answers. ${floor}`;
 	}
 </script>
 

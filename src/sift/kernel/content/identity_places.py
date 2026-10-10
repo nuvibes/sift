@@ -9,9 +9,10 @@ import os
 import shutil
 import threading
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
+from types import MappingProxyType
 
 from sift.kernel import lanes
 from sift.kernel.archives import PART_SUFFIX, extract_member
@@ -22,7 +23,7 @@ from sift.kernel.content.identity_store import StoreCore
 from sift.kernel.content.placeless import STRANDED
 from sift.kernel.db import in_clause
 from sift.kernel.forgetting import forget_everywhere
-from sift.kernel.log import get_logger
+from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.kernel.threads import on_serving_thread
 
@@ -80,6 +81,10 @@ OWED_ANSWER_SECONDS = 30.0
 #: of the budget, and never past a quarter of the disk's free space.
 OWED_CEILING_TIMES = 8
 OWED_CEILING_FREE_SHARE = 4
+
+#: After a walk of a cache that could drop nothing but copies owed work, the next walk waits this
+#: long: at one library's ceiling every new picture walked 10,000 copies again.
+KEEP_WALK_EVERY_SECONDS = 60.0
 
 #: Each local copy handed out, and when (`time.monotonic`): for the whole process, as every store
 #: of it reads the same cache.
@@ -409,18 +414,31 @@ class Places(StoreCore):
         self._owed_answer = (time.monotonic(), wanted, owed)
         return owed
 
+    #: Each cache folder whose last walk found only owed copies, and when (`time.monotonic`).
+    _only_owed_at: Mapping[str, float] = MappingProxyType({})
+
     async def _keep(self, folder: Path | str, budget: int, keep: Path) -> None:
         """Hold a cache folder to its budget: never the copy just made, one handed out lately, or,
         up to a ceiling, one whose asset still has work owed (`_drop`)."""
-        directory = self._settings.cache_dir / folder
-        held = await asyncio.to_thread(_cached, directory)
-        if sum(size for _, size, _ in held) <= budget:
+        if (
+            time.monotonic() - self._only_owed_at.get(str(folder), float("-inf"))
+            < KEEP_WALK_EVERY_SECONDS
+        ):
             return
-        owed = await self._work_owed(_asset_of(directory, path) for _, _, path in held)
-        ceiling = await asyncio.to_thread(_owed_ceiling, directory, budget)
-        dropped, owed_dropped = await asyncio.to_thread(
-            _drop, directory, held, budget, keep, owed=owed, ceiling=ceiling
-        )
+        directory = self._settings.cache_dir / folder
+        # Timed: at one library's ceiling this walk was most of a probe's unrecorded time.
+        with timing_hook("content.cache_keep", folder=str(folder)):
+            held = await asyncio.to_thread(_cached, directory)
+            if sum(size for _, size, _ in held) <= budget:
+                return
+            # Named in the thread: thousands of paths, and the loop is everybody's.
+            owed = await self._work_owed(await asyncio.to_thread(_assets_of, directory, held))
+            ceiling = await asyncio.to_thread(_owed_ceiling, directory, budget)
+            dropped, owed_dropped = await asyncio.to_thread(
+                _drop, directory, held, budget, keep, owed=owed, ceiling=ceiling
+            )
+        if owed_dropped or dropped == 0:
+            self._only_owed_at = {**self._only_owed_at, str(folder): time.monotonic()}
         if owed_dropped:
             log.warning(
                 "content.cache_dropped_owed",
@@ -505,7 +523,11 @@ def _place_copy(scratch: Path, destination: Path) -> None:
 
 def _asset_of(directory: Path, path: Path) -> str:
     """The asset a cached copy is filed under: the folder named for it."""
-    return path.relative_to(directory).parts[0]
+    return path.parts[len(directory.parts)]
+
+
+def _assets_of(directory: Path, held: list[tuple[float, int, Path]]) -> frozenset[str]:
+    return frozenset(_asset_of(directory, path) for _, _, path in held)
 
 
 def _owed_ceiling(directory: Path, budget: int) -> int:
