@@ -19,7 +19,7 @@ import sift
 from sift import client
 
 # `log_settings` declares two log settings at import, applied once there is a database.
-from sift.kernel import changes, landing, lanes, log_settings, media, wiring
+from sift.kernel import changes, landing, lanes, listener, log_settings, media, wiring
 from sift.kernel.access import users_that_may_gain
 from sift.kernel.changes import ChangeBus
 from sift.kernel.config import (
@@ -155,6 +155,8 @@ def _quieten_a_reset_at_teardown() -> None:
     def handler(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
         failure = context.get("exception")
         if isinstance(failure, ConnectionResetError) and ordinary in context.get("message", ""):
+            return
+        if listener.accept_failed(loop, context):
             return
         loop.default_exception_handler(context)
 

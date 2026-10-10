@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 # Registers the component: a library records a "benchmarks" version.
 import sift.kernel.benchmarks  # noqa: F401
 from sift import client
-from sift.kernel import foreground, lifecycle
+from sift.kernel import foreground, lifecycle, listener
 from sift.kernel.config import ConfigError, Settings, ensure_directories, get_settings
 from sift.kernel.db import (
     DatabaseError,
@@ -388,6 +388,7 @@ def main() -> None:
         log_config=None,
     )
     server = uvicorn.Server(config)
+    listener.rearm(server)
     if settings.stop_on_stdin_eof:
         stop_when_the_parent_lets_go(server)
         # A restart is honest only where a parent holds this process and will start it again.

@@ -95,6 +95,11 @@ What's new lists what each release of Sift changes for you, newest first. To see
   you viewed or hearted them, and the wall does not reorder under an open player; the corner
   player's Play through runs on past a picture; a filter chip pressed in Theater lands
   immediately.
+- **Sift keeps answering through a busy moment.** A connection that reset while the server was
+  busy used to close the door for good: the app went on working its tasks while every page
+  and every browser was refused until a restart. The door is opened again on the spot. The
+  busy moment itself is gone too: a long task's record of where its time went grew without
+  bound and was sorted on every step (20,000 steps 68.6 s before, 0.03 s after).
 - **Library tasks say what is true**: "48 waiting, runs as files are imported", "1 left out",
   which opens the files with why each was left out, or "Up to date"; the time left is blank under
   a minute of work; a running Identify or Smart Search pass shows its window instead of "Not

@@ -1499,6 +1499,28 @@ def test_a_long_job_s_spans_are_merged_as_they_come_so_its_record_stays_small(
     assert cost.summary(ended=10.0)["covered_ms"] == 10_000
 
 
+def test_spans_that_never_touch_stay_bounded_too_with_the_narrowest_gaps_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(log_module, "_KEPT_SPANS", 4)
+    cost = log_module.JobCost(began=0.0)
+    # Half-second steps a second apart: no two ever merge, so the record would grow without end.
+    for n in range(200):
+        cost.staged("step", float(n), n + 0.5)
+        assert len(cost.stages["step"].spans) <= 4
+    said = cost.summary(ended=200.0)
+    assert said["stages"]["step"] == 100_000, "the closed gaps are taken off again"
+    assert said["covered_ms"] == 100_000
+
+
+def test_coarsening_closes_the_narrowest_gaps_first() -> None:
+    spans = [(0.0, 1.0), (1.1, 2.0), (5.0, 6.0), (6.2, 7.0), (20.0, 21.0)]
+    kept, closed = log_module._coarsened(spans, 3)
+    assert kept == [(0.0, 2.0), (5.0, 7.0), (20.0, 21.0)]
+    assert closed == pytest.approx(0.1 + 0.2)
+    assert log_module._coarsened(spans, 5) == (spans, 0.0)
+
+
 def test_a_timed_block_inside_a_job_is_filed_to_it_and_outside_one_to_nothing() -> None:
     cost = log_module.JobCost()
     with timing_hook("outside"):

@@ -631,6 +631,7 @@ _cov_db() {
 # pasted into a bug report, and the timing records, where a wait counted as work names the wrong
 # component, and every diagnosis follows the wrong name.
 _cov_log() { _cov src/sift/kernel/tests/test_log.py src/sift/kernel/tests/test_redaction.py --cov=sift.kernel.log --cov=sift.kernel.redaction; }
+_cov_listener() { _cov src/sift/kernel/tests/test_listener.py --cov=sift.kernel.listener; }
 # What Sift says its own version is. Twelve lines, and the reason it is gated is that both of its
 # branches are load-bearing: one is the number on the About screen and in every backup's name, and
 # the other is the empty string that makes the update check decline rather than invent an upgrade.

@@ -465,17 +465,47 @@ _WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL = (
 class _Spent:
     """One figure's time: the sum of its parts, and the spans they took, merged as they grow."""
 
-    __slots__ = ("spans", "summed")
+    __slots__ = ("closed", "spans", "summed")
 
     def __init__(self) -> None:
         self.spans: list[tuple[float, float]] = []
         self.summed = 0.0
+        #: Seconds of gap closed to keep the spans few; taken off what the spans say.
+        self.closed = 0.0
 
     def add(self, start: float, end: float) -> None:
         self.summed += end - start
         self.spans.append((start, end))
         if len(self.spans) > _KEPT_SPANS:
-            self.spans = _union(self.spans)
+            self.spans, gap = _coarsened(_union(self.spans), _KEPT_SPANS // 2)
+            self.closed += gap
+
+    def within(self, began: float, ended: float) -> float:
+        return max(0.0, _within(self.spans, began, ended) - self.closed)
+
+
+def _coarsened(
+    spans: list[tuple[float, float]], keep: int
+) -> tuple[list[tuple[float, float]], float]:
+    """At most `keep` merged spans, the narrowest gaps between neighbours closed, and the seconds
+    those gaps held: a long job's record stays bounded and each add stays cheap."""
+    extra = len(spans) - keep
+    if extra <= 0:
+        return spans, 0.0
+    gaps = sorted(spans[i + 1][0] - spans[i][1] for i in range(len(spans) - 1))
+    widest_closed = gaps[extra - 1]
+    out = [spans[0]]
+    closed = 0
+    held = 0.0
+    for start, end in spans[1:]:
+        gap = start - out[-1][1]
+        if closed < extra and gap <= widest_closed:
+            out[-1] = (out[-1][0], max(out[-1][1], end))
+            closed += 1
+            held += gap
+        else:
+            out.append((start, end))
+    return out, held
 
 
 def _within(spans: list[tuple[float, float]], began: float, ended: float) -> float:
@@ -556,13 +586,13 @@ class JobCost:
         parts: dict[str, int] = {}
 
         def took(name: str, spent: _Spent) -> int:
-            union = round(_within(spent.spans, self.began, ended) * 1000)
+            union = round(spent.within(self.began, ended) * 1000)
             if round(spent.summed * 1000) > union + 1:
                 parts[name] = round(spent.summed * 1000)
             return union
 
         with self._lock:
-            covered_ms = _within(self._covered.spans, self.began, ended) * 1000
+            covered_ms = self._covered.within(self.began, ended) * 1000
             timed = {name: took(name, spent) for name, spent in self.timed.items()}
             stages = {name: took(name, spent) for name, spent in sorted(self.stages.items())}
             folded = dict(sorted(self.folded.items()))
