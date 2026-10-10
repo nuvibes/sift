@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
@@ -16,7 +15,7 @@ from sift.kernel.audience import EVERY_ADMIN
 from sift.kernel.changes import About, telling
 from sift.kernel.db import Connection, Database
 from sift.kernel.jobs.queue_rows import WorkSummary
-from sift.kernel.jobs.quiet_hours import AT_NOW, AT_QUIET
+from sift.kernel.jobs.quiet_hours import AT_QUIET
 from sift.kernel.jobs.switchboard import QuietHold, Switchboard
 from sift.kernel.log import get_logger
 
@@ -131,23 +130,11 @@ class QueueCore:
                 await _read_into(kept, read)
             return kept.answer
 
-    def _family_holds(self) -> tuple[bool, str, str]:
-        """Nothing held here: `SwitchboardReads` keeps the families' holds and answers for them."""
-        return (True, "[]", "[]")
-
     def _claimable_now(self, arrival: Arrival) -> bool:
         """Whether the claim could take this row now, from what the queue already knows without a
-        read: its moment, a family's hold, and quiet hours and readiness as last asked. A wrong no
+        read: its moment, and quiet hours and readiness as last asked. A wrong no
         costs one idle poll, so what is not known counts as claimable."""
         if arrival.run_after is not None and arrival.run_after > self._now():
-            return False
-        free, families, spared = self._family_holds()
-        if (
-            not free
-            and arrival.timing != AT_NOW
-            and arrival.family in json.loads(families)
-            and arrival.job_type not in json.loads(spared)
-        ):
             return False
         if self._quiet_seen is not None and not self._quiet_seen[1].open:
             quiet = self._quiet_seen[1]

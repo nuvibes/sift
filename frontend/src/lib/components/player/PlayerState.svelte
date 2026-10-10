@@ -13,6 +13,8 @@
 	interface Props {
 		/** No copy of the file can be read. */
 		failed: boolean;
+		/** A scan that will find the file if it moved is waiting or running. */
+		scanQueued?: boolean;
 		/** The ask itself failed, not the file. */
 		unasked: boolean;
 		plan: PlaybackPlan | null;
@@ -24,12 +26,20 @@
 		onoverride: () => void;
 	}
 
-	let { failed, unasked, plan, overridden, onretry, onoverride }: Props = $props();
+	let {
+		failed,
+		scanQueued = false,
+		unasked,
+		plan,
+		overridden,
+		onretry,
+		onoverride
+	}: Props = $props();
 </script>
 
 {#if failed}
 	<!-- The row is here, the bytes are not: the page a picture draws for the same fact. -->
-	<div class="over"><FileUnreachable /></div>
+	<div class="over"><FileUnreachable {scanQueued} /></div>
 {:else if unasked}
 	<div class="warning over">
 		<Icon name="warning" size={20} label="" />

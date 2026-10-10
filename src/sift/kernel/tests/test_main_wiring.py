@@ -1256,9 +1256,6 @@ class _PoolQueue:
         # No quiet-hours work.
         return await self.unfinished_by_type()
 
-    async def held_for_family_by_type(self) -> dict[str, int]:
-        return {}
-
 
 def _capture_pool_config(
     monkeypatch: pytest.MonkeyPatch, hub: _Hub, *, resizes: bool = False

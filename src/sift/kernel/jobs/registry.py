@@ -30,6 +30,9 @@ _FOLLOWS: dict[str, str] = {}
 #: ways keeps one urgency.
 _URGENCY: dict[str, int] = {}
 
+#: The job types whose settle keeps that urgency even when a run more urgent asked for it.
+_KEEPS_URGENCY: set[str] = set()
+
 #: The job types claimed whether or not their family can run here: coordinators of several products.
 _NOT_GATED: set[str] = set()
 
@@ -66,6 +69,7 @@ def register_handler(
     trails: bool = False,
     counts: str | None = None,
     urgency: int | None = None,
+    keeps_urgency: bool = False,
     needs_ready: bool = True,
     carries_products: bool = False,
     unlisted: bool = False,
@@ -83,6 +87,7 @@ def register_handler(
         job_type,
         follows=follows,
         urgency=urgency,
+        keeps_urgency=keeps_urgency,
         needs_ready=needs_ready,
         carries_products=carries_products,
         alone=alone,
@@ -122,6 +127,7 @@ def _declare_claiming(
     *,
     follows: str | None,
     urgency: int | None,
+    keeps_urgency: bool,
     needs_ready: bool,
     carries_products: bool,
     alone: bool,
@@ -134,6 +140,10 @@ def _declare_claiming(
         _URGENCY[job_type] = urgency
     else:
         _URGENCY.pop(job_type, None)
+    if keeps_urgency:
+        _KEEPS_URGENCY.add(job_type)
+    else:
+        _KEEPS_URGENCY.discard(job_type)
     if needs_ready:
         _NOT_GATED.discard(job_type)
     else:
@@ -240,6 +250,11 @@ def registered_follows() -> dict[str, str]:
 def registered_urgency(job_type: str) -> int | None:
     """The most urgent this type ever runs, or None for a type that never said. See `_URGENCY`."""
     return _URGENCY.get(job_type)
+
+
+def keeps_its_urgency(job_type: str) -> bool:
+    """Whether a settle of this type keeps its declared urgency. See `_KEEPS_URGENCY`."""
+    return job_type in _KEEPS_URGENCY
 
 
 #: Failures that mean this machine cannot do the work just now, and how many seconds to hold it.

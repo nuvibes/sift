@@ -50,10 +50,13 @@ def _makers_of(products: importing.ProductRegistry) -> dict[str, tuple[str, ...]
     return makers
 
 
-def _less(counts: dict[str, int], held: dict[str, int]) -> dict[str, int]:
-    """Counts of work less what a family's hold keeps waiting: held is not due."""
-    left = {kind: count - held.get(kind, 0) for kind, count in counts.items()}
-    return {kind: count for kind, count in left.items() if count > 0}
+def pace_settings(full: int, previews: object, share_reads: int) -> dict[str, object]:
+    """The settings a pace belongs to, at the full worker count: stepping back is not a change."""
+    return {
+        importing.JOBS_AT_ONCE: full,
+        "previews together": performance.resolve_generation_limit(previews, full),
+        "network share reads": share_reads,
+    }
 
 
 class _PoolConfig:
@@ -103,19 +106,14 @@ class _PoolConfig:
             # The accelerator's cap: three on a card, one on the processor, where two encodes fight.
             **player.job_limits(self._accelerator.encoder),
         }
-        generation = await self._own_caps(limits, concurrency)
-        unfinished = _less(
-            await self._queue.due_by_type(), await self._queue.held_for_family_by_type()
-        )
+        await self._own_caps(limits, concurrency)
+        unfinished = await self._queue.due_by_type()
         limits.update(await self._divided(concurrency))
         # The ledger closes runs whose family has nothing due and records the three pace settings.
+        previews = await get_app(performance.GENERATION_LIMIT_KEY)
         await self._book.settle(
             unfinished,
-            settings={
-                importing.JOBS_AT_ONCE: full,
-                "previews together": generation,
-                "network share reads": share_reads,
-            },
+            settings=pace_settings(full, previews, share_reads),
             stepped_back=attention.ATTENTION.holding,
         )
         return concurrency, limits
@@ -151,8 +149,8 @@ class _PoolConfig:
             log.info("lanes.configured", network_reads_at_once=share_reads, measured=measured)
         return share_reads
 
-    async def _own_caps(self, limits: dict[str, int], concurrency: int) -> int:
-        """The caps outside the division below; the previews' cap, for the ledger."""
+    async def _own_caps(self, limits: dict[str, int], concurrency: int) -> None:
+        """The caps outside the division below."""
         get_app = self._get_app
         # Preview and sprite follow the effective worker count: a ceiling, not an entitlement below.
         generation = performance.resolve_generation_limit(
@@ -166,7 +164,6 @@ class _PoolConfig:
         )
         if downloads_at_once is not None:
             limits[download.DOWNLOAD] = downloads_at_once
-        return generation
 
     async def _face_scans(self, concurrency: int) -> int:
         get_app = self._get_app

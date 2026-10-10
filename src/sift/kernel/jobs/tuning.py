@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-IDLE_POLL_SECONDS = 1.0
-
 HEARTBEAT_SECONDS = 15.0
 
 #: Several heartbeats, so a slow disk never gets a healthy job reclaimed and run twice.

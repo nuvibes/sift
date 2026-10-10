@@ -469,8 +469,9 @@ async def test_the_setting_leaves_a_local_disk_alone() -> None:
 async def test_a_wait_worth_reporting_is_reported(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The same quarter second the loop and the pools warn at; here every wait is worth it."""
-    configure_logging("INFO")
+    """The same quarter second the loop and the pools warn at; here every wait is worth it. Each
+    one is a line at Detailed; at Normal the minute's `lanes.state` counts them."""
+    configure_logging("DEBUG")
     monkeypatch.setattr(lanes_module, "WAIT_WARN_SECONDS", 0.0)
     lanes = StorageLanes(network_reads_at_once=1)
     inside: list[int] = []
@@ -771,9 +772,28 @@ async def test_a_reader_holds_its_storage_only_while_it_is_in_the_lane() -> None
     assert not lanes_module.holding(Path("/nas/a/1"))
 
 
-async def test_a_lane_says_who_holds_and_who_waits_once_a_minute_while_anybody_waits() -> None:
-    from structlog.testing import capture_logs
+class _Said:
+    """The lane module's logger, standing in for it: a test that configures logging elsewhere has
+    the real one cached, which nothing can capture afterwards."""
 
+    def __init__(self) -> None:
+        self.lines: list[dict[str, object]] = []
+
+    def _said(self, level: str) -> Callable[..., None]:
+        def say(event: str, **fields: object) -> None:
+            self.lines.append({"event": event, "log_level": level, **fields})
+
+        return say
+
+    def __getattr__(self, level: str) -> Callable[..., None]:
+        return self._said(level)
+
+
+async def test_a_lane_says_who_holds_and_who_waits_once_a_minute_while_anybody_waits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    said_by = _Said()
+    monkeypatch.setattr(lanes_module, "log", said_by)
     lanes = StorageLanes(network_reads_at_once=1)
     lane = lanes.lane_for(Path("/nas/a/x"))
     await lane.take(lanes_module.ORDINARY)
@@ -783,20 +803,44 @@ async def test_a_lane_says_who_holds_and_who_waits_once_a_minute_while_anybody_w
     assert armed is not None, "a wait began with no report coming"
     armed.cancel()
 
-    with capture_logs() as logs:
-        lane._say_state()
-        again = lane._report
-        lane.give_back()
-        await waiting
-        lane._say_state()
+    lane._say_state()
+    again = lane._report
+    lane.give_back()
+    await waiting
+    lane._say_state()
 
-    said = [one for one in logs if one["event"] == "lanes.state"]
+    said = [one for one in said_by.lines if one["event"] == "lanes.state"]
     assert len(said) == 1
     assert said[0]["waiting"] == 1 and said[0]["asked"] == 1 and said[0]["active"] == 1
     assert again is not None, "a lane with somebody waiting stopped reporting"
     again.cancel()
     assert lane._report is None, "a lane nobody waits on kept reporting"
     lane.give_back()
+
+
+async def test_a_lane_s_minute_line_counts_its_waits_and_is_said_after_the_last_waiter_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    said_by = _Said()
+    monkeypatch.setattr(lanes_module, "log", said_by)
+    monkeypatch.setattr(lanes_module, "WAIT_WARN_SECONDS", 0.0)
+    lanes = StorageLanes(network_reads_at_once=1)
+    inside: list[int] = []
+    await asyncio.gather(*(_read(lanes, Path("/nas") / str(i), inside) for i in range(3)))
+    lane = lanes.lane_for(Path("/nas/0"))
+    armed = lane._report
+    assert armed is not None
+    armed.cancel()
+    lane._say_state()
+    assert lane._report is None, "nobody waits now, so nothing more is coming"
+    lane._say_state()
+    logs = said_by.lines
+
+    waited = [one for one in logs if one["event"] == "lanes.waited"]
+    assert len(waited) == 2 and {one["log_level"] for one in waited} == {"debug"}
+    (said,) = [one for one in logs if one["event"] == "lanes.state"]
+    assert said["waiting"] == 0 and said["waits"] == 2
+    assert float(str(said["worst_wait_seconds"])) <= float(str(said["waited_seconds"])) + 0.1
 
 
 async def test_a_long_read_is_counted_in_the_minutes_it_took(

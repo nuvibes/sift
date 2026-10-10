@@ -4859,8 +4859,8 @@ export interface paths {
         };
         /**
          * Browse
-         * @description The folders inside a granted place, so one can be picked. Admin-only, read-only, confined to
-         *     grants.
+         * @description The folders inside a place Sift has, so one can be picked, and with `files` the files whose
+         *     names match those patterns. Admin-only, read-only, confined to the library folders and grants.
          */
         get: operations["browse_api_library_browse_get"];
         put?: never;
@@ -8266,9 +8266,8 @@ export interface paths {
          *     for the same reason. And a list that has drifted since the screen drew it (somebody deleted a
          *     tag a minute ago) still enriches the rest.
          *
-         *     The key rides on the job because the boxes are asked with it and a job runs long after the
-         *     request that made it. It is the same key the request already carried; nothing new is unsealed
-         *     and nothing is written down anywhere it was not already.
+         *     The job reads the boxes' keys from the sealed store when it runs: no secret is written into
+         *     the job, which the queue keeps for days.
          */
         post: operations["enrich_entities_api_stash_boxes_enrich_post"];
         delete?: never;
@@ -11138,6 +11137,11 @@ export interface components {
              * @default 0
              */
             file_count: number;
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["BrowseEntry"][];
             /** Nothing Granted */
             nothing_granted: boolean;
             /** Path */
@@ -17168,10 +17172,17 @@ export interface components {
             /** Scale Height */
             scale_height: number | null;
             /**
+             * Scan Queued
+             * @default false
+             */
+            scan_queued: boolean;
+            /**
              * Streamable
              * @default true
              */
             streamable: boolean;
+            /** Unreadable */
+            unreadable: ("gone" | "away") | null;
             /** Url */
             url: string;
             /**
@@ -20267,8 +20278,14 @@ export interface components {
          * @description One storage as more files were read at the same time; `best_at_once` None where nothing was.
          */
         StorageCurveView: {
+            /** Achieved Mb Per Second */
+            achieved_mb_per_second: number | null;
+            /** Achieved Percent */
+            achieved_percent: number | null;
             /** Best At Once */
             best_at_once: number | null;
+            /** Ceiling Mb Per Second */
+            ceiling_mb_per_second: number | null;
             /** Failed */
             failed: string | null;
             /**
@@ -20283,8 +20300,16 @@ export interface components {
              * @default []
              */
             levels: components["schemas"]["StorageLevelView"][];
+            /** Listed Per Second */
+            listed_per_second: number | null;
+            /** Read Megabytes */
+            read_megabytes: number | null;
             /** Remote */
             remote: boolean;
+            /** Small Files Per Second */
+            small_files_per_second: number | null;
+            /** Small Mb Per Second */
+            small_mb_per_second: number | null;
             /** Storage */
             storage: string;
         };
@@ -29520,6 +29545,7 @@ export interface operations {
             query?: {
                 path?: string | null;
                 scope?: "granted" | "machine";
+                files?: string[] | null;
             };
             header?: never;
             path?: never;

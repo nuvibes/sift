@@ -206,3 +206,57 @@ test("a file's page says the file is gone when it is deleted elsewhere", async (
 	await figures(watcher, Date.now());
 	await removePhotos(writer, seeded);
 });
+
+test("a folder made elsewhere joins Browse's folders and the rest stay drawn", async ({
+	browser
+}) => {
+	const { writer, watcher } = await twoWindows(browser);
+	const seeded = await seedPhotos(writer, 'live-flash-explorer', 1);
+	const top = (
+		(await (await writer.request.get('/api/library/folders')).json()) as {
+			folders: { id: string; root_id: string; parent_id: string | null }[];
+		}
+	).folders.find((one) => one.root_id === seeded.rootId && one.parent_id === null);
+	expect(top, 'the seeded folder has no top folder').toBeTruthy();
+	const first = await write(writer, 'post', '/api/library/folders', {
+		parent_id: top!.id,
+		name: 'Aaa held'
+	});
+	await watcher.goto(`/browse?folders=${top!.id}`);
+	await expect(watcher.locator('.band li').getByText('Aaa held')).toBeVisible();
+
+	// Every frame from here: a skeleton put back over the band, or a row taken off and drawn again.
+	await watcher.evaluate(() => {
+		const seen = { bones: 0, rowsGone: 0 };
+		(window as unknown as { __band: typeof seen }).__band = seen;
+		new MutationObserver((records) => {
+			for (const record of records) {
+				for (const node of record.addedNodes)
+					if (node instanceof Element && (node.matches('.bone') || node.querySelector('.bone')))
+						seen.bones += 1;
+				for (const node of record.removedNodes)
+					if (node instanceof Element && (node.matches('li') || node.querySelector('li')))
+						seen.rowsGone += 1;
+			}
+		}).observe(document.body, { childList: true, subtree: true });
+	});
+	const name = `Bbb flash ${Date.now()}`;
+	const made = await write(writer, 'post', '/api/library/folders', {
+		parent_id: top!.id,
+		name
+	});
+	await expect(watcher.locator('.band li').getByText(name)).toBeVisible({
+		timeout: SHOWN_WITHIN_MS
+	});
+	await watcher.waitForTimeout(1_000);
+	const seen = await watcher.evaluate(
+		() => (window as unknown as { __band: Record<string, number> }).__band
+	);
+	test.info().annotations.push({ type: 'live-flash', description: JSON.stringify(seen) });
+
+	expect(seen.bones, 'the folders went back to their loading state').toBe(0);
+	expect(seen.rowsGone, 'a folder already drawn was taken off and drawn again').toBe(0);
+	expect(made.id).toBeTruthy();
+	expect(first.id).toBeTruthy();
+	await removePhotos(writer, seeded);
+});

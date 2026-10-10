@@ -9,6 +9,7 @@ these drives one failure deliberately rather than waiting for it to happen.
 from __future__ import annotations
 
 import asyncio
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.jobs import Job, JobState
 from sift.kernel.media import Accelerator, FFmpegError
+from sift.kernel.wiring import QUEUE, part_of_app
 from sift.slices.player import policy, tuning
 from sift.slices.player.cache import SegmentCache
 from sift.slices.player.service import PlayerService, SegmentUnavailable
@@ -246,6 +248,48 @@ def test_a_file_with_nowhere_to_read_it_from_has_no_playback_plan(
     )
 
     assert client.post(f"/api/assets/{asset_id}/playback", json=ANCIENT).status_code == 404
+
+
+def test_a_plan_says_a_copy_can_be_read_when_it_can(client: TestClient, library: Library) -> None:
+    sign_in(client)
+    asset_id = library.id_of("h264")
+
+    plan = client.post(f"/api/assets/{asset_id}/playback", json=ANCIENT).json()
+
+    assert plan["unreadable"] is None
+    assert plan["scan_queued"] is False
+
+
+def test_a_file_gone_from_a_folder_that_answers_is_said_to_be_gone(
+    client: TestClient, library: Library, idle_workers: None
+) -> None:
+    """Moved away since the last scan: the browser's refusal of its address must not be read as a
+    codec it cannot play, so the plan says the copy cannot be read, and which scan will find it."""
+    sign_in(client)
+    asset_id = library.id_of("h264")
+    for kept in (library.media / "clips").glob("h264-*"):
+        kept.unlink()
+
+    gone = client.post(f"/api/assets/{asset_id}/playback", json=ANCIENT).json()
+    assert gone["unreadable"] == "gone"
+    assert gone["scan_queued"] is False
+
+    queue = part_of_app(client.app, QUEUE)  # type: ignore[arg-type]
+    client.portal.call(queue.enqueue, "scan", {"root_id": library.root})  # type: ignore[union-attr]
+    coming = client.post(f"/api/assets/{asset_id}/playback", json=ANCIENT).json()
+    assert coming["scan_queued"] is True
+
+
+def test_a_file_on_a_folder_that_does_not_answer_is_said_to_be_away(
+    client: TestClient, library: Library
+) -> None:
+    sign_in(client)
+    asset_id = library.id_of("h264")
+    shutil.rmtree(library.media)
+
+    plan = client.post(f"/api/assets/{asset_id}/playback", json=ANCIENT).json()
+
+    assert plan["unreadable"] == "away"
 
 
 def test_an_empty_file_is_served_as_an_empty_response(client: TestClient, library: Library) -> None:

@@ -20,26 +20,27 @@ WHOLE = {
     "import-without-hold.csv.gz": (
         "import-with-hold.csv.gz",
         {
-            "scan": (93, [80, 100, 100], 100, 0, 31, 92, 9),
-            "generate": (100, [100, 100, 100], 100, 0, 22, 72, 2),
-            "fingerprint": (100, [100, 100, 100], 100, 0, 21, 73, 2),
+            "scan": (99, [96, 100, 100], 89, 0, 31, 88, 2),
+            "generate": (100, [100, 100, 100], 90, 0, 25, 65, 6),
+            "fingerprint": (100, [100, 100, 100], 90, 0, 21, 57, 12),
         },
     ),
+    # Recorded under the family hold, which no longer exists: the passes' first third waited for
+    # the walk's end, which nothing now makes them do.
     "import-with-hold.csv.gz": (
         "import-stall-and-eco.csv.gz",
         {
-            "scan": (85, [50, 100, 100], 100, 0, 97, 58, 48),
-            "generate": (90, [69, 100, 100], 100, 0, 42, 70, 13),
-            # A sub-task no closed run priced is said from its own finished files: 83 -> 86.
-            "fingerprint": (84, [28, 100, 100], 86, 0, 38, 64, 11),
+            "scan": (100, [None, 100, 100], 50, 0, 55, 8, 44),
+            "generate": (89, [37, 100, 100], 82, 0, 39, 62, 8),
+            "fingerprint": (82, [5, 100, 100], 83, 0, 55, 66, 0),
         },
     ),
     "import-stall-and-eco.csv.gz": (
         "import-without-hold.csv.gz",
         {
-            "scan": (93, [79, 100, 100], 98, 0, 56, 77, 9),
-            "generate": (95, [95, 100, 91], 100, 0, 36, 44, 0),
-            "fingerprint": (99, [96, 100, 100], 100, 0, 38, 47, 1),
+            "scan": (99, [97, 100, 100], 88, 0, 42, 90, 6),
+            "generate": (97, [97, 98, 98], 88, 0, 45, 45, 0),
+            "fingerprint": (98, [97, 98, 100], 90, 0, 45, 40, 0),
         },
     ),
 }
@@ -76,10 +77,11 @@ async def test_an_hour_of_a_share_paced_import_holds_its_words_and_its_files(
         after=replay.load("import-without-hold.csv.gz"),
     )
     held = {n: round(replay.horizon(record, said, "scan", n) or 0) for n in (100, 300, 500)}
-    assert held == {100: 78, 300: 96, 500: 97}
+    assert held == {100: 90, 300: 93, 500: 94}
     steady = {family: replay.steadiness(said, family) for family in ("scan", "generate")}
     assert {family: round(one["changes_an_hour"] or 0) for family, one in steady.items()} == {
-        "scan": 5,
-        "generate": 12,
+        "scan": 11,
+        "generate": 13,
     }
-    assert all(one["said"] == 100 and one["move"] == 0 for one in steady.values())
+    # The first two minutes say "Measuring." until the read has a pace of its own.
+    assert all(round(one["said"] or 0) == 97 and one["move"] == 0 for one in steady.values())

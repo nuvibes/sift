@@ -2036,6 +2036,14 @@
             "title": "File Count",
             "type": "integer"
           },
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/BrowseEntry"
+            },
+            "title": "Files",
+            "type": "array"
+          },
           "nothing_granted": {
             "title": "Nothing Granted",
             "type": "boolean"
@@ -2060,7 +2068,8 @@
           "file_count",
           "nothing_granted",
           "writable",
-          "read_only_mount"
+          "read_only_mount",
+          "files"
         ],
         "title": "BrowseView",
         "type": "object"
@@ -15797,10 +15806,30 @@
             ],
             "title": "Scale Height"
           },
+          "scan_queued": {
+            "default": false,
+            "title": "Scan Queued",
+            "type": "boolean"
+          },
           "streamable": {
             "default": true,
             "title": "Streamable",
             "type": "boolean"
+          },
+          "unreadable": {
+            "anyOf": [
+              {
+                "enum": [
+                  "gone",
+                  "away"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unreadable"
           },
           "url": {
             "title": "Url",
@@ -15823,7 +15852,9 @@
           "duration_ms",
           "resume_ms",
           "view_at_ms",
-          "qualities"
+          "qualities",
+          "unreadable",
+          "scan_queued"
         ],
         "title": "PlaybackPlan",
         "type": "object"
@@ -23112,6 +23143,28 @@
       "StorageCurveView": {
         "description": "One storage as more files were read at the same time; `best_at_once` None where nothing was.",
         "properties": {
+          "achieved_mb_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Achieved Mb Per Second"
+          },
+          "achieved_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Achieved Percent"
+          },
           "best_at_once": {
             "anyOf": [
               {
@@ -23122,6 +23175,17 @@
               }
             ],
             "title": "Best At Once"
+          },
+          "ceiling_mb_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ceiling Mb Per Second"
           },
           "failed": {
             "anyOf": [
@@ -23151,9 +23215,53 @@
             "title": "Levels",
             "type": "array"
           },
+          "listed_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Listed Per Second"
+          },
+          "read_megabytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read Megabytes"
+          },
           "remote": {
             "title": "Remote",
             "type": "boolean"
+          },
+          "small_files_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Small Files Per Second"
+          },
+          "small_mb_per_second": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Small Mb Per Second"
           },
           "storage": {
             "title": "Storage",
@@ -23167,7 +23275,14 @@
           "remote",
           "levels",
           "failed",
-          "best_at_once"
+          "best_at_once",
+          "ceiling_mb_per_second",
+          "small_files_per_second",
+          "small_mb_per_second",
+          "listed_per_second",
+          "achieved_mb_per_second",
+          "achieved_percent",
+          "read_megabytes"
         ],
         "title": "StorageCurveView",
         "type": "object"
@@ -39251,7 +39366,7 @@
     },
     "/api/library/browse": {
       "get": {
-        "description": "The folders inside a granted place, so one can be picked. Admin-only, read-only, confined to\ngrants.",
+        "description": "The folders inside a place Sift has, so one can be picked, and with `files` the files whose\nnames match those patterns. Admin-only, read-only, confined to the library folders and grants.",
         "operationId": "browse_api_library_browse_get",
         "parameters": [
           {
@@ -39282,6 +39397,25 @@
               ],
               "title": "Scope",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "files",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Files"
             }
           }
         ],
@@ -50617,7 +50751,7 @@
     },
     "/api/stash-boxes/enrich": {
       "post": {
-        "description": "Ask the stash-boxes about a batch of people, sites or tags.\n\nQueues and returns immediately, for the reason the sweep does: one request per subject to\nsomebody else's service, paced, so forty of them is most of a minute and a screen that waited\nfor it would look broken.\n\nEvery id is resolved through the SCOPED read first, and one that resolves to nothing is dropped\nrather than refusing the batch. Two things follow. A subject this user may not be shown does\nnot have its name sent to three public services, which is the same rule the file scan follows,\nfor the same reason. And a list that has drifted since the screen drew it (somebody deleted a\ntag a minute ago) still enriches the rest.\n\nThe key rides on the job because the boxes are asked with it and a job runs long after the\nrequest that made it. It is the same key the request already carried; nothing new is unsealed\nand nothing is written down anywhere it was not already.",
+        "description": "Ask the stash-boxes about a batch of people, sites or tags.\n\nQueues and returns immediately, for the reason the sweep does: one request per subject to\nsomebody else's service, paced, so forty of them is most of a minute and a screen that waited\nfor it would look broken.\n\nEvery id is resolved through the SCOPED read first, and one that resolves to nothing is dropped\nrather than refusing the batch. Two things follow. A subject this user may not be shown does\nnot have its name sent to three public services, which is the same rule the file scan follows,\nfor the same reason. And a list that has drifted since the screen drew it (somebody deleted a\ntag a minute ago) still enriches the rest.\n\nThe job reads the boxes' keys from the sealed store when it runs: no secret is written into\nthe job, which the queue keeps for days.",
         "operationId": "enrich_entities_api_stash_boxes_enrich_post",
         "requestBody": {
           "content": {

@@ -55,6 +55,13 @@ KINDS: tuple[FailureKind, ...] = (
     ),
     _kind(
         "library-unreachable",
+        r"waiting for the library folder to answer",
+        "Waiting for the library folder to answer. Nothing was changed; the scan carries on once "
+        "it's back.",
+    ),
+    # The same, as a failed row written before the walk waited for its folder says it.
+    _kind(
+        "library-unreachable-failed",
         r"the library folder did\snot answer",
         "The library folder didn't answer, so nothing was changed. Scan it again once it's back.",
     ),
@@ -172,10 +179,23 @@ def kind_of(error: str) -> FailureKind | None:
     return next((one for one in KINDS if one.pattern.search(error)), None)
 
 
+#: How an error that is an exception's text was stored: its kind's name first (`worker_pool`).
+_AN_EXCEPTION = re.compile(r"^[A-Za-z_][\w.]*: ")
+
+
+def written_for_a_person(error: str) -> bool:
+    """Whether a stored error is the sentence a handler gave up with (`JobFailedPermanently`),
+    stored as written, rather than an exception's or a tool's text, stored under its kind's name."""
+    return bool(error.strip()) and _AN_EXCEPTION.match(error) is None
+
+
 def in_plain_words(error: str) -> str:
-    """What a person reads about this stored error, in place of the error itself."""
+    """What a person reads about this stored error, in place of the error itself: the kind's
+    words, else a handler's own sentence as it was written, else that the tool failed."""
     found = kind_of(error)
-    return OTHERWISE if found is None else found.words
+    if found is not None:
+        return found.words
+    return error.strip() if written_for_a_person(error) else OTHERWISE
 
 
 #: The longest a row's one line of failure runs before it is cut, in characters.

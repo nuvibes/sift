@@ -21,7 +21,7 @@ import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel import db as db_module
 from sift.kernel.db import Database
 from sift.kernel.jobs import ledger as ledger_module
-from sift.kernel.jobs import ledger_store, pacing
+from sift.kernel.jobs import ledger_store, pacing, time_left
 from sift.kernel.jobs.families import LONG_PASSES, Family
 from sift.kernel.jobs.ledger import CURRENT_FAMILY, Ledger, priced, report_text
 
@@ -33,6 +33,12 @@ FAMILIES = {
     "identify": Family.IDENTIFY,
     "backup_run": Family.OTHER,
 }
+
+
+@pytest.fixture(autouse=True)
+def _a_run_ends_when_its_family_drains(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The run's own tests settle once; the batch's gap has tests of its own below."""
+    monkeypatch.setattr(ledger_module, "RUN_GAP_SECONDS", 0.0)
 
 
 @pytest.fixture
@@ -1339,3 +1345,134 @@ async def test_a_ledger_from_before_the_time_left_gets_its_column_and_table(
     record = await Ledger(temp_db).get("R1")
     assert record is not None and record.time_left is None
     assert await _said(temp_db) == []
+
+
+class _Clock:
+    """Both of the ledger's clocks, moved by hand."""
+
+    def __init__(self) -> None:
+        self.now = 1_000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def time(self) -> float:
+        return 1_800_000_000 + self.now
+
+
+async def test_a_pass_is_one_run_through_its_gaps_and_while_the_read_feeds_it(
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(ledger_module, "time", clock)
+    monkeypatch.setattr(ledger_module, "RUN_GAP_SECONDS", 120.0)
+    ledger.started("thumbnail")
+    ledger.finished("thumbnail", duration_ms=1000, ok=True, media_type="image")
+    await ledger.settle({"thumbnail": 1}, settings={})
+    first = ledger.open_run(Family.GENERATE)
+    assert first is not None
+
+    # Drained for a minute while the read still has work due: the same run.
+    clock.now += 60
+    await ledger.settle({"probe": 5}, settings={})
+    clock.now += 60
+    await ledger.settle({"probe": 5}, settings={})
+    assert ledger.open_run(Family.GENERATE) is first
+    # The read done too, and the gap not yet out: still the same run.
+    clock.now += 60
+    await ledger.settle({}, settings={})
+    assert ledger.open_run(Family.GENERATE) is first
+    # Work again inside the gap keeps it.
+    ledger.finished("thumbnail", duration_ms=1000, ok=True, media_type="image")
+    await ledger.settle({"thumbnail": 1}, settings={})
+    assert ledger.open_run(Family.GENERATE) is first
+
+    clock.now += 30
+    await ledger.settle({}, settings={})
+    clock.now += 121
+    await ledger.settle({}, settings={})
+    assert ledger.open_run(Family.GENERATE) is None
+    (run,) = [one for one in await ledger.recent() if one.family == "generate"]
+    # It ended when it last had work, not when the gap ran out.
+    assert run.jobs_done == 2 and run.seconds == 210
+
+
+async def test_the_rate_is_the_work_finished_over_the_time_it_had_work_due_across_runs(
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(ledger_module, "time", clock)
+    assert ledger.rate(Family.GENERATE) is None
+    await ledger.settle({"thumbnail": 1}, settings={"jobs together": 1})
+    for _second in range(0, 150, 3):
+        clock.now += 3
+        ledger.finished("thumbnail", duration_ms=6000, ok=True, media_type="image")
+        await ledger.settle({"thumbnail": 1}, settings={"jobs together": 1})
+    # A run closed between does not start the rate again.
+    await ledger.settle({}, settings={"jobs together": 1})
+    assert ledger.open_run(Family.GENERATE) is None
+    found = ledger.rate(Family.GENERATE)
+    assert found is not None and found.per_second == pytest.approx(1 / 3)
+    worked = ledger.rate(Family.GENERATE, time_left.WORK)
+    assert worked is not None and worked.per_second == pytest.approx(2.0)
+    # A settings change: nothing measured before it is quoted.
+    await ledger.settle({"thumbnail": 1}, settings={"jobs together": 2})
+    assert ledger.rate(Family.GENERATE) is None
+
+
+async def test_stepping_back_is_no_settings_change_to_the_pace(
+    ledger: Ledger, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pool's tick hands the ledger the settings at the FULL worker count: a step back to 2
+    of 8 workers left every price and pace measured so far standing (it cleared them before)."""
+    from types import SimpleNamespace
+
+    from sift.kernel import attention, device_load
+    from sift.slices import performance
+    from sift.wiring import workers
+
+    stepped = {"workers": 8}
+    monkeypatch.setattr(
+        attention.ATTENTION, "workers", lambda full, **_kw: stepped["workers"], raising=False
+    )
+
+    async def calm(**_kw: object) -> bool:
+        return False
+
+    monkeypatch.setattr(device_load.READER, "tick_off_loop", calm)
+    monkeypatch.setattr(performance, "resolve_worker_count", lambda _raw, _hw: 8)
+    config = workers._PoolConfig.__new__(workers._PoolConfig)
+
+    async def nothing_set(_key: str) -> object:
+        return None
+
+    async def shared(_full: int, _now: int) -> int:
+        return 0
+
+    async def no_caps(_limits: dict[str, int], _now: int) -> None:
+        return None
+
+    async def divided(_now: int) -> dict[str, int]:
+        return {}
+
+    async def due() -> dict[str, int]:
+        return {"thumbnail": 5}
+
+    config._get_app = nothing_set  # type: ignore[assignment]
+    config._hardware = None  # type: ignore[assignment]
+    config._measuring = lambda: False
+    config._accelerator = SimpleNamespace(encoder=None)  # type: ignore[assignment]
+    config._queue = SimpleNamespace(due_by_type=due)  # type: ignore[assignment]
+    config._book = ledger
+    config._resize_shared = shared  # type: ignore[method-assign, assignment]
+    config._own_caps = no_caps  # type: ignore[method-assign, assignment]
+    config._divided = divided  # type: ignore[method-assign, assignment]
+    await config()
+    for _ in range(time_left.FEWEST_PRICED):
+        ledger.finished("thumbnail", duration_ms=1000, ok=True, media_type="image")
+    assert ledger.prices()
+
+    stepped["workers"] = 2
+    await config()
+    assert ledger.prices(), "a step back is not a settings change"
+    assert ledger._settings["previews together"] == 4

@@ -1614,3 +1614,98 @@ def test_a_number_every_share_measured_is_not_advised_back_to_automatic() -> Non
     found = selftest.recommend_share_reads([four, weak], current={selftest.SHARE_READS_KEY: 4})
     assert found is not None and found.suggested == selftest.AS_MEASURED
     assert found.reason.endswith(selftest.ONE_FOR_EVERY_SHARE)
+
+
+def test_the_walk_keeps_a_spread_of_small_files_and_times_its_listing(tmp_path: Path) -> None:
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"x" * (selftest.SAMPLE_FLOOR_BYTES + 1))
+    (tmp_path / "tiny.bin").write_bytes(b"x")
+    for index in range(6):
+        (tmp_path / f"p{index}.jpg").write_bytes(b"x" * selftest.SMALL_FLOOR_BYTES)
+
+    walked = selftest.walk_sample([tmp_path], small_wanted=3)
+
+    assert walked.large == [big]
+    assert len(walked.small) == 3 and len(set(walked.small)) == 3
+    assert walked.entries == 8
+    assert walked.listed_per_second is not None and walked.listed_per_second > 0
+    assert selftest.Walked([], [], 0, 0.0).listed_per_second is None
+
+
+async def test_a_share_of_pictures_alone_still_gives_its_small_files_and_its_listing(
+    tmp_path: Path,
+) -> None:
+    """No file large enough to seek into: the seek ladder says so, the small files are read
+    whole, every byte of them, and the walk's listing rate is kept."""
+    sizes = [selftest.SMALL_FLOOR_BYTES + 10 * index for index in range(3)]
+    for index, size in enumerate(sizes):
+        (tmp_path / f"p{index}.jpg").write_bytes(b"x" * size)
+    one = selftest.StorageToMeasure(storage="s", label="x", remote=True, roots=(tmp_path,))
+
+    curve = await selftest.measure_storage(one)
+
+    assert curve.failed == "too few large files to seek into" and curve.levels == ()
+    assert curve.small is not None and curve.small.at_once == 1
+    assert curve.small.seeks == 3 and curve.small.bytes_read == sum(sizes)
+    assert curve.small.files_per_second > 0
+    assert curve.listed_per_second is not None
+
+
+async def test_small_files_are_read_whole_at_the_width_the_ladder_chose(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[tuple[int, bool, int]] = []
+
+    async def read_level(
+        files: list[Path], *, at_once: int, salt: int, whole: bool = False
+    ) -> selftest.StorageLevel:
+        asked.append((at_once, whole, len(files)))
+        return a_storage_level(at_once, {1: 40, 2: 75, 4: 30}.get(at_once, 20))
+
+    large = [Path(f"f{i}") for i in range(20)]
+    small = [Path(f"p{i}") for i in range(5)]
+    monkeypatch.setattr(
+        selftest, "walk_sample", lambda roots: selftest.Walked(large, small, 25, 0.5)
+    )
+    one = selftest.StorageToMeasure(storage="s", label="x", remote=True, roots=(Path("."),))
+
+    curve = await selftest.measure_storage(one, read_level=read_level, repeats=1)
+
+    assert curve.best is not None and curve.best.at_once == 2
+    assert asked[-1] == (2, True, 5)
+    assert curve.small is not None and curve.small.at_once == 2
+    assert curve.listed_per_second == 50.0
+    assert curve.ceiling == 75.0
+
+
+def test_a_storage_never_measured_has_no_ceiling() -> None:
+    assert a_share().ceiling is None
+    assert a_share(a_storage_level(1, 20), a_storage_level(2, 23)).ceiling == 23.0
+
+
+async def test_a_whole_read_counts_every_byte_once_a_file_from_the_disk_past_its_cache(
+    tmp_path: Path,
+) -> None:
+    files = [tmp_path / f"{index}.jpg" for index in range(2)]
+    files[0].write_bytes(b"x" * (selftest.BYTES_PER_SEEK + 5))
+    files[1].write_bytes(b"y" * 70_000)
+    for cached in (False, True):
+        level = await selftest._read_level(
+            files, at_once=2, salt=0, uncached=not cached and uncached.AVAILABLE, whole=True
+        )
+        assert level.seeks == 2
+        assert level.bytes_read == selftest.BYTES_PER_SEEK + 5 + 70_000
+
+
+def test_the_small_files_and_the_listing_are_kept_with_the_rates() -> None:
+    curve = replace(
+        a_share(a_storage_level(1, 20)),
+        small=selftest.StorageLevel(at_once=1, seconds=2.0, bytes_read=8_000_000, seeks=10),
+        listed_per_second=1650.0,
+    )
+    kept = rates.measurement_from_json(
+        rates.measurement_to_json(Measurement(cores=4, storages=(curve,)))
+    )
+    assert kept is not None and kept.storages[0].small == curve.small
+    assert kept.storages[0].listed_per_second == 1650.0
+    assert kept.storages[0].small is not None and kept.storages[0].small.files_per_second == 5.0

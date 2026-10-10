@@ -104,6 +104,7 @@ def handlers(
     service: LibraryService,
     reindexer: RecordingReindexer,
     job_queue: JobQueue,
+    content_store: ContentStore,
     clean_handlers: None,
 ) -> None:
     """Claim this slice's job types, and `probe` as a no-op: the queue refuses an unclaimed type,
@@ -116,6 +117,7 @@ def handlers(
         reindexer=reindexer,
         queue=job_queue,
         preferences=_Preferences(),
+        content=content_store,
     )
 
     async def nothing(context: JobContext) -> None:

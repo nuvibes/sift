@@ -31,6 +31,7 @@ async def build_storage(
     await database.connect()
     await database.initialize_schema()
     content = ContentStore(database, settings)
+    await content.tidy_incoming()
     # Every route that reads an asset reads it through this, behind the permission check.
     access = Repository(database, content)
     # The roots and the folder tree, handed to the feature that manages a library.

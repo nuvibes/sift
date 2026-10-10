@@ -32,7 +32,7 @@ After your first folder is added, Sift offers to create a **Download folder** fo
 
 ## A big first import
 
-Sift counts every folder you add first, so Activity can say how many files are left. While a folder of 2,000 files or more on a network share is still being scanned, its files are read first. The tasks that wait say **Waiting for the scan to finish.** Once the scan ends, each file's thumbnail, fingerprint, face scan and Smart Search follow its read.
+Sift counts every folder you add first, so Activity can say how many files are left. While a folder is being scanned, each file's thumbnail, fingerprint, face scan and Smart Search follow its read. Nothing waits for the whole scan to end. On a network share a file is read once into Sift's cache and every task reads that copy.
 
 ## A folder's menu
 

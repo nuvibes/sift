@@ -96,3 +96,32 @@ export async function signIn(
 		await new Promise((done) => setTimeout(done, Math.min(wait + Math.random() * 250, left)));
 	}
 }
+
+/**
+ * Sign in through the form, as a person does, pressing again while the server answers that a
+ * sign-in for that name is already being checked: under load another worker's sign-in for the same
+ * name can still be in flight. `signIn` waits the same answer out over the API.
+ */
+export async function signInByForm(
+	page: Page,
+	username: string,
+	password: string,
+	deadlineMs = SIGN_IN_DEADLINE_MS
+): Promise<void> {
+	await page.getByLabel('Username').fill(username);
+	await page.getByLabel('Password', { exact: true }).fill(password);
+	const deadline = Date.now() + deadlineMs;
+	for (;;) {
+		const answered = page.waitForResponse(
+			(response) =>
+				response.url().endsWith('/api/auth/login') && response.request().method() === 'POST'
+		);
+		await page.getByRole('button', { name: 'Sign in' }).click();
+		const login = await answered;
+		const left = deadline - Date.now();
+		if (login.status() !== 429 || left <= 0) return;
+		const named = Number(login.headers()['retry-after']);
+		const wait = (Number.isFinite(named) && named > 0 ? named : 1) * 1000;
+		await page.waitForTimeout(Math.min(wait + Math.random() * 250, left));
+	}
+}

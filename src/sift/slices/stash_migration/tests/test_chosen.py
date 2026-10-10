@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Migrate from Stash reads a database named by its file or by Stash's folder.
+"""Migrate from Stash reads the database FILE chosen, never a folder: several can sit in one.
 
-A browser can pick only folders, so a folder named is Stash's own: the database is the one its
-`config.yml` names, or `stash-go.sqlite`, found inside that folder by name and never by listing it.
+Stash's `config.yml` chosen stands for the database it names beside it, or `stash-go.sqlite`.
 """
 
 from __future__ import annotations
@@ -62,28 +61,88 @@ def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[FastAPI]:
     get_settings.cache_clear()
 
 
-def test_a_folder_picked_in_a_browser_is_read(app: FastAPI, tmp_path: Path) -> None:
+def _signed_in(client: TestClient) -> Path:
+    database = client.app.state.database.path  # type: ignore[attr-defined]
+    _user, token, csrf = establish_session(
+        database, role="admin", username="stash-admin", password="A-Stash-Test-Passw0rd!"
+    )
+    client.cookies.set(SESSION_COOKIE_NAME, token)
+    client.headers[CSRF_HEADER_NAME] = csrf
+    return Path(database)
+
+
+def test_the_file_chosen_is_read_and_a_folder_is_refused(app: FastAPI, tmp_path: Path) -> None:
     given = tmp_path / "given"
     make_stash(given / "stash-go.sqlite")
-    empty = given / "nothing-here"
-    empty.mkdir()
+    make_stash(given / "stash-go.sqlite.20260101_120000")
     with TestClient(app) as client:
-        database = client.app.state.database.path  # type: ignore[attr-defined]
-        _user, token, csrf = establish_session(
-            database, role="admin", username="stash-admin", password="A-Stash-Test-Passw0rd!"
-        )
-        client.cookies.set(SESSION_COOKIE_NAME, token)
-        client.headers[CSRF_HEADER_NAME] = csrf
+        database = _signed_in(client)
         execute_blocking(
             database,
             "INSERT INTO browse_grants (id, abs_path, granted_at) VALUES (?, ?, ?)",
             (new_id(), str(given), 1_700_000_000),
         )
 
-        read = client.post("/api/stash-migration/read", json={"path": str(given)})
-        assert read.status_code == 200, read.text
-        assert read.json()["summary"]["scenes"] > 0
+        older = client.post(
+            "/api/stash-migration/read",
+            json={"path": str(given / "stash-go.sqlite.20260101_120000")},
+        )
+        assert older.status_code == 200, older.text
+        assert older.json()["source"] == str((given / "stash-go.sqlite.20260101_120000").resolve())
 
-        refused = client.post("/api/stash-migration/read", json={"path": str(empty)})
+        folder = client.post("/api/stash-migration/read", json={"path": str(given)})
+        assert folder.status_code == 422
+        assert "Choose Stash's database file" in folder.text
+
+
+def test_a_config_chosen_stands_for_the_database_it_names(app: FastAPI, tmp_path: Path) -> None:
+    given = tmp_path / "given"
+    make_stash(given / "library.sqlite")
+    (given / "config.yml").write_text("database: library.sqlite\n", encoding="utf-8")
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "empty" / "config.yml").write_text("port: 9999\n", encoding="utf-8")
+    with TestClient(app) as client:
+        database = _signed_in(client)
+        execute_blocking(
+            database,
+            "INSERT INTO browse_grants (id, abs_path, granted_at) VALUES (?, ?, ?)",
+            (new_id(), str(tmp_path), 1_700_000_000),
+        )
+
+        read = client.post("/api/stash-migration/read", json={"path": str(given / "config.yml")})
+        assert read.status_code == 200, read.text
+        assert read.json()["source"] == str((given / "library.sqlite").resolve())
+
+        none = client.post(
+            "/api/stash-migration/read", json={"path": str(tmp_path / "empty" / "config.yml")}
+        )
+        assert none.status_code == 422
+        assert "names no Stash database" in none.text
+
+
+def test_a_database_in_a_library_folder_is_read_without_a_grant(
+    app: FastAPI, tmp_path: Path
+) -> None:
+    """A folder added by its typed path is a library folder, not a grant: still one Sift has."""
+    library = tmp_path / "library"
+    make_stash(library / "stash-go.sqlite")
+    with TestClient(app) as client:
+        database = _signed_in(client)
+        execute_blocking(
+            database,
+            "INSERT INTO library_roots (id, name, abs_path, created_at) VALUES (?, ?, ?, ?)",
+            (new_id(), "library", str(library), 1_700_000_000),
+        )
+
+        read = client.post(
+            "/api/stash-migration/read", json={"path": str(library / "stash-go.sqlite")}
+        )
+        assert read.status_code == 200, read.text
+
+        outside = tmp_path / "outside"
+        make_stash(outside / "stash-go.sqlite")
+        refused = client.post(
+            "/api/stash-migration/read", json={"path": str(outside / "stash-go.sqlite")}
+        )
         assert refused.status_code == 422
-        assert "no Stash database in that folder" in refused.text
+        assert "Browse this device" in refused.text

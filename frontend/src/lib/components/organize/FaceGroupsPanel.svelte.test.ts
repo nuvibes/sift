@@ -17,7 +17,12 @@ import type { PagerProps } from '$lib/components/common/Pager.svelte';
 import { noServerAt } from '../../../test-setup';
 
 /* Left unanswered on purpose: the people list and how well each is known, read on the way past. */
-noServerAt('/api/people', '/api/faces/references/strength', '/api/faces/fingerprints/offers');
+noServerAt(
+	'/api/people',
+	'/api/faces/references/strength',
+	'/api/faces/fingerprints/offers',
+	'/api/faces/work-left'
+);
 
 const mocks = vi.hoisted(() => ({
 	toCheck: vi.fn(),
@@ -215,4 +220,36 @@ it('measures the wall it hands its rows to, so a page is whole rows of it', () =
 	expect(panelSource).toContain("new CardPaging(PAGE, 'faces.unnamed')");
 	expect(panelSource).toContain('measure={paging.cards}');
 	expect(groupsSource).toContain('<CardWall cards={handed ? measure : paging.cards}>');
+});
+
+it('says groups appear as the scan goes on while a scan still has files to look at', async () => {
+	mocks.toCheck.mockResolvedValue({ items: [], total: 0, offset: 0, small_groups: 0 });
+	const answered = vi.fn(async (input: RequestInfo | URL) => {
+		const url = new URL(String(input instanceof Request ? input.url : input), 'http://sift.test');
+		if (url.pathname !== '/api/faces/work-left') throw new TypeError('not listening');
+		return new Response(JSON.stringify({ files: 1234, moments: 2000 }), {
+			headers: { 'content-type': 'application/json' }
+		});
+	});
+	vi.stubGlobal('fetch', answered);
+	try {
+		await render('faces-to-name');
+		for (let turn = 0; turn < 4; turn += 1) await Promise.resolve();
+		flushSync();
+	} finally {
+		vi.unstubAllGlobals();
+	}
+
+	expect(host.textContent).toContain('Sift is still looking for faces in 1,234 files.');
+	expect(host.textContent).toContain('Groups appear here as the scan goes on.');
+	expect(host.textContent).not.toContain('Faces Sift doesn');
+});
+
+it('says what the tab is for once no scan has files left', async () => {
+	mocks.toCheck.mockResolvedValue({ items: [], total: 0, offset: 0, small_groups: 0 });
+
+	await render('faces-to-name');
+
+	expect(host.textContent).toContain('Faces Sift doesn');
+	expect(host.textContent).not.toContain('as the scan goes on');
 });

@@ -43,7 +43,7 @@ from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard
 from sift.slices.media_jobs.activity_wire import Chore, FamilyOfWork, KindOfWork, PartOfWork
 from sift.slices.media_jobs.jobs import PROBE
-from sift.slices.media_jobs.pooled import WAITING_FOR_THE_SCAN, priced_together
+from sift.slices.media_jobs.pooled import priced_together
 from sift.slices.media_jobs.presses import Presses
 from sift.slices.media_jobs.router_controls import (
     PAUSED,
@@ -80,14 +80,26 @@ async def _held_for_quiet_hours(board: Switchboard, queue: JobQueue | None) -> M
     return await queue.held_by_type(hold.types)
 
 
-def _running_together(pool: WorkerPool | None, job_types: Sequence[str]) -> int:
-    """How many workers this family can occupy: its types' caps added, held under the pool's count;
-    one with no pool."""
+def _running_together(
+    pool: WorkerPool | None,
+    job_types: Sequence[str],
+    work: Mapping[str, KindOfWork] | None = None,
+) -> int:
+    """How many workers this family can occupy: the caps of its types with work added (all of them
+    with none), held under the pool's count; one with no pool."""
     if pool is None:
         return 1
     workers = pool.concurrency
     limits = pool.limits
-    return max(1, min(workers, sum(limits.get(job_type, workers) for job_type in job_types)))
+    with_work = [
+        one
+        for one in job_types
+        if work is not None
+        and (found := work.get(one)) is not None
+        and (found.outstanding > 0 or (found.waiting or 0) > 0)
+    ]
+    using = with_work or job_types
+    return max(1, min(workers, sum(limits.get(job_type, workers) for job_type in using)))
 
 
 def _held(pool: WorkerPool | None, job_types: Sequence[str]) -> bool:
@@ -177,7 +189,6 @@ async def _families(
     presses: Mapping[Family, Presses] | None = None,
     live: Sequence[LiveWork] | None = None,
     unread: FilesToRead | None = None,
-    scan_held: Mapping[str, int] | None = None,
     pace: str | None = None,
     benchmark: bool = False,
     pool_bound: bool = True,
@@ -206,22 +217,25 @@ async def _families(
         # What quiet hours are holding back, read once for every family: the pool's caps alone
         # would say "Running" over a family whose every job is held at the claim.
         held_rows=held if held is not None else await _held_for_quiet_hours(board, queue),
-        scan_held=scan_held or {},
         benchmark=benchmark,
         standing=standing or {},
         arriving=arriving or {},
     )
     answer: dict[str, FamilyOfWork] = {}
     alone: set[str] = set()
+    standing_of: dict[str, int] = {}
     for family, types in grouped.items():
-        answer[family.value], by_presses_alone = await _family(family, types, reads)
+        answer[family.value], by_presses_alone, standing_of[family.value] = await _family(
+            family, types, reads
+        )
         if by_presses_alone:
             alone.add(family.value)
-    answer = not_before_the_read(pictured_in_the_read(answer, alone), alone)
+    answer = pictured_in_the_read(answer, alone)
     if ledger is not None and pool is not None and not (unread and unread.uncounted):
         answer = await priced_together(
-            answer, work, kinds or {}, ledger, pool.concurrency, pool_bound, alone
+            answer, work, kinds or {}, ledger, pool.concurrency, pool_bound, alone, standing_of
         )
+    answer = not_before_the_read(answer, alone)
     answer = not_known_yet(answer, uncounted=0 if unread is None else unread.uncounted, pace=pace)
     return {
         key: one.model_copy(update=_HOLD) if one.reason == PAUSED_FOR_THE_BENCHMARK else one
@@ -245,7 +259,6 @@ class _Reads:
     carried: tuple[dict[Family, float], dict[Family, int], dict[str, Family]]
     carriers: frozenset[str]
     held_rows: Mapping[str, int]
-    scan_held: Mapping[str, int]
     benchmark: bool = False
     standing: Mapping[str, int] = field(default_factory=dict)
     arriving: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
@@ -274,14 +287,17 @@ async def _own_work(
     return off, priced, counted
 
 
-async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[FamilyOfWork, bool]:
-    """One long pass's row, and whether the presses alone describe it."""
+async def _family(
+    family: Family, types: list[str], reads: _Reads
+) -> tuple[FamilyOfWork, bool, int]:
+    """One long pass's row, whether the presses alone describe it, and its files waiting for their
+    task's own run."""
     _left, carried_outstanding, _by = reads.carried
     by_presses_alone = False
     off, priced, (left, counted_left, done, total, parts, outstanding) = await _own_work(
         family, types, reads
     )
-    at_once = _running_together(reads.pool, types)
+    at_once = _running_together(reads.pool, types, reads.work)
     press = None if reads.presses is None else reads.presses.get(family)
     priced_mix = priced
     if press is not None:
@@ -340,14 +356,13 @@ async def _family(family: Family, types: list[str], reads: _Reads) -> tuple[Fami
             # Asked only of a held family: the hour is the answer to "held until when".
             opens=await reads.board.window_opens(family) if held_now else None,
             quiet=held_by(held_rows=reads.held_rows),
-            by_scan=held_by(held_rows=reads.scan_held),
             by_benchmark=reads.benchmark and outstanding > 0 and not running,
         ),
         task=FAMILY_TASKS.get(family),
         runs=runs(family, off),
         running=running,
     )
-    return row, by_presses_alone
+    return row, by_presses_alone, standing
 
 
 def _for_task(files: int, *, more: bool) -> str | None:
@@ -474,9 +489,8 @@ def _with_unread(
 def not_before_the_read(
     answer: dict[str, FamilyOfWork], alone: Collection[str] = ()
 ) -> dict[str, FamilyOfWork]:
-    """A pass after the read is not done before the read is: at least the read's time, and the
-    read's time AND its own while the read holds its work back. Where the read cannot say, neither
-    can it."""
+    """A pass after the read is not done before the read is: at least the read's time. Where the
+    read cannot say, neither can it, and it says why the read cannot."""
     reading = answer.get(Family.SCAN.value)
     if reading is None or reading.waiting <= 0 or Family.SCAN.value in alone:
         return answer
@@ -484,23 +498,20 @@ def not_before_the_read(
         after = answer.get(family.value)
         if after is None or after.waiting <= 0 or family.value in alone:
             continue
-        quick: int | None = None
-        slow: int | None = None
-        if not (
-            after.quick_seconds is None
-            or after.slow_seconds is None
-            or reading.quick_seconds is None
-            or reading.slow_seconds is None
-        ):
-            if after.reason == WAITING_FOR_THE_SCAN:
-                quick = after.quick_seconds + reading.quick_seconds
-                slow = after.slow_seconds + reading.slow_seconds
-            else:
-                quick = max(after.quick_seconds, reading.quick_seconds)
-                slow = max(after.slow_seconds, reading.slow_seconds)
-        answer[family.value] = after.model_copy(
-            update={"quick_seconds": quick, "slow_seconds": slow}
-        )
+        if after.quick_seconds is None or after.slow_seconds is None:
+            continue
+        if reading.quick_seconds is None or reading.slow_seconds is None:
+            update: dict[str, object] = {
+                "quick_seconds": None,
+                "slow_seconds": None,
+                "time_unknown": reading.time_unknown,
+            }
+        else:
+            update = {
+                "quick_seconds": max(after.quick_seconds, reading.quick_seconds),
+                "slow_seconds": max(after.slow_seconds, reading.slow_seconds),
+            }
+        answer[family.value] = after.model_copy(update=update)
     return answer
 
 
@@ -728,7 +739,6 @@ def _reason(
     held: bool,
     opens: str | None = None,
     quiet: bool = False,
-    by_scan: bool = False,
     by_benchmark: bool = False,
 ) -> str | None:
     """Why this pass is not running, in one sentence, or None while it is."""
@@ -741,8 +751,6 @@ def _reason(
         return WAITING_FOR_WINDOW if opens is None else WAITING_FOR_WINDOW_AT.format(opens=opens)
     if quiet:
         return WAITING_FOR_QUIET_HOURS
-    if by_scan:
-        return WAITING_FOR_THE_SCAN
     if left <= 0 and outstanding == 0:
         return NOTHING_WAITING
     # Work nobody has started is not a reason: its estimate is what somebody pressing Run now reads.

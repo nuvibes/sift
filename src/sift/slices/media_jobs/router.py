@@ -4,8 +4,8 @@ somebody's library. Live because the shared live connection says when the queue 
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
-from typing import Annotated
+from collections.abc import Awaitable, Collection, Mapping, Sequence
+from typing import Annotated, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import Field
@@ -41,7 +41,7 @@ from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.jobs.switchboard import one_reading
 from sift.kernel.jobs.work_ahead import Ahead
-from sift.kernel.log import get_logger
+from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.sampling import PREVIEW_SHAPE_SETTING, preview_shape
 from sift.kernel.seams import SettingsSeam
 from sift.kernel.wire import Wire
@@ -74,7 +74,6 @@ from sift.slices.media_jobs.activity_wire import StepSummary as StepSummary
 from sift.slices.media_jobs.activity_wire import Stopped as Stopped
 from sift.slices.media_jobs.folds import fold_tops
 from sift.slices.media_jobs.jobs import REBUILD_PREVIEWS, REBUILD_THUMBNAILS, preview_recipe
-from sift.slices.media_jobs.pooled import WAITING_FOR_THE_SCAN as WAITING_FOR_THE_SCAN
 from sift.slices.media_jobs.presses import read_presses
 from sift.slices.media_jobs.read_first import after_the_read_first
 from sift.slices.media_jobs.router_controls import controls, held_views
@@ -241,7 +240,6 @@ async def _families_and_holds(
         presses=presses,
         live=live,
         unread=unread,
-        scan_held=await queue.held_for_family_by_type(),
         pace=await _paced_by(library),
         pool_bound=_pool_bound(),
         benchmark=await queue.held_by_exclusive(),
@@ -390,6 +388,17 @@ def _views(
     ]
 
 
+async def _timed(name: str, read: Awaitable[_T]) -> _T:
+    """One part of the Tasks page's read, timed: a slow one is said at Normal detail."""
+    with timing_hook(f"jobs.page.{name}", level="debug", slow_ms=PAGE_PART_SLOW_MS):
+        return await read
+
+
+#: A part of the page's read slower than this is said at Normal detail.
+PAGE_PART_SLOW_MS = 250.0
+_T = TypeVar("_T")
+
+
 async def _page(
     queue: JobQueue,
     work_ahead: WorkAhead,
@@ -413,11 +422,11 @@ async def _page(
     quiet = sorted((by_itself_job_types() | BACKGROUND) - upkeep) if unnamed else []
     # The whole queue's shape, read first: "Older tasks" are its kinds no handler claims (a
     # press's head is no kind of work).
-    summary = await queue.work_summary()
+    summary = await _timed("summary", queue.work_summary())
     claimed = registered_job_names()
     gone = sorted(kind for kind in summary.states if kind not in {*claimed, *upkeep, PRESS})
     # On a page of families a state is the one a family's row shows (`folded`), never a row's own.
-    page = await queue.list(
+    listing = queue.list(
         state=None if fold else state,
         folded=state if fold else None,
         job_type=job_type,
@@ -429,11 +438,13 @@ async def _page(
         limit=limit,
         offset=offset,
     )
-    subjects, assets, folded = await _about_the_rows(queue, database, page.jobs, shown, fold=fold)
+    page = await _timed("list", listing)
+    about = _about_the_rows(queue, database, page.jobs, shown, fold=fold)
+    subjects, assets, folded = await _timed("rows", about)
     # What is still to come, so a bar's total does not climb as a pass queues a page at a time.
-    work, counted = await _work_of(summary, work_ahead, upkeep)
+    work, counted = await _timed("work", _work_of(summary, work_ahead, upkeep))
     listed = {kind: by_state for kind, by_state in summary.states.items() if kind not in upkeep}
-    counts = await _row_counts(queue, listed, quiet)
+    counts = await _timed("counts", _row_counts(queue, listed, quiet))
     tallies = _tallies(
         families=page.by_state if fold else None,
         rows=counts,
@@ -442,12 +453,13 @@ async def _page(
         older=gone if older else None,
         parent_id=parent_id,
     )
-    # Only the rows that could be in the line, asked in one statement for the whole page.
-    places = await queue.positions_of([job.id for job in page.jobs if job.state is JobState.QUEUED])
-    unread = await work_ahead.unread_now(counted)
-    families, held, sealed = await _families_and_holds(
-        queue, work, ledger, pool, listed, counted, library, unread
+    in_line = [job.id for job in page.jobs if job.state is JobState.QUEUED]
+    places = await _timed("places", queue.positions_of(in_line))
+    unread = await _timed("unread", work_ahead.unread_now(counted))
+    families, held, sealed = await _timed(
+        "families", _families_and_holds(queue, work, ledger, pool, listed, counted, library, unread)
     )
+    chores = await _timed("housekeeping", _housekeeping(queue, summary, ledger, pool, held, sealed))
     return JobsPage(
         jobs=held_views(_views(page.jobs, subjects, assets, places, folded), page.jobs, pool),
         total=page.total,
@@ -458,7 +470,7 @@ async def _page(
         older=[kind for kind in gone if kind in listed],
         work=work,
         families=families,
-        housekeeping=await _housekeeping(queue, summary, ledger, pool, held, sealed),
+        housekeeping=chores,
         stepping_back=stepping_back(),
         turbo_mode=turbo_mode(),
         step_back_share=attention.ATTENTION.share,

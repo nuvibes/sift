@@ -20,10 +20,14 @@ from sift.kernel.jobs import JobContext
 from sift.kernel.jobs.worker_pool import WorkerPool
 from sift.main import create_app
 from sift.slices.media_jobs import probing, read_first
-from sift.slices.media_jobs.activity_families import _AFTER_THE_READ, PACE_WINDOW_SECONDS, _joined
+from sift.slices.media_jobs.activity_families import (
+    _AFTER_THE_READ,
+    PACE_WINDOW_SECONDS,
+    WAITING_FOR_QUIET_HOURS,
+    _joined,
+)
 from sift.slices.media_jobs.activity_wire import FamilyOfWork
 from sift.slices.media_jobs.read_first import READ_FIRST_ON_SHARE, after_the_read_first
-from sift.slices.media_jobs.router import WAITING_FOR_THE_SCAN
 from sift.testing.auth import establish_session
 
 ROUTER = sys.modules["sift.slices.media_jobs.router"]
@@ -84,7 +88,7 @@ async def test_a_pass_after_the_read_says_the_share_reads_its_files_first() -> N
         scan=_row("Scan"),
         generate=_row("Generate"),
         fingerprint=_row("Fingerprint", outstanding=0),
-        identify=_row("Identify", reason=WAITING_FOR_THE_SCAN),
+        identify=_row("Identify", reason=WAITING_FOR_QUIET_HOURS),
         semantic=_row("Smart Search", pace="Already said."),
     )
 

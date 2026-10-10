@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import pytest
 from structlog.testing import capture_logs
@@ -899,10 +900,39 @@ async def test_every_read_a_probe_makes_of_a_file_takes_its_storage_lane(
     )
 
     of_the_file = [one for one in asked if one == video]
-    # The gate, the metadata, the interleave, the one decode the fingerprints read and the ends.
-    # The fingerprint asks the tool nothing: it reads the answer the probe kept.
-    assert len(of_the_file) >= 5, asked
+    # The gate with the metadata read inside its place, the interleave, the one decode the
+    # fingerprints read and the ends. The fingerprint reads the answer the probe kept.
+    assert len(of_the_file) >= 4, asked
     assert all(one == video for one in asked), "a read of something that is not the file"
+
+
+async def test_a_videos_probe_asks_ffprobe_once_and_the_gate_reads_its_answer(
+    ingested_video: Ingested,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gate's decode check and the reading are one question of the same file: asked once."""
+    import subprocess
+
+    await ffmpeg.probe_tool(settings=settings)
+    launched: list[str] = []
+    real = subprocess.Popen
+
+    class Counted(real):  # type: ignore[misc,valid-type]
+        def __init__(self, args: Any, *rest: Any, **options: Any) -> None:
+            launched.append(Path(str(args[0])).stem)
+            super().__init__(args, *rest, **options)
+
+    monkeypatch.setattr(subprocess, "Popen", Counted)
+    await probing.probe(
+        await context_for("probe", {"asset_id": ingested_video.asset.id}),
+        settings=settings,
+        hardware=hardware,
+    )
+
+    assert launched == ["ffprobe"]
 
 
 # --- files taken in and never read ---------------------------------------------------------------

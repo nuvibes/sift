@@ -31,7 +31,6 @@ class HoldWatcher(RecordingReindexer):
         super().__init__()
         self.queue = queue
         self.batches: list[int] = []
-        self.holder: list[str | None] = []
         self.claimed: list[str | None] = []
 
     async def touched_many(self, asset_ids: Sequence[str]) -> None:
@@ -40,7 +39,6 @@ class HoldWatcher(RecordingReindexer):
             probe = (await self.queue.list(parent_id=scan.id, job_type=taking_in.PROBE)).jobs[0]
             await self.queue.enqueue(RELEASED, {}, parent_id=probe.id, priority=probe.priority)
         self.batches.append(len(asset_ids))
-        self.holder.append(await self.queue.holder_of([RELEASED, taking_in.PROBE]))
         job = await self.queue.claim("another worker", limits={taking_in.PROBE: 0})
         self.claimed.append(None if job is None else job.type)
         await super().touched_many(asset_ids)
@@ -88,6 +86,4 @@ async def test_a_big_read_on_a_share_holds_none_of_its_own_work(
     await _scan(job_queue, capabilities, settings, service, watcher, jobs.scan_shape(root.id))
 
     assert watcher.batches == [2, 1], "the index hears each batch as it arrives"
-    assert watcher.holder == [None, None], "nothing held while reading"
     assert watcher.claimed[0] == RELEASED, "a file's work is claimed while the read goes on"
-    assert await job_queue.held_for_family_by_type() == {}

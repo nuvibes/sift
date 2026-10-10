@@ -78,7 +78,16 @@ from sift.kernel.jobs.run_records import LAST_RUN_FOR_PRODUCTS as LAST_RUN_FOR_P
 from sift.kernel.jobs.run_records import RunReads, run_record
 from sift.kernel.jobs.run_records import RunRecord as RunRecord
 from sift.kernel.jobs.schedules import get_schedule
-from sift.kernel.jobs.time_left import ANY_KIND, FEWEST_PRICED, PRICED_OVER, Key, Said, score
+from sift.kernel.jobs.time_left import (
+    ANY_KIND,
+    FEWEST_PRICED,
+    PRICED_OVER,
+    Key,
+    Rate,
+    Said,
+    Throughput,
+    score,
+)
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.vocabulary import Subject
@@ -89,6 +98,10 @@ log = get_logger(__name__)
 
 #: Stages that are not the work: every database statement is timed, and every request.
 _NOT_A_STAGE = ("db.", "http.", "job")
+
+#: A long pass's run is its batch: it ends only after this long with nothing due, and a pass after
+#: the read not while the read has work due.
+RUN_GAP_SECONDS = time_left.BATCH_GAP_SECONDS
 
 #: The family of the job the current task is running, for the timing hook's stages. Set by the
 #: worker pool around the handler and read by `Ledger.stage`. None outside a job.
@@ -255,6 +268,10 @@ class Ledger(RunReads):
         self._stepped = False
         self._ticked: float | None = None
         self._spans: deque[list[int | None]] = deque(maxlen=STEPPED_SPANS_KEPT)
+        # Each family's finished items by minute with its seconds of work due, across its runs.
+        self._throughput: dict[Family, Throughput] = {}
+        # Each idle long pass: when its gap began counting, and when it last had work (wall).
+        self._idle_since: dict[Family, tuple[float, int]] = {}
         self.first_prices: Callable[[], Awaitable[Mapping[str, float]]] | None = None
 
     # --- what the pool tells it ------------------------------------------------------------
@@ -360,6 +377,9 @@ class Ledger(RunReads):
         run.last_done = time.monotonic()
         if ok and units > 0:
             self._minute(run)[1][(job_type, kind)] += units
+            self.throughput(run.family).done(
+                time.monotonic(), units, size_bytes or 0, duration_ms / 1000
+            )
             for key in ((job_type, kind), (job_type, ANY_KIND)):
                 timed = self._priced.setdefault(key, deque(maxlen=PRICED_OVER))
                 timed.append(duration_ms / 1000 / units)
@@ -440,6 +460,7 @@ class Ledger(RunReads):
         the work runs on a share now.
         """
         now = int(time.time())
+        ticked = self._ticked
         self._count_stepped(now, stepped_back)
         # A settings change invalidates the pace, so the moment is noted here: this is the one
         # place the live settings arrive, on the pool's own timer. Not on the first tick, which is
@@ -448,19 +469,26 @@ class Ledger(RunReads):
         if self._settings and changed:
             self._settings_changed_at = now
             self._priced.clear()
+            for one in self._throughput.values():
+                one.clear()
             log.info("ledger.settings_changed", at=now)
         self._settings = dict(settings)
         # This process's first tick and a settings change move every price; a run's close, its own.
         for family in LONG_PASSES if changed else ():
             await self._keep_prices(family)
         busy = {self.family_of(job_type) for job_type, count in unfinished.items() if count > 0}
+        mono = time.monotonic()
+        for family in busy:
+            self._idle_since.pop(family, None)
+            if ticked is not None:
+                self.throughput(family).busy(mono, mono - ticked)
         for family, run in list(self._open.items()):
             run.settings = dict(settings)
-            if family in busy:
+            if family in busy or self._batch_goes_on(family, busy, mono, now):
                 if time.monotonic() - run.last_flushed >= FLUSH_EVERY_SECONDS:
                     await self._write(run, now)
                 continue
-            run.finished_at = now
+            run.finished_at = self._idle_since.pop(family, (mono, now))[1]
             await self._finish(run, now)
             del self._open[family]
             log.info(
@@ -478,6 +506,17 @@ class Ledger(RunReads):
             if family in LONG_PASSES:
                 await self._db.refresh_statistics(reason=f"pass:{family.value}")
                 await self._keep_prices(family)
+
+    def _batch_goes_on(self, family: Family, busy: set[Family], mono: float, now: int) -> bool:
+        """Whether an idle long pass's run is still its batch: within the gap, or fed by the read."""
+        if family not in LONG_PASSES:
+            return False
+        gap_from, last_work = self._idle_since.setdefault(family, (mono, now))
+        if family is not Family.SCAN and Family.SCAN in busy:
+            # The gap counts from the read's end; the run still ends when it last had work.
+            self._idle_since[family] = (mono, last_work)
+            return True
+        return mono - gap_from < RUN_GAP_SECONDS
 
     def _count_stepped(self, now: int, stepped: bool) -> None:
         """Add the stretch since the last tick to each open run, if it was stepped back."""
@@ -570,6 +609,14 @@ class Ledger(RunReads):
             for key, one in self._priced.items()
             if len(one) >= FEWEST_PRICED
         }
+
+    def throughput(self, family: Family) -> Throughput:
+        return self._throughput.setdefault(family, Throughput())
+
+    def rate(self, family: Family, of: int = time_left.ITEMS) -> Rate | None:
+        """What the family's work has finished per second it had work due, lately, or None."""
+        found = self._throughput.get(family)
+        return None if found is None else found.rate(time.monotonic(), of)
 
     def life(self, family: Family) -> float | None:
         """Seconds the family's open run has gone, or None with none open."""

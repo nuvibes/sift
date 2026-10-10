@@ -82,6 +82,10 @@ _ASSET_BY_ID = "SELECT * FROM assets WHERE id = ?"
 
 _EXISTING_IDS = "SELECT id FROM assets WHERE id IN (SELECT value FROM json_each(?))"
 
+_UNREAD_AMONG = (
+    "SELECT id FROM assets WHERE id IN (SELECT value FROM json_each(?)) AND probed_at IS NULL"
+)
+
 _ASSET_BY_IDENTITY = "SELECT * FROM assets WHERE identity = ?"
 
 
@@ -279,4 +283,9 @@ class Arrivals(StoreCore):
         if not asset_ids:
             return set()
         rows = await self._db.fetch_all(_EXISTING_IDS, (json.dumps(list(asset_ids)),))
+        return {str(row["id"]) for row in rows}
+
+    async def unread_among(self, asset_ids: Sequence[str]) -> set[str]:
+        """Which of these assets have never been read, in one statement."""
+        rows = await self._db.fetch_all(_UNREAD_AMONG, (json.dumps(list(asset_ids)),))
         return {str(row["id"]) for row in rows}

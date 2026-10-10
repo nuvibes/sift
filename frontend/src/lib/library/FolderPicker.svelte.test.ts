@@ -29,6 +29,10 @@ function picker(over: Partial<Picker> = {}): Picker {
 		loading: false,
 		failed: null,
 		chosen: [],
+		scope: 'granted',
+		names: [],
+		files: [],
+		file: null,
 		canGoUp: false,
 		atTopLevel: true,
 		selected: null,
@@ -37,16 +41,18 @@ function picker(over: Partial<Picker> = {}): Picker {
 		isChosen: () => false,
 		choose: vi.fn(),
 		unchoose: vi.fn(),
+		pick: vi.fn(),
+		look: vi.fn(),
 		...over
 	} as unknown as Picker;
 }
 
-function render(one: Picker, selectable = false) {
+function render(one: Picker, selectable = false, device = false) {
 	host = document.createElement('div');
 	document.body.append(host);
 	mounted = mount(FolderPicker, {
 		target: host,
-		props: { picker: one, labelledBy: 'label', selectable }
+		props: { picker: one, labelledBy: 'label', selectable, device }
 	});
 	flushSync();
 	return host;
@@ -164,5 +170,61 @@ describe('when a request failed', () => {
 		const where = render(picker({ ...INSIDE, failed: 'That folder is not one Sift was given.' }));
 
 		expect(where.textContent).toContain('That folder is not one Sift was given.');
+	});
+});
+
+describe('one chooser for every place', () => {
+	it('offers the rest of this device beside the folders Sift has, only where asked', () => {
+		const look = vi.fn();
+		const offered = render(picker({ ...TOP, look }), false);
+		expect(offered.textContent).not.toContain('Browse this device');
+		if (mounted) void unmount(mounted);
+		host.remove();
+
+		host = document.createElement('div');
+		document.body.append(host);
+		mounted = mount(FolderPicker, {
+			target: host,
+			props: { picker: picker({ ...TOP, look }), labelledBy: 'label', device: true }
+		});
+		flushSync();
+		expect(host.querySelector('#label')?.textContent).toBe('Folders Sift already has');
+		const toggle = [...host.querySelectorAll('button')].find((one) =>
+			one.textContent?.includes('Browse this device')
+		);
+		toggle?.click();
+		expect(look).toHaveBeenCalledWith('machine');
+	});
+
+	it('lists the files a chooser of a file offers, and picks one by a click', () => {
+		const pick = vi.fn();
+		const database = { name: 'stash-go.sqlite', path: 'D:\\stash\\stash-go.sqlite' };
+		const drawn = render(
+			picker({
+				atTopLevel: false,
+				canGoUp: true,
+				breadcrumb: [{ name: 'stash', path: 'D:\\stash' }],
+				names: ['stash-go.sqlite*'],
+				files: [database],
+				file: database,
+				pick
+			}),
+			false,
+			true
+		);
+
+		expect(drawn.querySelector('#label')?.textContent).toBe('Which file');
+		const row = drawn.querySelector<HTMLButtonElement>('.file');
+		expect(row?.textContent).toContain('stash-go.sqlite');
+		expect(row?.getAttribute('aria-pressed')).toBe('true');
+		row?.click();
+		expect(pick).toHaveBeenCalledWith(database);
+	});
+
+	it('says when a folder holds no file it can choose', () => {
+		const drawn = render(
+			picker({ atTopLevel: false, canGoUp: true, names: ['stash-go.sqlite*'], files: [] })
+		);
+		expect(drawn.textContent).toContain('No file here that can be chosen');
 	});
 });

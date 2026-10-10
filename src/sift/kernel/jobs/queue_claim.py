@@ -30,8 +30,8 @@ SELECT EXISTS (SELECT 1 FROM jobs
 # whatever is at its cap; and the rows put off to a moment now past (`ix_jobs_queued_later`), which
 # go before the work of their urgency that never waited: a settle asked for during a run runs in it.
 # Then the read (the scan family: a file's first step) up to its cap, so files keep arriving, and
-# every other worker on the oldest work: no kind waits while another runs. A family's hold and held
-# products are read row by row.
+# every other worker on the oldest work: no kind waits while another runs. Held products are read
+# row by row.
 _CLAIM = """
 UPDATE jobs
    SET state = 'running',
@@ -39,18 +39,16 @@ UPDATE jobs
        heartbeat_at = :now,
        attempts = attempts + 1,
        error = NULL,
+       note = NULL,
        stop_wanted = NULL,
        updated_at = :now,
        started_at = :now
  WHERE id = (
        SELECT id FROM jobs
         WHERE id IN (
-              SELECT (SELECT head.id FROM jobs AS head
+              SELECT (SELECT head.id FROM jobs AS head INDEXED BY ix_jobs_claim_heads
                        WHERE head.state = 'queued' AND head.run_after IS NULL
                          AND head.type = kind.type AND head.timing IS kind.timing
-                         AND (:free OR NOT (head.root_id IN (SELECT value FROM json_each(:families))
-                                            AND COALESCE(head.timing, '') <> 'now'
-                                            AND head.type NOT IN (SELECT value FROM json_each(:spared))))
                          AND (:products IS NULL
                               OR NOT EXISTS (SELECT 1 FROM json_each(head.payload, '$.products'))
                               OR EXISTS (SELECT 1 FROM json_each(head.payload, '$.products') AS made
@@ -73,9 +71,6 @@ UPDATE jobs
                  AND (:open OR NOT (COALESCE(due.timing, '') = 'quiet'
                                     OR (due.timing IS NULL
                                         AND due.type IN (SELECT value FROM json_each(:quiet)))))
-                 AND (:free OR NOT (due.root_id IN (SELECT value FROM json_each(:families))
-                                    AND COALESCE(due.timing, '') <> 'now'
-                                    AND due.type NOT IN (SELECT value FROM json_each(:spared))))
                  AND (:products IS NULL
                       OR NOT EXISTS (SELECT 1 FROM json_each(due.payload, '$.products'))
                       OR EXISTS (SELECT 1 FROM json_each(due.payload, '$.products') AS made
@@ -106,13 +101,11 @@ def claim_parameters(
     now: int,
     capped: Collection[str],
     quiet: tuple[bool, str],
-    families: tuple[bool, str, str],
     products: str | None,
     beside: Collection[str] = (),
 ) -> dict[str, object]:
-    """`_CLAIM`'s parameters: the types at their cap, quiet hours (open, types), a family's hold
-    (free, families, spared), the held products, and the walks at their cap whose one place
-    beside it is free (`_ASKED_RUNNING`)."""
+    """`_CLAIM`'s parameters: the types at their cap, quiet hours (open, types), the held products,
+    and the walks at their cap whose one place beside it is free (`_ASKED_RUNNING`)."""
     from sift.kernel.jobs.worker_pool import registered_families
 
     reading = sorted(
@@ -125,9 +118,6 @@ def claim_parameters(
         "capped": json.dumps(sorted(capped)),
         "open": quiet[0],
         "quiet": quiet[1],
-        "free": families[0],
-        "families": families[1],
-        "spared": families[2],
         "products": products,
         "beside": json.dumps(sorted(beside)),
     }
@@ -173,6 +163,7 @@ UPDATE jobs
        heartbeat_at = ?,
        attempts = attempts + 1,
        error = NULL,
+       note = NULL,
        stop_wanted = NULL,
        updated_at = ?,
        started_at = ?
@@ -197,9 +188,6 @@ UPDATE jobs SET state = 'paused', stop_wanted = ?, updated_at = ?
           AND type NOT IN (?*)
           AND (? OR NOT (COALESCE(timing, '') = 'quiet'
                          OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
-          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
-                         AND COALESCE(timing, '') <> 'now'
-                         AND type NOT IN (SELECT value FROM json_each(?))))
         LIMIT ?
  )
 RETURNING id
@@ -256,14 +244,13 @@ class Claiming(SwitchboardReads):
         payload names products, every one of them in `held_products`, is passed over: paused.
 
         The count and the claim share one short `write()` block, so no other writer starts a capped
-        type between them; readiness, quiet hours and a family's hold are asked BEFORE the lock.
+        type between them; readiness and quiet hours are asked BEFORE the lock.
         """
         now = self._now()
         held_back = await self._not_ready_types()
         # QUIET HOURS, asked before the lock for the reason readiness is: it is a settings read.
         quiet = await self._held()
         hold = (quiet.open, json.dumps(sorted(quiet.types)))
-        families = self._family_holds()
         products = json.dumps(sorted(held_products)) if held_products else None
 
         from sift.kernel.jobs.worker_pool import exclusive_job_types
@@ -296,7 +283,7 @@ class Claiming(SwitchboardReads):
             rows = list(
                 await connection.execute_fetchall(
                     _CLAIM,
-                    claim_parameters(worker_id, now, at_capacity, hold, families, products, beside),
+                    claim_parameters(worker_id, now, at_capacity, hold, products, beside),
                 )
             )
 
@@ -316,7 +303,7 @@ class Claiming(SwitchboardReads):
                 rows = await _fetch(
                     connection,
                     sql,
-                    (PAUSED_FOR_BENCHMARK, now, now, *params, *hold, *self._family_holds(), chunk),
+                    (PAUSED_FOR_BENCHMARK, now, now, *params, *hold, chunk),
                 )
             paused += len(rows)
             if len(rows) < chunk:

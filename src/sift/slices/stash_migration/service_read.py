@@ -49,9 +49,10 @@ class ReadMixin(StashBase):
     """Reading a Stash database: the copy, the summary, and what a run is asked to do."""
 
     async def _confined(self, chosen: str, what: str = "Stash's blobs folder") -> Path:
-        """The path named, proven to be inside a folder Sift has been given. The picker's rule.
-        `what` names what was asked for in the sentence a refusal says."""
+        """The path named, proven to be inside a folder Sift has: a library folder or a grant, as
+        the chooser lists them. `what` names what was asked for in the sentence a refusal says."""
         places = [Path(grant.abs_path) for grant in await self._library.grants()]
+        places += [Path(root.abs_path) for root in await self._library.roots()]
 
         def inside() -> Path | None:
             for place in places:
@@ -64,28 +65,31 @@ class ReadMixin(StashBase):
         found = await asyncio.to_thread(inside)
         if found is None:
             raise StashRefused(
-                "Sift can only read a file in a folder it has been given. Add the folder that "
-                f"holds {what} in `Settings > Folders` first."
+                f"Sift can only read a file in a folder it has. Choose {what} again, through "
+                "Browse this device if it isn't in one of them."
             )
         return found
 
     async def _chosen(self, chosen: str) -> Path:
-        """The file named, proven to be inside a folder Sift has been given. The picker's rule.
-
-        A FOLDER named is Stash's folder (what a browser can pick): the database is the one its
-        `config.yml` names, or `stash-go.sqlite`, looked for inside that folder by name."""
+        """The database FILE named, proven to be inside a folder Sift has. Several databases can
+        sit in one folder, so a folder is refused; Stash's `config.yml` stands for the database it
+        names beside it."""
         found = await self._confined(chosen, "Stash's database")
         if await asyncio.to_thread(found.is_dir):
-            inside = await asyncio.to_thread(_database_in, found)
-            if inside is None:
-                raise StashRefused(
-                    "There's no Stash database in that folder. Choose the folder that holds "
-                    f"{STASH_DATABASE}, or the one its {STASH_CONFIG} is in."
-                )
-            return inside
+            raise StashRefused(
+                f"That's a folder. Choose Stash's database file, {STASH_DATABASE}, or its "
+                f"{STASH_CONFIG}."
+            )
         if not await asyncio.to_thread(found.is_file):
             raise StashRefused("There's no file there. Check the name and try again.")
-        return found
+        if found.name.casefold() != STASH_CONFIG:
+            return found
+        named = await asyncio.to_thread(_database_in, found.parent)
+        if named is None:
+            raise StashRefused(
+                f"That {STASH_CONFIG} names no Stash database beside it. Choose the database file."
+            )
+        return named
 
     async def read(self, chosen: str) -> dict[str, Any]:
         """Copy Stash's database in, read it, and say what it holds and what matches here."""

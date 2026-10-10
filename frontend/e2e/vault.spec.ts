@@ -1,6 +1,6 @@
 import { type Page } from '@playwright/test';
 import { expect, test } from './test';
-import { ADMIN, PASSWORD, signInAsAdmin } from './admin';
+import { ADMIN, PASSWORD, signInAsAdmin, signInByForm } from './admin';
 
 /* The vault in a browser: only what the API tests cannot see. Hiding itself is checked at the
  * server; here, the control, the PIN prompt, and the refetch after opening. The grid is
@@ -193,9 +193,7 @@ test('a cold session needs the password: the PIN cannot bring one back', async (
 	await page.goto('/browse');
 	await expect(page).toHaveURL(/\/login$/);
 
-	await page.getByLabel('Username').fill(ADMIN);
-	await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-	await page.getByRole('button', { name: 'Sign in' }).click();
+	await signInByForm(page, ADMIN, PASSWORD);
 	await expect(page).toHaveURL(/\/browse/);
 	// Signing in is not unlocking.
 	await expect(vaultButton(page)).toHaveAttribute('aria-pressed', 'false');

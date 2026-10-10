@@ -102,20 +102,31 @@
 	 * the list itself, as on the Library screen and the entity walls. */
 	reloadOnLibraryChange(() => void load());
 
+	/* Only the newest read may land: a bell rings about once a second while files are imported. */
+	let reading = 0;
+
+	/* A re-read keeps the list on screen and lands only what changed: blanking it to the skeleton on
+	 * every bell is a flash, and re-rows the wall under the band. */
 	async function load() {
-		loaded = false;
-		failed = false;
-		/* A count under a folder is exactly what these changes move, so the tallies are asked again. */
-		tallies.clear();
+		const ticket = ++reading;
+		/* A count under a folder is exactly what these changes move, so the tallies are asked again,
+		 * the last figure shown until the new one lands. */
 		talliesAsked.clear();
 		try {
 			const answer = await api.get<components['schemas']['FoldersView']>('/library/folders');
-			folders = answer.folders;
+			if (ticket !== reading) return;
+			if (!loaded || failed || JSON.stringify(answer.folders) !== JSON.stringify(folders))
+				folders = answer.folders;
+			failed = false;
 		} catch {
-			failed = true;
-			folders = [];
+			if (ticket !== reading) return;
+			/* A re-read that fails leaves the list it has; only a first read says it could not. */
+			if (!loaded) {
+				failed = true;
+				folders = [];
+			}
 		} finally {
-			loaded = true;
+			if (ticket === reading) loaded = true;
 		}
 	}
 

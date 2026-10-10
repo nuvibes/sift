@@ -16,6 +16,7 @@ from sift.kernel.jobs.holding import Holding
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import LiveWork
 from sift.kernel.jobs.switchboard import Switchboard
+from sift.kernel.jobs.time_left import MEASURING
 from sift.slices.media_jobs.activity_families import _families
 from sift.slices.media_jobs.presses import Presses
 from sift.slices.media_jobs.router import FamilyOfWork, KindOfWork
@@ -90,10 +91,17 @@ async def test_while_only_arriving_files_run_the_time_left_is_theirs(temp_db: Da
         assert row.for_task == "2,691 more wait for their task."
         assert row.waiting == waiting
 
-    # Priced together over one worker, the whole backlog at the last poll was hours.
+    # With a pool and no rate of its own measured yet, the row says so rather than guess.
     before = await _identify(book, 2727, 24, pool=_Pool())
-    assert before.quick_seconds is not None and before.quick_seconds > 3600
-    assert before.for_task is None
+    assert (before.quick_seconds, before.time_unknown) == (None, MEASURING)
+    # Thirty files in five minutes of work due: the whole backlog at that rate is hours.
+    clock = time.monotonic()
+    for _tick in range(20):
+        book.throughput(Family.IDENTIFY).busy(clock, 15.0)
+    book.throughput(Family.IDENTIFY).done(clock, 30)
+    priced = await _identify(book, 2727, 24, pool=_Pool())
+    assert priced.quick_seconds is not None and priced.quick_seconds > 3600
+    assert priced.for_task is None
 
 
 async def test_with_no_arriving_file_left_to_price_the_time_says_what_waits(

@@ -49,6 +49,19 @@ class StorageCurveView(Wire):
     levels: list[StorageLevelView] = Field(default=[])
     failed: str | None = None
     best_at_once: int | None = None
+    ceiling_mb_per_second: float | None = None
+    """The most any level gave: what the storage can give."""
+    small_files_per_second: float | None = None
+    """Small files read whole a second at the answer's width, as a scan reads pictures."""
+    small_mb_per_second: float | None = None
+    listed_per_second: float | None = None
+    """Entries listed a second, as a scan's walk lists a folder."""
+    achieved_mb_per_second: float | None = None
+    """What Sift's own reads got here over the last minutes of reading; null before any."""
+    achieved_percent: int | None = None
+    """The achieved rate as a share of the ceiling."""
+    read_megabytes: float | None = None
+    """What Sift has read here since it started; null where it has read nothing."""
 
 
 class MeasurementView(Wire):

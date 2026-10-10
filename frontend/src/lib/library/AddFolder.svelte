@@ -36,16 +36,6 @@
 	let pressedAtTop = $state(false);
 	const warnAtTop = $derived(pressedAtTop && picker.atTopLevel);
 
-	/* What the list is, said above it: the folders Sift has at the top of the granted scope, the
-	   drives at the top of the computer, and otherwise the question the list answers. */
-	const listName = $derived(
-		!picker.atTopLevel
-			? 'Which folder'
-			: picker.scope === 'machine'
-				? 'Drives where Sift runs'
-				: 'Folders Sift already has'
-	);
-
 	async function openAdd() {
 		addError = undefined;
 		pressedAtTop = false;
@@ -133,23 +123,9 @@
 		<Scroller viewportClass="add-scroll">
 			<div class="add-body">
 				<div class="field">
-					<!-- What the list is, with the way to the other list beside it. -->
-					<div class="list-head">
-						<span class="label" id="picker-label">{listName}</span>
-						{#if !grants.canAdd}
-							{#if picker.scope === 'granted'}
-								<Button tone="quiet" size="small" onclick={() => void picker.look('machine')}>
-									Browse this device
-								</Button>
-							{:else}
-								<Button tone="quiet" size="small" onclick={() => void picker.look('granted')}>
-									Back to the folders Sift has
-								</Button>
-							{/if}
-						{/if}
-					</div>
 					<FolderPicker
 						{picker}
+						device={!grants.canAdd}
 						labelledBy="picker-label"
 						describedBy={addError ? 'picker-help picker-error' : 'picker-help'}
 					/>
@@ -247,23 +223,10 @@
 		gap: var(--space-2);
 	}
 
-	.field .label {
-		font: var(--text-label);
-		color: var(--sift-ink-2);
-	}
-
 	.field .help {
 		margin: 0;
 		font: var(--text-body-sm);
 		color: var(--sift-ink-3);
-	}
-
-	/* The list's name on the left and the way to the other list at the right edge, on one line. */
-	.list-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-3);
 	}
 
 	/* The buttons stay put; only what is above them scrolls. */

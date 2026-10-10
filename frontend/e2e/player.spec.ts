@@ -33,6 +33,8 @@ type Plan = {
 	streamable: boolean;
 	duration_ms: number | null;
 	resume_ms?: number | null;
+	unreadable?: 'gone' | 'away' | null;
+	scan_queued?: boolean;
 };
 
 /* A real playable file for the resume tests; the others 404 the stream on purpose. */
@@ -112,6 +114,62 @@ test('a direct-played clip never asks for a segment', async ({ page }) => {
 	await page.locator('.tile').first().click();
 	await expect(page.locator('video')).toBeVisible();
 
+	expect(segments).toEqual([]);
+});
+
+test('a file recorded where it no longer is says so, and names the scan that will find it', async ({
+	page
+}) => {
+	const segments: string[] = [];
+	await serveLibrary(page, {
+		...TRANSCODE,
+		route: 'direct',
+		url: '/api/assets/p1/stream',
+		unreadable: 'gone',
+		scan_queued: true
+	});
+	page.on('request', (request) => {
+		if (request.url().includes('/hls/') || request.url().includes('/stream'))
+			segments.push(request.url());
+	});
+
+	await page.goto('/browse');
+	await page.locator('.tile').first().click();
+
+	await expect(page.getByText("Sift can't reach this file")).toBeVisible();
+	await expect(page.getByText('A scan of its library folder is queued')).toBeVisible();
+	expect(segments, 'a file nobody can read was fetched or converted').toEqual([]);
+});
+
+test('a stream that answers 404 is never blamed on the codec or converted', async ({ page }) => {
+	// Moved since the plan: the element fails as it fails for a codec, and the second plan says why.
+	const segments: string[] = [];
+	await serveLibrary(page, TRANSCODE);
+	let asked = 0;
+	await page.route('**/api/assets/p1/playback', (route) => {
+		asked += 1;
+		const plan =
+			asked === 1
+				? { ...TRANSCODE, route: 'direct', url: '/api/assets/p1/stream', unreadable: null }
+				: { ...TRANSCODE, unreadable: 'gone', scan_queued: false };
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify(plan)
+		});
+	});
+	await page.route('**/api/assets/p1/stream', (route) => route.fulfill({ status: 404 }));
+	page.on('request', (request) => {
+		if (request.url().includes('/hls/')) segments.push(request.url());
+	});
+
+	await page.goto('/browse');
+	await page.locator('.tile').first().click();
+
+	await expect(page.getByText("Sift can't reach this file")).toBeVisible();
+	expect(asked).toBe(2);
+	await expect(page.getByText('being converted')).toHaveCount(0);
+	await expect(page.getByText('could play this file')).toHaveCount(0);
 	expect(segments).toEqual([]);
 });
 

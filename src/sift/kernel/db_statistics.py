@@ -50,6 +50,9 @@ _TABLES = (
     " AND sql NOT LIKE 'CREATE VIRTUAL TABLE%'"
 )
 _ANY_ROW = 'SELECT 1 FROM "{table}" LIMIT 1'
+#: Every index with its own statement, by table, and every index the statistics have counted.
+_INDEXES = "SELECT tbl_name, name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL"
+_INDEXES_COUNTED = "SELECT tbl, idx FROM sqlite_stat1 WHERE idx IS NOT NULL"
 _ROWS_NOW = 'SELECT COUNT(*) FROM "{table}"'
 _HOLDS_A_ROW = 'SELECT 1 FROM "{table}" WHERE {where} LIMIT 1'
 _ANALYZE_ONE = 'ANALYZE "{table}"'
@@ -109,7 +112,29 @@ async def stale_tables(connection: aiosqlite.Connection) -> list[str]:
             if await connection.execute_fetchall(probe):
                 stale.append(table)
                 break
+    stale += await _with_an_uncounted_index(connection, analyzed, set(stale))
     return sorted(stale)
+
+
+async def _with_an_uncounted_index(
+    connection: aiosqlite.Connection, analyzed: set[str], already: set[str]
+) -> list[str]:
+    """Tables holding rows with an index made after their last analyze: it has no row of its own,
+    so the planner cannot weigh it and seeks through an older one (the claim: 13 s a call)."""
+    if not analyzed:
+        return []
+    counted = {(row[0], row[1]) for row in await connection.execute_fetchall(_INDEXES_COUNTED)}
+    found: list[str] = []
+    for table, index in await connection.execute_fetchall(_INDEXES):
+        if table not in analyzed or table in already or table in found:
+            continue
+        if (table, index) in counted or not _PLAIN_NAME.fullmatch(table):
+            continue
+        # An empty table's plain index is never counted, and misleads nothing.
+        probe = _ANY_ROW.format(table=table)  # nosemgrep: sift-no-string-built-sql (a plain name)
+        if await connection.execute_fetchall(probe):  # nosemgrep: sift-no-string-built-sql
+            found.append(table)
+    return found
 
 
 async def keep_the_statistics_current(

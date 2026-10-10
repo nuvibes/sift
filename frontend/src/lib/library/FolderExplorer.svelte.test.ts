@@ -5,6 +5,7 @@ import { flushSync, mount, unmount } from 'svelte';
 
 import FolderExplorer from './FolderExplorer.svelte';
 import { session, type Viewer } from '$lib/shell/session.svelte';
+import { libraryChanges } from '$lib/library/changes.svelte';
 
 let host: HTMLElement;
 let mounted: Record<string, unknown> | null = null;
@@ -170,6 +171,39 @@ describe('the folder explorer', () => {
 		flushSync();
 
 		expect(onlisted).not.toHaveBeenCalled();
+	});
+
+	it('keeps the folders drawn while a bell re-reads them, and an equal answer moves nothing', async () => {
+		/* A bell rings about once a second while files are imported: a skeleton over the list on
+		 * each is a flash, and re-rows the wall under the band. */
+		serving();
+		const onlisted = vi.fn();
+		mounted = mount(FolderExplorer, { target: host, props: { here: 'top-1', onlisted } });
+		await settle();
+		const rows = [...host.querySelectorAll('li')];
+		expect(rows.length).toBe(2);
+		const told = onlisted.mock.calls.length;
+
+		libraryChanges.changed();
+		flushSync();
+		expect(host.querySelector('.bone'), 'the list went back to its skeleton').toBeNull();
+		await settle();
+
+		expect([...host.querySelectorAll('li')]).toEqual(rows);
+		expect(onlisted, 'an equal answer was handed on as a change').toHaveBeenCalledTimes(told);
+	});
+
+	it('keeps the folders it has when a re-read fails', async () => {
+		const asked = serving();
+		mounted = mount(FolderExplorer, { target: host, props: { here: 'top-1' } });
+		await settle();
+		asked.mockImplementation(async () => json({ detail: 'no' }, 500));
+
+		libraryChanges.changed();
+		await settle();
+
+		expect(shown()).toContain('Holidays');
+		expect(host.textContent ?? '').not.toContain("couldn't be read");
 	});
 
 	it('shows a folder whose parent the viewer cannot see', async () => {

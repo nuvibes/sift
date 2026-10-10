@@ -9,6 +9,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import FolderPicker from '$lib/library/FolderPicker.svelte';
 	import { Picker } from '$lib/library/picker.svelte';
+	import { Grants } from '$lib/library/grants-state.svelte';
 	import { bridge } from '$lib/bridge';
 	import PathText from '$lib/components/PathText.svelte';
 	import { clock } from '$lib/edit/edit.svelte';
@@ -31,8 +32,7 @@
 		picturesHelp: (list: string) =>
 			`The pictures Stash kept on ${list}. Each becomes a cover where there isn't one, and a cover you chose stays.`,
 		blobs: "Stash's blobs folder",
-		blobsHelp:
-			"Stash keeps some of these pictures as files. Choose the folder they're in, in a folder you've added to Sift.",
+		blobsHelp: "Stash keeps some of these pictures as files. Choose the folder they're in.",
 		blobsPickerTitle: "Choose Stash's blobs folder",
 		blobsPickerHelp: 'Click through to the folder Stash keeps its pictures in, then choose it.',
 		groups: (count: number) =>
@@ -56,6 +56,10 @@
 		sites: '/sites?created=stash_unattached',
 		tags: '/tags?created=stash_unattached'
 	} as const;
+
+	/** The files the chooser offers for Stash's database: its own name and the dated copies
+	 * Stash keeps beside it, any other database file, and the `config.yml` that names one. */
+	const STASH_FILES = ['stash-go.sqlite*', '*.sqlite', '*.sqlite3', '*.db', 'config.yml'];
 
 	/** The job type the server runs a Stash import as. `STASH_IMPORT` in the server's slice. */
 	const STASH_JOB = 'stash_import';
@@ -144,12 +148,28 @@
 		return error instanceof ApiError ? (error.detail ?? error.message) : fallback;
 	}
 
-	/* The browser's way to choose: the folder picker over the folders Sift has, in a sheet. */
+	/* The browser's way to choose: the chooser over the folders Sift has and this device, in a
+	   sheet. A folder found through the device, or the system's own dialog, is given to Sift by the
+	   choosing, as Add a folder does. */
 	const picker = new Picker();
+	const grants = new Grants();
 	let picking = $state(false);
 	let pressedAtTop = $state(false);
-	/** What the open sheet is choosing: Stash's folder (its database is found in it) or its blobs. */
+	/** What the open sheet is choosing: Stash's database file, or the folder of its blobs. */
 	let pickingFor = $state<'database' | 'blobs'>('database');
+
+	/** The folder a path on the server is in, by either separator. */
+	function folderOf(chosen: string): string {
+		return chosen.slice(0, Math.max(chosen.lastIndexOf('/'), chosen.lastIndexOf('\\')));
+	}
+
+	async function openPicker(names: string[]) {
+		picker.names = names;
+		picker.scope = 'granted';
+		pressedAtTop = false;
+		await picker.open();
+		picking = true;
+	}
 
 	async function choose() {
 		if (bridge.canChooseFile()) {
@@ -157,13 +177,11 @@
 			// Closing the dialog without choosing is not an error and changes nothing.
 			if (chosen === null) return;
 			path = chosen;
-			await readIt();
+			await readIt(folderOf(chosen));
 			return;
 		}
 		pickingFor = 'database';
-		pressedAtTop = false;
-		await picker.open();
-		picking = true;
+		await openPicker(STASH_FILES);
 	}
 
 	/* The blobs folder the same way: the machine's own folder dialog in the desktop application,
@@ -171,32 +189,38 @@
 	async function chooseBlobs() {
 		if (bridge.canChooseFolder()) {
 			const chosen = await bridge.chooseFolder();
-			if (chosen !== null) blobs = chosen;
+			if (chosen === null) return;
+			await grants.ensure(chosen);
+			blobs = chosen;
 			return;
 		}
 		pickingFor = 'blobs';
-		pressedAtTop = false;
-		await picker.open();
-		picking = true;
+		await openPicker([]);
 	}
 
-	function useFolder(event: SubmitEvent) {
+	/* The database is a FILE, never a folder: several can sit in one folder. */
+	async function useChoice(event: SubmitEvent) {
 		event.preventDefault();
-		const chosen = picker.selected;
-		if (picker.atTopLevel || !chosen) {
+		const database = pickingFor === 'database';
+		const chosen = database ? picker.file : picker.atTopLevel ? null : picker.selected;
+		if (!chosen) {
 			pressedAtTop = true;
 			return;
 		}
 		picking = false;
-		if (pickingFor === 'blobs') {
+		const found = picker.scope === 'machine' ? picker.path : undefined;
+		if (!database) {
+			if (found !== undefined) await grants.ensure(chosen.path);
 			blobs = chosen.path;
 			return;
 		}
 		path = chosen.path;
-		void readIt();
+		await readIt(found);
 	}
 
-	async function readIt() {
+	/** Read the database named; `given` is the folder it was found in outside the folders Sift has,
+	 * given to Sift first, as choosing it there says to. */
+	async function readIt(given?: string) {
 		const chosen = path.trim();
 		if (chosen === '') return;
 		reading = true;
@@ -206,6 +230,7 @@
 		read = null;
 		asking = false;
 		naming = false;
+		if (given !== undefined) await grants.ensure(given);
 		try {
 			read = await api.post<StashRead>('/stash-migration/read', { body: { path: chosen } });
 			asking = false;
@@ -381,18 +406,21 @@
 		bind:open={picking}
 		title={pickingFor === 'blobs' ? MORE.blobsPickerTitle : COPY.pickerTitle}
 	>
-		<form class="stash-folder" onsubmit={useFolder}>
-			<span class="field-label" id="stash-folders">{COPY.pickerList}</span>
-			<FolderPicker {picker} labelledBy="stash-folders" describedBy="stash-folders-help" />
+		<form class="stash-folder" onsubmit={(event) => void useChoice(event)}>
+			<FolderPicker {picker} device labelledBy="stash-folders" describedBy="stash-folders-help" />
 			<p class="note" id="stash-folders-help">
 				{pickingFor === 'blobs' ? MORE.blobsPickerHelp : COPY.pickerHelp}
 			</p>
-			{#if pressedAtTop && picker.atTopLevel}
-				<p class="note" role="alert">{COPY.pickerAtTop}</p>
+			{#if pressedAtTop && (pickingFor === 'blobs' ? picker.atTopLevel : picker.file === null)}
+				<p class="note" role="alert">
+					{pickingFor === 'blobs' ? COPY.pickerAtTop : COPY.pickerNoFile}
+				</p>
 			{/if}
 			<div class="picker-actions">
 				<Button onclick={() => (picking = false)}>{COPY.cancel}</Button>
-				<Button type="submit" tone="primary" icon="check">{COPY.useFolder}</Button>
+				<Button type="submit" tone="primary" icon="check"
+					>{pickingFor === 'blobs' ? COPY.useFolder : COPY.useFile}</Button
+				>
 			</div>
 		</form>
 	</Modal>

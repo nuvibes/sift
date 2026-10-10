@@ -45,16 +45,18 @@ def newest_matching(
     keep: Callable[[str], bool] | None = None,
     *,
     budget: int | None = None,
+    within: bytes | None = None,
 ) -> Tail:
     """The newest `lines` lines `keep` accepts, across `paths` (newest file first), oldest first.
 
     Read from the end in blocks, at most `budget` bytes (then `whole=False`); a file that cannot
     be read is an empty answer, never a raise on the screen that is looking for what went wrong.
+    `within`, lower case, is bytes every kept line holds, so a block without them is not split.
     """
     wanted = max(0, min(lines, MOST_LINES))
     if wanted == 0:
         return Tail(lines=[], read_bytes=0, whole=True)
-    reading = _Reading(wanted, keep, budget)
+    reading = _Reading(wanted, keep, budget, within)
     for path in paths:
         try:
             size = path.stat().st_size
@@ -71,12 +73,24 @@ def newest_matching(
 class _Reading:
     """One tail read: the lines kept so far, newest first, and the bytes spent."""
 
-    def __init__(self, wanted: int, keep: Callable[[str], bool] | None, budget: int | None) -> None:
+    def __init__(
+        self,
+        wanted: int,
+        keep: Callable[[str], bool] | None,
+        budget: int | None,
+        within: bytes | None = None,
+    ) -> None:
         self.wanted = wanted
         self.keep = keep
         self.budget = budget
+        self.within = within
         self.kept: list[str] = []
         self.spent = 0
+
+    def _passed_over(self, block: bytes) -> bool:
+        """Whether no line in `block` can match. An escaped character may fold to the search's own
+        letters (a sharp s to "ss"), so a block holding one is always read line by line."""
+        return self.within is not None and self.within not in block.lower() and b"\\u" not in block
 
     def take(self, piece: bytes) -> bool:
         """Judge one whole line. True once there are enough."""
@@ -105,7 +119,13 @@ class _Reading:
                     handle.seek(at, os.SEEK_SET)
                     held = handle.read(step)
                     self.spent += len(held)
-                    pieces = (held + carry).split(b"\n")
+                    joined = held + carry
+                    if self._passed_over(joined):
+                        # No whole line here can match; only the front, still partial, goes on.
+                        cut = joined.find(b"\n")
+                        carry = (joined if cut < 0 else joined[:cut])[: LINE_CAP * 4]
+                        continue
+                    pieces = joined.split(b"\n")
                     # The first piece is only whole if this read reached the start of the file.
                     carry = pieces[0]
                     for piece in reversed(pieces[1:]):

@@ -157,6 +157,8 @@ def measurement_from_json(text: str) -> Measurement | None:
                     levels=tuple(StorageLevel(**one) for one in curve.get("levels", ())),
                     failed=curve.get("failed"),
                     unmeasured=curve.get("unmeasured"),
+                    small=None if curve.get("small") is None else StorageLevel(**curve["small"]),
+                    listed_per_second=curve.get("listed_per_second"),
                 )
                 for curve in raw.get("storages", ())
             ),

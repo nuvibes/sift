@@ -23,7 +23,7 @@ from sift.kernel.ingress import (
     Kind,
 )
 from sift.kernel.jobs import (
-    JobFailedPermanently,
+    JobHeld,
 )
 from sift.kernel.log import get_logger
 from sift.kernel.paths import PathEscape, confine
@@ -199,15 +199,26 @@ def look_at(root_abs: Path, rel_paths: Sequence[str]) -> Walk:
     return Walk(files=tuple(files), directories=tuple(sorted(directories)), looked=True)
 
 
-class FolderStoppedAnswering(JobFailedPermanently):
-    """The folder being scanned stopped answering partway through: nothing in it was judged."""
+#: How long a walk whose folder did not answer waits before it asks again.
+ROOT_WAIT = 600.0
 
 
-class RootUnreachable(JobFailedPermanently):
-    """The library folder did not answer, so the pass did nothing.
+class FolderStoppedAnswering(JobHeld):
+    """The folder being scanned stopped answering partway through: nothing in it was judged. The
+    walk waits for it with its attempt handed back, as for a library folder that does not answer."""
 
-    Not `RootIsGone` (a row somebody removed): a drive not plugged in, a share that is off.
-    Permanent for the job: the person plugs it in and scans again."""
+    def __init__(self, message: str, *, retry_in: float = ROOT_WAIT) -> None:
+        super().__init__(message, retry_in=retry_in)
+
+
+class RootUnreachable(JobHeld):
+    """The library folder did not answer, so the pass did nothing yet.
+
+    Not `RootIsGone` (a row somebody removed): a drive not plugged in, a share that is off. The
+    walk waits for it with its attempt handed back, and carries on from its plan once it answers."""
+
+    def __init__(self, message: str, *, retry_in: float = ROOT_WAIT) -> None:
+        super().__init__(message, retry_in=retry_in)
 
 
 def _root_answer(root_abs: Path) -> OSError | None:

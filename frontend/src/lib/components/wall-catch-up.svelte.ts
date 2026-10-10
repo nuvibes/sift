@@ -47,6 +47,9 @@ export class WallCatchUp {
 	private heldForPlayer = $state(false);
 	/** A take of the newer files is on its way, so the line offering them is not drawn for it. */
 	takingIn = $state(false);
+	/* The read asked in this flush: one live message rings several bells together, and a read asked
+	   after them all covers each. A later ask while it is out is owed, never joined. */
+	private askedThisTurn: Promise<unknown> | undefined;
 
 	constructor(wall: WallParts) {
 		this.wall = wall;
@@ -114,6 +117,7 @@ export class WallCatchUp {
 
 	/** Re-read the page showing, where it is. Returns the ask, for the placeholder handover. */
 	catchUp(): Promise<unknown> | undefined {
+		if (this.askedThisTurn) return this.askedThisTurn;
 		const { grid, order } = this.wall;
 		const source = this.wall.source();
 		if (document.visibilityState !== 'visible' || grid.reading) {
@@ -127,7 +131,10 @@ export class WallCatchUp {
 		const start: PageStart =
 			anchor === undefined ? { at: grid.offset } : { from: anchor, near: grid.offset };
 		// Quiet: nobody asked for this one. See `loadAt`.
-		return untrack(() => grid.loadAt(order.fullQuery, start, { quiet: true }));
+		const asked = untrack(() => grid.loadAt(order.fullQuery, start, { quiet: true }));
+		this.askedThisTurn = asked;
+		queueMicrotask(() => (this.askedThisTurn = undefined));
+		return asked;
 	}
 
 	/* A heart, stars or a view moved a file in an order that hangs on them. Held while this tab's

@@ -147,3 +147,26 @@ def test_the_status_counts_the_files_not_read_yet_once_it_can_read(
     monkeypatch.setattr(WatermarkService, "ready", can_read)
 
     assert client.get("/api/watermarks/status").json()["unread_files"] == 1
+
+
+async def test_files_being_read_count_identifys_tasks_for_arriving_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    from sift.kernel.jobs.families import Family
+
+    router = importlib.import_module("sift.slices.watermarks.router")
+
+    families = {
+        "identify_file": Family.IDENTIFY,
+        "watermark_read": Family.IDENTIFY,
+        "thumbnail": Family.GENERATE,
+    }
+    monkeypatch.setattr(router, "family_of", families.__getitem__)
+
+    class _Queue:
+        async def unfinished_by_type(self) -> dict[str, int]:
+            return {"identify_file": 3, "watermark_read": 2, "thumbnail": 7}
+
+    assert await router._reading(_Queue()) == 5

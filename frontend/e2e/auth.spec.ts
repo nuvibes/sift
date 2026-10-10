@@ -1,5 +1,5 @@
 import { expect, test } from './test';
-import { ADMIN, PASSWORD, signInAsAdmin } from './admin';
+import { ADMIN, PASSWORD, signInAsAdmin, signInByForm } from './admin';
 
 /* Signing in through the real form. The specs share a server, so the fresh-instance branch is not
  * tested; a second setup being refused is. */
@@ -29,14 +29,9 @@ test('signing in through the form lands on the grid', async ({ page }) => {
 	await page.context().clearCookies();
 
 	await page.goto('/login');
-	await page.getByLabel('Username').fill(ADMIN);
-	await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-
-	// Retried while busy: every spec signs in as this account.
-	await expect(async () => {
-		await page.getByRole('button', { name: 'Sign in' }).click();
-		await expect(page).toHaveURL('/browse', { timeout: 4000 });
-	}).toPass({ timeout: 30_000 });
+	// Pressed again while busy: every spec signs in as this account.
+	await signInByForm(page, ADMIN, PASSWORD);
+	await expect(page).toHaveURL('/browse');
 	await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
 });
 

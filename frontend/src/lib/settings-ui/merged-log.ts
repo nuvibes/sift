@@ -33,10 +33,11 @@ function carried(lines: readonly LogRecord[]): number[] {
 	});
 }
 
+/* The earliest moment a cut read holds: a job's own lines come with its summary first. */
 function floorOf(read: LogRead | null): number {
 	if (!read || !read.cut) return -Infinity;
-	const known = read.lines.map(momentOf).find((one) => one !== null);
-	return known ?? -Infinity;
+	const known = read.lines.map(momentOf).filter((one): one is number => one !== null);
+	return known.length > 0 ? Math.min(...known) : -Infinity;
 }
 
 /** The two logs as one list, in the order the lines were written. `app` is null where there is none. */

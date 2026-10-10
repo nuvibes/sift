@@ -119,3 +119,17 @@ describe('a page somebody turned to', () => {
 		expect(loadAt).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('several bells in one live message', () => {
+	it('are one read, and a bell in a later turn is another', async () => {
+		const { current, loadAt } = wall();
+		// `library` and `arrivals` in one message: a read asked after both covers each.
+		current.catchUp();
+		current.catchUp();
+		expect(loadAt, 'one message read the page twice').toHaveBeenCalledTimes(1);
+
+		await new Promise((done) => setTimeout(done, 0));
+		current.catchUp();
+		expect(loadAt).toHaveBeenCalledTimes(2);
+	});
+});

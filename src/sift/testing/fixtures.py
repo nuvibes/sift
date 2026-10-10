@@ -196,6 +196,7 @@ JOB_REGISTRIES = (
     "_EXCLUSIVE",
     "_FOLLOWS",
     "_URGENCY",
+    "_KEEPS_URGENCY",
     "_NOT_GATED",
     "_CARRIERS",
     "_TRAILS",

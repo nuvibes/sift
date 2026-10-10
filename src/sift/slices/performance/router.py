@@ -21,7 +21,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from sift.kernel import lifecycle
+from sift.kernel import lanes, lifecycle
 from sift.kernel.access import Viewer
 from sift.kernel.jobs import JobState
 from sift.kernel.jobs.ledger import report_text
@@ -71,7 +71,23 @@ router = APIRouter(tags=["performance"])
 
 
 def _storage_view(curve: selftest.StorageCurve, folders: dict[str, str]) -> StorageCurveView:
+    ceiling, small = curve.ceiling, curve.small
+    reads = lanes.installed()
+    lane = (reads.readings() if reads is not None else {}).get(curve.storage, {})
+    achieved = lane.get("achieved_mb_per_second")
+    nbytes = lane.get("bytes_read")
     return StorageCurveView(
+        ceiling_mb_per_second=None if ceiling is None else round(ceiling, 1),
+        small_files_per_second=None if small is None else round(small.files_per_second, 1),
+        small_mb_per_second=None if small is None else round(small.megabytes_per_second, 1),
+        listed_per_second=None
+        if curve.listed_per_second is None
+        else round(curve.listed_per_second),
+        achieved_mb_per_second=achieved if isinstance(achieved, float) else None,
+        achieved_percent=round(100 * achieved / ceiling)
+        if isinstance(achieved, float) and ceiling
+        else None,
+        read_megabytes=round(nbytes / 1_000_000, 1) if isinstance(nbytes, int) and nbytes else None,
         storage=curve.storage,
         label=curve.name,
         folders=folders.get(curve.storage, ""),

@@ -63,14 +63,69 @@ def test_a_stalled_read_leaves_the_passes_their_own_work_over_the_pool() -> None
     assert time_left.seconds_left(_job(pool_bound=False, read_stalled=True)) == (100.0, 50.0)
 
 
-def test_passes_held_for_the_walk_start_when_the_read_is_done() -> None:
-    assert time_left.seconds_left(_job(held=True)) == (100.0, 130.0)
-
-
 def test_passes_with_a_kind_unpriced_are_no_sooner_than_the_read_and_the_queue() -> None:
     unpriced = {("preview", "video"): 3}
     assert time_left.seconds_left(_job(passes=unpriced, queued={"thumbnail": 5})) == (100.0, 101.0)
-    assert time_left.seconds_left(_job(passes=unpriced, held=True)) == (100.0, None)
+
+
+def _worked(minutes: list[tuple[float, float]], *, at: float = 6000.0) -> time_left.Throughput:
+    """A family's minutes, oldest first, each as (busy seconds, items), the newest ending at `at`."""
+    throughput = time_left.Throughput()
+    for back, (busy, items) in zip(range(len(minutes) - 1, -1, -1), minutes, strict=True):
+        clock = at - 60.0 * back
+        for _tick in range(int(busy // 15)):
+            throughput.busy(clock, 15.0)
+        throughput.done(clock, items, items * 1000)
+    return throughput
+
+
+def test_no_rate_before_two_minutes_of_work_due_and_twenty_items_finished() -> None:
+    assert _worked([(60.0, 50.0)]).rate(6000.0) is None
+    assert _worked([(60.0, 9.0), (60.0, 9.0)]).rate(6000.0) is None
+    found = _worked([(60.0, 12.0), (60.0, 12.0)]).rate(6000.0)
+    assert found is not None and found.per_second == pytest.approx(0.2)
+
+
+def test_no_rate_while_the_newest_minute_runs_twice_as_fast_as_any_before() -> None:
+    """A batch's pipeline filling: the newest minute 40 times the first, as a 6-minute import's
+    first figure said 3 to 9 hours."""
+    assert _worked([(60.0, 1.0), (60.0, 40.0)]).rate(6000.0) is None
+    assert _worked([(60.0, 1.0), (60.0, 30.0), (60.0, 50.0)]).rate(6000.0) is not None
+
+
+def test_the_rate_is_the_newest_ten_busy_minutes_and_its_spread_their_minutes() -> None:
+    steady = _worked([(60.0, 600.0)] * 5 + [(60.0, 60.0)] * 10).rate(6000.0)
+    assert steady is not None
+    assert (steady.per_second, steady.seconds, steady.spread) == (1.0, 600.0, 1.25)
+    uneven = _worked([(60.0, 60.0), (60.0, 30.0), (60.0, 60.0), (60.0, 90.0)]).rate(6000.0)
+    assert uneven is not None and uneven.spread == pytest.approx(1 + 21.213 / 60, abs=1e-3)
+    by_bytes = _worked([(60.0, 60.0)] * 2).rate(6000.0, time_left.BYTES)
+    assert by_bytes is not None and by_bytes.per_second == pytest.approx(1000.0)
+    assert time_left.Rate(2.0, 1.5, 0, 0).window(240.0) == pytest.approx((80.0, 180.0))
+
+
+def test_one_minute_has_the_widest_spread_and_an_idle_gap_is_not_counted() -> None:
+    alone = _worked([(120.0, 120.0)]).rate(6000.0)
+    assert alone is not None and alone.spread == time_left.SPREAD_MOST - 1.0
+    gap = _worked([(60.0, 60.0), (0.0, 0.0), (60.0, 60.0)]).rate(6000.0)
+    assert gap is not None and (gap.per_second, gap.seconds) == (1.0, 120.0)
+
+
+def test_a_tick_counts_at_most_its_bound_and_old_minutes_age_out() -> None:
+    throughput = time_left.Throughput()
+    throughput.busy(0.0, 3600.0)
+    throughput.done(0.0, 10)
+    assert throughput.rate(0.0) is None
+    old = _worked([(60.0, 60.0)], at=60.0)
+    assert old.rate(60.0 * (time_left.RATE_MINUTES_HELD + 2)) is None
+    old.clear()
+    assert old.rate(60.0) is None
+
+
+def test_a_batch_after_an_idle_gap_has_a_pace_of_its_own() -> None:
+    throughput = _worked([(60.0, 600.0)] * 3, at=600.0)
+    throughput.busy(600.0 + time_left.BATCH_GAP_SECONDS + 1, 15.0)
+    assert throughput.rate(600.0 + time_left.BATCH_GAP_SECONDS + 1) is None
 
 
 def test_the_range_is_the_ratio_either_side() -> None:

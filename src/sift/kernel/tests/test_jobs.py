@@ -20,6 +20,7 @@ import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error c
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -39,8 +40,10 @@ from sift.kernel.jobs import (
     register_handler,
     registered_handlers,
     registered_job_names,
+    worker_pool,
 )
 from sift.kernel.jobs import schema as jobs_schema
+from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.queue import _check_payload, _for_the_record
 from sift.kernel.jobs.queue_enqueue import SETTLE_SLACK_SECONDS
 from sift.kernel.jobs.quiet_hours import AT_NOW
@@ -588,7 +591,7 @@ async def test_only_work_a_worker_could_take_now_wakes_the_idle_workers(
     job_queue: JobQueue,
 ) -> None:
     """An idle worker woken for a row it cannot take claims nothing inside the writer's lock:
-    a row put off, a settle and a family's held work wait for their moment or their lift."""
+    a row put off and a settle wait for their moment; a scan's own work wakes one each."""
     woken: list[int] = []
     job_queue.listen_for_work(lambda: woken.append(1))
     kind = noop_handler()
@@ -599,11 +602,8 @@ async def test_only_work_a_worker_could_take_now_wakes_the_idle_workers(
 
     scan = await job_queue.enqueue(noop_handler("scan"))
     assert len(woken) == 1
-    await job_queue.hold_family(scan, spared=("read",))
     await job_queue.enqueue_children(scan, [(noop_handler("picture"), {})])
-    assert len(woken) == 1, "held by its family"
-    await job_queue.enqueue_children(scan, [(noop_handler("read"), {})])
-    assert len(woken) == 2, "spared by the hold"
+    assert len(woken) == 2, "nothing holds a scan's own work back"
 
 
 @pytest.mark.integration
@@ -1124,80 +1124,39 @@ async def test_a_pool_needs_a_worker(job_queue: JobQueue) -> None:
         WorkerPool(job_queue, concurrency=0)
 
 
-async def _a_read_and_its_work(job_queue: JobQueue) -> tuple[str, str]:
+@pytest.mark.integration
+async def test_a_jobs_children_of_one_type_go_in_one_write_and_count_as_handed_on(
+    job_queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A walk handing out a batch of reads writes the queue once, and its own family's children
+    are taken off what it did, as one at a time would."""
     for kind in ("walk", "per_file", "elsewhere"):
         noop_handler(kind)
-    walk = await job_queue.enqueue("walk")
-    assert await job_queue.claim(WORKER) is not None
-    per_file = await job_queue.enqueue("per_file", parent_id=walk)
-    return walk, per_file
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("limits", [None, {"capped": 0}])
-async def test_a_held_family_waits_while_other_work_runs(
-    job_queue: JobQueue, limits: dict[str, int] | None
-) -> None:
-    walk, per_file = await _a_read_and_its_work(job_queue)
-    elsewhere = await job_queue.enqueue("elsewhere")
-    await job_queue.hold_family(walk, spared=["walk"])
-
-    first = await job_queue.claim(OTHER_WORKER, limits=limits)
-    assert first is not None and first.id == elsewhere
-    assert await job_queue.claim(OTHER_WORKER, limits=limits) is None
-
-    assert job_queue.lift_hold(walk) and not job_queue.lift_hold(walk)
-    after = await job_queue.claim(OTHER_WORKER, limits=limits)
-    assert after is not None and after.id == per_file
-
-
-@pytest.mark.integration
-@pytest.mark.parametrize("limits", [None, {"capped": 0}])
-async def test_a_row_pressed_now_and_the_holders_own_kinds_pass_a_hold(
-    job_queue: JobQueue, limits: dict[str, int] | None
-) -> None:
-    walk, _ = await _a_read_and_its_work(job_queue)
-    pressed = await job_queue.enqueue("per_file", {"n": 2}, parent_id=walk, at=AT_NOW)
-    sibling = await job_queue.enqueue("walk", {"n": 3}, parent_id=walk)
-    await job_queue.hold_family(walk, spared=["walk"])
-
-    taken = [await job_queue.claim(OTHER_WORKER, limits=limits) for _ in range(3)]
-
-    assert [None if one is None else one.id for one in taken] == [pressed, sibling, None]
-
-
-@pytest.mark.integration
-async def test_held_work_is_not_demand_and_says_which_job_holds_it(job_queue: JobQueue) -> None:
-    walk, _ = await _a_read_and_its_work(job_queue)
-    await job_queue.enqueue("elsewhere")
-    assert await job_queue.holder_of(["per_file"]) is None
-    assert await job_queue.held_for_family_by_type() == {}
-
-    await job_queue.hold_family(walk, spared=["walk"])
-
-    assert await job_queue.demand_by_type() == {"walk": 1, "elsewhere": 1}
-    assert await job_queue.held_for_family_by_type() == {"per_file": 1}
-    assert await job_queue.holder_of(["per_file", "thumbnail"]) == walk
-    assert await job_queue.holder_of(["elsewhere"]) is None
-
-
-@pytest.mark.integration
-async def test_a_hold_ends_with_its_job_however_the_handler_ends(job_queue: JobQueue) -> None:
-    walk, per_file = await _a_read_and_its_work(job_queue)
-    job = await job_queue.get(walk)
-    assert job is not None
+    family_of = {"walk": Family.SCAN, "per_file": Family.SCAN, "elsewhere": Family.GENERATE}
+    monkeypatch.setattr(worker_pool, "family_of", family_of.__getitem__)
+    walk = await job_queue.enqueue("walk", at=AT_NOW)
+    job = await job_queue.claim(WORKER)
+    assert job is not None and job.id == walk
     context = JobContext(job=job, worker_id=WORKER, queue=job_queue)
+    context._units = 5
+    writes: list[int] = []
+    real = job_queue._writing
 
-    async def handler(context: JobContext) -> None:
-        await context.hold_own_family(spared=["walk"])
-        raise RuntimeError("the read failed")
+    def counted() -> Any:
+        writes.append(1)
+        return real()
 
-    with pytest.raises(RuntimeError):
-        await WorkerPool(job_queue, concurrency=1)._invoke(handler, context)
+    monkeypatch.setattr(job_queue, "_writing", counted)
 
-    assert not context.lift_own_hold()
-    after = await job_queue.claim(OTHER_WORKER)
-    assert after is not None and after.id == per_file
+    mine = await context.enqueue_children("per_file", [{"n": n} for n in range(3)], priority=50)
+    other = await context.enqueue_children("elsewhere", [{"n": 9}], priority=50)
+
+    assert len(writes) == 2 and context.units_done == 2
+    children = {one.id: one for one in await job_queue.children(walk)}
+    assert set(children) == {*mine, *other}
+    assert {children[one].timing for one in mine} == {AT_NOW}
+    assert children[other[0]].timing is None
+    assert {one.priority for one in children.values()} == {50}
 
 
 @pytest.mark.integration
@@ -1285,7 +1244,7 @@ async def test_a_claim_passes_a_kind_at_its_cap_without_reading_its_rows(
     job = await job_queue.claim(WORKER, limits={capped: 0})
 
     assert job is not None and job.id == last
-    asked = claim_parameters(WORKER, 0, [capped], (True, "[]"), (True, "[]", "[]"), None)
+    asked = claim_parameters(WORKER, 0, [capped], (True, "[]"), None)
     explained = "EXPLAIN QUERY PLAN " + _CLAIM  # nosemgrep: sift-no-string-built-sql
     plan = await job_queue._db.fetch_all(explained, asked)  # nosemgrep: sift-no-string-built-sql
     details = " ".join(str(row["detail"]) for row in plan)
@@ -1337,6 +1296,43 @@ async def test_a_settle_asked_from_a_job_is_as_urgent_as_that_job(job_queue: Job
     first, second = await job_queue.get(asked), await job_queue.get(alone)
     assert first is not None and first.priority == 50
     assert second is not None and second.priority == 200
+
+
+@pytest.mark.integration
+async def test_a_read_run_twice_hands_its_work_out_once(job_queue: JobQueue) -> None:
+    """The second hand-out of the same children collapses onto the ones still waiting."""
+    parent = await job_queue.enqueue(noop_handler("probe_twice"))
+    children = [(noop_handler("thumb_once"), {"asset_id": "A"}), ("thumb_once", {"asset_id": "B"})]
+
+    first = await job_queue.enqueue_children(parent, children)
+    again = await job_queue.enqueue_children(parent, children)
+
+    assert again == first
+    assert len(await job_queue.children(parent)) == 2
+
+
+@pytest.mark.integration
+async def test_a_settle_a_run_asks_for_goes_past_its_types_own_urgency_unless_kept(
+    job_queue: JobQueue,
+) -> None:
+    """A pass declared as background work runs during a pressed run when the run asks for it; a
+    type registered `keeps_urgency` keeps its own, and outside a job the declaration holds."""
+    from sift.kernel.jobs.queue_core import ASKED_AT
+
+    async def nothing(_context: JobContext) -> None:
+        return None
+
+    register_handler("passed", nothing, name="Passed", urgency=200)
+    register_handler("kept", nothing, name="Kept", urgency=200, keeps_urgency=True)
+    token = ASKED_AT.set(50)
+    try:
+        passed = await job_queue.enqueue_when_settled("passed")
+        kept = await job_queue.enqueue_when_settled("kept")
+    finally:
+        ASKED_AT.reset(token)
+    outside = await job_queue.enqueue_when_settled("passed", {"n": 2}, priority=50)
+    rows = [await job_queue.get(one) for one in (passed, kept, outside)]
+    assert [None if row is None else row.priority for row in rows] == [50, 200, 200]
 
 
 @pytest.mark.integration

@@ -296,7 +296,9 @@ class SelfTestRunner:
     async def prices(self) -> dict[str, float]:
         """Seconds of one worker for one file, by family, from the models measured and kept."""
         kept = await self._rates.load(self._hardware.profile)
-        return measure_models.prices(kept.models if kept is not None else self.models)
+        if kept is None:
+            return measure_models.prices(self.models)
+        return measure_models.prices(kept.models, seek_seconds=kept.seek_seconds or 0.0)
 
     async def measured(self) -> bool:
         """Whether this hardware has rates on file from an earlier run."""

@@ -8,6 +8,7 @@ import asyncio
 import ctypes
 import threading
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -466,3 +467,49 @@ async def test_a_width_canceled_mid_run_stops_its_memory_watch(tmp_path: Path) -
     with pytest.raises(asyncio.CancelledError):
         await measuring
     assert watches.count("started") == watches.count("stopped") == 2
+
+
+async def test_a_file_is_timed_as_its_model_runs_and_its_decode_is_priced_from_a_seek(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The test clip's seeks were nine tenths of a timed file, so a file is its model's runs and
+    the decode is the decoder's seek for each frame."""
+
+    async def no_decode(*_args: Any, **_kwargs: Any) -> list[bytes]:
+        raise AssertionError("a model file decodes nothing")
+
+    monkeypatch.setattr(media, "raw_moments", no_decode)
+    stand = Stand()
+    one = a_pass(stand)
+    ready = mm._load(one)
+    done = await mm.model_file(
+        ready, one, source=tmp_path, seconds=30, settings=a_settings(tmp_path)
+    )
+    assert done
+    assert stand.runs == [("finder", (1, 3, 8, 8))] * 3 + [("reader", (2, 3, 4, 4))]
+
+    curve = await mm.measure_pass(
+        one, source=tmp_path, seconds=30, settings=a_settings(tmp_path), busy=lambda: False,
+        watch=Quiet, repeats=1, levels=(1,),
+    )  # fmt: skip
+    assert curve.frames == 4 and curve.levels[0].finished == 1
+
+
+async def test_a_model_file_whose_runs_fail_did_not_finish(tmp_path: Path) -> None:
+    class Broken(Stand):
+        def run(self, *_args: Any, **_kwargs: Any) -> list[np.ndarray]:
+            raise RuntimeError("the device went away")
+
+    one = a_pass(Broken())
+    ready = mm._load(one)
+    settings = a_settings(tmp_path)
+    assert not await mm.model_file(ready, one, source=tmp_path, seconds=30, settings=settings)
+
+
+def test_a_price_adds_a_seek_for_each_frame_a_file_stands_for() -> None:
+    faces = replace(a_curve(a_level(1, 0.5)), frames=30)
+    marks = replace(a_curve(a_level(1, 4.0), family="identify", share=False), frames=1)
+    assert mm.prices([faces, marks]) == pytest.approx({"identify": 2.0 + 0.25})
+    assert mm.prices([faces, marks], seek_seconds=0.04) == pytest.approx(
+        {"identify": 2.0 + 30 * 0.04 + 0.25 + 0.04}
+    )

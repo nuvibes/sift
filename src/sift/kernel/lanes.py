@@ -30,7 +30,8 @@ a lower kind also waits, every `ORDINARY_TURN`th goes to the lower kinds, by the
 **What a storage gives is recorded as it is read**: the bytes each read says it took
 (`note_read`) over the time the lane had a reader in it, per minute for the last
 `ACHIEVED_MINUTES`, so the screen can set what a share delivers against what it measured. While
-anybody waits, each lane says once a minute who holds its places and who waits (`lanes.state`).
+anybody waits, each lane says once a minute how many hold its places, who waits, and the
+minute's waits (`lanes.state`); each wait on its own only at Detailed (`lanes.waited`).
 """
 
 from __future__ import annotations
@@ -106,6 +107,10 @@ class Lane:
     waits: int = 0
     """How many reads had to wait at all."""
     worst_wait: float = 0.0
+    #: Since the last `lanes.state`: the reads that waited, their seconds, and the longest.
+    said_waits: int = 0
+    said_waited: float = 0.0
+    said_worst: float = 0.0
     #: Seconds waited in all, by readers of a kind above the ordinary and by the rest.
     urgent_wait: float = 0.0
     ordinary_wait: float = 0.0
@@ -255,9 +260,10 @@ class Lane:
         return sum(one[0] for one in kept) / busy / 1_000_000
 
     def _say_state(self) -> None:
-        """Once a minute while anybody waits: the places, who waits by kind, what was given."""
+        """Once a minute while anybody waits or waited: the places, who waits by kind, the minute's
+        waits, what was given."""
         self._report = None
-        if not self.waiting:
+        if not self.waiting and not self.said_waits:
             return
         achieved = self.achieved_megabytes_per_second
         log.info(
@@ -270,10 +276,14 @@ class Lane:
             first=len(self._waiters[FIRST]),
             read=len(self._waiters[READ]),
             ordinary=len(self._waiters[ORDINARY]),
-            worst_wait_seconds=round(self.worst_wait, 3),
+            waits=self.said_waits,
+            waited_seconds=round(self.said_waited, 1),
+            worst_wait_seconds=round(self.said_worst, 3),
             achieved_mb_per_second=None if achieved is None else round(achieved, 2),
         )
-        self._report = asyncio.get_running_loop().call_later(REPORT_SECONDS, self._say_state)
+        self.said_waits, self.said_waited, self.said_worst = 0, 0.0, 0.0
+        if self.waiting:
+            self._report = asyncio.get_running_loop().call_later(REPORT_SECONDS, self._say_state)
 
     @property
     def whole_limit(self) -> int:
@@ -411,8 +421,12 @@ class StorageLanes:
                 lane.ordinary_wait += waited
             if waited > lane.worst_wait:
                 lane.worst_wait = waited
+            lane.said_waits += 1
+            lane.said_waited += waited
+            lane.said_worst = max(lane.said_worst, waited)
+            # Each one only at Detailed: `lanes.state` counts them once a minute.
             if waited >= WAIT_WARN_SECONDS:
-                log.info(
+                log.debug(
                     "lanes.waited", storage=lane.storage.key, seconds=round(waited, 3), first=urgent
                 )
         held = _HOLDING.set(_HOLDING.get() | {lane.storage.key})

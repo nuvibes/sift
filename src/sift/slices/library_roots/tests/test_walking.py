@@ -15,7 +15,7 @@ from sift.kernel.config import Settings
 from sift.kernel.content import LibraryStore, Root
 from sift.kernel.db import Database
 from sift.kernel.jobs import (
-    JobFailedPermanently,
+    JobHeld,
 )
 from sift.kernel.ledger import Actor
 from sift.slices.library_roots import jobs, taking_in, walking
@@ -280,7 +280,7 @@ async def test_a_root_that_does_not_answer_changes_nothing(
 
     monkeypatch.setattr(jobs, "_root_answer", off)
     again = await context_for(jobs.SCAN, {"root_id": root.id})
-    with pytest.raises(walking.RootUnreachable, match="did not answer"):
+    with pytest.raises(walking.RootUnreachable, match="folder to answer"):
         await jobs.scan(again, settings=settings, service=service, reindexer=reindexer)
 
     rows = await temp_db.fetch_all("SELECT status FROM asset_locations")
@@ -288,8 +288,8 @@ async def test_a_root_that_does_not_answer_changes_nothing(
     jobs_after = await temp_db.fetch_one("SELECT COUNT(*) AS n FROM jobs WHERE type = 'probe'")
     assert jobs_before is not None and jobs_after is not None
     assert jobs_after["n"] == jobs_before["n"], "no probe was handed out"
-    assert issubclass(walking.RootUnreachable, JobFailedPermanently), (
-        "the queue must not try the same unplugged drive twice more"
+    assert issubclass(walking.RootUnreachable, JobHeld), (
+        "held with its attempt handed back: a drive plugged in later is walked then"
     )
 
 

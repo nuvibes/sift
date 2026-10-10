@@ -27,11 +27,12 @@ from sift.slices.media_jobs.activity_families import (
     PAUSED_FOR_THE_BENCHMARK,
     ShareWaits,
     _families,
+    _running_together,
     not_before_the_read,
     not_known_yet,
     pictured_in_the_read,
 )
-from sift.slices.media_jobs.router import WAITING_FOR_THE_SCAN, FamilyOfWork, KindOfWork
+from sift.slices.media_jobs.router import FamilyOfWork, KindOfWork
 
 pytestmark = pytest.mark.unit
 
@@ -93,15 +94,15 @@ def test_the_pictures_coming_from_the_read_are_generate_running() -> None:
     assert pictured_in_the_read(done)["generate"].outstanding == 0, "nothing left is nothing on"
 
 
-def test_a_pass_the_scan_holds_takes_the_reads_time_and_its_own() -> None:
-    held = _family("Generate", waiting=230, quick=60, slow=100).model_copy(
-        update={"reason": WAITING_FOR_THE_SCAN}
+def test_where_the_read_cannot_say_neither_can_a_pass_after_it() -> None:
+    measuring = _family("Scan", waiting=80, quick=120, slow=240).model_copy(
+        update={"quick_seconds": None, "slow_seconds": None, "time_unknown": "Measuring."}
     )
-    answer = {"scan": _family("Scan", waiting=80, quick=120, slow=240), "generate": held}
+    answer = {"scan": measuring, "generate": _family("Generate", waiting=230, quick=60, slow=100)}
 
-    said = not_before_the_read(answer)
+    said = not_before_the_read(answer)["generate"]
 
-    assert (said["generate"].quick_seconds, said["generate"].slow_seconds) == (180, 340)
+    assert (said.quick_seconds, said.slow_seconds, said.time_unknown) == (None, None, "Measuring.")
 
 
 async def _nothing(_context: object) -> None:
@@ -198,19 +199,6 @@ async def test_a_product_switched_off_is_given_no_unread_files() -> None:
     )
 
     assert book.left["generate"] == 23167 + 10
-
-
-async def test_a_pass_whose_work_the_scan_holds_says_so() -> None:
-    work = _first_import()
-    work["face_scan"] = KindOfWork(done=0, outstanding=40, failed=0, waiting=23167, total=23167)
-
-    families = await _families(
-        work, None, Switchboard(), unread=FilesToRead(), scan_held={"face_scan": 40}
-    )
-
-    assert families["identify"].reason == WAITING_FOR_THE_SCAN
-    free = await _families(work, None, Switchboard(), unread=FilesToRead(), scan_held={})
-    assert free["identify"].reason is None
 
 
 def test_the_running_read_names_what_sets_its_pace() -> None:
@@ -323,3 +311,17 @@ async def test_a_pass_the_benchmark_holds_says_so_in_place_of_a_time() -> None:
     assert (held.reason, held.time_unknown) == (PAUSED_FOR_THE_BENCHMARK, AFTER_THE_BENCHMARK)
     assert (held.for_task, held.pace) == (None, None)
     assert families["identify"].time_unknown is None, "a task still running is not held"
+
+
+def test_a_familys_workers_are_the_caps_of_its_kinds_with_work_not_the_pools() -> None:
+    pool = SimpleNamespace(concurrency=12, limits={"thumbnail": 2, "preview": 3, "sprite": 4})
+    types = ["thumbnail", "preview", "sprite"]
+    work = {
+        "thumbnail": KindOfWork(done=0, outstanding=5, failed=0, waiting=5),
+        "preview": KindOfWork(done=0, outstanding=0, failed=0, waiting=0),
+    }
+    assert _running_together(pool, types, work) == 2  # type: ignore[arg-type]
+    # With nothing waiting anywhere, what the family could use: every kind's cap.
+    assert _running_together(pool, types, {}) == 9  # type: ignore[arg-type]
+    assert _running_together(pool, types) == 9  # type: ignore[arg-type]
+    assert _running_together(None, types, work) == 1

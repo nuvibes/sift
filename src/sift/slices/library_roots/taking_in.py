@@ -51,6 +51,7 @@ from sift.kernel.jobs import (
     JobCanceled,
     JobContext,
 )
+from sift.kernel.jobs.retrying import WaitingForSpace, is_disk_full
 from sift.kernel.log import get_logger, timing_hook
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.sweeping import _folder_for
@@ -320,8 +321,12 @@ async def _read_once(
         yield None
         return
     incoming = settings.cache_dir / "incoming"
-    await asyncio.to_thread(incoming.mkdir, parents=True, exist_ok=True)
-    scratch = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="copy-", dir=incoming))
+    try:
+        await asyncio.to_thread(incoming.mkdir, parents=True, exist_ok=True)
+        scratch = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="copy-", dir=incoming))
+    except OSError as error:
+        _unless_the_cache_is_full(error)
+        raise
     try:
         copy = scratch / item.path.name
         try:
@@ -332,7 +337,8 @@ async def _read_once(
             log.info("library.file_still_changing", root_id=context.payload.get("root_id"))
             yield _NOT_READ
             return
-        except OSError:
+        except OSError as error:
+            _unless_the_cache_is_full(error)
             await _unless_its_folder_went(item)
             yield _NOT_READ
             return
@@ -340,6 +346,15 @@ async def _read_once(
         yield copy
     finally:
         await asyncio.to_thread(shutil.rmtree, scratch, True)
+
+
+def _unless_the_cache_is_full(error: OSError) -> None:
+    # A full cache is a wait for room, never a file skipped for this pass without a word.
+    if is_disk_full(error):
+        raise WaitingForSpace(
+            "Waiting for space: the disk Sift keeps its cache on is full, so a file on a network "
+            "share could not be copied in to be read. Free some space and it carries on."
+        ) from error
 
 
 async def _turn_apart(checked: IngressResult) -> bool | None:
@@ -630,7 +645,9 @@ async def _take_in_member(
 async def _member_taken_in(context: JobContext, ingested: Ingested, taken_in: list[str]) -> str:
     """A member's probe asked for where it is new or was never probed; its asset id."""
     if ingested.asset_is_new:
-        await context.enqueue_child(PROBE, _probe_payload(context, ingested.asset.id))
+        await context.enqueue_child(
+            PROBE, _probe_payload(context, ingested.asset.id), priority=context.job.priority
+        )
         taken_in.append(ingested.asset.id)
     elif ingested.asset.probed_at is None:
         await _probe_unless_already_coming(context, ingested.asset.id)
@@ -754,4 +771,6 @@ async def _probe_unless_already_coming(context: JobContext, asset_id: str) -> No
     for shape in ({"asset_id": asset_id}, {"asset_id": asset_id, "scan_only": True}):
         if await context.queue.is_live(PROBE, shape):
             return
-    await context.enqueue_child(PROBE, _probe_payload(context, asset_id), dedupe=True)
+    await context.enqueue_child(
+        PROBE, _probe_payload(context, asset_id), dedupe=True, priority=context.job.priority
+    )

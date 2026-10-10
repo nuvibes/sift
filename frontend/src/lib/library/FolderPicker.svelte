@@ -5,8 +5,8 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import type { Entry, Picker } from './picker.svelte';
 
-	/* Choosing a folder by clicking it. A breadcrumb over a list, rather than a tree that opens
-	 * in place. */
+	/* Choosing a folder, or a file in one, by clicking it. A breadcrumb over a list, rather than a
+	 * tree that opens in place. Every chooser of a place on the server is this one. */
 
 	interface Props {
 		picker: Picker;
@@ -17,14 +17,46 @@
 		describedBy?: string;
 		/** Whether each folder gets a tick to add it to a set. */
 		selectable?: boolean;
+		/** Whether the rest of this device can be walked too, beside the folders Sift has; the
+		 * list's name is then drawn here, with the press between the two. */
+		device?: boolean;
 	}
 
-	let { picker, labelledBy, describedBy, selectable = false }: Props = $props();
+	let { picker, labelledBy, describedBy, selectable = false, device = false }: Props = $props();
+
+	/* What the list is: the folders Sift has at the top, the drives at the top of the computer,
+	   and otherwise the question the list answers. */
+	const listName = $derived(
+		!picker.atTopLevel
+			? picker.names.length > 0
+				? 'Which file'
+				: 'Which folder'
+			: picker.scope === 'machine'
+				? 'Drives where Sift runs'
+				: 'Folders Sift already has'
+	);
 
 	function enter(entry: Entry) {
 		picker.open(entry.path);
 	}
 </script>
+
+<!-- What the list is, with the way to the other list beside it; a caller without the device
+     names the list itself. -->
+{#if device}
+	<div class="list-head">
+		<span class="label" id={labelledBy}>{listName}</span>
+		{#if picker.scope === 'granted'}
+			<Button tone="quiet" size="small" onclick={() => void picker.look('machine')}>
+				Browse this device
+			</Button>
+		{:else}
+			<Button tone="quiet" size="small" onclick={() => void picker.look('granted')}>
+				Back to the folders Sift has
+			</Button>
+		{/if}
+	</div>
+{/if}
 
 <div class="picker">
 	<!-- Only inside a folder: over the list of folders Sift already has there is no place to name,
@@ -100,13 +132,40 @@
 						</Pressable>
 					</li>
 				{/each}
+
+				<!-- In a chooser of a file, the files it offers here, after the folders. -->
+				{#each picker.files as entry (entry.path)}
+					<li class="row">
+						<Pressable
+							class="entry file"
+							feedback="wash"
+							radius="sm"
+							picked={picker.file?.path === entry.path}
+							disabled={picker.loading}
+							onclick={() => picker.pick(entry)}
+						>
+							<!-- Wrapped, so the folder's yellow stays the folders'. -->
+							<span class="glyph"><Icon name="article" /></span>
+							<span class="name">{entry.name}</span>
+							{#if picker.file?.path === entry.path}
+								<Icon name="check" />
+							{/if}
+						</Pressable>
+					</li>
+				{/each}
 			</ul>
 		</Scroller>
 	</div>
 
 	<!-- What is in here that the list above does not show. -->
 	{#if !picker.loading && !picker.nothingGranted && !picker.atTopLevel}
-		{#if picker.fileCount > 0}
+		{#if picker.names.length > 0}
+			{#if picker.files.length === 0}
+				<p class="quiet note">
+					No file here that can be chosen. Click through to the folder that holds it.
+				</p>
+			{/if}
+		{:else if picker.fileCount > 0}
 			<p class="quiet note">
 				{picker.fileCount === 1 ? '1 file' : `${counted(picker.fileCount)} files`} in this folder.
 				{picker.entries.length === 0 ? 'Choose it and Sift will read them.' : ''}
@@ -120,6 +179,19 @@
 </div>
 
 <style>
+	/* The list's name on the left and the way to the other list at the right edge, on one line. */
+	.list-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+	}
+
+	.list-head .label {
+		font: var(--text-label);
+		color: var(--sift-ink-2);
+	}
+
 	.picker {
 		border: 1px solid var(--sift-line);
 		border-radius: var(--radius-md);
@@ -206,6 +278,16 @@
 	}
 
 	.entries :global(.up) {
+		color: var(--sift-ink-3);
+	}
+
+	/* A file offered beside the folders: its own glyph, in the quieter ink, and no way inside. */
+	.entries :global(.entry.file) {
+		color: var(--sift-ink-2);
+	}
+
+	.glyph {
+		display: inline-flex;
 		color: var(--sift-ink-3);
 	}
 

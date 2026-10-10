@@ -79,6 +79,7 @@ it('stops offering to import the last read once a new read starts', async () => 
 /* The database is chosen, never typed: in the desktop application its own file dialog answers
    the path, and the read is asked for that file immediately. */
 it('reads the file chosen in the desktop file dialog, with no box to type in', async () => {
+	calls.post.mockClear();
 	calls.get.mockImplementation(async () => null);
 	calls.post.mockImplementation(async () => EARLIER);
 	shell.present = true;
@@ -101,6 +102,70 @@ it('reads the file chosen in the desktop file dialog, with no box to type in', a
 	expect(calls.post).toHaveBeenCalledWith('/stash-migration/read', {
 		body: { path: 'D:\\Stash\\stash-go.sqlite' }
 	});
+	// Chosen in the system's own dialog, its folder is given to Sift first, as Add a folder does.
+	expect(calls.post.mock.calls[0]).toEqual(['/library/grants', { body: { path: 'D:\\Stash' } }]);
+});
+
+/* In a browser the chooser is Add a folder's: the folders Sift has and this device, walked down to
+   the database FILE, which is what is read; a folder is never what is chosen. */
+it('chooses the database file in the chooser, never a folder, and grants a folder off the device', async () => {
+	const database = { name: 'stash-go.sqlite', path: 'D:\\stash\\stash-go.sqlite' };
+	calls.get.mockImplementation(
+		async (path: string, options?: { query?: Record<string, unknown> }) => {
+			if (path !== '/library/browse') return null;
+			const at = options?.query?.path;
+			return {
+				path: at ?? '',
+				entries: at ? [] : [{ name: 'stash', path: 'D:\\stash' }],
+				breadcrumb: at ? [{ name: 'stash', path: 'D:\\stash' }] : [],
+				file_count: at ? 3 : 0,
+				nothing_granted: false,
+				writable: true,
+				read_only_mount: false,
+				files: at ? [database] : []
+			};
+		}
+	);
+	calls.post.mockImplementation(async () => EARLIER);
+	calls.post.mockClear();
+	const host = document.createElement('div');
+	document.body.append(host);
+	drawn = mount(FromStash, { target: host }) as Record<string, unknown>;
+	const settle = async () => {
+		for (let turn = 0; turn < 6; turn++) await tick();
+		flushSync();
+	};
+	await settle();
+	const press = (label: string) =>
+		(
+			[...document.querySelectorAll('button')].find((one) =>
+				one.textContent?.includes(label)
+			) as HTMLButtonElement
+		).click();
+
+	press('Choose');
+	await settle();
+	press('Browse this device');
+	await settle();
+	expect(calls.get).toHaveBeenLastCalledWith('/library/browse', {
+		query: { scope: 'machine', files: expect.arrayContaining(['stash-go.sqlite*', 'config.yml']) }
+	});
+	press('stash');
+	await settle();
+	press('Use this file');
+	await settle();
+	expect(document.body.textContent).toContain('Choose a file first');
+	expect(calls.post).not.toHaveBeenCalled();
+
+	(document.querySelector('.file') as HTMLButtonElement).click();
+	await settle();
+	press('Use this file');
+	await settle();
+
+	expect(calls.post.mock.calls).toEqual([
+		['/library/grants', { body: { path: 'D:\\stash' } }],
+		['/stash-migration/read', { body: { path: database.path } }]
+	]);
 });
 
 it('says a library already came across, and offers to bring it in again', async () => {

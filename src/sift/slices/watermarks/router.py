@@ -9,12 +9,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from sift.kernel import wiring
 from sift.kernel.access import Viewer
-from sift.kernel.jobs import JobQueue
+from sift.kernel.jobs import JobQueue, family_of
+from sift.kernel.jobs.families import Family
 from sift.kernel.log import get_logger
 from sift.kernel.wiring import part_of
 from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.watermarks import weights
-from sift.slices.watermarks.jobs import WATERMARK_FETCH_MODELS, WATERMARK_READ
+from sift.slices.watermarks.jobs import WATERMARK_FETCH_MODELS
 from sift.slices.watermarks.models import ModelsFetching, ReadingsRemoved, WatermarkStatus
 from sift.slices.watermarks.service import SERVICE, WatermarkService
 
@@ -31,6 +32,15 @@ def _off() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail="Reading watermarks is switched off.",
+    )
+
+
+async def _reading(queue: JobQueue) -> int:
+    """Identify's tasks outstanding, by family: a file arriving is read for its watermarks by the
+    one task that also scans its faces, never by a `watermark_read` of its own."""
+    unfinished = await queue.unfinished_by_type()
+    return sum(
+        count for job_type, count in unfinished.items() if family_of(job_type) is Family.IDENTIFY
     )
 
 
@@ -52,7 +62,7 @@ async def read_status(
         # Counted no further than a page.
         waiting_files=await service.waiting(),
         unread_files=await service.unread() if ready else 0,
-        running_jobs=await queue.outstanding(WATERMARK_READ),
+        running_jobs=await _reading(queue),
         problem=problem,
         installed=sorted(
             weight_id for weight_id, weight in weights.CATALOG.items() if store.installed(weight)

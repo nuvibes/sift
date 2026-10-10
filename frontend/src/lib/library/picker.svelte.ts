@@ -1,4 +1,5 @@
-/* Walking the folders Sift has been given, so one can be chosen by clicking it. */
+/* Walking the folders Sift has (its library folders and the ones given to it), so a folder, or a
+   file in one, can be chosen by clicking it. */
 
 import { api, ApiError } from '$lib/api/client';
 import { UNREACHABLE } from '$lib/shell/unreachable';
@@ -42,6 +43,13 @@ export class Picker {
 	/** The folders ticked to be added, so folders in different places can be chosen together. */
 	chosen = $state<Chosen[]>([]);
 
+	/** For a chooser of a FILE: the names it offers (patterns, any case); none chooses a folder. */
+	names = $state<string[]>([]);
+	/** The files here whose names match `names`. */
+	files = $state<Entry[]>([]);
+	/** The file chosen, in a chooser of a file. */
+	file = $state<Entry | null>(null);
+
 	/** Whether there is anywhere to go back to. False only at the list of granted folders. */
 	get canGoUp(): boolean {
 		return this.breadcrumb.length > 0;
@@ -61,10 +69,15 @@ export class Picker {
 		this.loading = true;
 		try {
 			/* The address and what filters it, kept apart. */
+			const query = { scope: this.scope, ...(path ? { path } : {}) };
 			const listing = await api.get<Listing>('/library/browse', {
-				query: path ? { path, scope: this.scope } : { scope: this.scope }
+				query: this.names.length > 0 ? { ...query, files: this.names } : query
 			});
 			this.entries = listing.entries;
+			// None from a server older than the chooser of a file.
+			this.files = listing.files ?? [];
+			// A file chosen elsewhere is not one of these.
+			if (!this.files.some((one) => one.path === this.file?.path)) this.file = null;
 			this.breadcrumb = listing.breadcrumb;
 			this.path = listing.path;
 			this.fileCount = listing.file_count ?? 0;
@@ -97,6 +110,11 @@ export class Picker {
 		if (this.scope === scope) return;
 		this.scope = scope;
 		await this.open();
+	}
+
+	/** Choose a file, in a chooser of a file. */
+	pick(entry: Entry): void {
+		this.file = entry;
 	}
 
 	/** Whether this folder is one of the ticked ones. */

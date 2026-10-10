@@ -106,6 +106,14 @@ export const COPY = {
 		level: (n: number, mbps: number) => `${n} at a time: ${mbps} MB/s`,
 		quickest: (n: number) => `Quickest at ${n} at a time.`,
 		folders: (names: string) => `Library folders on it: ${names}.`,
+		canGive: (mbps: number) => `It can give up to ${mbps} MB/s.`,
+		small: (each: number, mbps: number) =>
+			`Small files, read whole: ${each} a second (${mbps} MB/s).`,
+		listed: (n: number) => `Lists about ${counted(n)} files and folders a second.`,
+		achieved: (mbps: number, percent: number | null | undefined) =>
+			`Sift's own reads here: ${mbps} MB/s over its last ten minutes of reading${percent === null || percent === undefined ? '' : `, ${percent}% of what it can give`}.`,
+		readSince: (megabytes: number) => `${counted(megabytes)} MB read since Sift started.`,
+		notReadYet: "Sift hasn't read from it since it started.",
 		readingAt: (n: number) =>
 			` Files read per share is set to ${n}, so ${n} are read at a time here.`,
 		gpu: 'Previews on your GPU',

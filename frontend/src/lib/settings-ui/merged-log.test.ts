@@ -70,6 +70,22 @@ describe('the one list of both logs', () => {
 		]);
 	});
 
+	it("keeps every line of a job's cut read, its summary first", () => {
+		const library = read(
+			[
+				['2026-10-03T06:00:09Z', 'job.summary'],
+				['2026-10-03T06:00:00Z', 'job.claimed'],
+				['2026-10-03T06:00:05Z', 'content.probed']
+			],
+			true
+		);
+		expect(order(library, read([]))).toEqual([
+			'library:job.summary',
+			'library:job.claimed',
+			'library:content.probed'
+		]);
+	});
+
 	it('is the library alone where there is no app log', () => {
 		const library = read([['2026-10-03T06:00:00Z', 'scan.started']], true);
 		expect(order(library, null)).toEqual(['library:scan.started']);

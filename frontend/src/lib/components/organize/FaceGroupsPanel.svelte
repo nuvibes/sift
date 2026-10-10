@@ -14,6 +14,8 @@
 	import { anchorIn, rememberAnchor } from '$lib/grid/anchor';
 	import { CardPaging } from '$lib/grid/cards.svelte';
 	import { reloadOnLibraryChange } from '$lib/library/changes.svelte';
+	import { api } from '$lib/api/client';
+	import type { components } from '$lib/api/schema';
 	import {
 		TO_CHECK_PER_PAGE as PAGE,
 		toCheck,
@@ -36,6 +38,17 @@
 	let total = $state(0);
 	let underFloor = $state(0);
 	let loading = $state(true);
+	/** Files a running scan still has to look at: groups are piled as it runs, not before. */
+	let scanning = $state(0);
+
+	async function stillScanning(): Promise<number> {
+		try {
+			const left = await api.get<components['schemas']['WorkLeft']>('/faces/work-left');
+			return left.files;
+		} catch {
+			return 0;
+		}
+	}
 	const paging = new CardPaging(PAGE, 'faces.unnamed');
 
 	async function load() {
@@ -73,6 +86,12 @@
 		paging.land(page.offset);
 		rememberAnchor(address.url, path, groups[0]?.id, page.offset);
 		loading = false;
+		scanning = 0;
+		if (groups.length === 0 && asked === 'waiting') {
+			void stillScanning().then((files) => {
+				if (asked === showing) scanning = files;
+			});
+		}
 	}
 
 	/*
@@ -114,6 +133,10 @@
 	});
 	onDestroy(() => ontools?.(null));
 
+	const scanLine = $derived(
+		`Sift is still looking for faces in ${scanning.toLocaleString()} ${scanning === 1 ? 'file' : 'files'}.`
+	);
+
 	/** The chip's words: the number and what they are. */
 	const smallLine = $derived(
 		underFloor === 1 ? '1 small group' : `${underFloor.toLocaleString()} small groups`
@@ -146,6 +169,8 @@
 			{:else if small}
 				A group of fewer than five faces is kept here, so the list of unnamed groups stays the
 				questions worth answering.
+			{:else if scanning > 0}
+				{scanLine} Groups appear here as the scan goes on.
 			{:else}
 				Faces Sift doesn't recognize appear here in groups, so you name a person once rather than
 				hundreds of times.

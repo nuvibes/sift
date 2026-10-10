@@ -142,6 +142,8 @@ class BrowseView(Wire):
     nothing_granted: bool
     writable: bool
     read_only_mount: bool
+    #: The files matching the names asked for (`files`), for a chooser of a file; else none.
+    files: list[BrowseEntry] = Field(default=[])
 
 
 class FolderView(Wire):

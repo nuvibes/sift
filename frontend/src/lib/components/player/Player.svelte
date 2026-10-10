@@ -3,7 +3,7 @@
 	/* The player: asks the server how this browser plays the file, attaches it, draws the controls. */
 	import { onMount, untrack } from 'svelte';
 	import { api, ApiError } from '$lib/api/client';
-	import { fetchSettingValues, saveSettings } from '$lib/settings-ui/settings';
+	import { saveSettings } from '$lib/settings-ui/settings';
 	import { arrivals, settingChanges, whenChanged } from '$lib/library/changes.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -11,24 +11,21 @@
 	import { abLoop } from '$lib/player/loop.svelte';
 	import { clipTheStretch } from '$lib/edit/edit.svelte';
 	import { keepTheLast } from '$lib/player/snapshot';
-	import {
-		DEFAULT_LOOP_MODE,
-		isLoopMode,
-		nextLoopMode,
-		type LoopMode
-	} from '$lib/player/loop-modes';
+	import { nextLoopMode, type LoopMode } from '$lib/player/loop-modes';
 	import { ACTS, keyOf } from '$lib/player/acts';
 	import { muteEcho, type Echo } from '$lib/theater/echoes';
 	import { taken } from '$lib/player/keys';
 	// `seekVideoTo`, because `seekTo` is already this player's prop for where to pick a file up.
 	import { dropWaitingSeek, seekTo as seekVideoTo } from '$lib/player/seek';
-	import { dwell, LOOP_MODE_KEY } from '$lib/player/dwell.svelte';
+	import { dwell } from '$lib/player/dwell.svelte';
 	import {
 		afterTheFrame,
 		attach,
 		changeQuality,
+		MUTED_KEY,
 		planFor,
 		planForWithout,
+		readPlaybackPreferences,
 		requestPlay,
 		startAt,
 		type Attachment,
@@ -63,10 +60,6 @@
 	import { pressed } from '$lib/shell/shortcuts';
 	import type { Offerable } from '$lib/remote/offer.svelte';
 	import type { components } from '$lib/api/schema';
-
-	/** The registered keys, spelled once. What happens at the end is the dwell's, beside it. */
-	const VOLUME_KEY = 'playback.volume';
-	const MUTED_KEY = 'playback.muted';
 
 	interface Props {
 		id: string;
@@ -144,6 +137,8 @@
 
 	let plan = $state<PlaybackPlan | null>(null);
 	let failed = $state(false);
+	/** A scan that finds the file if it moved is waiting or running, said with `failed`. */
+	let scanQueued = $state(false);
 	let overridden = $state(false);
 	let problem = $state<string | null>(null);
 	/** The ask itself failed, not the file, which is why it is not `failed`. */
@@ -270,6 +265,7 @@
 			duration = 0;
 			problem = null;
 			failed = false;
+			scanQueued = false;
 			overridden = false;
 			// Before the plan goes, while the element is still on the stage. See `heldAcross`.
 			heldAcross = video !== null;
@@ -287,7 +283,7 @@
 	   playable, and the read is announced the way an arrival is. Only then: a player on a file
 	   that is playing has no reason to re-plan because a scan is bringing files in. */
 	whenChanged(arrivals, () => {
-		if (plan?.route === 'unread') void load();
+		if (plan?.route === 'unread' || (failed && scanQueued)) void load();
 	});
 
 	onMount(() => {
@@ -321,6 +317,8 @@
 			const answer = await (takePlan(wanted) ?? planFor(wanted));
 			// A slower answer for a clip already moved on from must not attach itself to this one.
 			if (wanted !== watching) return;
+			if (cannotRead(answer)) return;
+			failed = false;
 			plan = answer;
 			heldAcross = false;
 			onplan?.(answer);
@@ -345,6 +343,8 @@
 		try {
 			const answer = await planForWithout(wanted, file?.vcodec);
 			if (wanted !== watching) return;
+			// The browser's refusal was the file's absence, not the codec: nothing is converted.
+			if (cannotRead(answer)) return;
 			if (answer.route === 'direct') {
 				problem = message;
 				return;
@@ -357,23 +357,18 @@
 		}
 	}
 
-	/* `sections` is a list, not a map; the flattening lives in `$lib/settings-ui/settings`. */
+	/* No copy can be read now: said as a file Sift can't reach, never attached or converted. */
+	function cannotRead(answer: PlaybackPlan): boolean {
+		if (!answer.unreadable) return false;
+		teardown();
+		if (plan !== null) onplan?.(null);
+		[plan, failed, heldAcross, scanQueued] = [null, true, false, answer.scan_queued];
+		return true;
+	}
+
 	async function readPreferences(): Promise<void> {
-		try {
-			const values = await fetchSettingValues();
-
-			const mode = values.get(LOOP_MODE_KEY);
-			dwell.repeats(isLoopMode(mode) ? mode : DEFAULT_LOOP_MODE);
-
-			// One read for both, the level handed to the one place that holds it.
-			loudness.heard(values.get(VOLUME_KEY));
-
-			/* Muted, remembered apart from how loud, so the switch never destroys the level. */
-			const off = values.get(MUTED_KEY);
-			muted = off === true || off === 'true' || off === 1 || off === '1';
-		} catch {
-			// These are niceties. Failing to read them must not stop a video playing.
-		}
+		const off = await readPlaybackPreferences();
+		if (off !== null) muted = off;
 	}
 
 	/* The volume onto the element, whichever of the two arrives second. */
@@ -799,6 +794,7 @@
      The states that are not the video sit over the picture, so the fullscreen element stays. -->
 <PlayerState
 	{failed}
+	{scanQueued}
 	{unasked}
 	{plan}
 	{overridden}

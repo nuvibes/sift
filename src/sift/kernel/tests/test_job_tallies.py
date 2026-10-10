@@ -251,19 +251,7 @@ SELECT type, COUNT(*) AS pending FROM jobs
    AND NOT (state = 'queued' AND NOT ?
             AND (COALESCE(timing, '') = 'quiet'
                  OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
-   AND NOT (state = 'queued' AND NOT ?
-            AND root_id IN (SELECT value FROM json_each(?)) AND COALESCE(timing, '') <> 'now'
-            AND type NOT IN (SELECT value FROM json_each(?)))
  GROUP BY type
-"""
-
-_HELD_OVER_ROWS = """
-SELECT root_id, type, COUNT(*) AS held FROM jobs
- WHERE root_id IN (SELECT value FROM json_each(:families)) AND state = 'queued'
-   AND (run_after IS NULL OR run_after <= :now)
-   AND COALESCE(timing, '') <> 'now'
-   AND type NOT IN (SELECT value FROM json_each(:spared))
- GROUP BY root_id, type
 """
 
 _DUE_OVER_ROWS = """
@@ -301,25 +289,13 @@ async def test_the_pools_reads_from_the_tallies_agree_with_a_count_of_every_row(
         await connection.execute(_EVERY_SHAPE)
     for quiet_open in (True, False):
         for quiet_types in ("[]", '["a"]'):
-            for holds in (
-                (True, "[]", "[]"),
-                (False, '["X"]', '["b"]'),
-                (False, '["X", "Y"]', "[]"),
-            ):
-                args = (quiet_open, quiet_types, *holds)
-                tallied = await database.fetch_all(queue_switchboard._DEMAND_BY_TYPE, args)
-                counted = await database.fetch_all(_DEMAND_OVER_ROWS, args)
-                assert _keyed(tallied, "type", value="pending") == _keyed(
-                    counted, "type", value="pending"
-                ), args
+            args = (quiet_open, quiet_types)
+            tallied = await database.fetch_all(queue_switchboard._DEMAND_BY_TYPE, args)
+            counted = await database.fetch_all(_DEMAND_OVER_ROWS, args)
+            assert _keyed(tallied, "type", value="pending") == _keyed(
+                counted, "type", value="pending"
+            ), args
     for now in (0, 1000, 10_000):
-        for families, spared in (('["X"]', "[]"), ('["X", "Y"]', '["b"]'), ("[]", "[]")):
-            held = {"families": families, "now": now, "spared": spared}
-            tallied = await database.fetch_all(queue_switchboard._HELD_FOR_A_FAMILY, held)
-            counted = await database.fetch_all(_HELD_OVER_ROWS, held)
-            assert _keyed(tallied, "root_id", "type", value="held") == _keyed(
-                counted, "root_id", "type", value="held"
-            ), held
         for everything, alone in ((True, "[]"), (False, '["c"]'), (False, "[]")):
             args2 = {"now": now, "everything": everything, "alone": alone}
             tallied = await database.fetch_all(queue_reads._DUE_BY_TYPE, args2)
@@ -336,11 +312,7 @@ async def test_the_pools_reads_never_walk_the_queue(job_queue: JobQueue) -> None
         await connection.execute(_A_WEEK_SETTLED)
         await connection.execute("ANALYZE")
     for statement, params in (
-        (queue_switchboard._DEMAND_BY_TYPE, (False, '["a"]', False, '["J00050"]', '["b"]')),
-        (
-            queue_switchboard._HELD_FOR_A_FAMILY,
-            {"families": '["J00050"]', "now": 0, "spared": "[]"},
-        ),
+        (queue_switchboard._DEMAND_BY_TYPE, (False, '["a"]')),
         (queue_reads._DUE_BY_TYPE, {"now": 0, "everything": True, "alone": "[]"}),
         (queue_reads._UNFINISHED_BY_TYPE, ()),
         (queue_reads._LIVE_BY_TYPE, ()),

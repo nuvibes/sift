@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -37,6 +38,15 @@ _MOST_ROTATIONS = 50
 _NOT_SEARCHED = frozenset({"timestamp", "level"})
 
 _MOST_SEARCH = 200
+
+#: A search that is a job's id: the whole kept log is searched, and the job's summary leads.
+_A_JOB_ID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}", re.IGNORECASE)
+
+#: A search made only of these is in the raw line exactly as typed, so a block can be passed over.
+_AS_WRITTEN = re.compile(r"[A-Za-z0-9_.:-]+")
+
+#: The line that says the whole of a job (`kernel.jobs.worker_pool._summarize`).
+_SUMMARY = "job.summary"
 
 
 def _parsed(line: str) -> LogLine:
@@ -81,21 +91,40 @@ def _read(path: Path, lines: int, level: str | None = None, search: str | None =
     except OSError:
         return LogPage(lines=[], path=str(path), present=False)
     keep = _keeps(level, search)
+    needle = (search or "").strip()
+    job = needle.upper() if _A_JOB_ID.fullmatch(needle) else None
     tail = newest_matching(
         _with_rotations(path),
         lines,
         keep,
-        # Bounded only when filtered: an unfiltered read has its lines within a few blocks.
-        budget=None if keep is None else SEARCH_BUDGET,
+        # Bounded only when filtered: an unfiltered read has its lines within a few blocks. A job
+        # is looked for in the whole log: its id is in few lines, and those are anywhere.
+        budget=None if keep is None or job is not None else SEARCH_BUDGET,
+        within=needle.casefold().encode() if _AS_WRITTEN.fullmatch(needle) else None,
     )
+    found = [_parsed(one) for one in tail.lines]
+    if job is not None:
+        found = _summary_first(found, job)
     return LogPage(
-        lines=[_parsed(one) for one in tail.lines],
+        lines=found,
         path=str(path),
         size_bytes=size,
         present=True,
         searched_bytes=tail.read_bytes,
         whole=tail.whole,
     )
+
+
+def _summary_first(lines: list[LogLine], job: str) -> list[LogLine]:
+    """A job's lines with its summary first: where its time went, before what it did."""
+    led = [one for one in lines if one.event == _SUMMARY and _record_job(one.raw) == job]
+    return led + [one for one in lines if one not in led]
+
+
+def _record_job(raw: str) -> str | None:
+    record = _record(raw)
+    said = None if record is None else record.get("job_id")
+    return said.upper() if isinstance(said, str) else None
 
 
 def _with_rotations(path: Path) -> list[Path]:

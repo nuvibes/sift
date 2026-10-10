@@ -18,6 +18,7 @@ function listing(over: Partial<Listing> = {}): Listing {
 		nothing_granted: false,
 		writable: false,
 		read_only_mount: true,
+		files: [],
 		...over
 	};
 }
@@ -428,5 +429,39 @@ describe('the scope', () => {
 		await picker.look('granted');
 
 		expect(mock).not.toHaveBeenCalled();
+	});
+});
+
+describe('a chooser of a file', () => {
+	const HERE = '/media/stash';
+	const DATABASE = { name: 'stash-go.sqlite', path: '/media/stash/stash-go.sqlite' };
+
+	it('asks for the names it offers, and holds the file picked while it is still listed', async () => {
+		const fetched = serve({ [HERE]: listing({ path: HERE, files: [DATABASE] }) });
+		const picker = new Picker();
+		picker.names = ['stash-go.sqlite*', 'config.yml'];
+
+		await picker.open(HERE);
+		const asked = new URL(String(fetched.mock.calls[0][0]), 'http://sift.test');
+		expect(asked.searchParams.getAll('files')).toEqual(['stash-go.sqlite*', 'config.yml']);
+		expect(picker.files).toEqual([DATABASE]);
+
+		picker.pick(DATABASE);
+		await picker.open(HERE);
+		expect(picker.file).toEqual(DATABASE);
+
+		await picker.open('/media');
+		expect(picker.file, 'a file stayed chosen in a folder that does not hold it').toBeNull();
+	});
+
+	it('names no file and asks for none when it chooses a folder', async () => {
+		const fetched = serve({});
+		const picker = new Picker();
+
+		await picker.open(HERE);
+
+		const asked = new URL(String(fetched.mock.calls[0][0]), 'http://sift.test');
+		expect(asked.searchParams.has('files')).toBe(false);
+		expect(picker.files).toEqual([]);
 	});
 });

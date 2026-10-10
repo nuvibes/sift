@@ -20,13 +20,15 @@ from sift.kernel.jobs import (
     STOP_TO_CANCEL,
     JobCanceled,
     JobContext,
+    JobHeld,
     JobQueue,
     JobState,
     SystemCapabilities,
+    queue_controls,
     queue_plans,
     recover,
 )
-from sift.slices.library_roots import jobs, sweeping, taking_in
+from sift.slices.library_roots import canceling, jobs, sweeping, taking_in, walking
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.tests.conftest import RecordingReindexer, draw
 from sift.slices.library_roots.tests.test_archive_scan import gallery
@@ -125,6 +127,165 @@ async def test_a_restart_carries_on_from_the_last_checkpoint_and_owes_nothing(
     assert await rows(temp_db, "SELECT job_id FROM job_plan_marks") == []
 
 
+async def test_a_walk_resumed_onto_a_folder_that_does_not_answer_waits_and_owes_nothing(
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    job_queue: JobQueue,
+    capabilities: SystemCapabilities,
+    temp_db: Database,
+    reindexer: RecordingReindexer,
+    small_plan: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The process goes past a checkpoint, and at the restart the library folder is away: the walk
+    is held with its attempt handed back, and the file taken in since the checkpoint has its
+    probe asked for and its index entry, as the checkpoint would have given it."""
+    pictures(root_path, 6)
+    first = await context_for(jobs.SCAN, {"root_id": root.id})
+    taking(monkeypatch, halt_at=5)
+    with pytest.raises(Halt):
+        await jobs.scan(first, settings=settings, service=service, reindexer=reindexer)
+    await temp_db.execute("DELETE FROM jobs WHERE type = ?", (taking_in.PROBE,))
+    reindexer.told.clear()
+
+    await recover(job_queue)
+    again = await claim_again(job_queue, capabilities, first.job.id)
+    monkeypatch.setattr(jobs, "_root_answer", lambda _path: OSError(2, "gone"))
+    with pytest.raises(walking.RootUnreachable) as held:
+        await jobs.scan(again, settings=settings, service=service, reindexer=reindexer)
+
+    assert isinstance(held.value, JobHeld)
+    taken = {row[0] for row in await rows(temp_db, "SELECT id FROM assets")}
+    assert len(taken) == 4
+    probed = await rows(temp_db, "SELECT payload FROM jobs WHERE type = ?", taking_in.PROBE)
+    owed = {json.loads(row[0])["asset_id"] for row in probed}
+    assert len(owed) == 1 and owed <= taken, "the one taken in past the checkpoint"
+    assert owed <= set(reindexer.told)
+
+
+async def test_a_cancel_still_landing_in_chunks_leaves_no_probe_unasked(
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    job_queue: JobQueue,
+    temp_db: Database,
+    reindexer: RecordingReindexer,
+    small_plan: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The walk hears its stop after the cancel's first chunk: its probes still waiting for the
+    later chunks are asked again as surely as the ones already canceled."""
+    pictures(root_path, 3)
+    monkeypatch.setattr(jobs, "PROBE_HANDOUT_BATCH", 1)
+    context = await context_for(jobs.SCAN, {"root_id": root.id})
+
+    monkeypatch.setattr(queue_controls, "_STOP_CHUNK", 1)
+
+    async def canceled_a_row_at_a_time(*_args: Any, **_options: Any) -> None:
+        await job_queue.cancel(context.job.id)
+        context.told_to_stop(STOP_TO_CANCEL)
+        raise JobCanceled(context.job.id)
+
+    monkeypatch.setattr(jobs, "_sweep", canceled_a_row_at_a_time)
+    with pytest.raises(JobCanceled):
+        await jobs.scan(context, settings=settings, service=service, reindexer=reindexer)
+    await canceling.asked()
+
+    asked = await rows(
+        temp_db,
+        "SELECT payload FROM jobs WHERE type = ? AND parent_id IS NULL",
+        taking_in.PROBE,
+    )
+    assets = {row[0] for row in await rows(temp_db, "SELECT id FROM assets")}
+    assert len(assets) == 3
+    assert {json.loads(row[0])["asset_id"] for row in asked} == assets
+
+
+async def test_a_resumed_walk_canceled_while_it_decides_owes_nothing_past_the_mark(
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    job_queue: JobQueue,
+    capabilities: SystemCapabilities,
+    temp_db: Database,
+    reindexer: RecordingReindexer,
+    small_plan: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A file the cut claim took in past its checkpoint has its probe and its index entry even when
+    the resumed claim is canceled before its decide finds it."""
+    pictures(root_path, 6)
+    first = await context_for(jobs.SCAN, {"root_id": root.id})
+    taking(monkeypatch, halt_at=5)
+    with pytest.raises(Halt):
+        await jobs.scan(first, settings=settings, service=service, reindexer=reindexer)
+    await temp_db.execute("DELETE FROM jobs WHERE type = ?", (taking_in.PROBE,))
+    reindexer.told.clear()
+    await recover(job_queue)
+    again = await claim_again(job_queue, capabilities, first.job.id)
+
+    async def canceled_while_deciding(*_args: Any, **_options: Any) -> Any:
+        await job_queue.cancel(again.job.id)
+        again.told_to_stop(STOP_TO_CANCEL)
+        raise JobCanceled(again.job.id)
+
+    monkeypatch.setattr(jobs, "_decide", canceled_while_deciding)
+    with pytest.raises(JobCanceled):
+        await jobs.scan(again, settings=settings, service=service, reindexer=reindexer)
+    await canceling.asked()
+
+    probed = await rows(temp_db, "SELECT payload FROM jobs WHERE type = ?", taking_in.PROBE)
+    owed = {json.loads(row[0])["asset_id"] for row in probed}
+    assert len(owed) == 1, "the one taken in past the checkpoint"
+    assert owed <= set(reindexer.told)
+
+
+async def test_a_walk_canceled_while_it_waits_after_a_restart_owes_nothing(
+    context_for: Context,
+    root: Root,
+    root_path: Path,
+    settings: Settings,
+    service: LibraryService,
+    job_queue: JobQueue,
+    temp_db: Database,
+    reindexer: RecordingReindexer,
+    small_plan: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A walk requeued by a restart and canceled before its next claim: no claim runs to clean up,
+    so its row's cancel asks again for every probe it handed out and for what it took in past its
+    checkpoint, and tells the search of those."""
+    pictures(root_path, 6)
+    first = await context_for(jobs.SCAN, {"root_id": root.id})
+    taking(monkeypatch, halt_at=5)
+    with pytest.raises(Halt):
+        await jobs.scan(first, settings=settings, service=service, reindexer=reindexer)
+    reindexer.told.clear()
+    await recover(job_queue)
+
+    await job_queue.cancel(first.job.id)
+    await canceling.asked()
+
+    taken = {row[0] for row in await rows(temp_db, "SELECT id FROM assets")}
+    assert len(taken) == 4
+    asked = await rows(
+        temp_db,
+        "SELECT payload FROM jobs WHERE type = ? AND state = ? AND parent_id IS NULL",
+        taking_in.PROBE,
+        JobState.QUEUED.value,
+    )
+    assert {json.loads(row[0])["asset_id"] for row in asked} == taken
+    assert len(reindexer.told) == 1, "the one taken in past the checkpoint"
+    assert await rows(temp_db, "SELECT job_id FROM job_plan") == []
+
+
 async def test_a_claim_that_settled_nothing_is_charged_for_the_restart(
     job_queue: JobQueue, handlers: None
 ) -> None:
@@ -163,7 +324,7 @@ async def test_a_cancel_mid_read_leaves_every_file_with_its_probe_and_its_index_
     real = taking_in._take_in
     calls: list[str] = []
 
-    monkeypatch.setattr(jobs, "MAX_PAGE_SIZE", 1)
+    monkeypatch.setattr(canceling, "MAX_PAGE_SIZE", 1)
 
     async def cancel_at_three(context: JobContext, item: Any, **options: Any) -> set[str]:
         calls.append(options["rel_path"])
@@ -184,6 +345,7 @@ async def test_a_cancel_mid_read_leaves_every_file_with_its_probe_and_its_index_
     monkeypatch.setattr(jobs, "_take_in", cancel_at_three)
     with pytest.raises(JobCanceled):
         await jobs.scan(context, settings=settings, service=service, reindexer=reindexer)
+    await canceling.asked()
 
     assets = {row[0] for row in await rows(temp_db, "SELECT id FROM assets")}
     assert len(assets) == 3
@@ -225,6 +387,7 @@ async def test_a_cancel_in_the_sweep_asks_again_for_every_probe_it_took(
     monkeypatch.setattr(jobs, "_sweep", canceled)
     with pytest.raises(JobCanceled):
         await jobs.scan(context, settings=settings, service=service, reindexer=reindexer)
+    await canceling.asked()
 
     waiting = await rows(
         temp_db,

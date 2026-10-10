@@ -48,7 +48,6 @@ from sift.slices.performance.runner import current_settings
 from sift.slices.performance.selftest import Measurement
 from sift.slices.performance.tests.test_runner import a_machine, a_measurement, a_runner, a_store
 from sift.slices.settings_hub.service import SettingsService
-from sift.wiring.workers import _less
 
 pytestmark = pytest.mark.integration
 
@@ -132,6 +131,8 @@ async def test_work_a_benchmark_holds_back_is_paused_says_so_and_its_wait_is_not
     monkeypatch.setattr(
         ledger_module, "time", SimpleNamespace(time=lambda: clock[0], monotonic=time.monotonic)
     )
+    # A run here ends the tick its family drains: the gap a batch rides over is not this test's.
+    monkeypatch.setattr(ledger_module, "RUN_GAP_SECONDS", 0.0)
     pictures, holds = Pictures(), Holds()
     first = FirstBenchmark()
 
@@ -162,7 +163,7 @@ async def test_work_a_benchmark_holds_back_is_paused_says_so_and_its_wait_is_not
     await book.start()
 
     async def tick() -> None:
-        due = _less(await job_queue.due_by_type(), await job_queue.held_for_family_by_type())
+        due = await job_queue.due_by_type()
         await book.settle(due, settings={})
 
     for index in range(24):

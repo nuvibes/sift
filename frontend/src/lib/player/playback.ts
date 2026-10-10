@@ -1,4 +1,5 @@
-/* Getting a plan from the server and attaching it to a video element, testable without a DOM. */
+/* Getting a plan from the server and attaching it to a video element, testable without a DOM, and
+   the account's playback preferences. */
 
 import Hls from 'hls.js';
 // Its own file, so the stream is unpacked off the page's thread; a `blob:` worker is refused.
@@ -11,6 +12,10 @@ import {
 	type Capabilities
 } from '$lib/player/capabilities';
 import type { components } from '$lib/api/schema';
+import { fetchSettingValues } from '$lib/settings-ui/settings';
+import { dwell, LOOP_MODE_KEY } from '$lib/player/dwell.svelte';
+import { loudness } from '$lib/player/loudness.svelte';
+import { DEFAULT_LOOP_MODE, isLoopMode } from '$lib/player/loop-modes';
 
 /** `unread`: nothing attaches until Sift has read the file. */
 export type Route = 'direct' | 'remux' | 'transcode' | 'unread';
@@ -38,6 +43,30 @@ export function planForWithout(
 	codec: string | null | undefined
 ): Promise<PlaybackPlan> {
 	return planFor(id, capabilitiesWithout(codec));
+}
+
+/** The registered keys, spelled once. What happens at the end is the dwell's, beside it. */
+export const VOLUME_KEY = 'playback.volume';
+export const MUTED_KEY = 'playback.muted';
+
+/**
+ * The preferences handed to the places that hold them: the loop to the dwell, the level to the
+ * loudness. Whether it is muted is returned, or null where they could not be read.
+ */
+/* WHY NOT FOLLOWED: the player asks again on `settingChanges` (`Player.svelte`), and it is a screen. */
+export async function readPlaybackPreferences(): Promise<boolean | null> {
+	try {
+		const values = await fetchSettingValues();
+		const mode = values.get(LOOP_MODE_KEY);
+		dwell.repeats(isLoopMode(mode) ? mode : DEFAULT_LOOP_MODE);
+		loudness.heard(values.get(VOLUME_KEY));
+		/* Muted, remembered apart from how loud, so the switch never destroys the level. */
+		const off = values.get(MUTED_KEY);
+		return off === true || off === 'true' || off === 1 || off === '1';
+	} catch {
+		// These are niceties. Failing to read them must not stop a video playing.
+		return null;
+	}
 }
 
 /** Why the element refused a file, as something somebody can act on. */

@@ -417,3 +417,26 @@ def test_no_copy_is_found_in_a_folder_of_parts_alone(tmp_path: Path) -> None:
     (tmp_path / f"a.jpg.1{PART_SUFFIX}").write_bytes(b"x")
     assert identity_places._the_copy_in(tmp_path) is None
     assert identity_places._the_copy_in(tmp_path / "missing") is None
+
+
+async def test_a_starts_tidy_removes_the_take_ins_scratch_and_keeps_the_copies(
+    content_store: ContentStore,
+) -> None:
+    """A process stopped during a copy or an archive's take-in leaves its scratch folder; the
+    next start removes it, and the kept copies the passes read stay."""
+    incoming = content_store._settings.cache_dir / "incoming"
+    for name in ("copy-abc", "archive-def"):
+        (incoming / name).mkdir(parents=True)
+        (incoming / name / "half.jpg").write_bytes(b"part")
+    kept = content_store._settings.cache_dir / ContentStore.LOCAL_COPIES / "A" / "a.jpg"
+    kept.parent.mkdir(parents=True)
+    kept.write_bytes(b"whole")
+
+    assert await content_store.tidy_incoming() == 2
+    assert sorted(one.name for one in incoming.iterdir()) == ["copies"]
+    assert kept.read_bytes() == b"whole"
+    assert await content_store.tidy_incoming() == 0
+
+
+async def test_a_start_with_no_scratch_yet_tidies_nothing(tmp_path: Path) -> None:
+    assert identity_places._tidy_scratch(tmp_path / "never-made") == 0

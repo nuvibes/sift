@@ -4,6 +4,7 @@ quietly carries what it was meant to hide."""
 
 from __future__ import annotations
 
+import json
 import logging
 import socket
 import sys
@@ -1461,6 +1462,21 @@ def test_a_job_s_stages_reads_and_waits_are_filed_to_it_and_nothing_counts_twice
     assert (said["wall_ms"], said["covered_ms"], said["covered_pct"]) == (1000, 750, 75.0)
 
 
+def test_parts_that_ran_together_never_claim_more_than_the_job_s_time() -> None:
+    """A walk's take-ins wait for the writer side by side: the wait is the time some part waited,
+    and the sum of the parts' waits is said beside it."""
+    cost = log_module.JobCost(began=0.0)
+    cost.wrote(0.0, 0.6, 0.65)
+    cost.wrote(0.2, 0.8, 0.85)
+    cost.staged("library.take_in.copy", 0.1, 0.5)
+    cost.staged("library.take_in.copy", 0.3, 0.7)
+    said = cost.summary(ended=1.0)
+    assert said["writer_wait_ms"] == 800 and said["writer_held_ms"] == 100
+    assert said["stages"] == {"library.take_in.copy": 600}
+    assert said["parts_ms"] == {"library.take_in.copy": 800, "writer_wait_ms": 1200}
+    assert said["covered_ms"] <= said["wall_ms"]
+
+
 def test_a_span_past_either_end_of_the_job_counts_only_inside_it() -> None:
     cost = log_module.JobCost(began=1.0)
     cost.staged("early", 0.5, 1.5)
@@ -1479,7 +1495,7 @@ def test_a_long_job_s_spans_are_merged_as_they_come_so_its_record_stays_small(
     cost = log_module.JobCost(began=0.0)
     for n in range(10):
         cost.staged("step", n, n + 1)
-    assert len(cost._spans) <= 5
+    assert len(cost.stages["step"].spans) <= 5 and len(cost._covered.spans) <= 5
     assert cost.summary(ended=10.0)["covered_ms"] == 10_000
 
 
@@ -1493,6 +1509,65 @@ def test_a_timed_block_inside_a_job_is_filed_to_it_and_outside_one_to_nothing() 
             pass
     assert log_module.job_cost() is None
     assert list(cost.stages) == ["inside"]
+
+
+def test_the_job_s_own_record_is_its_handler_time_and_its_per_file_lines_are_counted() -> None:
+    cost = log_module.JobCost(began=0.0)
+    cost.staged("job", 0.0, 0.8)
+    cost.counted("importing.skipped")
+    cost.counted("importing.skipped")
+    said = cost.summary(ended=1.0)
+    assert said["ran_ms"] == 800 and said["stages"] == {}
+    assert said["folded"] == {"importing.skipped": 2}
+
+
+@pytest.mark.parametrize("detailed", [False, True])
+def test_at_normal_a_per_file_line_is_counted_into_its_job_and_a_claim_is_left_to_the_summary(
+    capsys: pytest.CaptureFixture[str], detailed: bool
+) -> None:
+    configure_logging("DEBUG" if detailed else "INFO", redact_personal=True)
+    capsys.readouterr()
+    log = get_logger("test.fold")
+    cost = log_module.JobCost()
+    with log_module.costing(cost):
+        log.info("importing.skipped", asset_id="A")
+        log.info("content.location_missing", asset_id="B")
+        log.info("job.done", job_id="J")
+        log.info("content.ingested", asset_id="C")
+        with timing_hook("job"), timing_hook("probe.verify"):
+            pass
+    log.info("job.claimed", job_id="J")
+    out = capsys.readouterr().out
+    assert "content.ingested" in out and '"stage": "probe.verify"' in out
+    assert ('"stage": "job"' in out) is detailed
+    for event in ("importing.skipped", "content.location_missing", "job.done", "job.claimed"):
+        assert (event in out) is detailed
+    assert cost.summary()["folded"] == {"content.location_missing": 1, "importing.skipped": 1}
+
+
+def test_per_file_lines_outside_a_job_are_said_as_counts_once_a_minute(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    configure_logging("INFO", redact_personal=True)
+    monkeypatch.setattr(log_module, "_folded_outside", {})
+    monkeypatch.setattr(log_module, "_folded_since", time.monotonic())
+    capsys.readouterr()
+    log = get_logger("test.fold")
+    for _ in range(3):
+        log.info("job.enqueue_deduped", job_type="scan")
+    log.info("something.else")
+    assert "log.folded" not in capsys.readouterr().out
+    monkeypatch.setattr(log_module, "_folded_since", time.monotonic() - 61)
+    log.info("something.else")
+    lines = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    folded = [one for one in lines if one["event"] == "log.folded"]
+    assert len(folded) == 1 and folded[0]["counts"] == {"job.enqueue_deduped": 3}
+    assert folded[0]["seconds"] >= 60
+    # Said once: the counts start again.
+    log.info("something.else")
+    assert "log.folded" not in capsys.readouterr().out
+    log_module._say_folded()
+    assert "log.folded" not in capsys.readouterr().out
 
 
 def test_a_storage_wait_is_filed_to_the_job_it_was_for() -> None:

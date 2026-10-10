@@ -43,6 +43,7 @@ from sift.kernel.jobs.registry import (
     _FOLLOWS,
     _HANDLERS,
     _HOLDS,
+    _KEEPS_URGENCY,
     _NAMES,
     _NOT_GATED,
     _TRAILS,
@@ -60,6 +61,7 @@ from sift.kernel.jobs.registry import (
     hold_on,
     in_claim_order,
     job_name,
+    keeps_its_urgency,
     products_named,
     register_handler,
     registered_alone,
@@ -71,7 +73,7 @@ from sift.kernel.jobs.registry import (
     registered_urgency,
     unlisted_job_types,
 )
-from sift.kernel.jobs.retrying import backoff, cannot_change
+from sift.kernel.jobs.retrying import backoff, cannot_change, is_database_busy
 from sift.kernel.jobs.tuning import (
     HEARTBEAT_SECONDS,
     PROGRESS_INTERVAL_SECONDS,
@@ -101,6 +103,7 @@ __all__ = [
     "_FOLLOWS",
     "_HANDLERS",
     "_HOLDS",
+    "_KEEPS_URGENCY",
     "_NAMES",
     "_NOT_GATED",
     "_NO_HANDLER",
@@ -122,6 +125,7 @@ __all__ = [
     "hold_on",
     "in_claim_order",
     "job_name",
+    "keeps_its_urgency",
     "products_named",
     "register_handler",
     "registered_alone",
@@ -142,6 +146,25 @@ _NO_WORKSPACES = (
     "writing. Pass capabilities=SystemCapabilities(..., workspaces=Workspaces(path)) to "
     "WorkerPool; the composition root does this at boot (sift/wiring/workers.py)."
 )
+
+#: How long a finished job's own settle write waits out a database another writer holds.
+SETTLE_PATIENCE_SECONDS = 60.0
+
+
+async def _through_a_busy_database[T](job: Job, write: Callable[[], Awaitable[T]]) -> T:
+    """`write`, again after a doubling pause while the database is held, for up to
+    `SETTLE_PATIENCE_SECONDS`: finished work is not run twice for a lock its settle met."""
+    began, pause = time.monotonic(), 0.25
+    while True:
+        try:
+            return await write()
+        except Exception as error:
+            if not is_database_busy(error) or time.monotonic() - began >= SETTLE_PATIENCE_SECONDS:
+                raise
+        log.info("job.settle_waited", job_id=job.id, seconds=round(time.monotonic() - began, 2))
+        await asyncio.sleep(pause)
+        pause = min(pause * 2, 8.0)
+
 
 _PAUSED_MID_JOB = "stopped part way through because somebody paused it"
 
@@ -314,12 +337,17 @@ class JobContext:
             options.setdefault("at", self.job.timing)
         return await self.queue.enqueue(job_type, payload, parent_id=self.job.id, **options)
 
-    async def hold_own_family(self, *, spared: Sequence[str]) -> None:
-        """Keep this job's family waiting until `lift_own_hold` or the job ends."""
-        await self.queue.hold_family(self.job.id, spared=spared)
-
-    def lift_own_hold(self) -> bool:
-        return self.queue.lift_hold(self.job.id)
+    async def enqueue_children(
+        self, job_type: str, payloads: Sequence[Mapping[str, Any]], *, priority: int
+    ) -> list[str]:
+        """`enqueue_child` of one type for several payloads, in one write."""
+        mine = family_of(self.job.type)
+        same = job_type == self.job.type if mine is Family.OTHER else family_of(job_type) is mine
+        if same:
+            self._handed_on += len(payloads)
+        at = self.job.timing if family_of(job_type) is mine else None
+        children = [(job_type, payload) for payload in payloads]
+        return await self.queue.enqueue_children(self.job.id, children, priority=priority, at=at)
 
     async def raise_if_canceled(self) -> None:
         """Stop if the job was cancelled or taken away; also a heartbeat, refreshing `stopping`."""
@@ -480,6 +508,8 @@ class WorkerPool:
         A job cut off by the shutdown gets its attempt back: the interruption was our own.
         """
         self._stop.set()
+        # Before the wait: a stop cut short by its grace or a watchdog still charges nothing.
+        await self._queue.mark_stopping()
         tasks = [worker.task for worker in (*self._workers, *self._retiring)]
         if self._watchdog_task is not None:
             tasks.append(self._watchdog_task)
@@ -664,7 +694,7 @@ class WorkerPool:
         if runner.cancelled():
             # The job was cancelled or taken back: write nothing.
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
-            _summarize(job, cost, "lost")
+            _summarize(job, cost, "lost", worker_id)
             await self._sweep_workspace(context)
             return
 
@@ -679,7 +709,7 @@ class WorkerPool:
                 pressed=pressed_job(job.type, job.payload, context.pressed_by, job.started_at),
                 noted=context.noted,
             )
-        _summarize(job, cost, outcome)
+        _summarize(job, cost, outcome, worker_id, runner.exception())
         await self._sweep_workspace(context)
 
     async def _pressed_by(self, job: Job) -> str | None:
@@ -720,35 +750,9 @@ class WorkerPool:
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
             return "lost"
 
-        paused = False
-        held = False
-        state: JobState | None = None
-        outcome = "done"
-        if isinstance(error, JobPaused):
-            landed = await self._queue.pause_running(
-                job.id, worker_id, str(error) or _PAUSED_MID_JOB
-            )
-            paused = landed
-        elif error is None:
-            # Finished work is done, whatever pause was asked meanwhile.
-            landed = await self._queue.complete(job.id, worker_id, pressed=pressed)
-        elif isinstance(error, JobBlocked):
-            landed = await self._queue.block(job.id, worker_id, str(error) or _WAITING_FOR_LOGIN)
-            outcome = "blocked"
-        elif (hold := held_for(error)) is not None:
-            held = await self._queue.hold(job.id, worker_id, str(error), retry_in=hold)
-            landed = held
-            outcome = "held"
-        elif isinstance(error, JobFailedPermanently) or cannot_change(error):
-            state = await self._queue.fail(job.id, worker_id, str(error), permanent=True)
-            landed = state is not None
-        else:
-            # A pause asked since the last heartbeat makes `fail` answer `paused`.
-            failed = f"{type(error).__name__}: {error}"
-            wait = backoff(job.type, job.attempts, error)
-            state = await self._queue.fail(job.id, worker_id, failed, retry_in=wait)
-            landed = state is not None
-            paused = state is JobState.PAUSED
+        landed, paused, held, state, outcome = await _through_a_busy_database(
+            job, lambda: self._settle_row(job, worker_id, error, pressed)
+        )
         outcome = _settled_as(outcome, paused=paused, state=state)
 
         if not landed:
@@ -769,12 +773,45 @@ class WorkerPool:
                 ok=error is None,
                 units=units,
                 arrived=arrived,
-                failed_with=f"{type(error).__name__}: {error}"
-                if state is JobState.FAILED
-                else None,
+                failed_with=_stored(error) if state is JobState.FAILED and error else None,
                 noted=noted,
             )
         return outcome
+
+    async def _settle_row(
+        self, job: Job, worker_id: str, error: BaseException | None, pressed: Pressed | None
+    ) -> tuple[bool, bool, bool, JobState | None, str]:
+        """The one write that settles a finished job's row: (landed, paused, held, state, word)."""
+        paused = False
+        held = False
+        state: JobState | None = None
+        outcome = "done"
+        if isinstance(error, JobPaused):
+            landed = await self._queue.pause_running(
+                job.id, worker_id, str(error) or _PAUSED_MID_JOB
+            )
+            paused = landed
+        elif error is None:
+            # Finished work is done, whatever pause was asked meanwhile.
+            landed = await self._queue.complete(job.id, worker_id, pressed=pressed)
+        elif isinstance(error, JobBlocked):
+            landed = await self._queue.block(job.id, worker_id, str(error) or _WAITING_FOR_LOGIN)
+            outcome = "blocked"
+        elif (hold := held_for(error)) is not None:
+            held = await self._queue.hold(job.id, worker_id, str(error), retry_in=hold)
+            landed = held
+            outcome = "held"
+        elif isinstance(error, JobFailedPermanently) or cannot_change(error):
+            state = await self._queue.fail(job.id, worker_id, _stored(error), permanent=True)
+            landed = state is not None
+        else:
+            # A pause asked since the last heartbeat makes `fail` answer `paused`.
+            failed = f"{type(error).__name__}: {error}"
+            wait = backoff(job.type, job.attempts, error)
+            state = await self._queue.fail(job.id, worker_id, failed, retry_in=wait)
+            landed = state is not None
+            paused = state is JobState.PAUSED
+        return landed, paused, held, state, outcome
 
     async def _account(
         self,
@@ -823,13 +860,13 @@ class WorkerPool:
                 structlog.contextvars.bound_contextvars(
                     job_id=context.job.id, job_type=context.job.type
                 ),
+                # Its time is the summary's `ran_ms`; the line itself only at Detailed (`log._fold`).
                 timing_hook("job", job_type=context.job.type, job_id=context.job.id),
             ):
                 await handler(context)
         finally:
             CURRENT_FAMILY.reset(token)
             ASKED_AT.reset(asked_at)
-            self._queue.lift_hold(context.job.id)
 
     async def _beat(self, context: JobContext, wake: asyncio.Event | None = None) -> None:
         """Keep saying the job is alive, and return the moment it is no longer ours.
@@ -853,6 +890,14 @@ class WorkerPool:
             context.told_to_stop(beat.stop)
 
 
+def _stored(error: BaseException) -> str:
+    """How a failure is written down: a handler's own sentence as written, anything else under its
+    kind's name, so a screen can tell the two apart (`failure_words.in_plain_words`)."""
+    if isinstance(error, JobFailedPermanently):
+        return str(error)
+    return f"{type(error).__name__}: {error}"
+
+
 def _queued_s(job: Job) -> int | None:
     """Seconds from when the job could first be claimed to its claim."""
     if job.started_at is None:
@@ -861,19 +906,41 @@ def _queued_s(job: Job) -> int | None:
     return max(0, job.started_at - ready)
 
 
-def _summarize(job: Job, cost: JobCost, outcome: str) -> None:
-    """The job's one line: what became of it and where its time went."""
+def _summarize(
+    job: Job, cost: JobCost, outcome: str, worker_id: str, error: BaseException | None = None
+) -> None:
+    """The job's one line: what became of it and where its time went. At Normal it stands for its
+    claim and its settle too (`SAID_BY_THE_SUMMARY`), so it carries their fields: the worker, the
+    claim's moment, the attempt; the line's own time is the settle's. A job that raised names the
+    error's class and the frame that raised it, which `job.failed` and `job.retrying` do not."""
     asset_id = job.payload.get("asset_id")
+    raised = {} if error is None else {"error": type(error).__name__, "where": _where(error)}
     log.info(
         "job.summary",
         job_id=job.id,
         job_type=job.type,
         asset_id=asset_id if isinstance(asset_id, str) else None,
+        worker_id=worker_id,
         attempt=job.attempts,
         outcome=outcome,
+        claimed_at=job.started_at,
         queued_s=_queued_s(job),
+        **raised,
         **cost.summary(),
     )
+
+
+def _where(error: BaseException) -> str | None:
+    """The innermost frame of the error's traceback: its file under `sift`, its line, its function."""
+    trace = error.__traceback__
+    if trace is None:
+        return None
+    while trace.tb_next is not None:
+        trace = trace.tb_next
+    code = trace.tb_frame.f_code
+    parts = Path(code.co_filename).parts
+    inside = parts[len(parts) - parts[::-1].index("sift") :] if "sift" in parts else parts[-1:]
+    return f"{'/'.join(inside)}:{trace.tb_lineno} {code.co_name}"
 
 
 def _directories_under(root: Path) -> list[str]:

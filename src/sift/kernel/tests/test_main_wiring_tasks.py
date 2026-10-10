@@ -633,11 +633,3 @@ async def test_a_guest_dials_through_the_tunnel_chosen_for_joining_and_never_ano
 
     assert await chosen() == "t1"
     assert await unchosen() is None
-
-
-def test_work_a_familys_hold_keeps_waiting_is_not_due() -> None:
-    from sift.wiring import workers
-
-    due = workers._less({"probe": 5, "scan": 1, "thumbnail": 2}, {"probe": 5, "thumbnail": 1})
-
-    assert due == {"scan": 1, "thumbnail": 1}

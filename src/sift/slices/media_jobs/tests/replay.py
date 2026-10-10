@@ -276,7 +276,6 @@ class _State:
             held={},
             kinds=kinds,
             unread=FilesToRead(uncounted=int(self.uncounted)),
-            scan_held={t: n for t, n in self.waiting.items() if self.held and t != "probe"},
             benchmark=bench,
             pool_bound=bound,
         )

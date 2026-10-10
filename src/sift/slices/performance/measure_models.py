@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Each installed model, timed through the feature's own model process on its set device, one file
-of decoded frames at a time and then several. Nothing is downloaded."""
+"""Each installed model, timed through the feature's own model process on its set device, one file's
+runs at a time and then several. Nothing is downloaded."""
 
 from __future__ import annotations
 
@@ -123,6 +123,8 @@ class ModelCurve:
     memory_bytes: int | None = None
     """What loading the models and a first file took of the device's memory, and the card's."""
     card_memory_bytes: int | None = None
+    frames: int = 0
+    """The frames one file's runs stand for, each decoded at a seek's price (`prices`)."""
 
     @property
     def best(self) -> ModelLevel | None:
@@ -366,6 +368,20 @@ async def one_file(
     return True
 
 
+async def model_file(
+    ready: _Ready, one: ModelPass, *, source: Path, seconds: int, settings: Settings
+) -> bool:
+    """One file's model runs alone. True when they finished. Timed with its decode, the test clip's
+    seeks were nine tenths of a file, so the decode is priced from the decoder's seek instead."""
+    del source, seconds, settings
+    try:
+        await asyncio.to_thread(_ask, ready, one)
+    except (DeviceUnavailable, WeightError, RuntimeError, OSError) as error:
+        log.info("performance.models.file_failed", model=one.name, error=str(error))
+        return False
+    return True
+
+
 # --- the ladder -----------------------------------------------------------------------------------
 
 
@@ -394,11 +410,17 @@ async def measure_pass(
     busy: Callable[[], bool] = others_busy,
     watch: Callable[[], Watch] = MemoryWatch,
     load: Callable[[ModelPass], _Ready] = _load,
-    file: Callable[..., Awaitable[bool]] = one_file,
+    file: Callable[..., Awaitable[bool]] = model_file,
     deadline: Deadline | None = None,
 ) -> ModelCurve:
     """Time one pass at each width. Never raises: what could not be measured is the answer."""
-    curve = ModelCurve(name=one.name, family=one.family, device=one.device, share_key=one.share_key)
+    curve = ModelCurve(
+        name=one.name,
+        family=one.family,
+        device=one.device,
+        share_key=one.share_key,
+        frames=one.moments,
+    )
     if not all(one.installed(ask.weight) for ask in one.asks):
         return replace(curve, failed=NOT_INSTALLED)
     if source is None:
@@ -489,11 +511,12 @@ def recommend_share(
     )
 
 
-def prices(curves: Sequence[ModelCurve]) -> dict[str, float]:
-    """Seconds of one worker for one file, summed by family: a pass's price before any history."""
+def prices(curves: Sequence[ModelCurve], *, seek_seconds: float = 0.0) -> dict[str, float]:
+    """Seconds of one worker for one file, summed by family: a pass's price before any history,
+    its model's runs and a seek for each of its frames."""
     summed: dict[str, float] = {}
     for one in curves:
         each = one.seconds_per_file
         if each is not None:
-            summed[one.family] = summed.get(one.family, 0.0) + each
+            summed[one.family] = summed.get(one.family, 0.0) + each + one.frames * seek_seconds
     return summed

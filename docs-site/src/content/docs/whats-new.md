@@ -10,6 +10,40 @@ What's new lists what each release of Sift changes for you, newest first. To see
 
 ### What changed for you
 
+- **Library tasks: correct, fast and fault tolerant.** A folder scan writes its plan and
+  resumes from where it was: a restart no longer costs it an attempt, and every file it had taken
+  in keeps its probe and its place in Search (one kill mid-scan: 101 s to the next new file before,
+  31 after; 100 files left out before, 0 after). A cancel leaves nothing owed, whether the scan was
+  running or waiting. A library folder that stops answering holds the scan and carries on when it
+  answers again, instead of failing it. A full disk is a wait, not a failure.
+- **Imports read each file once.** On a network share a file is copied into Sift's cache once and
+  every task reads that copy; a picture is probed by one ffprobe and decoded once for its tile, its
+  fingerprints and the three Identify passes (a photograph's import reads about 2 times its size
+  where it read 6, and launches 2 tools where it launched 6); an archive's pictures are kept for
+  their passes. A scan you press, a folder you move or a file you name reads ahead of a
+  whole-library scan.
+- **The queue claims by kind.** The work queue seeks each kind's next file instead of walking its
+  rows (the claim 119 ms to 0.03 ms at 284,000 queued), no task waits for a whole scan to finish,
+  idle workers wake for work they can take, a settle such as face grouping runs during the run that
+  asked for it, and the duplicates pass compares nothing when no fingerprint changed (105 s to 0).
+- **The screens go first.** A task's statements yield to a request you are waiting on, and the
+  Tasks page's long reads are kept and refreshed behind the answer.
+- **Time left says "Measuring." until it can say a figure**, priced from a pace measured across
+  runs, never from another device's profile; a run is its batch; a family's workers are the ones it
+  can use.
+- **Failures are classified before a retry.** Broken bytes are refused once with the decoder's own
+  words; a disk or share error, a busy database and a tool that ran too long wait before trying
+  again; a missing copy is a hold when its share is away and a refusal when its folder answers.
+- **Browse no longer flashes while an import runs**, and a file that was moved says so in the
+  player ("Sift can't reach this file where it last saw it", with the scan that finds it named)
+  instead of blaming its codec.
+- **One chooser for Add a folder and Migrate from Stash**, with Browse this device in the window
+  and in a browser; Migrate from Stash chooses the database file itself.
+- **The benchmark prices Faces and Smart Search from their own runs**, reads small files and times
+  the listing, and the Performance pane shows Sift's achieved rate against what a drive or share
+  can give.
+- **The log keeps what a diagnosis needs**: one summary line per task at Normal, the per-file
+  lines at Detailed, and a job's bytes counted truly.
 - **Insights counts what happened.** A Theater wall counts one hour per hour its cells played,
   never its idle span; time falls on the day it was spent; a sitting stops counting after 15 minutes
   of a picture or three plays of a video; files, People and Sites viewed leave a wall's cells out;

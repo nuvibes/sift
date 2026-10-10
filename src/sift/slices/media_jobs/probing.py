@@ -19,6 +19,7 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.ingress import (
     IngressRejected,
     IngressResult,
+    Kind,
     Origin,
     verify_decodable,
     verify_ingress,
@@ -428,8 +429,8 @@ async def _verified(
     still indexed. `Origin.SCAN`, because that is where the file is now, and a scanned file is
     never moved when it is refused: it is the person's file, indexed where it lies.
 
-    A still read where it lies is checked through the reading's own answer, returned with the
-    result: one decode of the picture rather than two.
+    A still or a video read where it lies is checked through the reading's own answer, returned
+    with the result: one ffprobe rather than two.
     """
     answer: dict[str, Any] | None = None
     try:
@@ -454,11 +455,11 @@ async def _verified(
 
 
 def _read_with_the_check(source: Source, checked: IngressResult) -> bool:
-    """Whether the gate's decode check is asked of the reading itself: a still the gate takes as a
-    still, whose reading is of the file the gate read."""
+    """Whether the gate's decode check is asked of the reading itself: a still or a video the gate
+    takes as one, whose reading is of the file the gate read."""
     return (
-        source.asset.media_type == _IMAGE
-        and str(checked.media.kind) == _IMAGE
+        source.asset.media_type in (_IMAGE, Kind.VIDEO.value)
+        and str(checked.media.kind) == source.asset.media_type
         and checked.media.name != "webp-animated"
         and _described(source) == source.original
     )

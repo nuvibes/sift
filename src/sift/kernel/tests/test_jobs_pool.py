@@ -1868,7 +1868,16 @@ async def test_each_job_ends_with_one_line_saying_what_became_of_it_and_where_it
     # The settle is a write of the job's own, behind whoever held the writer.
     assert isinstance(done["writes"], int) and done["writes"] >= 1
     assert done["covered_ms"] <= done["wall_ms"]  # type: ignore[operator]
+    # It stands for the claim's and the settle's lines at Normal, so it carries their fields.
+    assert isinstance(done["worker_id"], str) and isinstance(done["claimed_at"], int)
+    assert 15 <= done["ran_ms"] <= done["wall_ms"]  # type: ignore[operator]
     assert bound == [{"job_id": ok, "job_type": "sum_ok"}]
+    # A job that raised says what and where, which its failure's own line does not.
+    broke = [s for s in summaries if s["job_type"] == "sum_broken"]
+    assert {s["error"] for s in broke} == {"RuntimeError"}
+    assert all(str(s["where"]).startswith("kernel/tests/test_jobs_pool.py:") for s in broke)
+    assert all(str(s["where"]).endswith(" broken") for s in broke)
+    assert "error" not in done and "where" not in done
     assert all(s["asset_id"] is None for s in summaries if s["job_type"] != "sum_ok")
 
 

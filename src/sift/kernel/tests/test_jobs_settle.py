@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -13,13 +14,16 @@ from sift.kernel.jobs import (
     MAX_ERROR_CHARACTERS,
     JobQueue,
     JobState,
+    WorkerPool,
     folded_state,
     recover,
     sweep,
+    worker_pool,
 )
 from sift.kernel.tests.jobs_helpers import (
     OTHER_WORKER,
     WORKER,
+    _a_job,
     noop_handler,
 )
 from sift.testing.fixtures import FakeClock
@@ -731,6 +735,33 @@ async def test_boot_recovery_puts_a_running_job_back(job_queue: JobQueue) -> Non
 
 
 @pytest.mark.integration
+async def test_an_orderly_stop_cut_short_charges_no_attempt_and_the_next_claim_clears_the_note(
+    job_queue: JobQueue,
+) -> None:
+    """The pool marks every running row the moment a stop begins; a boot after a stop that never
+    reached its release (a grace run out, a watchdog) hands the attempt back by that mark, and the
+    note goes at the next claim."""
+    job_id = await job_queue.enqueue(noop_handler())
+    await job_queue.claim(WORKER)
+    assert await job_queue.mark_stopping() == [job_id]
+
+    requeued, failed = await recover(job_queue)
+
+    assert requeued == [job_id] and failed == []
+    job = await job_queue.get(job_id)
+    assert job is not None
+    assert job.state is JobState.QUEUED
+    assert job.attempts == 0  # the stop was ours, not the job's
+
+    await job_queue.claim(WORKER)
+    job = await job_queue.get(job_id)
+    assert job is not None
+    assert job.state is JobState.RUNNING
+    assert job.note is None
+    assert job.attempts == 1
+
+
+@pytest.mark.integration
 async def test_boot_recovery_leaves_finished_and_waiting_jobs_alone(job_queue: JobQueue) -> None:
     done = await job_queue.enqueue(noop_handler())
     await job_queue.claim(WORKER)
@@ -1205,3 +1236,66 @@ async def test_a_failure_message_never_carries_a_credential(job_queue: JobQueue)
     assert job is not None
     assert job.error is not None
     assert "abc.DEF-123_ghi" not in job.error
+
+
+@pytest.mark.integration
+async def test_a_finished_jobs_settle_waits_out_a_held_database_and_is_done_once(
+    job_queue: JobQueue, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A completion that meets another writer's lock is written once the lock goes: the row is
+    done on its first attempt, never left running for the watchdog to run it again."""
+    import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the stand-in writer only)
+
+    noop_handler("finished")
+    job_id = await job_queue.enqueue("finished")
+    job = await job_queue.claim(WORKER)
+    assert job is not None and job.id == job_id
+    waits: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def counted(seconds: float) -> None:
+        waits.append(seconds)
+        await real_sleep(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", counted)
+    other = sqlite3.connect(tmp_path / "test.sqlite3", timeout=0, isolation_level=None)
+    other.execute("BEGIN IMMEDIATE")
+    try:
+        settling = asyncio.create_task(
+            WorkerPool(job_queue, concurrency=1)._record(job, WORKER, None)
+        )
+        await real_sleep(6.0)
+        assert not settling.done(), "the write waits for the lock rather than giving up"
+    finally:
+        other.execute("ROLLBACK")
+        other.close()
+    assert await settling == "done"
+    row = await job_queue.get(job_id)
+    assert row is not None and row.state is JobState.DONE and row.attempts == 1
+    assert waits, "it waited at least once"
+
+
+@pytest.mark.integration
+async def test_a_settle_write_gives_up_on_anything_but_a_busy_database(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error class only)
+
+    tries: list[int] = []
+
+    async def broken() -> None:
+        tries.append(1)
+        raise sqlite3.OperationalError("no such table: jobs")
+
+    with pytest.raises(sqlite3.OperationalError):
+        await worker_pool._through_a_busy_database(_a_job(), broken)
+    assert tries == [1]
+
+    async def locked() -> None:
+        tries.append(1)
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(worker_pool, "SETTLE_PATIENCE_SECONDS", 0.0)
+    with pytest.raises(sqlite3.OperationalError):
+        await worker_pool._through_a_busy_database(_a_job(), locked)
+    assert tries == [1, 1], "past its patience it gives up after one try"

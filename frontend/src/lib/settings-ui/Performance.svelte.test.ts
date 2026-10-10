@@ -1204,6 +1204,37 @@ describe('testing this machine', () => {
 		expect(onDrive).not.toContain('Files read per share');
 	});
 
+	it('shows what each storage can give beside what Sift achieves from it', async () => {
+		const share = ON_A_SHARE.measurement?.storages?.[0];
+		await withTest({
+			...ON_A_SHARE,
+			measurement: {
+				...ON_A_SHARE.measurement,
+				storages: [
+					{
+						...share,
+						ceiling_mb_per_second: 23,
+						small_files_per_second: 4.5,
+						small_mb_per_second: 3,
+						listed_per_second: 1650,
+						achieved_mb_per_second: 11.5,
+						achieved_percent: 50,
+						read_megabytes: 2500
+					},
+					{ ...share, storage: 'D:\\', label: 'drive D:', remote: true, read_megabytes: null }
+				]
+			}
+		} as unknown as SelfTest);
+
+		const [read, unread] = [
+			...(panel()?.querySelectorAll('[data-testid="self-test-storage-rates"]') ?? [])
+		].map((one) => (one.textContent ?? '').replace(/\s+/g, ' ').trim());
+		expect(read).toBe(
+			"It can give up to 23 MB/s. Small files, read whole: 4.5 a second (3 MB/s). Lists about 1,650 files and folders a second. Sift's own reads here: 11.5 MB/s over its last ten minutes of reading, 50% of what it can give. 2,500 MB read since Sift started."
+		);
+		expect(unread).toBe("Sift hasn't read from it since it started.");
+	});
+
 	it('says nothing of the share setting where only a local drive was measured', async () => {
 		const share = ON_A_SHARE.measurement?.storages?.[0];
 		await withTest({

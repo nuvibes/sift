@@ -24,7 +24,7 @@ from sift.kernel.jobs.recovery import _INTERRUPTED
 from sift.kernel.jobs.worker_pool import _NO_HANDLER
 from sift.kernel.subprocess import NEVER_STARTED
 from sift.kernel.tests.test_fetch import FAILURES, FakeResponse, FakeSession, Unreached
-from sift.slices.library_roots import jobs
+from sift.slices.library_roots import jobs, walking
 from sift.slices.library_roots.walking import RootUnreachable
 
 #: Stored errors in the shapes the queue keeps them, each with the kind it is.
@@ -145,14 +145,46 @@ async def test_a_library_folder_that_did_not_answer_is_said_as_one_whatever_the_
     monkeypatch.setattr(jobs, "_root_answer", lambda _: OSError(2, why))
     with pytest.raises(RootUnreachable) as raised:
         await jobs._walk_for_scan(cast(Any, None), "root", tmp_path, tmp_path, None)
-    found = kind_of(str(raised.value))
-    assert found is not None
-    assert found.name == "library-unreachable"
+    said = str(raised.value)
+    assert said.startswith("Waiting for the library folder to answer") and why in said
+    assert raised.value.retry_in == walking.ROOT_WAIT, "held, not failed: it asks again"
 
 
 def test_an_error_no_kind_knows_says_the_tool_failed_and_where_its_words_are() -> None:
     assert kind_of("ValueError: the query needs exactly one marker") is None
     assert in_plain_words("ValueError: the query needs exactly one marker") == OTHERWISE
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The connection to them was lost.",
+        "That folder isn't inside one Sift has been given.",
+        "  The Stash copy has gone. Read the database again.\n",
+    ],
+)
+def test_a_handler_s_own_sentence_is_said_as_it_was_written(sentence: str) -> None:
+    """A handler that gave up wrote its words for a person (`JobFailedPermanently`), stored with no
+    kind's name in front; only an exception's or a tool's text is said as the tool failing."""
+    assert kind_of(sentence) is None
+    assert in_plain_words(sentence) == sentence.strip()
+
+
+def test_an_exception_s_text_is_never_said_as_written() -> None:
+    assert (
+        in_plain_words("FFmpegError: 'ffmpeg.exe' failed with exit code 1: bad option") == OTHERWISE
+    )
+    assert in_plain_words("sift.kernel.subprocess.ToolFailed: oops") == OTHERWISE
+    assert in_plain_words("   ") == OTHERWISE
+
+
+def test_how_a_failure_is_stored_tells_a_handler_s_sentence_from_an_exception() -> None:
+    from sift.kernel.jobs import JobFailedPermanently
+    from sift.kernel.jobs.worker_pool import _stored
+
+    said = "The codes didn't match, so nothing was sent."
+    assert in_plain_words(_stored(JobFailedPermanently(said))) == said
+    assert in_plain_words(_stored(RuntimeError("the handler broke"))) == OTHERWISE
 
 
 def test_no_plain_words_carry_a_tool_name_an_address_or_a_bracket() -> None:
@@ -206,3 +238,11 @@ def test_a_rows_one_line_is_the_kinds_words_or_the_tools_last_line() -> None:
     assert in_one_line("") == OTHERWISE
     long = in_one_line("x" * 1000)
     assert len(long) == 240 and long.endswith("...")
+
+
+def test_a_library_folder_waited_on_and_one_that_failed_before_are_each_said_truly() -> None:
+    waiting = kind_of("RootUnreachable: Waiting for the library folder to answer (gone). Nothing")
+    failed = kind_of("the library folder did not answer (gone)")
+    assert waiting is not None and waiting.name == "library-unreachable"
+    assert "carries on" in waiting.words
+    assert failed is not None and failed.name == "library-unreachable-failed"

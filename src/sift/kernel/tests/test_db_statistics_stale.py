@@ -113,6 +113,28 @@ async def test_a_partial_index_counted_empty_is_stale_only_once_it_holds_a_row(
 
 
 @pytest.mark.unit
+async def test_an_index_made_after_the_last_analyze_makes_its_table_stale(
+    database: Database,
+) -> None:
+    """A catalog step that adds an index leaves it with no statistics row, and the planner then
+    seeks through an older index: the table is stale until it is analyzed again."""
+    async with database.write() as connection:
+        await connection.execute(
+            "CREATE TABLE later (id INTEGER PRIMARY KEY, kind TEXT, prio INTEGER)"
+        )
+        await connection.executemany(
+            "INSERT INTO later (kind, prio) VALUES (?, ?)", [("a", n) for n in range(50)]
+        )
+        await connection.execute("ANALYZE later")
+    assert "later" not in await _stale(database)
+    async with database.write() as connection:
+        await connection.execute("CREATE INDEX ix_later_kind ON later (kind, prio)")
+    assert "later" in await _stale(database)
+    async with database.write() as connection:
+        await connection.execute("ANALYZE later")
+    assert "later" not in await _stale(database)
+
+
 async def test_the_boot_refresh_analyzes_what_is_stale_and_the_plan_follows_the_file(
     database: Database,
 ) -> None:

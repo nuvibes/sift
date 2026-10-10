@@ -152,6 +152,50 @@ def test_the_media_area_lists_the_folders_that_were_handed_over(
     ]
 
 
+def test_the_top_level_is_every_folder_sift_has_library_folders_and_grants(
+    client: TestClient, media: Path, tmp_path: Path
+) -> None:
+    """A library folder added by its typed path is no grant, and is still listed and walkable."""
+    typed = tmp_path / "typed"
+    (typed / "inside").mkdir(parents=True)
+    sign_in(client, "admin")
+    execute_blocking(
+        client.app.state.database.path,  # type: ignore[attr-defined]
+        "INSERT INTO library_roots (id, name, abs_path, created_at) VALUES (?, ?, ?, ?)",
+        (new_id(), "typed", str(typed), 1_700_000_000),
+    )
+
+    top = client.get(BROWSE).json()
+    assert [entry["name"] for entry in top["entries"]] == ["library", "tv", "typed"]
+
+    inside = client.get(BROWSE, params={"path": str(typed)}).json()
+    assert [entry["name"] for entry in inside["entries"]] == ["inside"]
+
+
+def test_a_file_chooser_is_told_the_files_matching_its_names_and_no_others(
+    client: TestClient, media: Path
+) -> None:
+    library = media / "library"
+    for name in ("stash-go.sqlite", "stash-go.sqlite.20260101_120000", "config.yml", "a.mp4"):
+        (library / name).write_bytes(b"x")
+    sign_in(client, "admin")
+
+    asked = client.get(
+        BROWSE, params={"path": str(library), "files": ["stash-go.sqlite*", "CONFIG.YML"]}
+    ).json()
+    plain = client.get(BROWSE, params={"path": str(library)}).json()
+
+    assert [entry["name"] for entry in asked["files"]] == [
+        "config.yml",
+        "stash-go.sqlite",
+        "stash-go.sqlite.20260101_120000",
+    ]
+    assert asked["file_count"] == 4
+    assert plain["files"] == []
+    too_many = client.get(BROWSE, params={"path": str(library), "files": ["*"] * 9})
+    assert too_many.status_code == 400
+
+
 def test_a_folder_inside_one_can_be_looked_into(client: TestClient, media: Path) -> None:
     sign_in(client, "admin")
 

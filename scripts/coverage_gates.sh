@@ -290,7 +290,7 @@ _cov_access() {
 # scheduling setting that was assembled and quietly never applied. Both look like success.
 _cov_mp4() { _cov src/sift/kernel/tests/test_mp4.py --cov=sift.kernel.mp4; }
 
-_cov_subprocess() { _cov src/sift/kernel/tests/test_subprocess.py src/sift/kernel/tests/test_background_priority.py --cov=sift.kernel.subprocess --cov=sift.kernel.subprocess_jobs; }
+_cov_subprocess() { _cov src/sift/kernel/tests/test_subprocess.py src/sift/kernel/tests/test_background_priority.py --cov=sift.kernel.subprocess --cov=sift.kernel.long_lived --cov=sift.kernel.subprocess_jobs; }
 # The proxy every download tool goes out through. A branch here that lets a private address past
 # is a tool reaching into the home network on a stranger's say-so, and it looks like a download.
 _cov_public_net() { _cov src/sift/kernel/tests/test_public_net.py --cov=sift.kernel.public_net; }

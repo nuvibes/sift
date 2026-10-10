@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated, Any, cast, get_args
+from typing import Annotated, Any, Literal, cast, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -25,8 +25,10 @@ from sift.kernel.content import Asset, ContentStore, DerivativeKind, UserStateSt
 from sift.kernel.content.user_state import HEAT_BUCKETS, resume_minimum_ms, resume_point
 from sift.kernel.db import Database
 from sift.kernel.http import is_local_request
-from sift.kernel.jobs import WAITED_ON_PRIORITY
+from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue, registered_families
+from sift.kernel.jobs.families import Family
 from sift.kernel.log import get_logger
+from sift.kernel.media_sources import CopiesAway, MissingAsset, NoReadableCopy, resolve
 from sift.kernel.mp4 import NEEDS_REPAIR_BYTES
 from sift.kernel.numbers import as_int
 from sift.kernel.reach import refuse_one
@@ -126,6 +128,21 @@ class PlaybackPlan(Wire):
     #: Every size this file can be watched at, in the menu's order.
     qualities: list[Quality] = Field(default=[])
 
+    #: Why no copy can be read now, asked as a conversion asks: `gone` (its folder answers and the
+    #: file is not in it) or `away` (its drive or share is not answering). None when one can.
+    unreadable: Literal["gone", "away"] | None = None
+    #: Whether a scan of the library folder it was in is waiting or running, which finds it if moved.
+    scan_queued: bool = False
+
+
+def _plan_url(base: str, plan: policy.Plan) -> str:
+    """Where the browser asks for the plan's bytes."""
+    # The cheap routes are the same request; `stream` picks the file.
+    if plan.route in (policy.Route.DIRECT, policy.Route.REMUX, policy.Route.UNREAD):
+        return f"{base}/stream"
+    # The decision travels in the address, or later requests fall back to a full transcode.
+    return f"{base}/hls/index.m3u8{plan_query(plan)}"
+
 
 @router.post("/assets/{asset_id}/playback", dependencies=[Depends(csrf_protect)])
 async def plan_playback(
@@ -137,6 +154,7 @@ async def plan_playback(
     user_state: Annotated[UserStateStore, Depends(wiring.user_state)],
     player: Annotated[PlayerService, Depends(_player)],
     content: Annotated[ContentStore, Depends(wiring.content)],
+    queue: Annotated[JobQueue, Depends(wiring.queue)],
 ) -> PlaybackPlan:
     """Decide how this browser should play this file: a POST, as the answer is the client's own."""
     asset = await _open(access, viewer, asset_id)
@@ -145,6 +163,9 @@ async def plan_playback(
     # Every copy unreachable: the 404 `stream` would give, given first.
     if repaired is None and await access.locate(viewer, asset.id) is None:
         raise _missing()
+    # A file recorded where it no longer is fails like one the browser cannot decode, so it is said.
+    unreadable = None if repaired is not None else await _unreadable(content, asset.id)
+    scan_queued = unreadable is not None and await _scan_queued(content, queue, asset.id)
 
     client = _client_of(capabilities)
     settings = part_of(request, SETTINGS)
@@ -172,12 +193,7 @@ async def plan_playback(
     plan = await _unread(request, content, asset, plan)
 
     base = f"/api/assets/{asset_id}"
-    # The cheap routes are the same request; `stream` picks the file.
-    if plan.route in (policy.Route.DIRECT, policy.Route.REMUX, policy.Route.UNREAD):
-        url = f"{base}/stream"
-    else:
-        # The decision travels in the address, or later requests fall back to a full transcode.
-        url = f"{base}/hls/index.m3u8{plan_query(plan)}"
+    url = _plan_url(base, plan)
 
     # Through the same rule that stored it, so a raised minimum applies now.
     state = await user_state.state_of(asset_id, viewer.id)
@@ -202,7 +218,37 @@ async def plan_playback(
             cpu_count=hardware.cpu_count,
             encoder_rate=player.encoder_rate,
         ),
+        unreadable=unreadable,
+        scan_queued=scan_queued,
     )
+
+
+#: How long a plan waits to hear whether a copy can be opened; past it, the copy is away.
+_REACH_SECONDS = 5.0
+
+
+async def _unreadable(content: ContentStore, asset_id: str) -> Literal["gone", "away"] | None:
+    """Whether a conversion could open this file now, by the lookup it makes, and if not, why."""
+    try:
+        async with asyncio.timeout(_REACH_SECONDS):
+            await resolve(content, asset_id)
+    except MissingAsset:
+        raise _missing() from None
+    except (CopiesAway, TimeoutError):
+        return "away"
+    except NoReadableCopy:
+        return "gone"
+    return None
+
+
+async def _scan_queued(content: ContentStore, queue: JobQueue, asset_id: str) -> bool:
+    """Whether a walk of a library folder holding a copy of this file is waiting or running."""
+    roots = {location.root_id for location in await content.locations(asset_id)}
+    walks = [kind for kind, family in registered_families().items() if family is Family.SCAN]
+    for kind in walks:
+        if any(payload.get("root_id") in roots for payload in await queue.live_payloads(kind)):
+            return True
+    return False
 
 
 def _client_of(capabilities: Capabilities) -> policy.ClientCapabilities:

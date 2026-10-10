@@ -721,7 +721,7 @@ async def test_a_jpeg_two_readers_turn_apart_is_handed_over_as_the_browser_reads
         assert asked is asset and original == photograph
         return copy
 
-    monkeypatch.setattr(jpeg_turn, "drawn_apart", lambda path: apart)
+    monkeypatch.setattr(jpeg_turn, "drawn_apart_in", lambda head: apart)
     monkeypatch.setattr(jpeg_turn, "readable_copy", made)
 
     found = await media.resolve_decodable(store, "01HX0000000000000000000A01", settings=settings)

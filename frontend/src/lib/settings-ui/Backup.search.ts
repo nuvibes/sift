@@ -155,15 +155,18 @@ export const COPY = {
 		/** Bringing a Stash library in: read its database, then bring it into this library. */
 		stash: {
 			name: 'Migrate from Stash',
-			help: "Choose Stash's database, stash-go.sqlite, in a folder you've added to Sift. A copy of it is read, and nothing changes until you say so. Stash itself is left as it was.",
+			help: "Choose Stash's database file, stash-go.sqlite. A copy of it is read, and nothing changes until you say so. Stash itself is left as it was.",
 			choose: 'Choose\u2026',
 			nothingChosen: 'Nothing chosen yet',
-			pickerTitle: "Choose Stash's folder",
-			pickerList: 'Folders Sift has',
-			pickerHelp: 'Click through to the folder that holds stash-go.sqlite, then choose it.',
+			pickerTitle: "Choose Stash's database file",
+			pickerHelp:
+				'Click through to the folder Stash keeps its database in, then choose stash-go.sqlite, one of its dated copies, or its config.yml.',
 			pickerAtTop:
 				'Click into a folder first: this is the list of folders Sift has, not a folder itself.',
+			pickerNoFile:
+				'Choose a file first: click through to the folder that holds it, then click the file.',
 			useFolder: 'Use this folder',
+			useFile: 'Use this file',
 			read: 'Read it',
 			readHeading: 'What the Stash library holds',
 			readSays: (version: string) => `A Stash library, schema version ${version}. It holds:`,

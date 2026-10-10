@@ -8,8 +8,8 @@
 	},
 	"client-coverage": {
 		"untouched": 7,
-		"lines": 86.19,
-		"uncovered_lines": 5848
+		"lines": 86.3,
+		"uncovered_lines": 5815
 	},
 	"state-matrix": {
 		"undrawn": 0
@@ -130,7 +130,7 @@
 			"lib/components/Tile.svelte": 1,
 			"lib/entity/enrichment.svelte.ts": 1,
 			"lib/grid/verbs.ts": 2,
-			"lib/library/AddFolder.svelte": 1,
+			"lib/library/FolderPicker.svelte": 1,
 			"lib/library/LibraryScreen.svelte": 2,
 			"lib/settings-ui/NetworkSharing.svelte": 2,
 			"routes/browse/+page.svelte": 5,

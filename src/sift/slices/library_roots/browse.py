@@ -5,6 +5,7 @@ Directories only, every path confined inside a grant, and nothing is ever writte
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import os
 import sys
 from collections.abc import Sequence
@@ -36,6 +37,8 @@ class Listing:
     writable: bool
     #: Told apart from `writable`: the way out of each is a different sentence.
     read_only_mount: bool
+    #: The files whose names match what the chooser asked for; never any other file's name.
+    files: tuple[Entry, ...] = ()
 
 
 class BrowseRefused(Exception):
@@ -62,26 +65,32 @@ class _Contents:
 
     entries: tuple[Entry, ...]
     files: int
+    named: tuple[Entry, ...] = ()
 
 
-def _read(here: Path) -> _Contents:
-    """The subdirectories of one directory, in reading order, and a count of its files (never
-    names).
+def _read(here: Path, names: Sequence[str] = ()) -> _Contents:
+    """The subdirectories of one directory, in reading order, a count of its files, and the files
+    whose names match one of `names` (patterns, any case). No other file is named.
     Symlinked directories are not followed; an unreadable directory lists as empty."""
     found: list[Entry] = []
+    named: list[Entry] = []
     files = 0
+    patterns = [name.casefold() for name in names]
     try:
         with os.scandir(here) as entries:
             for entry in entries:
                 if entry.is_dir(follow_symlinks=False):
                     found.append(_entry(Path(entry.path)))
-                else:
-                    files += 1
+                    continue
+                files += 1
+                if any(fnmatch.fnmatchcase(entry.name.casefold(), one) for one in patterns):
+                    named.append(_entry(Path(entry.path)))
     except OSError:
         return _Contents(entries=(), files=0)
     return _Contents(
         entries=tuple(sorted(found, key=lambda entry: entry.name.casefold())),
         files=files,
+        named=tuple(sorted(named, key=lambda entry: entry.name.casefold())),
     )
 
 
@@ -110,7 +119,7 @@ def _top(roots: Sequence[Path]) -> Listing:
     )
 
 
-def _look(roots: Sequence[Path], requested: Path | None) -> Listing:
+def _look(roots: Sequence[Path], requested: Path | None, names: Sequence[str] = ()) -> Listing:
     """The blocking half: resolve, confine, and read. Runs in a thread."""
     if requested is None:
         return _top(roots)
@@ -135,7 +144,7 @@ def _look(roots: Sequence[Path], requested: Path | None) -> Listing:
     if not here.is_dir():
         raise BrowseRefused("That isn't a folder.")
 
-    contents = _read(here)
+    contents = _read(here, names)
     return Listing(
         path=str(here),
         entries=contents.entries,
@@ -144,6 +153,7 @@ def _look(roots: Sequence[Path], requested: Path | None) -> Listing:
         nothing_granted=False,
         writable=is_writable(here),
         read_only_mount=mount_is_readonly(here),
+        files=contents.named,
     )
 
 
@@ -181,9 +191,10 @@ async def machine_roots() -> list[Path]:
     return await asyncio.to_thread(_machine_roots)
 
 
-async def look(roots: Sequence[Path], requested: Path | None) -> Listing:
-    """What is inside `requested`, proved inside a granted folder; with none, the granted folders."""
-    return await asyncio.to_thread(_look, roots, requested)
+async def look(roots: Sequence[Path], requested: Path | None, names: Sequence[str] = ()) -> Listing:
+    """What is inside `requested`, proved inside a granted folder; with none, the granted folders.
+    `names` are the patterns of the files to name as well, for a chooser of a file."""
+    return await asyncio.to_thread(_look, roots, requested, names)
 
 
 __all__ = ["BrowseRefused", "Entry", "Listing", "look", "machine_roots"]

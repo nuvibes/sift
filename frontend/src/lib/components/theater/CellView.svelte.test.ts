@@ -58,7 +58,9 @@ const PLAN = {
 	duration_ms: 1000,
 	resume_ms: null,
 	view_at_ms: 2000,
-	qualities: []
+	qualities: [],
+	unreadable: null,
+	scan_queued: false
 };
 
 function playable(id: string, kind: string): Playable {

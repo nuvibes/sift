@@ -59,6 +59,12 @@ def cannot_change(error: BaseException) -> bool:
     return is_broken_data(str(error))
 
 
+def is_database_busy(error: BaseException) -> bool:
+    """Another writer holds the database: the same moment finds the same lock."""
+    said = str(error)
+    return isinstance(error, sqlite3.OperationalError) and ("locked" in said or "busy" in said)
+
+
 def _waits(error: BaseException) -> bool:
     """A failure of the disk, the share, a tool that hung or the database being busy."""
     # Here, not at the top: a bare interpreter loads this package without the tool runner.

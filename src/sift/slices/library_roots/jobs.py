@@ -17,6 +17,7 @@ from sift.kernel import lanes
 from sift.kernel.config import Settings
 from sift.kernel.content import (
     ROOT_REL_PATH,
+    ContentStore,
     FolderRow,
     check_rel_path,
     subtree_prefix,
@@ -24,8 +25,6 @@ from sift.kernel.content import (
 from sift.kernel.jobs import (
     BACKGROUND_PRIORITY,
     DEFAULT_PRIORITY,
-    MAX_PAGE_SIZE,
-    STOP_TO_CANCEL,
     WAITED_ON_PRIORITY,
     JobContext,
     JobQueue,
@@ -39,6 +38,11 @@ from sift.kernel.jobs.quiet_hours import AT_NOW
 from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.seams import ReindexSeam, SettingsSeam
 from sift.slices.library_roots import quarantine
+from sift.slices.library_roots.canceling import (
+    ask_again_after_cancel,
+    owed_after_a_cancel,
+    owed_by_an_earlier_claim,
+)
 from sift.slices.library_roots.catch_up import _differences, _folders_that_moved
 from sift.slices.library_roots.moved_folders import _reconcile_folders
 from sift.slices.library_roots.scan_plan import count_to_read, kind_by_name, size_said
@@ -203,7 +207,7 @@ RECHECKED = 2 * PLAN_WRITE_BATCH
 
 STOPPED_ANSWERING = (
     "The folder stopped answering partway through the scan, so nothing in it was marked missing"
-    " or unreadable. Scan it again once it's back."
+    " or unreadable. The scan carries on once it answers."
 )
 
 
@@ -222,9 +226,9 @@ async def _walk_for_scan(
     if refused is not None:
         log.warning("library.root_unreachable", root_id=root_id, error=refused.strerror)
         raise RootUnreachable(
-            "the library folder did not answer"
+            "Waiting for the library folder to answer"
             + (f" ({refused.strerror})" if refused.strerror else "")
-            + ". Nothing was changed. Scan it again once it's back."
+            + ". Nothing was changed."
         )
     with timing_hook("library.scan.walk", root_id=root_id):
         # In a thread and handed over as a list; in the root's storage lane, since a walk lists
@@ -471,45 +475,8 @@ class _ScanPass:
                 self.context.job.id, max(self.stale_steps, self.base + len(self.decided))
             )
 
-    async def if_canceled(self) -> None:
-        """A cancel takes the walk's waiting probes with it. What it took in keeps its read and its
-        place in the search: the probes are asked again outside the stopped family, at the floor
-        a stopped scan gets (`read_unread`'s), and the search is told now."""
-        context = self.context
-        if context.stopping() != STOP_TO_CANCEL:
-            return
-        owed = set(self.to_probe) | set(self.to_check)
-        queue, job = context.queue, context.job
-        offset = 0
-        while True:
-            page = await queue.list(
-                parent_id=job.id,
-                job_type=PROBE,
-                state=JobState.CANCELED,
-                limit=MAX_PAGE_SIZE,
-                offset=offset,
-            )
-            owed.update(str(one.payload["asset_id"]) for one in page.jobs)
-            if len(page.jobs) < MAX_PAGE_SIZE:
-                break
-            offset += MAX_PAGE_SIZE
-        # A read the cancel cut off after its rows were written.
-        for seq in self.started:
-            if not self.done[seq] and self.decided[seq][2] is Verdict.READ:
-                location = await context.content.location_at(self.root_id, self.decided[seq][1])
-                if location is not None:
-                    owed.add(location.asset_id)
-                    self.taken_in.append(location.asset_id)
-        await self.index_arrivals()
-        payloads: list[dict[str, object]] = []
-        for asset_id in sorted(owed):
-            asset = await context.content.get(asset_id)
-            if asset is not None and asset.probed_at is None:
-                payloads.append({"asset_id": asset_id, "scan_only": True})
-        for at in range(0, len(payloads), PLAN_WRITE_BATCH):
-            await queue.enqueue_many(PROBE, payloads[at : at + PLAN_WRITE_BATCH], dedupe=True)
-        await self.forget_plan()
-        log.info("library.scan_canceled", root_id=self.root_id, probes_asked=len(payloads))
+    async def if_ended(self, error: BaseException) -> None:
+        await ask_again_after_cancel(self, error)
 
     async def write_unread(self) -> None:
         context = self.context
@@ -520,10 +487,8 @@ class _ScanPass:
         batch = self.to_probe[:]
         del self.to_probe[:]
         await self.write_unread()
-        for asset_id in batch:
-            await self.context.enqueue_child(
-                PROBE, _probe_payload(self.context, asset_id), priority=self.context.job.priority
-            )
+        payloads = [_probe_payload(self.context, asset_id) for asset_id in batch]
+        await self.context.enqueue_children(PROBE, payloads, priority=self.context.job.priority)
 
     async def index_arrivals(self) -> None:
         """Tell the search index about the files taken in since it was last told."""
@@ -638,8 +603,8 @@ async def _decide_and_read(one: _ScanPass, root_id: str) -> None:
     try:
         await one.decide()
         await one.read()
-    except BaseException:
-        await one.if_canceled()
+    except BaseException as error:
+        await one.if_ended(error)
         raise
     finally:
         log.info("library.scan_read", root_id=root_id, read=one.finished)
@@ -668,7 +633,11 @@ async def scan(
     # The files a change notification named, relative to the root, or None for a whole walk.
     named = _named_paths(context)
     lanes.ahead_of_passes(named is not None or "folder_id" in context.payload)
-    walk = await _walk_for_scan(context, root_id, root_abs, root_abs / under, named)
+    try:
+        walk = await _walk_for_scan(context, root_id, root_abs, root_abs / under, named)
+    except RootUnreachable:
+        await owed_by_an_earlier_claim(context, root_id, reindexer)
+        raise
     one = _ScanPass(
         context,
         settings=settings,
@@ -705,8 +674,8 @@ async def scan(
             await _record_what_was_seen(
                 context, root_id=root_id, under=under, walk=walk, unjudged=one.unjudged
             )
-    except BaseException:
-        await one.if_canceled()
+    except BaseException as error:
+        await one.if_ended(error)
         raise
     await context.set_progress(1.0)
     if one.went_quiet:
@@ -949,6 +918,7 @@ def register_handlers(
     folder_settled: FolderSettled | None = None,
     archive_settled: ArchiveSettled | None = None,
     settles_into: Sequence[str] = (),
+    content: ContentStore | None = None,
 ) -> None:
     """Claim the job types this slice owns, once at boot, with what each handler needs bound in.
 
@@ -968,6 +938,9 @@ def register_handlers(
         name="Scanning folder",
         family=Family.SCAN,
     )
+    if content is not None:
+        # A walk canceled waiting, as well as running, owes its files their probes.
+        queue.listen_for_settled(SCAN, partial(owed_after_a_cancel, queue, content, reindexer))
     register_handler(
         SCAN_COUNT,
         partial(count_scan, service=service),

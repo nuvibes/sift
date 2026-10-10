@@ -57,6 +57,21 @@ from sift.slices.performance.clip import (
 from sift.slices.performance.clip import (
     middle as middle,
 )
+from sift.slices.performance.selftest_reads import _SALTS as _SALTS
+from sift.slices.performance.selftest_reads import BYTES_PER_SEEK as BYTES_PER_SEEK
+from sift.slices.performance.selftest_reads import NO_UNCACHED as NO_UNCACHED
+from sift.slices.performance.selftest_reads import SAMPLE_FLOOR_BYTES as SAMPLE_FLOOR_BYTES
+from sift.slices.performance.selftest_reads import SEEKS_PER_FILE as SEEKS_PER_FILE
+from sift.slices.performance.selftest_reads import SMALL_FLOOR_BYTES as SMALL_FLOOR_BYTES
+from sift.slices.performance.selftest_reads import STORAGE_LEVELS as STORAGE_LEVELS
+from sift.slices.performance.selftest_reads import StorageToMeasure as StorageToMeasure
+from sift.slices.performance.selftest_reads import Walked as Walked
+from sift.slices.performance.selftest_reads import _places as _places
+from sift.slices.performance.selftest_reads import _read_uncached as _read_uncached
+from sift.slices.performance.selftest_reads import _read_whole as _read_whole
+from sift.slices.performance.selftest_reads import _seek_and_read as _seek_and_read
+from sift.slices.performance.selftest_reads import _sort_entry as _sort_entry
+from sift.slices.performance.selftest_reads import _whole_uncached as _whole_uncached
 
 log = get_logger(__name__)
 
@@ -208,6 +223,11 @@ class StorageLevel:
         return self.bytes_read / self.seconds / 1_000_000
 
     @property
+    def files_per_second(self) -> float:
+        """Files a second where each was read whole (a seek each)."""
+        return self.seeks / self.seconds if self.seconds > 0 else 0.0
+
+    @property
     def seconds_per_seek(self) -> float:
         """What one reader paid per seek: the readers ran side by side, each with a share."""
         if self.seeks <= 0 or self.at_once <= 0:
@@ -257,6 +277,10 @@ class StorageCurve:
     """Why nothing was measured here, so a storage that could not be measured is not a slow one."""
     unmeasured: str | None = None
     """What the ladder did not try and why, where it stopped short of the widest level."""
+    small: StorageLevel | None = None
+    """Small files read whole at the answer's width, as a scan reads pictures; None where none."""
+    listed_per_second: float | None = None
+    """Entries the sample's walk listed a second, as a scan's walk lists them."""
 
     @property
     def name(self) -> str:
@@ -270,6 +294,11 @@ class StorageCurve:
     @property
     def best(self) -> StorageLevel | None:
         return near_best(self.eligible, key=_mbps)
+
+    @property
+    def ceiling(self) -> float | None:
+        """The most MB/s any level gave: what the storage can give, against what Sift achieves."""
+        return max((_mbps(one) for one in self.levels), default=None)
 
     @property
     def too_slow(self) -> StorageLevel | None:
@@ -628,45 +657,26 @@ async def _encode_once(
 
 # --- measuring the storage: read as a probe reads, the readers it serves read off the curve ------
 
-#: How many places in a file one reader seeks to, and how much it reads at each: about what a
-#: decoder pulls to rebuild one frame from the keyframe before it.
-SEEKS_PER_FILE = 6
-BYTES_PER_SEEK = 1 << 20
-
-#: The smallest file worth seeking into. Below this the six reads overlap and measure the cache.
-SAMPLE_FLOOR_BYTES = 16 << 20
-
 #: How many entries a walk of a library folder looks at, and how many files it keeps: two for each
 #: reader of the widest level, so no two readers of one run share a file.
 SAMPLE_WALK_LIMIT = 4000
 SAMPLE_FILES = 2 * MAX_READS_AT_ONCE
-
-#: The readers-at-once levels, doubling up to the most the lanes allow one storage.
-STORAGE_LEVELS = tuple(1 << step for step in range(MAX_READS_AT_ONCE.bit_length()))
-
-#: One salt per level per repeat, the midpoint and a busy level's second take included, so no run
-#: re-reads a place another left in the system's cache.
-_SALTS = 2 * (len(STORAGE_LEVELS) + 1) * REPEATS
-
-#: Why a local disk is not measured where the system cannot read past its cache: a read from
-#: memory is not a read from the disk.
-NO_UNCACHED = "this system offers no way to read a disk past its own cache"
-
-
-@dataclass(frozen=True)
-class StorageToMeasure:
-    """One storage and the library folders on it, as the composition root hands them in."""
-
-    storage: str
-    label: str
-    remote: bool
-    roots: tuple[Path, ...]
+SMALL_FILES = MAX_READS_AT_ONCE
 
 
 def sample_files(roots: Sequence[Path], *, wanted: int = SAMPLE_FILES) -> list[Path]:
     """The largest files under these folders, within a walk bounded on entries. Blocking."""
+    return walk_sample(roots, wanted=wanted).large
+
+
+def walk_sample(
+    roots: Sequence[Path], *, wanted: int = SAMPLE_FILES, small_wanted: int = SMALL_FILES
+) -> Walked:
+    """The largest files and a spread of small ones, the walk timed. Blocking."""
     seen: list[tuple[int, Path]] = []
+    small: list[Path] = []
     looked = 0
+    started = time.monotonic()
     for root in roots:
         pending = [root]
         while pending and looked < SAMPLE_WALK_LIMIT:
@@ -678,54 +688,33 @@ def sample_files(roots: Sequence[Path], *, wanted: int = SAMPLE_FILES) -> list[P
                         if looked >= SAMPLE_WALK_LIMIT:
                             break
                         try:
-                            if entry.is_dir(follow_symlinks=False):
-                                pending.append(Path(entry.path))
-                            elif entry.is_file(follow_symlinks=False):
-                                size = entry.stat(follow_symlinks=False).st_size
-                                if size >= SAMPLE_FLOOR_BYTES:
-                                    seen.append((size, Path(entry.path)))
+                            _sort_entry(entry, pending, seen, small)
                         except OSError:
                             continue
             except OSError:
                 continue
+    seconds = time.monotonic() - started
     seen.sort(reverse=True)
-    return [path for _, path in seen[:wanted]]
-
-
-def _places(size: int, salt: int) -> list[int]:
-    """Where in a file of `size` bytes one reader seeks, moved by `salt` so runs never overlap."""
-    span = max(1, size - BYTES_PER_SEEK)
-    within = (salt % _SALTS + 0.5) / _SALTS
-    places = (
-        int(((at + within) % SEEKS_PER_FILE) / SEEKS_PER_FILE * span)
-        for at in range(SEEKS_PER_FILE)
+    every = max(1, len(small) // max(1, small_wanted))
+    return Walked(
+        [path for _, path in seen[:wanted]], small[::every][:small_wanted], looked, seconds
     )
-    return [place - place % uncached.ALIGN for place in places]
-
-
-def _seek_and_read(path: Path, *, salt: int, uncached: bool = False) -> int:
-    """Read `BYTES_PER_SEEK` at each of a file's places. How many bytes came back."""
-    if uncached:
-        return _read_uncached(path, salt)
-    read = 0
-    with open(path, "rb", buffering=0) as handle:
-        for place in _places(os.fstat(handle.fileno()).st_size, salt):
-            handle.seek(place)
-            read += len(handle.read(BYTES_PER_SEEK))
-    return read
-
-
-def _read_uncached(path: Path, salt: int) -> int:
-    return uncached.read(path, _places(path.stat().st_size, salt), BYTES_PER_SEEK)
 
 
 async def _read_level(
-    files: Sequence[Path], *, at_once: int, salt: int, uncached: bool = False
+    files: Sequence[Path],
+    *,
+    at_once: int,
+    salt: int,
+    uncached: bool = False,
+    whole: bool = False,
 ) -> StorageLevel:
-    """Read `files` with `at_once` readers going at the same time, the way a probe does."""
+    """Read `files` with `at_once` readers going at the same time, the way a probe does, or each
+    `whole`, the way a scan's copy does (a file then counts as one seek)."""
     pending = list(files)
     total = 0
     seeks = 0
+    read_one = _read_whole if whole else _seek_and_read
 
     async def reader() -> None:
         nonlocal total, seeks
@@ -733,11 +722,9 @@ async def _read_level(
             path = pending.pop()
             try:
                 # Into a local first: `total += await ...` would lose a reader finishing alongside.
-                came_back = await asyncio.to_thread(
-                    _seek_and_read, path, salt=salt, uncached=uncached
-                )
+                came_back = await asyncio.to_thread(read_one, path, salt=salt, uncached=uncached)
                 total += came_back
-                seeks += SEEKS_PER_FILE
+                seeks += 1 if whole else SEEKS_PER_FILE
             except OSError as error:
                 log.info("performance.selftest.storage_read_failed", detail=str(error))
 
@@ -793,10 +780,15 @@ async def measure_storage(
     curve = StorageCurve(storage=one.storage, label=one.label, remote=one.remote)
     if not one.remote and not uncached.AVAILABLE:
         return replace(curve, failed=NO_UNCACHED)
-    sample = files if files is not None else await asyncio.to_thread(sample_files, list(one.roots))
-    if len(sample) < 2:
-        return replace(curve, failed="too few large files to seek into")
+    walked = Walked(list(files or ()), [], 0, 0.0)
+    if files is None:
+        walked = await asyncio.to_thread(walk_sample, list(one.roots))
+    sample = walked.large
     run_level = read_level or partial(_read_level, uncached=not one.remote)
+    curve = replace(curve, listed_per_second=walked.listed_per_second)
+    if len(sample) < 2:
+        small = await _small(walked.small, 1, run_level, one, deadline)
+        return replace(curve, failed="too few large files to seek into", small=small)
     offset = 0
     turn = 0
 
@@ -829,7 +821,24 @@ async def measure_storage(
         level = await deadline.within(steady(partial(take, between), _marked, busy))
         done.extend([level] if level is not None else [])
         curve = replace(curve, levels=tuple(sorted(done, key=lambda level: level.at_once)))
-    return curve
+    width = curve.best.at_once if curve.best is not None else 1
+    return replace(curve, small=await _small(walked.small, width, run_level, one, deadline))
+
+
+async def _small(
+    files: Sequence[Path],
+    at_once: int,
+    run_level: Callable[..., Awaitable[StorageLevel]],
+    one: StorageToMeasure,
+    deadline: Deadline,
+) -> StorageLevel | None:
+    """The small files read whole once at `at_once`; None where there are none or no time."""
+    if not files:
+        return None
+    level = await deadline.within(run_level(list(files), at_once=at_once, salt=0, whole=True))
+    if level is not None:
+        log.info("performance.selftest.storage_small", storage=one.storage, **level.as_dict())
+    return level
 
 
 async def _encode_level(

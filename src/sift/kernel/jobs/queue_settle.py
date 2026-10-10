@@ -201,6 +201,12 @@ RETURNING id, parent_id
 
 # Handing work back on an orderly shutdown without charging an attempt; a crash still charges one.
 _HANDED_BACK = "Interrupted by a restart and queued again. This did not count as an attempt."
+#: Written on every running row the moment an orderly stop begins: whatever cuts the stop short
+#: after that (a grace that runs out, a watchdog) was not the job's own crash, and the next boot
+#: hands the attempt back by this note.
+_STOPPING = "Sift was stopping while this ran; if it did not finish, it is queued again without counting an attempt."
+_MARK_STOPPING = "UPDATE jobs SET note = ? WHERE state = 'running' RETURNING id"
+_REFUND_STOPPED = "UPDATE jobs SET attempts = MAX(attempts - 1, 0) WHERE state = 'running' AND note = ? RETURNING id"
 
 # A job ASKED TO PAUSE lands `paused` here and in both reclaims, so "pause it, then quit" does not
 # come back running, and its note is left alone.
@@ -468,6 +474,20 @@ class Settling(HandOffs):
                 connection, _SET_NOTE, (_for_the_record(note), self._now(), job_id, worker_id)
             )
         return bool(rows)
+
+    async def mark_stopping(self) -> list[str]:
+        """Say on every running row that an orderly stop has begun, before the workers are
+        waited for: a stop cut short charges nothing at the next boot. Returns their ids."""
+        async with self._writing() as connection:
+            rows = await _fetch(connection, _MARK_STOPPING, (_STOPPING,))
+        return [str(row["id"]) for row in rows]
+
+    async def refund_stopped(self) -> list[str]:
+        """Give back the attempt of each row still running that an orderly stop had marked:
+        called at boot, before the reclaim. Returns their ids."""
+        async with self._writing() as connection:
+            rows = await _fetch(connection, _REFUND_STOPPED, (_STOPPING,))
+        return [str(row["id"]) for row in rows]
 
     async def release_running(self) -> list[str]:
         """Hand back every job still in flight, without charging it an attempt. Returns their ids.

@@ -137,6 +137,64 @@ class _CappedRotatingFileHandler(RotatingFileHandler):
         )
 
 
+# --- Lines kept at Detailed, counted at Normal -----------------------------------------------------
+
+#: A job's own claim and settle: its `job.summary` carries every field they give, and its timing
+#: record's (`_JOB_STAGE`) time as `ran_ms`.
+SAID_BY_THE_SUMMARY = frozenset({"job.claimed", "job.done"})
+
+#: Lines written once per file of a batch: counted into the job's summary (`folded`), or into a
+#: minute's `log.folded` line outside a job.
+COUNTED_PER_BATCH = frozenset(
+    {"content.location_missing", "importing.skipped", "job.enqueue_deduped"}
+)
+
+#: How often the counts of lines written outside any job are said.
+FOLDED_EVERY_SECONDS = 60.0
+
+_folded_outside: dict[str, int] = {}
+_folded_since = time.monotonic()
+_folded_lock = threading.Lock()
+
+
+def _detailed() -> bool:
+    return logging.getLogger().getEffectiveLevel() <= logging.DEBUG
+
+
+def _fold(
+    _logger: object, _name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    """At Normal, a line the job's summary already says is dropped, and a per-file line counted."""
+    event = event_dict.get("event")
+    if event in COUNTED_PER_BATCH:
+        cost = _JOB_COST.get()
+        if cost is not None:
+            cost.counted(event)
+        else:
+            with _folded_lock:
+                _folded_outside[event] = _folded_outside.get(event, 0) + 1
+    elif _folded_outside and time.monotonic() - _folded_since >= FOLDED_EVERY_SECONDS:
+        _say_folded()
+    said = event in SAID_BY_THE_SUMMARY or (
+        event == "timing" and event_dict.get("stage") == _JOB_STAGE
+    )
+    if (said or event in COUNTED_PER_BATCH) and not _detailed():
+        raise structlog.DropEvent
+    return event_dict
+
+
+def _say_folded() -> None:
+    """One line with the counts of the per-file lines written outside a job since the last."""
+    global _folded_since
+    with _folded_lock:
+        counts = dict(sorted(_folded_outside.items()))
+        _folded_outside.clear()
+        seconds = round(time.monotonic() - _folded_since)
+        _folded_since = time.monotonic()
+    if counts:
+        get_logger(__name__).info("log.folded", counts=counts, seconds=seconds)
+
+
 def configure_logging(
     level: str = "INFO",
     *,
@@ -163,7 +221,7 @@ def configure_logging(
     ]
 
     structlog.configure(
-        processors=[*shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        processors=[_fold, *shared, structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
@@ -394,92 +452,139 @@ def _union(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
     return merged
 
 
+#: The figures of a job's summary that are times, beside its stages, each its own spans.
+_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL = (
+    "writer_wait_ms",
+    "writer_held_ms",
+    "read_ms",
+    "storage_wait_ms",
+    "tool_ms",
+)
+
+
+class _Spent:
+    """One figure's time: the sum of its parts, and the spans they took, merged as they grow."""
+
+    __slots__ = ("spans", "summed")
+
+    def __init__(self) -> None:
+        self.spans: list[tuple[float, float]] = []
+        self.summed = 0.0
+
+    def add(self, start: float, end: float) -> None:
+        self.summed += end - start
+        self.spans.append((start, end))
+        if len(self.spans) > _KEPT_SPANS:
+            self.spans = _union(self.spans)
+
+
+def _within(spans: list[tuple[float, float]], began: float, ended: float) -> float:
+    """Seconds of `spans`, merged, between `began` and `ended`."""
+    return sum(max(0.0, min(end, ended) - max(start, began)) for start, end in _union(spans))
+
+
 class JobCost:
     """Where one job's time went: its stages, its waits for the writer and for storage, its tools.
 
-    Times are `time.perf_counter` seconds. Spans nest (a write inside a stage), so the time they
-    account for is their union, never their sum. Fed from threads too, hence the lock.
+    Times are `time.perf_counter` seconds. Spans nest (a write inside a stage) and a job's parts
+    run together (a walk's take-ins), so each figure is the time its spans took, never more than
+    the job's; where its parts overlapped, their sum is said beside it (`parts_ms`). Fed from
+    threads too, hence the lock.
     """
 
     def __init__(self, began: float | None = None) -> None:
         self.began = time.perf_counter() if began is None else began
-        self.stages: dict[str, float] = {}
-        self.writer_wait_ms = 0.0
-        self.writer_held_ms = 0.0
+        self.stages: dict[str, _Spent] = {}
+        self.timed: dict[str, _Spent] = {
+            name: _Spent() for name in (_WRITER_WAIT, _WRITER_HELD, _READ, _STORAGE_WAIT, _TOOL)
+        }
         self.writes = 0
-        self.read_ms = 0.0
         self.reads = 0
-        self.storage_wait_ms = 0.0
         self.launches = 0
-        self.tool_ms = 0.0
         self.tool_read_bytes = 0
-        self._spans: list[tuple[float, float]] = []
+        #: The handler's own time, the job record's (`_JOB_STAGE`).
+        self.ran_ms = 0.0
+        self.folded: dict[str, int] = {}
+        self._covered = _Spent()
         self._lock = threading.Lock()
-
-    def _span(self, start: float, end: float) -> None:
-        self._spans.append((start, end))
-        if len(self._spans) > _KEPT_SPANS:
-            self._spans = _union(self._spans)
 
     def staged(self, stage: str, start: float, end: float) -> None:
         """A timed block ended inside the job."""
-        if stage in (_WRITE_STAGE, _JOB_STAGE):
+        if stage == _JOB_STAGE:
+            self.ran_ms = (end - start) * 1000
             return
-        spent = (end - start) * 1000
+        if stage == _WRITE_STAGE:
+            return
         with self._lock:
             if stage in _READ_STAGES:
                 self.reads += 1
-                self.read_ms += spent
+                self.timed[_READ].add(start, end)
             else:
-                self.stages[stage] = self.stages.get(stage, 0.0) + spent
-            self._span(start, end)
+                self.stages.setdefault(stage, _Spent()).add(start, end)
+            self._covered.add(start, end)
 
     def wrote(self, asked: float, got: float, ended: float) -> None:
         """A write block: asked for the writer, got it, let it go."""
         with self._lock:
             self.writes += 1
-            self.writer_wait_ms += (got - asked) * 1000
-            self.writer_held_ms += (ended - got) * 1000
-            self._span(asked, ended)
+            self.timed[_WRITER_WAIT].add(asked, got)
+            self.timed[_WRITER_HELD].add(got, ended)
+            self._covered.add(asked, ended)
 
     def waited_for_storage(self, start: float, end: float) -> None:
         """A wait for a place in a storage's lane."""
         with self._lock:
-            self.storage_wait_ms += (end - start) * 1000
-            self._span(start, end)
+            self.timed[_STORAGE_WAIT].add(start, end)
+            self._covered.add(start, end)
 
     def launched(self, start: float, end: float, read_bytes: int) -> None:
         """A tool ran from `start` to `end` and read `read_bytes`."""
         with self._lock:
             self.launches += 1
-            self.tool_ms += (end - start) * 1000
+            self.timed[_TOOL].add(start, end)
             self.tool_read_bytes += read_bytes
-            self._span(start, end)
+            self._covered.add(start, end)
+
+    def counted(self, event: str) -> None:
+        """A per-file line written inside the job (`COUNTED_PER_BATCH`)."""
+        with self._lock:
+            self.folded[event] = self.folded.get(event, 0) + 1
 
     def summary(self, ended: float | None = None) -> dict[str, Any]:
         """The fields of the job's one summary line, up to `ended`."""
         ended = time.perf_counter() if ended is None else ended
+        parts: dict[str, int] = {}
+
+        def took(name: str, spent: _Spent) -> int:
+            union = round(_within(spent.spans, self.began, ended) * 1000)
+            if round(spent.summed * 1000) > union + 1:
+                parts[name] = round(spent.summed * 1000)
+            return union
+
         with self._lock:
-            spans = _union(self._spans)
-            stages = {name: round(spent) for name, spent in sorted(self.stages.items())}
+            covered_ms = _within(self._covered.spans, self.began, ended) * 1000
+            timed = {name: took(name, spent) for name, spent in self.timed.items()}
+            stages = {name: took(name, spent) for name, spent in sorted(self.stages.items())}
+            folded = dict(sorted(self.folded.items()))
         wall_ms = (ended - self.began) * 1000
-        covered_ms = (
-            sum(max(0.0, min(end, ended) - max(start, self.began)) for start, end in spans) * 1000
-        )
         return {
             "wall_ms": round(wall_ms),
+            "ran_ms": round(self.ran_ms),
             "covered_ms": round(covered_ms),
             "covered_pct": round(100 * covered_ms / wall_ms, 1) if wall_ms > 0 else 100.0,
-            "writer_wait_ms": round(self.writer_wait_ms),
-            "writer_held_ms": round(self.writer_held_ms),
+            "writer_wait_ms": timed[_WRITER_WAIT],
+            "writer_held_ms": timed[_WRITER_HELD],
             "writes": self.writes,
-            "read_ms": round(self.read_ms),
+            "read_ms": timed[_READ],
             "reads": self.reads,
-            "storage_wait_ms": round(self.storage_wait_ms),
+            "storage_wait_ms": timed[_STORAGE_WAIT],
             "launches": self.launches,
-            "tool_ms": round(self.tool_ms),
+            "tool_ms": timed[_TOOL],
             "tool_read_bytes": self.tool_read_bytes,
             "stages": stages,
+            "parts_ms": dict(sorted(parts.items())),
+            "folded": folded,
+            "loop_backlog_ms": _loop_backlog_ms(),
         }
 
 

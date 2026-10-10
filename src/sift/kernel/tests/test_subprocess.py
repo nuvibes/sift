@@ -1533,6 +1533,114 @@ async def test_each_tool_is_filed_to_the_job_it_ran_for_with_what_it_read(
         assert said["tool_read_bytes"] == 0
 
 
+@pytest.mark.skipif(not ON_WINDOWS, reason="the job calls are Windows' own")
+@pytest.mark.parametrize("launcher", ["run", "capture", "stream"])
+async def test_a_tool_put_in_its_job_late_still_has_every_byte_counted(
+    launcher: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A busy machine can reach the job well after the tool started; the tool waits for it, so
+    the reads it makes first are still the job's."""
+    from sift.kernel.log import JobCost, costing
+
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"z" * 300_000)
+    argv = [sys.executable, "-c", f"open({str(payload)!r}, 'rb').read(); print('x' * 8)"]
+    real_contain = sp._contain
+
+    def late(process: Any, *args: Any, **kwargs: Any) -> None:
+        time.sleep(0.5)
+        real_contain(process, *args, **kwargs)
+
+    monkeypatch.setattr(sp, "_contain", late)
+    cost = JobCost()
+    with costing(cost):
+        if launcher == "run":
+            await sp.run(argv, time_limit=10)
+        elif launcher == "capture":
+            await sp.capture(argv, time_limit=10)
+        else:
+            async for _ in sp.stream(argv, frame_bytes=1, time_limit=10):
+                pass
+    assert cost.summary()["tool_read_bytes"] >= 300_000
+
+
+async def test_a_cancelled_capture_still_files_what_its_tool_read(tmp_path: Path) -> None:
+    from sift.kernel.log import JobCost, costing
+
+    payload = tmp_path / "payload.bin"
+    payload.write_bytes(b"z" * 300_000)
+    script = f"open({str(payload)!r}, 'rb').read(); import time; time.sleep(30)"
+    cost = JobCost()
+
+    async def capture() -> None:
+        with costing(cost):
+            await sp.capture([sys.executable, "-c", script], time_limit=30)
+
+    task = asyncio.ensure_future(capture())
+    await asyncio.sleep(2)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    said = cost.summary()
+    assert said["launches"] == 1
+    if ON_WINDOWS:
+        assert said["tool_read_bytes"] >= 300_000
+
+
+def test_a_paused_tool_that_will_not_start_is_ended(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Refusing:
+        def NtResumeProcess(self, handle: int) -> int:
+            return 1
+
+    class Tool:
+        _handle = 7
+        killed = False
+
+        def kill(self) -> None:
+            self.killed = True
+
+    tool = Tool()
+    monkeypatch.setattr(sp, "_process_api", Refusing)
+    sp._let_go(tool)  # type: ignore[arg-type]
+    assert tool.killed
+
+
+def test_a_paused_tool_that_cannot_be_opened_by_its_id_is_not_let_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Closed:
+        def OpenProcess(self, *args: object) -> int:
+            return 0
+
+    monkeypatch.setattr(sp, "_job_api", Closed)
+    assert sp._let_go_by_id(1234) is False
+
+
+@pytest.mark.skipif(not ON_WINDOWS, reason="a tool starts paused only on Windows")
+async def test_a_streamed_tool_nobody_can_let_go_is_ended_and_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sp, "_popen_of", lambda process: None)
+    monkeypatch.setattr(sp, "_let_go_by_id", lambda pid: False)
+    with pytest.raises(sp.SubprocessError, match="could not run"):
+        async for _ in sp.stream(
+            [sys.executable, "-c", WRITES_PIECES], frame_bytes=8, time_limit=30
+        ):
+            pass
+
+
+def test_a_tool_is_started_paused_only_where_it_can_be_let_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sp, "_job_api", lambda: None)
+    assert sp._paused_start() == 0
+    monkeypatch.setattr(sp, "_job_api", lambda: object())
+    monkeypatch.setattr(sp, "_process_api", lambda: None)
+    assert sp._paused_start() == 0
+    monkeypatch.setattr(sp, "_process_api", lambda: object())
+    assert sp._paused_start() == sp._PAUSED
+
+
 def test_a_tool_with_no_job_or_an_unreadable_one_read_nothing_we_can_say() -> None:
     import subprocess
 

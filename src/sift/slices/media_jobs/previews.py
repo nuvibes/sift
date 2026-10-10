@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import asyncio
+import struct
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from pathlib import Path
 
+from sift.kernel import mp4
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -108,7 +110,13 @@ async def preview(
 
     size = await _size_of(destination)
     await _check_preview(
-        asset_id, destination, source=source.path, pieces=pieces, size=size, settings=settings
+        asset_id,
+        destination,
+        source=source.path,
+        pieces=pieces,
+        size=size,
+        settings=settings,
+        known_ms=source.asset.video_duration_ms or None,
     )
 
     await store.add_derivative(
@@ -173,6 +181,9 @@ async def _forget_older_previews(
 #: last frame of a piece can land a fortieth of a second either side of its boundary.
 _PREVIEW_SHORTFALL = 0.9
 
+#: The movie header, whose duration is the clip's running time.
+_MVHD = b"mvhd"
+
 
 async def _check_preview(
     asset_id: str,
@@ -182,12 +193,13 @@ async def _check_preview(
     pieces: Sequence[sampler.Piece],
     size: int,
     settings: Settings,
+    known_ms: int | None = None,
 ) -> None:
     """Say so when the clip is not what was asked for. Never refuses one: a short clip still plays.
 
     A container that declares more running time than it holds gives a short clip and an exit of 0.
-    A shortfall is measured against what the SOURCE's picture could supply, by a probe run only
-    on a clip that came out short.
+    A shortfall is measured against what the SOURCE's picture could supply: `known_ms`, the read's,
+    or a probe run only on a clip that came out short.
     """
     asked_ms = sum(piece.length_ms for piece in pieces)
     seconds_of_clip = max(asked_ms, 1) / 1000
@@ -198,11 +210,11 @@ async def _check_preview(
             "media.preview_oversized", asset_id=asset_id, size_bytes=size, asked_ms=asked_ms
         )
 
-    made_ms = await _clip_length_ms(destination, settings=settings)
+    made_ms = await asyncio.to_thread(_clip_length_ms, destination)
     if made_ms is None or made_ms >= asked_ms * _PREVIEW_SHORTFALL:
         return
 
-    available_ms = await _picture_length_ms(source, settings=settings)
+    available_ms = known_ms or await _picture_length_ms(source, settings=settings)
     expected_ms = asked_ms if available_ms is None else _cuttable_ms(pieces, available_ms)
     if made_ms >= expected_ms * _PREVIEW_SHORTFALL:
         return
@@ -226,16 +238,25 @@ def _cuttable_ms(pieces: Sequence[sampler.Piece], available_ms: int) -> int:
     return sum(max(0, min(piece.length_ms, available_ms - piece.start_ms)) for piece in pieces)
 
 
-async def _clip_length_ms(destination: Path, *, settings: Settings) -> int | None:
-    """How long the clip actually runs, or None if that cannot be read.
+def _clip_length_ms(destination: Path) -> int | None:
+    """How long the clip runs, from its movie header (`mvhd`), or None if that cannot be read.
 
-    None rather than a raise: a question about a preview must not be able to fail the preview.
+    Read from the index rather than by a tool: Sift wrote the clip. None rather than a raise: a
+    question about a preview must not be able to fail the preview.
     """
     try:
-        payload = await ffmpeg.run_json(ffmpeg.probe_args(destination, settings=settings))
-    except (ffmpeg.FFmpegError, ValueError, OSError):
+        held = mp4.index_box(destination, destination.stat().st_size)
+        header = None if held is None else mp4.find(held[0], held[1].body, held[1].end, _MVHD)
+        if held is None or header is None:
+            return None
+        blob, at = held[0], header.body
+        wide = blob[at] == 1
+        scale, length = struct.unpack_from(
+            ">IQ" if wide else ">II", blob, at + (20 if wide else 12)
+        )
+    except (mp4.Malformed, OSError, struct.error):
         return None
-    return ffmpeg.parse_probe(payload).duration_ms
+    return round(length * 1000 / scale) if scale else None
 
 
 async def _picture_length_ms(source: Path, *, settings: Settings) -> int | None:

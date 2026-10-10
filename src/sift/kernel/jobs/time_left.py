@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import math
+import statistics
+from collections import deque
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -15,7 +17,7 @@ MOVE_BY = 0.10
 MOVE_AFTER = 60.0
 #: A pass with work waiting, none running and nothing finished for this long has stopped.
 STALLED_AFTER = 120.0
-#: The read's pace is never read over less than this, in seconds.
+#: The live pace of a run is never read over less than this, in seconds.
 PACE_AT_LEAST = 600.0
 #: A price is quoted from this many items of a type and kind, over at most the newest `PRICED_OVER`.
 FEWEST_PRICED = 10
@@ -56,8 +58,6 @@ class Import:
     read_pace: float | None = None
     #: False while the read waits on its share's places rather than on the pool's workers.
     pool_bound: bool = True
-    #: The passes wait for the walk to end before they start.
-    held: bool = False
     read_stalled: bool = False
 
 
@@ -74,13 +74,109 @@ def seconds_left(job: Import) -> tuple[float | None, float | None]:
     queued = sum(n * job.prices.get((t, ANY_KIND), 0.0) for t, n in job.queued.items()) / workers
     if passes is None:
         # A kind nothing has priced yet: no sooner than the read and what is queued after it.
-        return own, None if job.held else own + queued
-    if job.held:
-        return own, own + passes / workers
+        return own, own + queued
     every = (read + passes) / workers
     if job.pool_bound:
         own = max(own, every - queued)
     return own, every if job.read_stalled else max(every, own + queued)
+
+
+#: What a rate is of: items finished, bytes read, or worker seconds of finished work.
+ITEMS, BYTES, WORK = 0, 1, 2
+
+#: A family's rate is read over its newest this many seconds of having work due ...
+RATE_OVER = 600.0
+#: ... and there is none before this much of it, or before this many items finished in it: a
+#: batch's first minute is its pipeline filling, measured 40 times slower than its second.
+RATE_AFTER = 120.0
+RATE_FEWEST = 20
+#: Nor while the newest minute goes this many times faster than any before it: still filling.
+RISING_AT_MOST = 2.0
+#: Minutes older than this are not evidence of the pace now, however little of them was busy.
+RATE_MINUTES_HELD = 60
+#: A minute is a point of the spread only with this much of it busy.
+SPREAD_BUSY_AT_LEAST = 20.0
+#: How far either side of the figure the window reaches: one plus the spread of the minutes' rates.
+SPREAD_LEAST = 1.25
+SPREAD_MOST = 3.0
+#: A family idle this long has finished its batch: the next one's pace is its own, so a share's
+#: import is not quoted the pace of a local one before it.
+BATCH_GAP_SECONDS = 120.0
+#: Ticks further apart than this count as this much busy time: the process was not running.
+TICK_AT_MOST = 15.0
+#: What a row with work due says while no rate of its own has been measured yet.
+MEASURING = "Measuring."
+
+
+@dataclass(frozen=True, slots=True)
+class Rate:
+    """What a family finished per second of the time it had work due (items, bytes or worker
+    seconds), and the spread of its minutes."""
+
+    per_second: float
+    spread: float
+    items: float
+    seconds: float
+
+    def window(self, left: float) -> tuple[float, float]:
+        seconds = left / self.per_second
+        return seconds / self.spread, seconds * self.spread
+
+
+class Throughput:
+    """One family's finished items and bytes by minute, with the seconds it had work due, across
+    its runs: the rate is the work's, not one run's, so a pass that drains and refills keeps it."""
+
+    def __init__(self) -> None:
+        # [minute, busy seconds, items, bytes, worker seconds]
+        self._minutes: deque[list[float]] = deque(maxlen=RATE_MINUTES_HELD)
+        self._worked_at: float | None = None
+
+    def _now(self, now: float) -> list[float]:
+        minute = now // 60
+        while self._minutes and self._minutes[0][0] <= minute - RATE_MINUTES_HELD:
+            self._minutes.popleft()
+        if not self._minutes or self._minutes[-1][0] != minute:
+            self._minutes.append([minute, 0.0, 0.0, 0.0, 0.0])
+        return self._minutes[-1]
+
+    def busy(self, now: float, seconds: float) -> None:
+        if self._worked_at is not None and now - self._worked_at > BATCH_GAP_SECONDS:
+            self._minutes.clear()
+        self._worked_at = now
+        self._now(now)[1] += max(0.0, min(seconds, TICK_AT_MOST))
+
+    def done(self, now: float, items: float, nbytes: float = 0.0, worked: float = 0.0) -> None:
+        minute = self._now(now)
+        minute[2] += items
+        minute[3] += nbytes
+        minute[4] += worked
+
+    def rate(self, now: float, of: int = ITEMS) -> Rate | None:
+        """The rate over the newest busy minutes, or None before there is one to quote."""
+        self._now(now)
+        busy = items = amount = 0.0
+        rates: list[float] = []
+        for minute in reversed(self._minutes):
+            if busy >= RATE_OVER:
+                break
+            seconds = minute[1]
+            busy += seconds
+            items += minute[2]
+            amount += minute[2 + of]
+            if seconds >= SPREAD_BUSY_AT_LEAST:
+                rates.append(minute[2 + of] / seconds)
+        if busy < RATE_AFTER or items < RATE_FEWEST or amount <= 0:
+            return None
+        mean = amount / busy
+        if len(rates) >= 2 and rates[0] > RISING_AT_MOST * max(rates[1:]):
+            return None
+        spread = 1.0 + (statistics.pstdev(rates) / mean if len(rates) >= 2 else 1.0)
+        return Rate(mean, min(SPREAD_MOST, max(SPREAD_LEAST, spread)), items, busy)
+
+    def clear(self) -> None:
+        self._minutes.clear()
+        self._worked_at = None
 
 
 def band(seconds: float) -> tuple[float, float]:

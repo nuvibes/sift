@@ -645,12 +645,26 @@ async def test_a_source_nothing_can_measure_leaves_the_check_asking_for_what_it_
     )
 
 
+async def test_a_clips_length_is_read_from_its_header_as_ffprobe_reads_it(
+    ingested_video: Ingested,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+) -> None:
+    """The check reads the clip Sift just wrote from its own index, with no tool launched."""
+    clip = await _a_real_clip(ingested_video, context_for, settings, hardware)
+    said = ffmpeg.parse_probe(await ffmpeg.run_json(ffmpeg.probe_args(clip, settings=settings)))
+
+    assert said.duration_ms is not None
+    assert abs((previews._clip_length_ms(clip) or 0) - said.duration_ms) <= 1
+
+
 async def test_a_clip_nothing_can_measure_is_left_alone_rather_than_failing_the_job(
     tmp_path: Path, settings: Settings
 ) -> None:
     """A preview that was built and cannot be measured is still a preview. Failing here would throw
     away a good file over a failed question about it."""
-    assert await previews._clip_length_ms(tmp_path / "not-a-video.mp4", settings=settings) is None
+    assert previews._clip_length_ms(tmp_path / "not-a-video.mp4") is None
 
 
 async def test_a_source_whose_streams_cannot_be_read_is_clipped_from_its_first_stream(

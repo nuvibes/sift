@@ -5,11 +5,12 @@ where a later block says otherwise; such a file is read through a copy carrying 
 from __future__ import annotations
 
 import struct
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 
-from sift.kernel import jpeg_turn
+from sift.kernel import jpeg_turn, lanes
 from sift.kernel.config import Settings
 from sift.kernel.content import Asset, ContentStore, DerivativeKind
 from sift.kernel.ids import new_id
@@ -140,6 +141,37 @@ async def test_the_turn_kept_on_the_row_is_read_instead_of_the_head(tmp_path: Pa
     assert alike is None
     with pytest.raises(FileNotFoundError):
         await jpeg_turn.as_the_browser_draws(None, photograph(None), settings=None)  # type: ignore[arg-type]
+
+
+async def test_the_head_and_the_copy_are_read_in_the_files_lane_and_once_held_not_again(
+    content_store: ContentStore, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A share's reader count holds only if every read takes its place; one already holding it
+    takes no second, which at a width of one would wait for itself."""
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    original = tmp_path / "turned.jpg"
+    original.write_bytes(_jpeg(_exif(6), _exif(1)))
+    asset = await _a_photograph(content_store)
+    asked: list[Path] = []
+
+    @asynccontextmanager
+    async def counting(path: Path) -> AsyncIterator[None]:
+        asked.append(path)
+        yield
+
+    monkeypatch.setattr(lanes, "reading", counting)
+    monkeypatch.setattr(lanes, "holding", lambda _path: False)
+    source = SimpleNamespace(asset=asset, path=original)
+    copy = await jpeg_turn.as_the_browser_draws(content_store, source, settings=settings)  # type: ignore[arg-type]
+    assert copy is not None and asked == [original, original]
+
+    copy.unlink()
+    asked.clear()
+    monkeypatch.setattr(lanes, "holding", lambda _path: True)
+    again = await jpeg_turn.readable_copy(content_store, asset, original, settings=settings)
+    assert again.read_bytes() == _jpeg(_exif(6)) and asked == []
 
 
 def test_the_take_in_asks_the_same_question_of_the_same_head() -> None:

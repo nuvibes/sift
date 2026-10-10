@@ -237,6 +237,7 @@ def _register_library(
         # The passes a walk makes worth running, named here since a scan of an indexed library
         # probes nothing.
         settles_into=(suggestions.SUGGESTION_SCAN, shoots.SHOOTS_LOOK),
+        content=store.content,
     )
 
 

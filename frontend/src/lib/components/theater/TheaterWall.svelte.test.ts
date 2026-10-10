@@ -504,7 +504,9 @@ describe('closing one feed', () => {
 		duration_ms: 1000,
 		projected_realtime: null,
 		qualities: [],
-		view_at_ms: 0
+		view_at_ms: 0,
+		unreadable: null,
+		scan_queued: false
 	};
 
 	it('leaves the other feed on the very element it was already playing in', () => {

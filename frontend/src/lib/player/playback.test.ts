@@ -96,6 +96,8 @@ function plan(overrides: Partial<PlaybackPlan> = {}): PlaybackPlan {
 		resume_ms: null,
 		view_at_ms: 2000,
 		qualities: [],
+		unreadable: null,
+		scan_queued: false,
 		...overrides
 	};
 }

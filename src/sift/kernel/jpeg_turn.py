@@ -20,6 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from sift.kernel import lanes
 from sift.kernel.config import Settings
 from sift.kernel.content import Asset, ContentStore, DerivativeKind
 from sift.kernel.log import get_logger
@@ -138,7 +139,7 @@ async def as_the_browser_draws(
     # The take-in keeps the answer on the row; only a file taken in before that is read here.
     apart = source.asset.turn_apart
     if apart is None:
-        apart = await asyncio.to_thread(drawn_apart, source.path)
+        apart = drawn_apart_in(await _read_in_lane(source.path, HEAD_BYTES))
     if not apart:
         return None
     return await readable_copy(store, source.asset, source.path, settings=settings)
@@ -161,7 +162,7 @@ async def readable_copy(
     # removal while it is being written.
     with tempfile.TemporaryDirectory(prefix="sift-turn-") as workspace:
         built = Path(workspace) / f"turned.{COPY_EXTENSION}"
-        size = await asyncio.to_thread(_write, original, built)
+        size = await asyncio.to_thread(_write, await _read_in_lane(original), built)
         derivative = await store.add_derivative(
             asset.id, DerivativeKind.RENDITION, extension=COPY_EXTENSION, size_bytes=size
         )
@@ -172,8 +173,25 @@ async def readable_copy(
     return destination
 
 
-def _write(original: Path, built: Path) -> int:
-    copy = as_the_browser_reads(original.read_bytes())
+async def _read_in_lane(path: Path, limit: int = -1) -> bytes:
+    """`limit` bytes of a library file (all of it by default), read in its storage's lane; the
+    place is let go before anything waits for the writer."""
+
+    def read() -> bytes:
+        with path.open("rb") as source:
+            return source.read(limit)
+
+    if lanes.holding(path):
+        data = await asyncio.to_thread(read)
+    else:
+        async with lanes.reading(path):
+            data = await asyncio.to_thread(read)
+    lanes.note_read(path, len(data))
+    return data
+
+
+def _write(data: bytes, built: Path) -> int:
+    copy = as_the_browser_reads(data)
     built.write_bytes(copy)
     return len(copy)
 

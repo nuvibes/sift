@@ -156,9 +156,8 @@ class Enqueuing(QueueCore):
         `requested_by` is the user whose press this is (None for a schedule, a watcher or a
         handler's children). `at` says when: `now` runs whatever quiet hours say, `quiet` waits for
         them; left out, a press is `now` and anything else follows its task's When. `settling` is
-        `enqueue_when_settled`'s: a collapse puts the waiting row off to this request's `run_after`.
-
-        `with_row` is a caller's own statement written in the same transaction, its first parameter
+        `enqueue_when_settled`'s: its urgency is final, and a collapse puts the waiting row off to
+        this request's `run_after`. `with_row` is a caller's own statement written in the same transaction, its first parameter
         the job id: the row joins whichever job the enqueue answers, a collapsed one included.
         """
         priority, timing = await self._admit(
@@ -169,6 +168,7 @@ class Enqueuing(QueueCore):
             at=at,
             parent_id=parent_id,
             require_handler=require_handler,
+            held_to_urgency=not settling,
         )
         job_id, row, serialized = self._row(
             job_type,
@@ -217,8 +217,9 @@ class Enqueuing(QueueCore):
         """Hand out several jobs under a running one in ONE write: the work a file's read starts.
 
         Each type is admitted as `enqueue` admits it, before anything is written, so a switched-off
-        one raises `JobSwitchedOff` and nothing is queued. Returns the ids in the order given, which
-        is the order they are claimed in at one urgency.
+        one raises `JobSwitchedOff` and nothing is queued. A child already waiting is collapsed onto
+        as `dedupe` does, so a read that runs twice hands its work out once. Returns the ids in the
+        order given, which is the order they are claimed in at one urgency.
         """
         placing = []
         for job_type, payload in children:
@@ -231,7 +232,7 @@ class Enqueuing(QueueCore):
                 parent_id=parent_id,
                 require_handler=True,
             )
-            job_id, row, _ = self._row(
+            job_id, row, serialized = self._row(
                 job_type,
                 payload,
                 priority=urgency,
@@ -241,17 +242,27 @@ class Enqueuing(QueueCore):
                 requested_by=None,
                 timing=timing,
             )
-            placing.append((job_type, job_id, row, timing))
+            placing.append((job_type, serialized, row, urgency, timing))
         if not placing:
             return []
-        arrivals = []
+        arrivals, placed = [], []
         async with self._writing() as connection:
-            for job_type, _, row, timing in placing:
-                arrivals.append(Arrival(job_type, await _place(connection, row), timing, None))
-        for job_type, job_id, _, _ in placing:
-            log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=parent_id)
+            for job_type, serialized, row, urgency, timing in placing:
+                job_id, family = await self._collapse_or_insert(
+                    connection,
+                    job_type,
+                    serialized,
+                    row,
+                    priority=urgency,
+                    requested_by=None,
+                    timing=timing,
+                )
+                placed.append(job_id)
+                if family is not None:
+                    arrivals.append(Arrival(job_type, family, timing, None))
+                    log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=parent_id)
         self._work_arrived(arrivals)
-        return [job_id for _, job_id, _, _ in placing]
+        return placed
 
     async def enqueue_many(
         self,
@@ -352,6 +363,7 @@ class Enqueuing(QueueCore):
         at: str | None,
         parent_id: str | None,
         require_handler: bool,
+        held_to_urgency: bool = True,
     ) -> tuple[int, str | None]:
         """Whether this kind of work may be queued at all, and at what urgency and timing.
 
@@ -368,7 +380,7 @@ class Enqueuing(QueueCore):
         # ONE URGENCY PER KIND OF WORK, declared at the handler (`register_handler(urgency=...)`),
         # so a pass asked for two ways cannot run twice for one answer. Only ever downwards.
         ceiling = registered_urgency(job_type)
-        if ceiling is not None and priority < ceiling:
+        if held_to_urgency and ceiling is not None and priority < ceiling:
             log.info("job.urgency_held", job_type=job_type, asked=priority, urgency=ceiling)
             priority = ceiling
 
@@ -529,15 +541,20 @@ class Enqueuing(QueueCore):
         A row already waiting until about then is left as it is, after a read and no write: a
         thousand files each asking move it once per `SETTLE_SLACK_SECONDS`, not once each.
 
-        Asked from inside a job, it is at least as urgent as that job: a settle a pressed run asks
-        for runs during the run, not after it.
+        Asked from inside a job, it is as urgent as that job, past the type's own urgency unless
+        the type keeps it (`keeps_urgency`): a settle a pressed run asks for runs during the run.
         """
-        asking = ASKED_AT.get()
-        if asking is not None:
-            from sift.kernel.jobs.worker_pool import registered_urgency
+        from sift.kernel.jobs.worker_pool import keeps_its_urgency, registered_urgency
 
-            # Never past the type's own urgency, which `_admit` would only hold it to.
-            priority = max(min(priority, asking), registered_urgency(job_type) or PRIORITY_MIN)
+        asking = ASKED_AT.get()
+        ceiling = registered_urgency(job_type) or PRIORITY_MIN
+        if asking is not None and not keeps_its_urgency(job_type):
+            priority = min(priority, asking)
+        elif asking is not None:
+            priority = max(min(priority, asking), ceiling)
+        elif priority < ceiling:
+            log.info("job.urgency_held", job_type=job_type, asked=priority, urgency=ceiling)
+            priority = ceiling
         if requested_by is None:
             waiting = await self._settle_still_waiting(job_type, payload, delay, priority)
             if waiting is not None:
@@ -568,6 +585,7 @@ class Enqueuing(QueueCore):
             at=None,
             parent_id=None,
             require_handler=True,
+            held_to_urgency=False,
         )
         body = dict(payload or {})
         _check_payload(body)

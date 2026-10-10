@@ -533,6 +533,30 @@
 										</p>
 									{/if}
 								{/if}
+								<!-- What the storage can give beside what Sift's own reads get from it. -->
+								<div data-testid="self-test-storage-rates">
+									{#if curve.ceiling_mb_per_second}
+										<p class="storage-name">{COPY.measure.canGive(curve.ceiling_mb_per_second)}</p>
+									{/if}
+									{#if curve.small_files_per_second && curve.small_mb_per_second}
+										<p class="storage-name">
+											{COPY.measure.small(curve.small_files_per_second, curve.small_mb_per_second)}
+										</p>
+									{/if}
+									{#if curve.listed_per_second}
+										<p class="storage-name">{COPY.measure.listed(curve.listed_per_second)}</p>
+									{/if}
+									{#if curve.achieved_mb_per_second}
+										<p class="storage-name">
+											{COPY.measure.achieved(curve.achieved_mb_per_second, curve.achieved_percent)}
+										</p>
+									{/if}
+									{#if curve.read_megabytes}
+										<p class="storage-name">{COPY.measure.readSince(curve.read_megabytes)}</p>
+									{:else if curve.remote}
+										<p class="storage-name">{COPY.measure.notReadYet}</p>
+									{/if}
+								</div>
 							</div>
 						{/each}
 					</div>

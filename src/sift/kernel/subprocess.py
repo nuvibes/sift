@@ -24,6 +24,8 @@ from enum import StrEnum
 from functools import cache
 from typing import IO, Any
 
+from sift.kernel.long_lived import LongLivedChild as LongLivedChild
+from sift.kernel.long_lived import start_long_lived as start_long_lived
 from sift.kernel.subprocess_jobs import (
     _EXTENDED_LIMIT_INFORMATION,
     _OVER_MEMORY,
@@ -182,6 +184,8 @@ def _process_api() -> Any:
         wintypes.ULONG,
         ctypes.POINTER(wintypes.ULONG),
     ]
+    ntdll.NtResumeProcess.restype = ctypes.c_long
+    ntdll.NtResumeProcess.argtypes = [wintypes.HANDLE]
     return ntdll
 
 
@@ -367,6 +371,7 @@ async def _spawn(
 ) -> subprocess.Popen[bytes]:
     """Start the tool on a thread, in its own job on Windows; `SubprocessError` if it cannot."""
     variables = {**os.environ, **extra_env} if extra_env else None
+    paused = _paused_start()
 
     def start() -> subprocess.Popen[bytes]:
         process = subprocess.Popen(  # noqa: S603 (a list, never a shell; see the module header)
@@ -374,11 +379,10 @@ async def _spawn(
             stdin=subprocess.PIPE if stdin else subprocess.DEVNULL,
             stdout=subprocess.PIPE if stdout else subprocess.DEVNULL,
             stderr=subprocess.PIPE,
-            creationflags=creation_flags(priority),
+            creationflags=creation_flags(priority) | paused,
             env=variables,
         )
-        step_aside(process, priority)
-        _contain(process, memory_limit_for(priority), background=priority is Priority.BACKGROUND)
+        _hold_then_start(process, priority, paused)
         return process
 
     try:
@@ -422,6 +426,8 @@ def _job_api() -> Any:
     kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.CreateIoCompletionPort.restype = wintypes.HANDLE
     kernel32.CreateIoCompletionPort.argtypes = [
         wintypes.HANDLE,
@@ -547,6 +553,52 @@ def _contain(
                 _set_rate(api, job, _background_rate)
 
 
+# --- a tool held until its job holds it ---------------------------------------------------------
+# A tool started running reads before it is put in its job, and the job never counts those bytes
+# (a quick enough tool has finished first), so it starts paused and is let go once it is held.
+
+#: `CREATE_SUSPENDED`.
+_PAUSED = 0x00000004
+
+
+def _paused_start() -> int:
+    """The creation flag that holds a tool still until `_hold_then_start`, where it can be let go."""
+    return _PAUSED if _job_api() is not None and _process_api() is not None else 0
+
+
+def _hold_then_start(process: subprocess.Popen[bytes], priority: Priority, paused: int) -> None:
+    """Lower and contain a freshly started tool, then let it run if it was started paused."""
+    try:
+        step_aside(process, priority)
+        _contain(process, memory_limit_for(priority), background=priority is Priority.BACKGROUND)
+    finally:
+        if paused:
+            _let_go(process)
+
+
+def _let_go(process: subprocess.Popen[bytes]) -> None:
+    """Start a paused tool; one that will not start is ended, never left waiting for its limit."""
+    handle = int(process._handle)  # type: ignore[attr-defined, unused-ignore]
+    if _process_api().NtResumeProcess(handle) != 0:
+        process.kill()
+
+
+#: `PROCESS_SUSPEND_RESUME`: the one right letting a paused tool go needs.
+_MAY_RESUME = 0x0800
+
+
+def _let_go_by_id(pid: int) -> bool:
+    """Start a paused tool known only by its id, which then runs uncontained; False if it cannot."""
+    api = _job_api()
+    handle = api.OpenProcess(_MAY_RESUME, False, pid)
+    if not handle:
+        return False
+    try:
+        return bool(_process_api().NtResumeProcess(handle) == 0)
+    finally:
+        api.CloseHandle(handle)
+
+
 # --- the processor time Sift's tools have used, for `kernel.device_load` ------------------------
 
 #: The job handles still open, read under `_RATE_LOCK` so none is closed while it is asked.
@@ -631,77 +683,6 @@ def _release(process: subprocess.Popen[bytes]) -> None:
         close()
 
 
-# --- a child that runs for as long as Sift does ---------------------------------------------------
-
-
-class LongLivedChild:
-    """A child that runs until told to stop; on Windows, dropping this ends it with its job."""
-
-    def __init__(self, process: subprocess.Popen[bytes]) -> None:
-        self._process = process
-
-    @property
-    def pid(self) -> int:
-        return self._process.pid
-
-    @property
-    def returncode(self) -> int | None:
-        """The exit status, or None while it runs. Asked of the process each time, never cached."""
-        return self._process.poll()
-
-    def terminate(self) -> None:
-        """Ask it to stop. On Windows there is no asking: this ends it, the same as `kill`."""
-        self._process.terminate()
-
-    def kill(self) -> None:
-        self._process.kill()
-
-    async def wait(self, *, time_limit: float | None = None) -> int:
-        """Wait for it to exit on a thread and release its job; `TimeoutError` past `time_limit`."""
-        try:
-            code = await asyncio.to_thread(self._process.wait, time_limit)
-        except subprocess.TimeoutExpired:
-            raise TimeoutError(f"process {self.pid} did not exit in {time_limit} s") from None
-        _release(self._process)
-        return code
-
-
-async def start_long_lived(
-    argv: list[str],
-    *,
-    stdout: IO[bytes] | int = subprocess.DEVNULL,
-    stderr: IO[bytes] | int = subprocess.DEVNULL,
-) -> LongLivedChild:
-    """Start a child that runs until told to stop, contained so it cannot outlive Sift.
-
-    Its input is closed: the desktop shell uses this process's input to ask it to stop.
-    """
-
-    def launch() -> subprocess.Popen[bytes]:
-        child = subprocess.Popen(  # noqa: S603 (a list, never a shell; see the module header)
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=stderr,
-        )
-        _contain(child)
-        return child
-
-    launching = asyncio.ensure_future(asyncio.to_thread(launch))
-    try:
-        started = await asyncio.shield(launching)
-    except asyncio.CancelledError:
-        with contextlib.suppress(Exception):
-            abandoned = await launching
-            abandoned.kill()
-            await asyncio.to_thread(abandoned.wait)
-            _release(abandoned)
-        raise
-    except OSError as exc:
-        raise SubprocessError(f"could not run {argv[0]!r}") from exc
-    return LongLivedChild(started)
-
-
 async def capture(
     argv: list[str],
     *,
@@ -711,6 +692,7 @@ async def capture(
     """Run `argv` on threads and hand back all it wrote, uncapped; killed past `time_limit` or on
     cancel. A non-zero exit raises `ToolFailed` with the end of what the tool said."""
     started = time.perf_counter()
+    paused = _paused_start()
 
     def launch() -> subprocess.Popen[bytes]:
         try:
@@ -719,15 +701,12 @@ async def capture(
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                creationflags=creation_flags(priority),
+                creationflags=creation_flags(priority) | paused,
             )
         except OSError as exc:
             raise SubprocessError(f"could not run {argv[0]!r}") from exc
         try:
-            step_aside(process, priority)
-            _contain(
-                process, memory_limit_for(priority), background=priority is Priority.BACKGROUND
-            )
+            _hold_then_start(process, priority, paused)
         except BaseException:
             process.kill()
             process.communicate()
@@ -753,20 +732,31 @@ async def capture(
             _release(abandoned)
         raise
     talking = asyncio.ensure_future(asyncio.to_thread(talk, process))
+    filed = False
     try:
         output, errors = await asyncio.shield(talking)
     except asyncio.CancelledError:
         # The thread cannot be cancelled: ending the tool and all it started closes its pipes,
-        # which ends the thread.
+        # which ends the thread. Filed first: a closed job has no counters left to ask.
         with contextlib.suppress(OSError):
             process.kill()
+        _ran(process, started)
+        filed = True
         _release(process)
         with contextlib.suppress(Exception):
             await talking
         raise
     finally:
-        _ran(process, started)
+        if not filed:
+            _ran(process, started)
         _release(process)
+    return _captured(process, argv, output, errors)
+
+
+def _captured(
+    process: subprocess.Popen[bytes], argv: list[str], output: bytes | None, errors: bytes | None
+) -> bytes:
+    """What `capture` hands back, or the failure its tool's exit says."""
     if process in _OVER_MEMORY:
         raise SubprocessError(_over_memory(argv))
     if process.returncode != 0:
@@ -886,6 +876,7 @@ async def _launch_streaming(
     argv: list[str], priority: Priority, *, stdin: bytes | None
 ) -> tuple[asyncio.subprocess.Process, subprocess.Popen[bytes] | None]:
     """Start a streamed tool on the loop, contained like the others, and the `Popen` behind it."""
+    paused = _paused_start()
     try:
         process = await asyncio.create_subprocess_exec(
             *launch_prefix(priority),
@@ -893,16 +884,16 @@ async def _launch_streaming(
             stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
-            creationflags=creation_flags(priority),
+            creationflags=creation_flags(priority) | paused,
         )
     except OSError as exc:
         raise SubprocessError(f"could not run {argv[0]!r}") from exc
     held = _popen_of(process)
     if held is not None:
-        step_aside(held, priority)
-        await asyncio.to_thread(
-            _contain, held, memory_limit_for(priority), background=priority is Priority.BACKGROUND
-        )
+        await asyncio.to_thread(_hold_then_start, held, priority, paused)
+    elif paused and not _let_go_by_id(process.pid):
+        await _kill(process)
+        raise SubprocessError(f"could not run {argv[0]!r}")
     return process, held
 
 

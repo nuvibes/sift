@@ -37,7 +37,10 @@ function doubles(canAdd: boolean) {
 		trail: [],
 		loading: false,
 		failed: null,
-		canGoUp: false
+		canGoUp: false,
+		names: [],
+		files: [],
+		file: null
 	};
 	return { library, grants, picker };
 }

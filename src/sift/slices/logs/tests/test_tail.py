@@ -322,3 +322,76 @@ def test_a_read_filled_by_the_first_line_of_a_file_stops_before_the_rotated_ones
     assert found.lines == ["first", "second", "third"]
     assert found.whole is False
     assert found.read_bytes == current.stat().st_size, "the rotated file was never read"
+
+
+def test_a_block_without_the_search_is_passed_over_and_the_answer_is_the_same(
+    tmp_path: Path,
+) -> None:
+    from sift.slices.logs.router import _keeps
+
+    current = tmp_path / "sift.log"
+    lines = [_record("info", "filler", n=n, pad="z" * 200) for n in range(3000)]
+    lines[5] = _record("info", "found.me", folder="Needle")
+    lines[2500] = _record("info", "found.me.too", folder="needle")
+    current.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    keep = _keeps(None, "needle")
+    assert keep is not None
+
+    plain = newest_matching([current], 10, keep)
+    quick = newest_matching([current], 10, keep, within=b"needle")
+
+    assert quick == plain
+    assert [json.loads(one)["event"] for one in quick.lines] == ["found.me", "found.me.too"]
+
+
+def test_a_block_holding_an_escaped_character_is_always_read_line_by_line(tmp_path: Path) -> None:
+    """A sharp s folds to "ss", and the line holds it escaped, so the bytes cannot rule it out."""
+    from sift.slices.logs.router import _keeps
+
+    current = tmp_path / "sift.log"
+    # Not the file's first line, which is always read whole at the end.
+    current.write_text(
+        _record("info", "first") + "\n" + _record("info", "walked", folder="Stra\u00dfe") + "\n",
+        encoding="utf-8",
+    )
+    keep = _keeps(None, "strasse")
+    assert keep is not None
+
+    found = newest_matching([current], 10, keep, within=b"strasse")
+
+    assert [json.loads(one)["event"] for one in found.lines] == ["walked"]
+
+
+def test_a_job_s_id_finds_its_lines_anywhere_in_the_log_with_its_summary_first(
+    tmp_path: Path,
+) -> None:
+    """Past the search's budget too: a job ran an hour ago is still the one being asked about."""
+    import importlib
+
+    # The module, not the package's `router` attribute, which is the routes object.
+    router = importlib.import_module("sift.slices.logs.router")
+
+    job = "01M4HAJYWS66S29SPZ4P85SHKE"
+    older = tmp_path / "sift.log.1"
+    older.write_text(
+        "\n".join(
+            [
+                _record("info", "job.claimed", job_id=job),
+                _record("info", "content.probed", job_id=job),
+                _record("info", "job.summary", job_id=job, wall_ms=12),
+                _record("info", "job.summary", job_id="01M4HAJYWS66S29SPZ4P85SHKF"),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    current = tmp_path / "sift.log"
+    current.write_bytes(b"".join(b"%07d %s\n" % (n, b"z" * 200) for n in range(4000)))
+
+    with patch.object(router, "SEARCH_BUDGET", 64 * 1024):
+        page = router._read(current, 50, search=job.lower())
+        other = router._read(current, 50, search="content.probed")
+
+    assert [one.event for one in page.lines] == ["job.summary", "job.claimed", "content.probed"]
+    assert page.whole is True
+    assert other.lines == [] and other.whole is False, "any other search keeps its budget"

@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import shutil
+import threading
 import time
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
@@ -356,6 +357,14 @@ class Places(StoreCore):
         await self._keep(self.ARCHIVE_CACHE, self.ARCHIVE_CACHE_BUDGET, destination)
         return destination
 
+    async def tidy_incoming(self) -> int:
+        """Remove the take-in's scratch folders a stopped process left under the cache, at start
+        before any job runs; the kept copies beside them stay. How many were removed."""
+        removed = await asyncio.to_thread(_tidy_scratch, self._settings.cache_dir / "incoming")
+        if removed:
+            log.info("content.scratch_tidied", folders=removed)
+        return removed
+
     async def local_copy(self, asset_id: str) -> Path | None:
         """The copy of this asset kept in the cache, where one is: read from a share at its take-in,
         or a picture already pulled out of its archive."""
@@ -422,23 +431,47 @@ class Places(StoreCore):
             )
 
 
+#: The prefixes of a take-in's own scratch folders under `incoming` (`tempfile.mkdtemp`'s).
+_SCRATCH_PREFIXES = ("copy-", "archive-")
+
+
+def _tidy_scratch(incoming: Path) -> int:
+    """Remove every take-in scratch folder directly under `incoming`. Blocking, for a thread."""
+    try:
+        found = [one for one in incoming.iterdir() if one.name.startswith(_SCRATCH_PREFIXES)]
+    except OSError:
+        return 0
+    for folder in found:
+        # Sift's own scratch under its cache, never a library file.
+        shutil.rmtree(  # nosemgrep: sift-no-file-removal-outside-delete-trash
+            folder, ignore_errors=True
+        )
+    return len(found)
+
+
 #: How many notes of copies handed out are kept before the stale ones are let go.
 _HANDED_OUT_NOTES = 10_000
 
 
+#: The keeper reads the handed-out copies in a thread while the loop hands more out: one lock.
+_HANDED_OUT_LOCK = threading.RLock()
+
+
 def _handed_out(path: Path) -> Path:
-    _HANDED_OUT[path] = time.monotonic()
-    if len(_HANDED_OUT) > _HANDED_OUT_NOTES:
-        _lately_handed_out()
-    return path
+    with _HANDED_OUT_LOCK:
+        _HANDED_OUT[path] = time.monotonic()
+        if len(_HANDED_OUT) > _HANDED_OUT_NOTES:
+            _lately_handed_out()
+        return path
 
 
 def _lately_handed_out() -> frozenset[Path]:
     """The copies handed out within `HANDED_OUT_SECONDS`; older notes are let go."""
-    now = time.monotonic()
-    for path in [one for one, at in _HANDED_OUT.items() if now - at >= HANDED_OUT_SECONDS]:
-        del _HANDED_OUT[path]
-    return frozenset(_HANDED_OUT)
+    with _HANDED_OUT_LOCK:
+        now = time.monotonic()
+        for path in [one for one, at in _HANDED_OUT.items() if now - at >= HANDED_OUT_SECONDS]:
+            del _HANDED_OUT[path]
+        return frozenset(_HANDED_OUT)
 
 
 def _the_copy_in(folder: Path) -> Path | None:

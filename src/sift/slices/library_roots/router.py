@@ -196,22 +196,31 @@ async def add_grant(
     return GrantView(id=grant.id, path=grant.abs_path, granted_at=grant.granted_at)
 
 
+#: The most file-name patterns one listing takes, and the longest of them.
+_MOST_NAMES = 8
+_LONGEST_NAME = 64
+
+
 @router.get("/browse")
 async def browse(
     library: Annotated[LibraryStore, Depends(wiring.library)],
     viewer: Annotated[Viewer, Depends(require_admin)],
     path: str | None = None,
     scope: Literal["granted", "machine"] = "granted",
+    files: Annotated[list[str] | None, Query()] = None,
 ) -> BrowseView:
-    """The folders inside a granted place, so one can be picked. Admin-only, read-only, confined to
-    grants."""
+    """The folders inside a place Sift has, so one can be picked, and with `files` the files whose
+    names match those patterns. Admin-only, read-only, confined to the library folders and grants."""
+    names = files or []
+    if len(names) > _MOST_NAMES or any(len(name) > _LONGEST_NAME for name in names):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ask for fewer or shorter file names.")
     if scope == "machine":
         # The whole computer, so a remote Sift can be administered; it grants nothing.
         roots = await machine_roots()
     else:
-        roots = [Path(grant.abs_path) for grant in await library.grants()]
+        roots = await _places(library)
     try:
-        listing = await look(roots, Path(path) if path else None)
+        listing = await look(roots, Path(path) if path else None, names)
     except BrowseRefused as refusal:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(refusal)) from refusal
 
@@ -223,7 +232,18 @@ async def browse(
         nothing_granted=listing.nothing_granted,
         writable=listing.writable,
         read_only_mount=listing.read_only_mount,
+        files=[BrowseEntry(name=entry.name, path=entry.path) for entry in listing.files],
     )
+
+
+async def _places(library: LibraryStore) -> list[Path]:
+    """Every folder Sift has: the library folders and the grants, each once."""
+    places = [grant.abs_path for grant in await library.grants()]
+    places += [root.abs_path for root in await library.roots()]
+    seen: dict[str, Path] = {}
+    for place in places:
+        seen.setdefault(place, Path(place))
+    return list(seen.values())
 
 
 @router.get("/roots")

@@ -4,8 +4,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Collection
-from dataclasses import dataclass
 
 from sift.kernel.jobs.queue_core import QueueCore
 from sift.kernel.jobs.queue_rows import JobState
@@ -14,39 +12,16 @@ from sift.kernel.jobs.switchboard import QuietHold
 #: How long "can this family run here" stays true: the pool's own `RECONFIGURE_SECONDS`.
 READINESS_FRESH_FOR_SECONDS = 3
 
-# Unfinished work by type, less what quiet hours or a family's hold keep waiting: the family
-# tallies, so a few rows however long the queue.
+# Unfinished work by type, less what quiet hours keep waiting: the family tallies, so a few rows
+# however long the queue.
 _DEMAND_BY_TYPE = """
 SELECT type, SUM(n) AS pending FROM job_family_tallies
  WHERE state IN ('queued', 'running', 'blocked')
    AND NOT (state = 'queued' AND NOT ?
             AND (timing = 'quiet' OR (timing = '' AND type IN (SELECT value FROM json_each(?)))))
-   AND NOT (state = 'queued' AND NOT ?
-            AND root_id IN (SELECT value FROM json_each(?)) AND timing <> 'now'
-            AND type NOT IN (SELECT value FROM json_each(?)))
  GROUP BY type
  HAVING SUM(n) > 0
 """
-
-# A held family's waiting rows by type from its tallies, less those put off to later, which the
-# tallies cannot tell from the rest (`ix_jobs_queued_later`).
-_HELD_FOR_A_FAMILY = """
-SELECT root_id, type, SUM(n) AS held FROM (
-  SELECT root_id, type, n FROM job_family_tallies
-   WHERE root_id IN (SELECT value FROM json_each(:families)) AND state = 'queued'
-     AND timing <> 'now' AND type NOT IN (SELECT value FROM json_each(:spared))
-  UNION ALL
-  SELECT COALESCE(root_id, id), type, -COUNT(*) FROM jobs
-   WHERE state = 'queued' AND run_after IS NOT NULL AND run_after > :now
-     AND COALESCE(root_id, id) IN (SELECT value FROM json_each(:families))
-     AND COALESCE(timing, '') <> 'now' AND type NOT IN (SELECT value FROM json_each(:spared))
-   GROUP BY 1, 2
-)
- GROUP BY root_id, type
- HAVING SUM(n) > 0
-"""
-
-_FAMILY_OF = "SELECT COALESCE(root_id, id) AS family FROM jobs WHERE id = ?"
 
 # Quiet-hours work by type and state: what Tasks counts as held, and what keeps the device awake.
 _HELD_BY_TYPE = """
@@ -59,18 +34,8 @@ SELECT type, state, COUNT(*) AS held FROM jobs
 """
 
 
-@dataclass(frozen=True, slots=True)
-class FamilyHold:
-    """A running job keeping its family's other waiting work back, all but its `spared` kinds."""
-
-    family: str
-    spared: frozenset[str]
-
-
 class SwitchboardReads(QueueCore):
     """What the board and quiet hours hold back, kept for a few seconds between asks."""
-
-    _holds_by_job: dict[str, FamilyHold] | None = None
 
     async def _held(self) -> QuietHold:
         """What quiet hours hold back right now, kept for `READINESS_FRESH_FOR_SECONDS`."""
@@ -89,53 +54,9 @@ class SwitchboardReads(QueueCore):
         """`_DEMAND_BY_TYPE`."""
         quiet = await self._held()
         rows = await self._db.fetch_all(
-            _DEMAND_BY_TYPE, (quiet.open, json.dumps(sorted(quiet.types)), *self._family_holds())
+            _DEMAND_BY_TYPE, (quiet.open, json.dumps(sorted(quiet.types)))
         )
         return {row["type"]: row["pending"] for row in rows}
-
-    @property
-    def _holds(self) -> dict[str, FamilyHold]:
-        if self._holds_by_job is None:
-            self._holds_by_job = {}
-        return self._holds_by_job
-
-    async def hold_family(self, job_id: str, *, spared: Collection[str]) -> None:
-        """Keep this job's family waiting until `lift_hold`, all but a row pressed `now`."""
-        row = await self._db.fetch_one(_FAMILY_OF, (job_id,))
-        family = job_id if row is None else str(row["family"])
-        self._holds[job_id] = FamilyHold(family=family, spared=frozenset(spared))
-
-    def lift_hold(self, job_id: str) -> bool:
-        """End this job's hold. False when it held nothing."""
-        return self._holds.pop(job_id, None) is not None
-
-    def _family_holds(self) -> tuple[bool, str, str]:
-        holds = list(self._holds.values())
-        spared = sorted({kind for hold in holds for kind in hold.spared})
-        return (not holds, json.dumps(sorted({hold.family for hold in holds})), json.dumps(spared))
-
-    async def _held_for_families(self) -> list[tuple[str, str, int]]:
-        if not self._holds:
-            return []
-        _, families, spared = self._family_holds()
-        rows = await self._db.fetch_all(
-            _HELD_FOR_A_FAMILY, {"families": families, "now": int(self._now()), "spared": spared}
-        )
-        return [(str(row["root_id"]), str(row["type"]), int(row["held"])) for row in rows]
-
-    async def held_for_family_by_type(self) -> dict[str, int]:
-        """The waiting rows a family's hold keeps back now, by type: held, not due."""
-        held: dict[str, int] = {}
-        for _family, job_type, count in await self._held_for_families():
-            held[job_type] = held.get(job_type, 0) + count
-        return held
-
-    async def holder_of(self, job_types: Collection[str]) -> str | None:
-        """The job (a scan) holding back waiting work of these types, or None."""
-        wanted = set(job_types)
-        families = {family for family, kind, _ in await self._held_for_families() if kind in wanted}
-        holders = sorted(job_id for job_id, hold in self._holds.items() if hold.family in families)
-        return holders[0] if holders else None
 
     async def held_by_type(
         self,

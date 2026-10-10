@@ -656,3 +656,48 @@ async def _kept_beside_the_app(client: TestClient, rates: MachineRates) -> None:
         await RatesStore(database).save(rates)
     finally:
         await database.close()
+
+
+def test_each_storage_shows_what_sift_achieves_against_what_it_can_give(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ceiling is the curve's best level; the achieved rate and the bytes are the lane's, read
+    now; a storage Sift has read nothing from since it started shows neither."""
+    from sift.kernel import lanes
+
+    class Reads:
+        def readings(self) -> dict[str, dict[str, object]]:
+            return {"\\\\nas\\photos\\": {"achieved_mb_per_second": 11.5, "bytes_read": 2_500_000}}
+
+    monkeypatch.setattr(lanes, "installed", lambda: Reads())
+    runner = part_of_app(client.app, SELF_TEST_RUNNER)  # type: ignore[arg-type]
+    runner.state = a_finished_run()
+    levels = tuple(
+        selftest.StorageLevel(at_once=n, seconds=1.0, bytes_read=rate)
+        for n, rate in ((1, 21_000_000), (2, 23_000_000))
+    )
+    small = selftest.StorageLevel(at_once=2, seconds=2.0, bytes_read=6_000_000, seeks=9)
+    runner.state.measurement = Measurement(
+        cores=8,
+        storages=(
+            selftest.StorageCurve(
+                storage="\\\\nas\\photos\\",
+                label="Photos",
+                remote=True,
+                levels=levels,
+                small=small,
+                listed_per_second=1650.4,
+            ),
+            selftest.StorageCurve(storage="D:\\", label="Disk", remote=False, levels=levels),
+        ),
+    )
+
+    shown = _as_admin(client).get("/api/performance/self-test").json()["measurement"]["storages"]
+
+    assert shown[0]["ceiling_mb_per_second"] == 23.0
+    assert shown[0]["achieved_mb_per_second"] == 11.5 and shown[0]["achieved_percent"] == 50
+    assert shown[0]["read_megabytes"] == 2.5
+    assert shown[0]["small_files_per_second"] == 4.5 and shown[0]["small_mb_per_second"] == 3.0
+    assert shown[0]["listed_per_second"] == 1650
+    assert shown[1]["achieved_mb_per_second"] is None and shown[1]["achieved_percent"] is None
+    assert shown[1]["read_megabytes"] is None and shown[1]["small_files_per_second"] is None
