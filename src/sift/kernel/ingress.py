@@ -19,6 +19,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import filetype
 
@@ -26,7 +27,7 @@ from sift.kernel.config import Settings
 from sift.kernel.log import get_logger, hashed, security_event
 from sift.kernel.numbers import as_int
 from sift.kernel.paths import O_NONBLOCK
-from sift.kernel.subprocess import SubprocessError
+from sift.kernel.subprocess import Priority, SubprocessError
 from sift.kernel.subprocess import run as run_tool
 from sift.kernel.threads import waits_on_storage
 
@@ -514,6 +515,46 @@ async def verify_decodable(result: IngressResult, *, settings: Settings) -> None
         raise await _reject_decoded(Reason.PIXELS_EXCEEDED, result, settings, handle, None)
 
     log.debug("ingress.decodable", handle=handle, file_type=result.media.name)
+
+
+async def verify_probed(
+    result: IngressResult, argv: list[str], *, settings: Settings
+) -> dict[str, Any]:
+    """`verify_decodable` asked of the reader's own ffprobe `argv`, whose JSON answer it returns."""
+    handle = hashed(str(result.path))
+    try:
+        probe = await run_tool(
+            argv, time_limit=_PROBE_TIMEOUT_SECONDS, priority=Priority.BACKGROUND
+        )
+    except SubprocessError:
+        raise await _reject_decoded(Reason.TIMED_OUT, result, settings, handle, "timeout") from None
+
+    if probe.returncode != 0:
+        detail = probe.stderr.decode("utf-8", "replace").strip()
+        raise await _reject_decoded(Reason.NOT_DECODABLE, result, settings, handle, detail)
+
+    try:
+        answer = json.loads(probe.stdout)
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict):
+        raise await _reject_decoded(Reason.NOT_DECODABLE, result, settings, handle, "no answer")
+
+    listed = answer.get("streams")
+    pictures = [
+        one
+        for one in (listed if isinstance(listed, list) else [])
+        if isinstance(one, dict) and one.get("codec_type") == "video"
+    ]
+    if not pictures:
+        raise await _reject_decoded(Reason.NO_VIDEO_STREAM, result, settings, handle, None)
+
+    lines = "\n".join(f"video,{one.get('width', '')},{one.get('height', '')}" for one in pictures)
+    if not _within_pixel_cap(lines.encode("utf-8")):
+        raise await _reject_decoded(Reason.PIXELS_EXCEEDED, result, settings, handle, None)
+
+    log.debug("ingress.decodable", handle=handle, file_type=result.media.name)
+    return answer
 
 
 def _within_pixel_cap(stdout: bytes) -> bool:

@@ -9,6 +9,7 @@ the readers the offer and the landing add under theirs. A section never writes a
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sift.kernel.audience import EVERY_ADMIN
@@ -118,12 +119,10 @@ _ADOPTABLE = (
 _MOVE_MANIFEST = (
     "UPDATE swap_manifests SET session_id = ?, updated_at = ? WHERE session_id = ? AND file_key = ?"
 )
-# One chunk appended once. `json_each` is the guard against a chunk counted twice when a resend of
-# a chunk already verified arrives; `$[#]` appends.
-_MARK_DONE = (
-    "UPDATE swap_manifests SET done = json_insert(done, '$[#]', ?), updated_at = ?"
-    " WHERE session_id = ? AND file_key = ?"
-    " AND NOT EXISTS (SELECT 1 FROM json_each(swap_manifests.done) WHERE value = ?)"
+# The whole list of verified chunks, written in place of the last: a batch at a time, never a
+# chunk at a time, so the cost of a file's records grows with its batches, not its chunks squared.
+_RECORD_DONE = (
+    "UPDATE swap_manifests SET done = ?, updated_at = ? WHERE session_id = ? AND file_key = ?"
 )
 _DROP_MANIFEST = "DELETE FROM swap_manifests WHERE session_id = ? AND file_key = ?"
 _STALE_MANIFESTS = (
@@ -485,9 +484,12 @@ class SessionStore:
             raise RuntimeError("the manifest was not moved")
         return kept
 
-    async def mark_done(self, session_id: str, file_key: str, chunk: int, now: int) -> None:
-        """Append one verified chunk to the file's manifest, once."""
-        await self._db.execute(_MARK_DONE, (chunk, now, session_id, file_key, chunk))
+    async def record_done(
+        self, session_id: str, file_key: str, done: Iterable[int], now: int
+    ) -> None:
+        """The chunks of the file verified and on the disk, each once, in order."""
+        chunks = json.dumps(sorted(set(done)))
+        await self._db.execute(_RECORD_DONE, (chunks, now, session_id, file_key))
 
     async def drop_manifest(self, session_id: str, file_key: str) -> None:
         await self._db.execute(_DROP_MANIFEST, (session_id, file_key))

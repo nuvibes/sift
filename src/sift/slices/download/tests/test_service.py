@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -913,16 +914,37 @@ async def test_the_sweep_leaves_a_download_that_is_really_running(
     assert row is not None and row["state"] == "running"
 
 
-async def test_the_sweep_leaves_a_row_with_no_job_at_all(
-    download_service: DownloadService, temp_db: Database
+async def test_a_row_a_stop_left_with_no_job_is_queued_again_and_a_new_one_is_left(
+    download_service: DownloadService, temp_db: Database, registered_download: None
 ) -> None:
-    """Deliberately narrow: there is a moment during submission when a row has no job yet, and that
-    is exactly what a healthy row looks like. Only a job that has GIVEN UP settles one."""
-    await _insert_download(temp_db, "fresh", state="queued")
+    """A row from before this start with no job would sit queued for ever; one written since
+    this start may be mid-submission, and is left to it."""
+    await _insert_download(temp_db, "stranded", state="queued")
+    await temp_db.execute(
+        "INSERT INTO downloads (id, url, url_hash, state, created_at) VALUES (?, ?, ?, ?, ?)",
+        ("fresh", _URL, url_hash(_URL), "queued", int(time.time()) + 60),
+    )
 
-    assert await download_service.settle_orphans() == 0
-    row = await temp_db.fetch_one("SELECT state FROM downloads WHERE id = 'fresh'")
-    assert row is not None and row["state"] == "queued"
+    assert await download_service.settle_orphans() == 1
+
+    stranded = await _named_job(temp_db, "stranded")
+    assert stranded is not None
+    job = await temp_db.fetch_one("SELECT type, state, payload FROM jobs WHERE id = ?", (stranded,))
+    assert job is not None and job["type"] == "download" and job["state"] == "queued"
+    assert json.loads(job["payload"]) == {"download_id": "stranded"}
+    assert await _named_job(temp_db, "fresh") is None
+    assert await download_service.settle_orphans() == 0, "settled once, not on every start"
+
+
+async def test_a_submitted_link_is_one_write_holding_its_job(
+    download_service: DownloadService, registered_download: None, temp_db: Database
+) -> None:
+    download_id = await download_service.submit_url(url=_URL, dest_folder_id=None)
+
+    job_id = await _named_job(temp_db, download_id)
+    assert job_id is not None
+    job = await temp_db.fetch_one("SELECT payload FROM jobs WHERE id = ?", (job_id,))
+    assert job is not None and json.loads(job["payload"]) == {"download_id": download_id}
 
 
 async def test_a_finished_download_tells_the_file_where_it_came_from(

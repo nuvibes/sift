@@ -62,6 +62,13 @@ class NotAStashDatabase(Exception):
     """The file is not a Stash database this can read. The message says why, for a person."""
 
 
+#: Said when the copy of the database fills the disk: the database itself is fine.
+NO_ROOM_FOR_THE_COPY = (
+    "There isn't room on this device's disk for a copy of the Stash database. Free some space, "
+    "then read it again."
+)
+
+
 def copy_in(source: Path, target: Path) -> None:
     """Copy a Stash database to `target` through SQLite's own backup, reading it read-only.
 
@@ -81,6 +88,8 @@ def copy_in(source: Path, target: Path) -> None:
         try:
             reading.backup(writing, pages=_COPY_PAGES)
         except sqlite3.DatabaseError as broken:
+            if "disk is full" in str(broken):
+                raise NotAStashDatabase(NO_ROOM_FOR_THE_COPY) from broken
             raise NotAStashDatabase("That file isn't a database Sift can read.") from broken
         finally:
             writing.close()

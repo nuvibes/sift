@@ -56,7 +56,7 @@ from sift.slices.download.sources.errors import (
 from sift.slices.download.sources.net import guarded_session
 from sift.slices.download.sources.resolved import Fetched
 from sift.slices.download.sources.subproc import SubprocessError
-from sift.slices.download.url_guard import UrlRejected, guard_url, next_hop
+from sift.slices.download.url_guard import LookupFailedForNow, UrlRejected, guard_url, next_hop
 
 log = get_logger(__name__)
 
@@ -269,6 +269,10 @@ async def _fetch_failed(
         # As permanent as a refusal of the pasted link: recorded, not retried.
         said = await _record_failure(service, download_id, exc, direct=direct)
         raise JobFailedPermanently(said) from exc
+    if isinstance(exc, LookupFailedForNow):
+        # The network, not the address: waited out like a dropped connection.
+        await _retry_or_give_up(context, service, download_id, str(exc))
+        raise exc
     if isinstance(exc, NoAnswer):
         # Another attempt would sit through the same wait; Try again is the next ask.
         said = await _record_failure(service, download_id, exc, direct=direct)

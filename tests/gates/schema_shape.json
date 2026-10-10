@@ -84,10 +84,13 @@
     "ix_insight_days_split": "create index ix_insight_days_split on insight_days ( user_id , split_at )",
     "ix_jobs_by_type": "create index ix_jobs_by_type on jobs ( type , state , id )",
     "ix_jobs_claim_by_id": "create index ix_jobs_claim_by_id on jobs ( state , priority , id , run_after )",
+    "ix_jobs_claim_heads": "create index ix_jobs_claim_heads on jobs ( type , timing , priority , id ) where state = 'queued' and run_after is null",
     "ix_jobs_done_by_updated": "create index ix_jobs_done_by_updated on jobs ( updated_at , type ) where state = 'done'",
     "ix_jobs_family": "create index ix_jobs_family on jobs ( root_id , state )",
     "ix_jobs_family_by_id": "create index ix_jobs_family_by_id on jobs ( root_id , id )",
     "ix_jobs_last_run": "create index ix_jobs_last_run on jobs ( type , updated_at , id ) where state in ( 'done' , 'canceled' ) and started_at is not null",
+    "ix_jobs_live_asset": "create index ix_jobs_live_asset on jobs ( json_extract ( payload , '$.asset_id' ) ) where state in ( 'queued' , 'running' , 'blocked' , 'paused' )",
+    "ix_jobs_live_payload": "create index ix_jobs_live_payload on jobs ( type , payload ) where state in ( 'queued' , 'running' , 'blocked' , 'paused' )",
     "ix_jobs_parent": "create index ix_jobs_parent on jobs ( parent_id )",
     "ix_jobs_queued_later": "create index ix_jobs_queued_later on jobs ( run_after ) where state = 'queued' and run_after is not null",
     "ix_jobs_settled_by_created": "create index ix_jobs_settled_by_created on jobs ( created_at , state , type ) where state in ( 'done' , 'failed' )",
@@ -471,6 +474,7 @@
         "still_at_ms": "integer",
         "stranded_at": "integer",
         "title": "text",
+        "turn_apart": "integer",
         "vcodec": "text",
         "video_duration_ms": "integer",
         "video_phash": "text",
@@ -1282,6 +1286,30 @@
       "constraints": [
         "primary key ( root_id , state , type , timing )"
       ],
+      "options": "without rowid"
+    },
+    "job_plan": {
+      "columns": {
+        "job_id": "text not null references jobs ( id ) on delete cascade",
+        "kind": "text not null",
+        "mtime_ns": "integer not null",
+        "rel_path": "text not null",
+        "seq": "integer not null",
+        "size": "integer not null",
+        "verdict": "text not null"
+      },
+      "constraints": [
+        "primary key ( job_id , seq )"
+      ],
+      "options": "without rowid"
+    },
+    "job_plan_marks": {
+      "columns": {
+        "job_id": "text primary key references jobs ( id ) on delete cascade",
+        "settled": "integer not null",
+        "worker_id": "text not null"
+      },
+      "constraints": [],
       "options": "without rowid"
     },
     "job_tallies": {
@@ -3307,7 +3335,7 @@
     "access": 5,
     "benchmarks": 3,
     "catalog": 93,
-    "content": 31,
+    "content": 32,
     "dedup": 4,
     "download": 38,
     "faces": 44,
@@ -3315,7 +3343,7 @@
     "identity": 4,
     "importing": 1,
     "insights": 8,
-    "jobs": 17,
+    "jobs": 21,
     "ledger": 8,
     "library": 7,
     "music": 6,

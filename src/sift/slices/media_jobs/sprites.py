@@ -6,9 +6,11 @@ from __future__ import annotations
 import asyncio
 import shutil
 import tempfile
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sift.kernel import media
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -20,21 +22,49 @@ from sift.kernel.jobs import (
 )
 from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.media import (
+    ReadRates,
+    ReadShape,
+    Source,
     moments_to_files,
     resolve_decodable,
 )
-from sift.slices.media_jobs import ffmpeg, tuning
-from sift.slices.media_jobs.job_types import _GIF
+from sift.slices.media_jobs import ffmpeg, fingerprints, tuning
+from sift.slices.media_jobs.job_types import _GIF, FINGERPRINT_FILE, SettlingJobs, ShouldGenerate
 from sift.slices.media_jobs.shared import _asset_id, _made_for, _render, _size_of
+
+#: This machine's measured rates for reading a file at a path, or None where never measured.
+ReadRatesFor = Callable[[Path], Awaitable[ReadRates | None]]
 
 log = get_logger(__name__)
 
 
-async def sprite(context: JobContext, *, settings: Settings, hardware: HardwareReport) -> None:
+def sprite_request(duration_ms: int) -> media.FrameFiles:
+    """What the strip reads: one tile per moment of the sprite ladder, as `_seek_sprite_tiles`
+    asks for them."""
+    return media.FrameFiles(
+        moments=tuple(ffmpeg.hash_frame_moment(at) for at in sampler.sprite_frames(duration_ms)),
+        filters=ffmpeg.still_filter(width=tuning.SPRITE_TILE_WIDTH),
+        suffix=".jpg",
+        output=ffmpeg.still_output(tuning.SPRITE_QUALITY),
+    )
+
+
+async def sprite(
+    context: JobContext,
+    *,
+    settings: Settings,
+    hardware: HardwareReport,
+    should_generate: ShouldGenerate | None = None,
+    read_rates: ReadRatesFor | None = None,
+    fingerprints_settle_into: SettlingJobs = (),
+) -> None:
     """The strip of frames a scrubber shows while it is dragged, built as the file arrives.
 
     Two passes: seek out each frame, then tile the results into one sheet. One pass with a filter
-    that picks frames as they go by would decode the entire video to keep thirty of them.
+    that picks frames as they go by would decode the entire video to keep thirty of them, which
+    is the cheaper read for a short file on a machine whose rates were measured: then the same
+    decode also gives the fingerprints' frames, and they are recorded here, and what reads them
+    (`fingerprints_settle_into`) asked for.
     """
     asset_id = _asset_id(context)
     store = context.content
@@ -55,26 +85,116 @@ async def sprite(context: JobContext, *, settings: Settings, hardware: HardwareR
         params={"columns": columns, "rows": rows, "tile_width": tuning.SPRITE_TILE_WIDTH},
     )
 
-    with timing_hook("sprite.render", asset_id=asset_id, frames=len(timestamps)):
-        await _render_sprite(
-            source.path,
-            destination,
-            timestamps=timestamps,
-            columns=columns,
-            rows=rows,
-            settings=settings,
-            context=context,
-            # A GIF cannot seek cheaply, so its tiles come from one decode rather than one seek each.
-            single_decode=source.asset.media_type == _GIF,
-        )
+    gif = source.asset.media_type == _GIF
+    async with _one_read(
+        context,
+        source,
+        settings=settings,
+        should_generate=None if gif else should_generate,
+        read_rates=None if gif else read_rates,
+    ) as fingerprints_too:
+        with timing_hook("sprite.render", asset_id=asset_id, frames=len(timestamps)):
+            await _render_sprite(
+                source.path,
+                destination,
+                timestamps=timestamps,
+                columns=columns,
+                rows=rows,
+                settings=settings,
+                context=context,
+                # A GIF cannot seek cheaply, so its tiles come from one decode, not one seek each.
+                single_decode=gif,
+            )
 
-    await store.add_derivative(
-        asset_id,
-        DerivativeKind.SPRITE,
-        extension="jpg",
-        params={"columns": columns, "rows": rows, "tile_width": tuning.SPRITE_TILE_WIDTH},
-        size_bytes=await _size_of(destination),
+        await store.add_derivative(
+            asset_id,
+            DerivativeKind.SPRITE,
+            extension="jpg",
+            params={"columns": columns, "rows": rows, "tile_width": tuning.SPRITE_TILE_WIDTH},
+            size_bytes=await _size_of(destination),
+        )
+        written = None
+        if fingerprints_too:
+            try:
+                written = await fingerprints.fingerprint_one(
+                    store, asset_id, settings=settings, arriving=True, source=source
+                )
+            except (ffmpeg.FFmpegError, OSError) as error:
+                # Left to the file's own fingerprint job, which reads the file itself.
+                log.info("sprite.fingerprint_left", asset_id=asset_id, detail=str(error))
+    if written is not None:
+        await context.queue.settle_into(fingerprints_settle_into)
+
+
+@asynccontextmanager
+async def _one_read(
+    context: JobContext,
+    source: Source,
+    *,
+    settings: Settings,
+    should_generate: ShouldGenerate | None,
+    read_rates: ReadRatesFor | None,
+) -> AsyncIterator[bool]:
+    """Decode the file once for the strip and the fingerprints it lacks, where this machine's
+    measured rates say that is quicker than seeking; inside, whether the fingerprints are served.
+
+    Not inside a task that prepared frames already (a Build plans its own read), nor where the
+    machine was never measured: unmeasured, a frame count prices the strip's seeks too high and
+    a long file would be decoded whole for them.
+    """
+    rates = await read_rates(source.path) if read_rates is not None else None
+    asset = source.asset
+    wanted = (
+        rates is not None
+        and media.prepared_now() is None
+        and not fingerprints._has_its_fingerprints(asset)
+        and (should_generate is None or await should_generate(FINGERPRINT_FILE, asset.id))
     )
+    if not wanted:
+        yield False
+        return
+    probed = await fingerprints.probed_of(context.content, source, settings=settings)
+    try:
+        requests: list[media.FrameRequest] = [
+            sprite_request(asset.duration_ms or 0),
+            *fingerprints.fingerprint_requests(probed),
+        ]
+    except ValueError as error:
+        log.info("sprite.read_unplanned", asset_id=asset.id, detail=str(error))
+        yield False
+        return
+    moments = sum(len(one.moments) for one in requests)
+    shape = media.choose_read_shape(
+        moments=moments,
+        duration_seconds=probed.duration_seconds or 0.0,
+        fps=probed.fps or 0.0,
+        width=probed.width or 0,
+        height=probed.height or 0,
+        size_bytes=source.location.size_bytes or asset.size_bytes or 0,
+        codec=probed.vcodec,
+        rates=rates,
+    )
+    log.info("sprite.read_shape", asset_id=asset.id, shape=str(shape), moments=moments)
+    if shape is not ReadShape.DECODE_ONCE:
+        yield False
+        return
+    with tempfile.TemporaryDirectory(prefix="sift-sprite-read-") as workspace:
+        try:
+            with timing_hook("sprite.decode_once", asset_id=asset.id, moments=moments):
+                frames = await media.decode_once(
+                    source.path,
+                    requests,
+                    workspace=Path(workspace),
+                    settings=settings,
+                    time_limit=tuning.SUBPROCESS_TIMEOUT_SECONDS,
+                )
+        except media.FFmpegError as error:
+            # The strip and the fingerprints seek, as they would have without this.
+            log.info("sprite.decode_refused", asset_id=asset.id, detail=str(error))
+            yield False
+            return
+        with media.prepared(frames):
+            yield True
 
 
 async def _render_sprite(

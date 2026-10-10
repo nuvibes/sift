@@ -44,6 +44,13 @@ def moments_in_memory(picture: Picture, *, threads: int, budget: int) -> int:
     return max(1, budget // max(1, input_bytes(picture, threads=threads)))
 
 
+#: The threads of one seeked input, and of each output's filters beside it. A seek decodes a few
+#: frames, which more threads read further ahead for and do no quicker (measured: a lone sprite of
+#: twenty tiles 992 ms at one thread against 1,165 ms at the machine's); the inputs of one process
+#: decode side by side.
+SEEK_THREADS = 1
+
+
 def picture_from(stream: dict[str, Any]) -> Picture | None:
     """The picture ffprobe describes for a video stream, or None where it does not say."""
     width, height = stream.get("width"), stream.get("height")
@@ -182,6 +189,10 @@ def microseconds_of(text: str) -> int | None:
 
 _RawKey = tuple[Path, str, str]
 
+#: How `media.moments_to_stills` writes a still and reads its grey levels.
+STILL_SUFFIX = ".jpg"
+STILL_LEVEL_FORMAT = "gray"
+
 
 _FilesKey = tuple[Path, str, str, tuple[str, ...]]
 
@@ -228,6 +239,31 @@ class PreparedFrames:
         if held is None or any(moment.seek not in held for moment in moments):
             return None
         return [held.pop(moment.seek) for moment in moments]
+
+    def stills(
+        self,
+        source: Path,
+        moments: Sequence[Moment],
+        *,
+        still_filters: str,
+        still_output: Sequence[str],
+        level_filters: str,
+    ) -> list[tuple[Path | None, bytes | None]] | None:
+        """Each moment's still and grey levels, as `media.moments_to_stills` cuts them, the stills
+        taken out of the store; None where any was not prepared."""
+        levels = self.raw(source, moments, filters=level_filters, pixel_format=STILL_LEVEL_FORMAT)
+        cut = FrameFiles(
+            moments=tuple(moments),
+            filters=still_filters,
+            suffix=STILL_SUFFIX,
+            output=tuple(still_output),
+        )
+        if levels is None or not self.holds(source, cut):
+            return None
+        files = self.files(
+            source, moments, filters=still_filters, suffix=STILL_SUFFIX, output=still_output
+        )
+        return None if files is None else list(zip(files, levels, strict=True))
 
     @property
     def count(self) -> int:
@@ -323,18 +359,22 @@ def choose_read_shape(
     codec: str | None = None,
     rates: ReadRates | None,
 ) -> ReadShape:
-    """Seek or decode once: the file's frames against moments times `frames_per_seek`; on a
-    share both sides are priced in seconds from what the share measured."""
+    """Seek or decode once. Where this machine was measured, both sides are priced in seconds from
+    its own decode rate and seek time (the clip is H.264; another codec's seek is scaled by
+    `frames_per_seek`), plus the share's where the file is on one. Unmeasured, the file's frames
+    against moments times `frames_per_seek`."""
     if moments <= 0 or duration_seconds <= 0:
         return ReadShape.SEEK
     frames = duration_seconds * (fps if fps > 0 else 30.0)
-    decoding = frames
-    seeking = float(moments * frames_per_seek(codec))
-    if rates is not None and rates.storage is not None and rates.decode_fps > 0:
-        scale = max(1.0, (width * height) / REFERENCE_PIXELS) if width and height else 1.0
-        per_frame = scale / rates.decode_fps
-        decoding *= per_frame
-        seeking = seeking * per_frame + moments * rates.storage.seek_seconds
+    if rates is None or rates.decode_fps <= 0 or rates.seek_seconds <= 0:
+        seeking = float(moments * frames_per_seek(codec))
+        return ReadShape.DECODE_ONCE if frames < seeking else ReadShape.SEEK
+    scale = max(1.0, (width * height) / REFERENCE_PIXELS) if width and height else 1.0
+    decoding = frames * scale / rates.decode_fps
+    codec_share = frames_per_seek(codec) / FRAMES_PER_SEEK["h264"]
+    seeking = moments * rates.seek_seconds * scale * codec_share
+    if rates.storage is not None:
+        seeking += moments * rates.storage.seek_seconds
         if rates.storage.megabytes_per_second > 0:
             decoding = max(decoding, size_bytes / 1_000_000 / rates.storage.megabytes_per_second)
     return ReadShape.DECODE_ONCE if decoding < seeking else ReadShape.SEEK
@@ -356,6 +396,10 @@ class FileFacts:
     video_duration_ms: int | None = None
     #: The picture's codec, which prices a seek into the file (`frames_per_seek`).
     vcodec: str | None = None
+    #: The running time unrounded, as the probe kept it; the stash-box grid divides this one.
+    duration_seconds: float | None = None
+    #: Whether a person pressed for the products again, so one the file has is made anyway.
+    again: bool = False
 
 
 def seconds(milliseconds: int) -> str:

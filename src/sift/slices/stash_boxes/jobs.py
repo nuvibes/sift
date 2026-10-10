@@ -626,8 +626,8 @@ async def enrich_entities(context: JobContext, *, entities: EntityEnricher) -> N
 
     A subject gone since is skipped and one that goes wrong is counted (`_one_of_many`).
     """
-    key = context.payload.get("key")
-    master_key = bytes.fromhex(str(key)) if key else None
+    # Read from the sealed store now, never carried in the payload: the queue keeps a job for days.
+    master_key = await context.master_key()
     # Named by whoever queued it, so one press stays one decision.
     only = str(context.payload.get("box") or "") or None
     tally: Counter[Outcome] = Counter()

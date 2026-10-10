@@ -11,8 +11,10 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+from sift.kernel import media
 from sift.kernel.log import get_logger
 from sift.kernel.media import NoReadableCopy, Source, resolve_decodable
+from sift.kernel.ml.pictures import damaged
 from sift.slices.faces import crop as cropping
 from sift.slices.faces import recognize, tuning, weights
 from sift.slices.faces.frames import Reader
@@ -99,8 +101,35 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             )
             return await self._settle(asset_id)
 
+        asset = source.asset
+        if (
+            asset.media_type in ("image", "video")
+            and not (asset.width and asset.height)
+            and asset.probed_at is not None
+        ):
+            # Read and still no size: read as a 2 by 2 picture it would be filed as "no faces".
+            await self._give_up(
+                asset_id,
+                code="no_picture",
+                reason="This file has no picture Sift can read, so nothing in it could be looked at.",
+                transient=False,
+            )
+            return await self._settle(asset_id)
+
         resume_from = await self._resume_point(asset_id, configured, again=again)
-        outcome, recognizer = await self._read_faces(asset_id, configured, source, resume_from)
+        try:
+            outcome, recognizer = await self._read_faces(asset_id, configured, source, resume_from)
+        except media.FFmpegError as error:
+            # Damaged bytes do not mend: one verdict, in the decoder's words, and no retry.
+            if not media.is_broken_data(str(error)):
+                raise
+            await self._give_up(
+                asset_id,
+                code="no_frame" if asset.media_type != "video" else "no_frame_decoded",
+                reason=damaged(str(error)),
+                transient=False,
+            )
+            return await self._settle(asset_id)
 
         # Moments to read, not cut short, nothing back: a verdict, and the earlier faces stay.
         if (
@@ -116,6 +145,17 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             )
             return await self._settle(asset_id)
 
+        return await self._keep_and_decide(asset_id, configured, outcome, recognizer, resume_from)
+
+    async def _keep_and_decide(
+        self,
+        asset_id: str,
+        configured: Configured,
+        outcome: Outcome,
+        recognizer: Recognizer,
+        resume_from: int | None,
+    ) -> ScanStatus:
+        """`scan`'s end: the faces read kept, decided and settled, and only what is new recorded."""
         appearances = await self._without_removed(
             asset_id, outcome.appearances, recognizer.revision
         )
@@ -163,6 +203,7 @@ class ScanningMixin(WeightsMixin, MatchingMixin, BoxQuestionsMixin):
             bar=configured.bar,
             density=configured.density,
             budget_seconds=configured.budget_seconds,
+            batched=configured.device != "cpu",
         )
         # Named for the log a lost device leaves (`runner.IN_FLIGHT`).
         reading = IN_FLIGHT.set(f"file {asset_id}")

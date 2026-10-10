@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 log = get_logger(__name__)
 #: Said by anything that takes the writer when this task already holds it.
 _INSIDE_A_WRITE = (
-    "write() cannot be opened inside another write(): it would wait for a lock this task already "
-    "holds and never return. Pass the connection you already have down to whatever needs it, so "
+    "write() may not be opened inside another write(): it would wait for a lock this task already "
+    "holds and never return. Hand the connection you already have down to whatever needs it, so "
     "the whole write is one transaction."
 )
 

@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -95,8 +97,16 @@ async def land(
     username and person.
     """
     landed = Landed()
+    earlier = await asyncio.to_thread(_landed_before, staging)
     for fetched_file in fetched.files:
         confine_to(staging, fetched_file)
+        # Let in by an earlier attempt of this job: the tool hands it back, the library has it.
+        before = earlier.get(fetched_file.relative_to(staging).as_posix())
+        if before is not None:
+            landed.arrived.append(before[0])
+            landed.names.append(fetched_file.name)
+            landed.all_duplicate = landed.all_duplicate and before[1]
+            continue
         # Both keyed by the path the fetcher produced, so read before the rename.
         media_key = fetched.item_keys.get(fetched_file)
         about = fetched.names.get(fetched_file, NameFacts())
@@ -120,6 +130,11 @@ async def land(
         )
         if outcome is None:
             return None
+        earlier[produced.relative_to(staging).as_posix()] = (
+            outcome.asset_id,
+            outcome.was_duplicate,
+        )
+        await asyncio.to_thread(_note_landed, staging, earlier)
         landed.arrived.append(outcome.asset_id)
         landed.names.append(produced.name)
         landed.all_duplicate = landed.all_duplicate and outcome.was_duplicate
@@ -129,6 +144,34 @@ async def land(
             hash_value, media_key or f"asset:{outcome.asset_id}", asset_id=outcome.asset_id
         )
     return landed
+
+
+#: Beside the tool's folder, never in it: which files of this job are already in the library.
+_LANDED = "landed.json"
+
+
+def _landed_before(staging: Path) -> dict[str, tuple[str, bool]]:
+    """What earlier attempts of this job let in, by the file's place in the folder; blocking."""
+    try:
+        kept = json.loads((staging.parent / _LANDED).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(kept, dict):
+        return {}
+    return {
+        str(name): (str(one[0]), bool(one[1]))
+        for name, one in kept.items()
+        if isinstance(one, list) and len(one) == 2
+    }
+
+
+def _note_landed(staging: Path, landed: dict[str, tuple[str, bool]]) -> None:
+    """Write down what is in the library, replaced whole so a stop never leaves half; blocking."""
+    note = staging.parent / _LANDED
+    partial = note.with_name(f".{_LANDED}.partial")
+    partial.write_text(json.dumps({name: list(one) for name, one in landed.items()}), "utf-8")
+    # The tool's own note beside its folder, written whole then named.
+    partial.replace(note)  # nosemgrep: sift-no-file-removal-outside-delete-trash
 
 
 async def _let_in(

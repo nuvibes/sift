@@ -133,7 +133,7 @@ async def build_picture(
         if not again and not await context.content.lacking_derivative(picture.kind, [asset_id]):
             return
         if picture.job_type == THUMBNAIL:
-            await thumbnail(context, settings=settings, hardware=hardware)
+            await thumbnail(context, settings=settings, hardware=hardware, should_generate=allowed)
         elif picture.job_type == PREVIEW:
             await preview(
                 context,

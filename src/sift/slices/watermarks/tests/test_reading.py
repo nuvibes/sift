@@ -257,6 +257,67 @@ async def test_a_files_frame_is_read_through_its_storages_lane(
     assert held == [target]
 
 
+async def test_a_frame_a_tasks_one_decode_prepared_is_not_read_again(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ask a task's one decode answers is the same the read makes, so the crops come from it
+    and nothing is launched; a refusal of the bytes reaches the service as a decoder's refusal."""
+    from sift.kernel import media
+    from sift.kernel.subprocess import ToolFailed
+
+    async def launched(argv: list[str], **rest: object) -> bytes:
+        raise AssertionError("a prepared frame was read again")
+
+    monkeypatch.setattr(frames, "subprocess_capture", launched)
+    target = Path("still.jpg")
+    (asked,) = await frames.frame_requests(
+        media.FileFacts(
+            asset_id="a",
+            path=target,
+            media_type="image",
+            duration_ms=0,
+            width=640,
+            height=480,
+            fps=0.0,
+            size_bytes=1,
+        )
+    )
+    assert isinstance(asked, media.RawFrames)
+    ready = media.PreparedFrames()
+    ready.put_raw(target, asked, [bytes(asked.frame_bytes)])
+    with media.prepared(ready):
+        pieces = await frames.read(
+            target, media_type="image", width=640, height=480, duration_ms=None, settings=settings
+        )
+    assert [piece.name for piece in pieces] == ["band", "corner"]
+
+    async def refused(argv: list[str], **rest: object) -> bytes:
+        raise ToolFailed("ffmpeg failed: Decode error rate 1", returncode=69, said="")
+
+    monkeypatch.setattr(frames, "subprocess_capture", refused)
+    with pytest.raises(media.FFmpegError, match="Decode error rate"):
+        await frames.read(
+            target, media_type="image", width=640, height=480, duration_ms=None, settings=settings
+        )
+
+
+async def test_a_file_without_a_size_or_a_picture_plans_nothing() -> None:
+    from sift.kernel import media
+
+    for kind, width in (("gif", 640), ("image", 0)):
+        facts = media.FileFacts(
+            asset_id="a",
+            path=Path("x"),
+            media_type=kind,
+            duration_ms=0,
+            width=width,
+            height=480,
+            fps=0.0,
+            size_bytes=1,
+        )
+        assert await frames.frame_requests(facts) == []
+
+
 # --- the three kinds that name no site in their letters ----------------------------------------
 
 

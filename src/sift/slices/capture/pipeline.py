@@ -8,18 +8,20 @@ import asyncio
 import os
 import re
 import shutil
+import tempfile
 from enum import StrEnum
 from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit
 
-from sift.kernel import landing, places
+from sift.kernel import landing, lanes, places
 from sift.kernel.config import Settings
-from sift.kernel.content import LocationStatus, Root
+from sift.kernel.content import Asset, LocationStatus, Root
 from sift.kernel.content.hashing import identity_file
 from sift.kernel.destination import resolve_destination
-from sift.kernel.ingress import IngressResult, NoDestination, Origin, verify_ingress
+from sift.kernel.ingress import IngressResult, Kind, NoDestination, Origin, verify_ingress
 from sift.kernel.jobs import JobContext
+from sift.kernel.jobs.retrying import WaitingForSpace, is_disk_full
 from sift.kernel.log import get_logger
 from sift.kernel.paths import PathEscape, confine
 from sift.kernel.seams import ReindexSeam
@@ -143,6 +145,7 @@ async def import_file(
         await landing.landed(
             path, ingested.asset.identity, settings=settings, root_id=destination.root.id
         )
+        await _kept_for_the_passes(ctx, path, copied, ingested.asset, settings)
         await ctx.enqueue_child(PROBE, {"asset_id": ingested.asset.id})
         # So a new file can be found by its name before anything rebuilds the index.
         await reindexer.touched(ingested.asset.id)
@@ -159,6 +162,35 @@ async def import_file(
         location_id=ingested.location.id,
         was_duplicate=not ingested.asset_is_new,
     )
+
+
+#: A video up to this size landed on a share is kept local too, as the take-in keeps one.
+KEEP_VIDEOS_UP_TO = 64 * 1024**2
+
+
+async def _kept_for_the_passes(
+    ctx: JobContext, source: Path, landed_at: Path, asset: Asset, settings: Settings
+) -> None:
+    """Bytes landed on a share stay readable here: the probe and the passes read the cache's copy,
+    never the share. Best effort: without it they read the share, as they always could."""
+    if not lanes.storage_for(landed_at).remote:
+        return
+    if asset.media_type != Kind.IMAGE and (asset.size_bytes or 0) > KEEP_VIDEOS_UP_TO:
+        return
+    incoming = settings.cache_dir / "incoming"
+    try:
+        await asyncio.to_thread(incoming.mkdir, parents=True, exist_ok=True)
+        scratch = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="landed-", dir=incoming))
+    except OSError:
+        return
+    try:
+        copy = scratch / landed_at.name
+        await asyncio.to_thread(shutil.copyfile, source, copy)
+        await ctx.content.keep_local_copy(asset.id, copy)
+    except OSError as error:
+        log.warning("capture.local_copy_not_kept", asset_id=asset.id, reason=str(error))
+    finally:
+        await asyncio.to_thread(shutil.rmtree, scratch, True)
 
 
 async def _already_here(checked: IngressResult, ctx: JobContext) -> ImportOutcome | None:
@@ -221,6 +253,9 @@ def _copy_into_folder(source: Path, root: Root, rel_dir: str) -> str:
             "Check the drive it is on is still attached, then try again."
         )
 
+    if shutil.disk_usage(root_path).free < source.stat().st_size + ROOM_TO_SPARE:
+        raise WaitingForSpace(_no_room(root.name))
+
     base = root_path / rel_dir if rel_dir else root_path
     base.mkdir(parents=True, exist_ok=True)
 
@@ -234,11 +269,24 @@ def _copy_into_folder(source: Path, root: Root, rel_dir: str) -> str:
     try:
         # copyfile, not copy2: a network share can refuse the chmod after the bytes are written.
         shutil.copyfile(source, target)
-    except OSError:
+    except OSError as error:
         # This path was created by O_EXCL above, so it holds only our half-written bytes.
         target.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        if is_disk_full(error):
+            raise WaitingForSpace(_no_room(root.name)) from error
         raise
     return target.relative_to(root_path).as_posix()
+
+
+#: Room left on a library's disk after a file lands, so the disk is never filled to the last byte.
+ROOM_TO_SPARE = 256 * 1024**2
+
+
+def _no_room(folder: str) -> str:
+    return (
+        f'Waiting for space: the disk the folder "{folder}" is on has no room for this file. '
+        "Free some space and it carries on; the file is kept until then."
+    )
 
 
 def _claim_unique_path(directory: Path, name: str) -> Path:

@@ -98,10 +98,12 @@ class Arrivals(StoreCore):
         archive_rel_path: str | None = None,
         member_path: str | None = None,
         mtime: int | None = None,
+        turn_apart: bool | None = None,
     ) -> Ingested:
         """Hash a file the ingress gate verified (its proof, never a path) and record what it is
         and where it sits, asset and location in ONE transaction: half of it is worse than none.
-        `archive_rel_path` and `member_path` say which archive member the verified copy is.
+        `archive_rel_path` and `member_path` say which archive member the verified copy is;
+        `turn_apart` is the JPEG turn the take-in read from the head, kept on a NEW asset only.
         """
         rel_path = check_rel_path(rel_path)
         digest = await identity_file(checked)
@@ -128,6 +130,7 @@ class Arrivals(StoreCore):
                     # INDEXED: a control character kept would make it findable by nothing.
                     original_filename=clean_stored_text(checked.path.name),
                     now=now,
+                    turn_apart=turn_apart,
                 )
             location = await self._add_location(
                 connection,

@@ -886,3 +886,259 @@ def test_a_runtime_that_cannot_start_is_said_in_each_features_words_and_kept(
 )
 def test_how_a_child_ended_is_said_the_way_its_system_names_it(code: int, said: str) -> None:
     assert ml_child._how_it_ended(code) == said
+
+
+# --- one decode of a still for every model pass -----------------------------------------------
+
+
+def _still(target: Path, settings: Settings, size: str = "640x480") -> Path:
+    import subprocess as system
+
+    system.run(
+        [
+            settings.ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc2=size={size}",
+            "-frames:v",
+            "1",
+            str(target),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return target
+
+
+def _ask(filters: str, frame_bytes: int) -> Any:
+    from sift.kernel import media
+    from sift.kernel.ml import pictures
+
+    return media.RawFrames(
+        moments=(pictures.STILL,), filters=filters, pixel_format="rgb24", frame_bytes=frame_bytes
+    )
+
+
+def test_a_still_is_asked_for_once_per_shape_and_the_largest_goes_past_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sift.kernel import media
+    from sift.kernel.ml import pictures
+
+    small, large = _ask("scale=4:4", 48), _ask("scale=8:8", 192)
+    sought = media.RawFrames(
+        moments=(media.Moment(seek=("-ss", "1.000")),),
+        filters="scale=2:2",
+        pixel_format="rgb24",
+        frame_bytes=12,
+    )
+    files = media.FrameFiles(moments=(pictures.STILL,), filters="x", suffix=".jpg", output=())
+    asks = [large, small, _ask("scale=4:4", 48), sought, files]
+    assert pictures.still_requests(asks) == [small, large]
+    monkeypatch.setattr(pictures, "MOST_PREPARED_BYTES", 100)
+    assert pictures.still_requests(asks) == [small]
+
+
+def test_the_one_decode_splits_the_picture_once_and_maps_every_branch(tmp_path: Path) -> None:
+    from sift.kernel.ml import pictures
+
+    asks = [_ask("scale=4:4", 48), _ask("crop=2:2:0:0", 12)]
+    settings = Settings(data_dir=tmp_path, cache_dir=tmp_path)
+    assert pictures.still_graph(asks) == (
+        "[0:v]split=2[s0][s1];\n[s0]scale=4:4[o0];\n[s1]crop=2:2:0:0[o1]\n"
+    )
+    argv = pictures.still_args(
+        Path("in.jpg"), asks, script=tmp_path / "g.txt", workspace=tmp_path, settings=settings
+    )
+    assert argv[0] == settings.ffmpeg_path
+    assert argv[argv.index("-filter_complex_script") + 1] == str(tmp_path / "g.txt")
+    assert argv.count("-map") == 2 and argv.count("-frames:v") == 2
+    assert argv[-1] == str(tmp_path / "01.raw")
+
+
+def test_the_decoders_words_keep_the_lines_about_broken_bytes_without_an_address() -> None:
+    from sift.kernel.ml import pictures
+
+    said = (
+        "'C:\\\\tools\\\\ffmpeg.exe' failed with exit code 69: [mjpeg @ 000001c4ab] "
+        "Decode error rate 1 exceeds maximum 0.666667\nConversion failed!"
+    )
+    assert pictures.damaged(said) == (
+        "The decoder refused the picture: [mjpeg] Decode error rate 1 exceeds maximum 0.666667"
+    )
+    assert pictures.damaged("nothing known") == (
+        "The decoder refused the picture: the bytes are damaged"
+    )
+
+
+def test_a_still_nothing_prepared_is_read_as_usual_and_one_refused_is_refused() -> None:
+    from sift.kernel import media
+    from sift.kernel.ml import pictures
+
+    path = Path("a.jpg")
+    assert pictures.held(path, filters="scale=4:4", pixel_format="rgb24") is None
+    ready = media.PreparedFrames()
+    ready.put_raw(path, _ask("scale=4:4", 3), [b"abc"])
+    with media.prepared(ready):
+        assert pictures.held(path, filters="scale=4:4", pixel_format="rgb24") == b"abc"
+        assert pictures.held(path, filters="scale=9:9", pixel_format="rgb24") is None
+    with pictures._refusing(path, "Decode error rate 1"):
+        with pytest.raises(media.FFmpegError, match="Decode error rate 1"):
+            pictures.held(path, filters="scale=4:4", pixel_format="rgb24")
+        assert pictures.held(Path("b.jpg"), filters="scale=4:4", pixel_format="rgb24") is None
+
+
+async def test_one_decode_gives_every_pass_the_pixels_its_own_read_gives(
+    tmp_path: Path, settings: Settings
+) -> None:
+    """The point of the whole thing: the decoder's own scaler on every branch, so a model reads
+    the very bytes it read before, from one read of the file."""
+    from sift.kernel import media
+    from sift.kernel import subprocess as tools
+    from sift.kernel.ml import pictures
+
+    target = _still(tmp_path / "still.png", settings)
+    asks = [
+        _ask("scale=320:240", 320 * 240 * 3),
+        _ask("scale=224:224:flags=bilinear", 224 * 224 * 3),
+        _ask(
+            "split=2[a][b];[a]crop=640:58:0:422[x];[b]crop=256:96:384:384,scale=640:240[y];"
+            "[x]pad=640:58[p];[p][y]vstack=inputs=2",
+            640 * 298 * 3,
+        ),
+    ]
+    work = tmp_path / "work"
+    work.mkdir()
+    prepared = await pictures.decode_still(target, asks, workspace=work, settings=settings)
+
+    for ask in asks:
+        alone = await tools.capture(
+            media.raw_frame_args(
+                target,
+                pictures.STILL,
+                filters=ask.filters,
+                pixel_format="rgb24",
+                settings=settings,
+            ),
+            time_limit=60,
+        )
+        assert prepared.raw(
+            target, [pictures.STILL], filters=ask.filters, pixel_format="rgb24"
+        ) == [alone]
+
+
+async def test_a_still_the_decoder_refuses_is_refused_in_its_words(
+    tmp_path: Path, settings: Settings
+) -> None:
+    from sift.kernel import media
+    from sift.kernel.ml import pictures
+
+    broken = tmp_path / "broken.jpg"
+    broken.write_bytes(b"not a picture at all")
+    with pytest.raises(media.FFmpegError):
+        await pictures.decode_still(
+            broken, [_ask("scale=4:4", 48)], workspace=tmp_path, settings=settings
+        )
+
+
+class _Source:
+    def __init__(self, path: Path, media_type: str, width: int | None) -> None:
+        from types import SimpleNamespace
+
+        self.path = path
+        self.asset = SimpleNamespace(media_type=media_type, width=width, height=width, size_bytes=1)
+        self.location = SimpleNamespace(size_bytes=None)
+
+
+class _Pass:
+    """A pass that would ask for these shapes of a still."""
+
+    def __init__(self, *shapes: int) -> None:
+        self.shapes = shapes
+        self.facts: list[Any] = []
+
+    @property
+    def frames(self) -> Any:
+        async def plan(facts: Any) -> list[Any]:
+            self.facts.append(facts)
+            return [_ask(f"scale={one}:{one}", one * one * 3) for one in self.shapes]
+
+        return plan
+
+
+class _NoFrames:
+    frames = None
+
+
+async def test_a_task_decodes_a_still_once_where_two_asks_would_read_it(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel import media
+    from sift.kernel.ml import pictures
+
+    target = _still(tmp_path / "still.png", settings)
+    found: dict[str, Any] = {"a": _Source(target, "image", 640)}
+
+    async def resolve(_content: Any, asset_id: str, **_kwargs: Any) -> Any:
+        if asset_id not in found:
+            raise media.MissingAsset(asset_id)
+        return found[asset_id]
+
+    monkeypatch.setattr(media, "resolve_decodable", resolve)
+    reader = pictures.OnePicture(Any, settings=settings)  # type: ignore[arg-type]
+    both: list[Any] = [_Pass(8), _NoFrames(), _Pass(16)]
+
+    outer = media.PreparedFrames()
+    outer.put_raw(Path("other.png"), _ask("scale=2:2", 12), [b"x" * 12])
+    with media.prepared(outer):
+        async with reader.prepared("a", both):
+            assert pictures.held(target, filters="scale=8:8", pixel_format="rgb24") is not None
+            assert pictures.held(target, filters="scale=16:16", pixel_format="rgb24") is not None
+            kept = media.prepared_now()
+            assert kept is not None
+            assert kept.raw(
+                Path("other.png"), [pictures.STILL], filters="scale=2:2", pixel_format="rgb24"
+            ) == [b"x" * 12]
+    assert both[0].facts[0].width == 640 and both[0].facts[0].media_type == "image"
+
+    # One ask, a video, a still of unknown size, or no file: nothing is decoded for the task.
+    found["v"] = _Source(target, "video", 640)
+    found["u"] = _Source(target, "image", None)
+    for asset_id, passes in (("a", [_Pass(8)]), ("v", both), ("u", both), ("gone", both)):
+        async with reader.prepared(asset_id, passes):
+            assert media.prepared_now() is None
+
+
+async def test_a_damaged_still_is_refused_to_every_pass_and_any_other_refusal_reads_alone(
+    tmp_path: Path, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sift.kernel import media
+    from sift.kernel import subprocess as tools
+    from sift.kernel.ml import pictures
+
+    target = tmp_path / "x.jpg"
+
+    async def resolve(_content: Any, asset_id: str, **_kwargs: Any) -> Any:
+        return _Source(target, "image", 640)
+
+    said = ["Decode error rate 1 exceeds maximum"]
+
+    async def refuse(argv: list[str], **_kwargs: Any) -> bytes:
+        raise tools.ToolFailed(f"ffmpeg failed: {said[0]}", returncode=69, said=said[0])
+
+    monkeypatch.setattr(media, "resolve_decodable", resolve)
+    monkeypatch.setattr(tools, "capture", refuse)
+    reader = pictures.OnePicture(Any, settings=settings)  # type: ignore[arg-type]
+    async with reader.prepared("a", [_Pass(8), _Pass(16)]):
+        with pytest.raises(media.FFmpegError, match="Decode error rate"):
+            pictures.held(target, filters="scale=8:8", pixel_format="rgb24")
+    assert pictures.held(target, filters="scale=8:8", pixel_format="rgb24") is None
+
+    said[0] = "the share stopped answering"
+    async with reader.prepared("a", [_Pass(8), _Pass(16)]):
+        assert pictures.held(target, filters="scale=8:8", pixel_format="rgb24") is None

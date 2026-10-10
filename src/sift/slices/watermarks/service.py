@@ -23,6 +23,7 @@ from sift.kernel.ids import new_id
 from sift.kernel.ledger import Object as LedgerObject
 from sift.kernel.log import get_logger
 from sift.kernel.memo import PacedAnswer
+from sift.kernel.ml import pictures
 from sift.kernel.ml.weights import Progress
 from sift.kernel.vocabulary import VIA_WATERMARK, Subject
 from sift.kernel.wiring import Part
@@ -201,14 +202,25 @@ class WatermarkService:
             # Never probed: left for the next scan to probe.
             return None
 
-        pieces = await frames.read(
-            source.path,
-            media_type=str(asset.media_type),
-            width=int(asset.width),
-            height=int(asset.height),
-            duration_ms=int(asset.duration_ms or 0),
-            settings=self._settings,
-        )
+        try:
+            pieces = await frames.read(
+                source.path,
+                media_type=str(asset.media_type),
+                width=int(asset.width),
+                height=int(asset.height),
+                duration_ms=int(asset.duration_ms or 0),
+                settings=self._settings,
+            )
+        except media.FFmpegError as error:
+            # Damaged bytes do not mend: one verdict, in the decoder's words, and no retry.
+            if not media.is_broken_data(str(error)):
+                raise
+            code = "no_frame" if asset.media_type != "video" else "no_frame_decoded"
+            await self._content.record_verdict(
+                asset_id, PRODUCT, code=code, reason=pictures.damaged(str(error))
+            )
+            log.info("watermarks.gave_up", asset_id=asset_id, code=code, detail=str(error))
+            return None
         models = await self.models()
         # A dead device is raised: the job fails once, the file stays unread.
         lines = await models.read_crops(pieces)

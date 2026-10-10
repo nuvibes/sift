@@ -1438,3 +1438,58 @@ def test_every_failure_the_handler_writes_down_is_one_that_ends_its_job() -> Non
         and node.func.attr == "mark_failed"
     }
     assert writers == {"_give_up", "_record_failure", "_retry_or_give_up"}
+
+
+async def test_a_retried_album_lets_in_only_what_its_earlier_attempt_did_not(
+    tmp_path: Path,
+) -> None:
+    """The tool hands back every file in its folder on the retry, the ones already in the library
+    too: those are not copied into the library a second time."""
+    from types import SimpleNamespace
+
+    from sift.slices.download import landing
+
+    staging = tmp_path / "workspace" / "media"
+    staging.mkdir(parents=True)
+    let_in: list[str] = []
+    broken = {"two.png"}
+
+    async def import_file(*, path: Path, **_kwargs: object) -> SimpleNamespace:
+        if path.name in broken:
+            raise IngressRejected(Reason.NOT_DECODABLE)
+        let_in.append(path.name)
+        return SimpleNamespace(asset_id=f"asset-{path.name}", was_duplicate=False)
+
+    class Service:
+        async def record_item(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+        async def mark_failed(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    async def attempt_once(number: int) -> landing.Landed | None:
+        files = sorted(path for path in staging.iterdir() if path.is_file())
+        context = SimpleNamespace(attempt=number, job=SimpleNamespace(max_attempts=3))
+        return await landing.land(
+            context,  # type: ignore[arg-type]
+            Service(),  # type: ignore[arg-type]
+            import_file,
+            Fetched(files=files),
+            download_id="d1",
+            staging=staging,
+            options=SiteOptions(naming=""),
+            site=None,
+            username=None,
+            dest_folder_id=None,
+            hash_value="h",
+        )
+
+    (staging / "one.png").write_bytes(b"1")
+    (staging / "two.png").write_bytes(b"2")
+    with pytest.raises(IngressRejected):
+        await attempt_once(1)
+    broken.clear()
+    landed = await attempt_once(2)
+
+    assert let_in == ["one.png", "two.png"], "the first file was let in twice"
+    assert landed is not None and landed.arrived == ["asset-one.png", "asset-two.png"]

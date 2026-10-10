@@ -226,6 +226,7 @@ from sift.kernel.db_writer import (
     _writer_still_held,
     keep_the_log_folded,
 )
+from sift.kernel.foreground import screens_first
 from sift.kernel.log import get_logger, job_cost, timing_hook
 
 log = get_logger(__name__)
@@ -655,6 +656,7 @@ class Database(LogUpkeep):
         if _IN_WRITE.get():
             raise DatabaseError(_INSIDE_A_WRITE)
         pending: list[Callable[[], None]] = []
+        await screens_first(False)
         asked = time.perf_counter()
         async with self._write_lock:
             got = time.perf_counter()
@@ -806,6 +808,7 @@ class Database(LogUpkeep):
                 await aiosqlite.Connection.execute(connection, sql, params)
 
     async def fetch_all(self, statement: str | PointRead, params: Params = ()) -> list[Row]:
+        await screens_first(_IN_WRITE.get())
         sql = statement.sql if isinstance(statement, PointRead) else statement
         _refuse_writes(sql)
         inline = self._inline(statement)
@@ -829,6 +832,7 @@ class Database(LogUpkeep):
                 return rows
 
     async def fetch_one(self, statement: str | PointRead, params: Params = ()) -> Row | None:
+        await screens_first(_IN_WRITE.get())
         sql = statement.sql if isinstance(statement, PointRead) else statement
         _refuse_writes(sql)
         inline = self._inline(statement)

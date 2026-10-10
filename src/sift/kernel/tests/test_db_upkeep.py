@@ -64,7 +64,7 @@ async def test_folding_the_log_takes_the_writer_rather_than_cutting_in(tmp_path:
     try:
         async with database.write() as connection:
             await connection.execute("CREATE TABLE note (id TEXT)")
-            with pytest.raises(DatabaseError, match="cannot be opened inside"):
+            with pytest.raises(DatabaseError, match="be opened inside"):
                 await database.fold_the_log_back()
         assert await database.fold_the_log_back() == (True, 0), "and it folds outside one"
     finally:

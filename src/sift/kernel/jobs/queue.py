@@ -22,16 +22,18 @@ it lost the job.
 from __future__ import annotations
 
 from sift.kernel.jobs.queue_claim import (
+    _ASKED_RUNNING,
     _CLAIM,
-    _CLAIM_EXCLUDING,
     _CLAIM_ONLY,
     _EXCLUSIVE_HELD,
     _PAUSE_CLAIMABLE,
     _RUNNING_BY_TYPE,
     _SOMEBODY_WAITING,
+    _WALKS_WAITING,
     Claiming,
     _capped,
     _claimed,
+    claim_parameters,
 )
 from sift.kernel.jobs.queue_controls import (
     _CALL_OFF_THE_HEAD,
@@ -99,6 +101,17 @@ from sift.kernel.jobs.queue_pages import (
     _upkeep_total,
     _where,
 )
+from sift.kernel.jobs.queue_plans import (
+    _ADD_STEPS,
+    _DROP_MARK,
+    _DROP_STEPS,
+    _MARK_OF,
+    _REFUND_PROGRESSED,
+    _SETTLE,
+    _STEPS_FROM,
+    _STILL_MINE,
+    Plans,
+)
 from sift.kernel.jobs.queue_reads import (
     _ASKED_ABOUT_PER_READ,
     _BURST_START,
@@ -114,6 +127,7 @@ from sift.kernel.jobs.queue_reads import (
     _LIVE_SUMMARY,
     _LIVE_TOPS,
     _NEWEST_OF_TYPE,
+    _NEXT_DUE,
     _NEXT_SCHEDULED,
     _NEXT_SCHEDULED_OF,
     _OUTSTANDING,
@@ -228,8 +242,10 @@ __all__ = [
     "TERMINAL_STATES",
     "UNLOCK_WAIT",
     "_ABSOLUTE_PATH",
+    "_ADD_STEPS",
     "_AND",
     "_ASKED_ABOUT_PER_READ",
+    "_ASKED_RUNNING",
     "_ASK_TO_PAUSE",
     "_A_RUN_ENDED",
     "_A_RUN_IS",
@@ -243,7 +259,6 @@ __all__ = [
     "_CANCEL_TREE",
     "_CANCEL_TYPES",
     "_CLAIM",
-    "_CLAIM_EXCLUDING",
     "_CLAIM_ONLY",
     "_CLEAR_ALL_CANCELED",
     "_CLEAR_ALL_FAILED",
@@ -252,6 +267,8 @@ __all__ = [
     "_COUNT_HEAD",
     "_DEMAND_BY_TYPE",
     "_DONE_LATELY",
+    "_DROP_MARK",
+    "_DROP_STEPS",
     "_DUE_BY_TYPE",
     "_EXCLUSIVE_HELD",
     "_FAIL",
@@ -279,9 +296,11 @@ __all__ = [
     "_LIVE_PRODUCTS",
     "_LIVE_SUMMARY",
     "_LIVE_TOPS",
+    "_MARK_OF",
     "_MOST_CLEAR_PASSES",
     "_NAME_REQUESTER",
     "_NEWEST_OF_TYPE",
+    "_NEXT_DUE",
     "_NEXT_SCHEDULED",
     "_NEXT_SCHEDULED_OF",
     "_OUTSTANDING",
@@ -303,6 +322,7 @@ __all__ = [
     "_RAISE_PRIORITY",
     "_RECLAIM_EXHAUSTED",
     "_RECLAIM_REQUEUE",
+    "_REFUND_PROGRESSED",
     "_RELEASE_RUNNING",
     "_RESUME",
     "_RETIME_WAITING",
@@ -312,15 +332,18 @@ __all__ = [
     "_RETRY_ROWS",
     "_RUNNING_BY_TYPE",
     "_RUN_NOW",
+    "_SETTLE",
     "_SETTLED_IN_RUN",
     "_SET_NOTE",
     "_SET_PROGRESS",
     "_SET_UNITS",
     "_SOMEBODY_WAITING",
     "_STARTED_BY",
+    "_STEPS_FROM",
     "_STEPS_PAGE",
     "_STEPS_TOTAL",
     "_STEP_COUNTS",
+    "_STILL_MINE",
     "_TALLIES",
     "_TASK_RUNS",
     "_TOP_OF",
@@ -331,6 +354,7 @@ __all__ = [
     "_UNFINISHED_BY_TYPE",
     "_UPKEEP_COUNT_HEAD",
     "_USER_STILL_THERE",
+    "_WALKS_WAITING",
     "_WHERE",
     "_WITHDRAW_WAITING",
     "Beat",
@@ -346,6 +370,7 @@ __all__ = [
     "JobState",
     "LiveProducts",
     "LiveWork",
+    "Plans",
     "PressedWork",
     "StepCounts",
     "StepsPage",
@@ -370,12 +395,13 @@ __all__ = [
     "_to_job",
     "_upkeep_total",
     "_where",
+    "claim_parameters",
     "folded_state",
     "waits_for_password",
 ]
 
 
-class JobQueue(Enqueuing, Claiming, Settling, Controls, Reads, Pages, TaskRuns):
+class JobQueue(Enqueuing, Claiming, Settling, Controls, Reads, Pages, TaskRuns, Plans):
     """The queue. One per database, held on the application rather than in a module global.
 
     Each concern is a part of its own module, and this class is all of them together: putting

@@ -18,6 +18,7 @@ import numpy as np
 from sift.kernel import lanes, media, sampling
 from sift.kernel.config import Settings
 from sift.kernel.log import get_logger
+from sift.kernel.ml import pictures
 from sift.kernel.subprocess import Priority, SubprocessError
 from sift.kernel.subprocess import capture as subprocess_capture
 from sift.slices.faces import tuning
@@ -134,10 +135,23 @@ def frame_filter(width: int, height: int) -> str:
 
 
 def frame_requests(facts: media.FileFacts, *, density: float) -> list[media.FrameRequest]:
-    """What a pass over this video asks the kernel for, so a Build reads it once; videos only."""
+    """What a pass over this file asks for, so one task reads it once: a video's moments, or a
+    still's working frame and the closer look at its own size (`Reader.windows`)."""
+    out_width, out_height = output_size(facts.width, facts.height)
+    if facts.media_type == "image":
+        own_width, own_height = source_size(facts.width, facts.height)
+        sizes = dict.fromkeys(((out_width, out_height), (own_width, own_height)))
+        return [
+            media.RawFrames(
+                moments=(pictures.STILL,),
+                filters=frame_filter(width, height),
+                pixel_format=FRAME_PIXELS,
+                frame_bytes=width * height * 3,
+            )
+            for width, height in sizes
+        ]
     if facts.media_type != "video":
         return []
-    out_width, out_height = output_size(facts.width, facts.height)
     return [
         media.RawFrames(
             moments=tuple(
@@ -225,7 +239,7 @@ class Reader:
         # A handful of moments per process: fewer launches, and the time limit never waits long.
         for start in range(0, len(timestamps), MOMENTS_PER_READ):
             run = timestamps[start : start + MOMENTS_PER_READ]
-            pictures = await media.raw_moments(
+            raws = await media.raw_moments(
                 path,
                 [moment_at(timestamp_ms) for timestamp_ms in run],
                 filters=frame_filter(out_width, out_height),
@@ -235,7 +249,7 @@ class Reader:
                 time_limit=_FRAME_TIMEOUT * len(run),
                 priority=self._priority,
             )
-            for timestamp_ms, raw in zip(run, pictures, strict=True):
+            for timestamp_ms, raw in zip(run, raws, strict=True):
                 if raw is None:
                     # One unreadable moment is not an unreadable file; the coverage says so.
                     log.warning("faces.frame.unreadable", timestamp_ms=timestamp_ms)
@@ -266,14 +280,8 @@ class Reader:
         own_width, own_height = source_size(width, height)
         own_bytes = own_width * own_height * 3
         if media_type == "image":
-            pictures = await self._pictures(
-                frame_args(path, 0, width=own_width, height=own_height, settings=self._settings),
-                own_width,
-                own_height,
-                _FRAME_TIMEOUT,
-                path=path,
-            )
-            picture = pictures[0] if pictures else None
+            whole = await self._single(path, 0, own_width, own_height)
+            picture = whole[0].pixels if whole else None
             return await asyncio.to_thread(pieces_of, picture, [box for _, box in wanted])
 
         work_width, work_height = output_size(width, height)
@@ -309,6 +317,17 @@ class Reader:
         return ordered
 
     async def _single(self, path: Path, timestamp_ms: int, width: int, height: int) -> list[Frame]:
+        # A still the task already decoded for every pass is not decoded again.
+        held = (
+            pictures.held(path, filters=frame_filter(width, height), pixel_format=FRAME_PIXELS)
+            if timestamp_ms <= 0
+            else None
+        )
+        if held is not None:
+            return [
+                Frame(pixels=picture, timestamp_ms=timestamp_ms)
+                for picture in split(held, width, height)
+            ]
         argv = frame_args(
             path,
             timestamp_ms,
@@ -316,8 +335,8 @@ class Reader:
             height=height,
             settings=self._settings,
         )
-        pictures = await self._pictures(argv, width, height, _FRAME_TIMEOUT, path=path)
-        return [Frame(pixels=picture, timestamp_ms=timestamp_ms) for picture in pictures]
+        decoded = await self._pictures(argv, width, height, _FRAME_TIMEOUT, path=path)
+        return [Frame(pixels=picture, timestamp_ms=timestamp_ms) for picture in decoded]
 
     async def _pictures(
         self, argv: list[str], width: int, height: int, time_limit: float, *, path: Path
@@ -337,12 +356,12 @@ class Reader:
         argv = all_frames_args(
             path, width=width, height=height, settings=self._settings, stream=stream
         )
-        pictures = await self._pictures(argv, width, height, _WHOLE_FILE_TIMEOUT, path=path)
-        if not pictures:
+        every = await self._pictures(argv, width, height, _WHOLE_FILE_TIMEOUT, path=path)
+        if not every:
             return []
-        keep = thin(pictures, max(1, wanted))
+        keep = thin(every, max(1, wanted))
         # A GIF's position in the sequence, not an invented time.
-        return [Frame(pixels=pictures[index], timestamp_ms=index) for index in keep]
+        return [Frame(pixels=every[index], timestamp_ms=index) for index in keep]
 
 
 def long_side_scale(long_side: int) -> str:

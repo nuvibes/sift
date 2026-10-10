@@ -48,6 +48,7 @@ from sift.slices import (
     vault,
     watermarks,
 )
+from sift.slices.importing.jobs import ARRIVED
 from sift.slices.player import service as player_service
 from sift.wiring import (
     catalog,
@@ -247,9 +248,11 @@ class _Watcher:
         self.refreshed += 1
 
 
-def _capture_import_handlers(monkeypatch: pytest.MonkeyPatch, hub: _Hub) -> dict[str, Any]:
+def _capture_import_handlers(
+    monkeypatch: pytest.MonkeyPatch, hub: _Hub, content: Any = None
+) -> dict[str, Any]:
     """Build the import handlers and keep everything they were handed: the rules given to the media
-    slice are reachable no other way."""
+    slice are reachable no other way. `content` answers where a file lives, for a file's own ask."""
     caught: dict[str, Any] = {}
 
     def register(**kwargs: Any) -> None:
@@ -274,7 +277,7 @@ def _capture_import_handlers(monkeypatch: pytest.MonkeyPatch, hub: _Hub) -> dict
             None,  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
             None,  # type: ignore[arg-type]
-            _storage(),
+            _storage(content),
             None,  # type: ignore[arg-type]
             hub,  # type: ignore[arg-type]
             # The queue: the quarantine sweep queues its next run, and the off switches are declared
@@ -443,16 +446,64 @@ async def test_the_stash_box_lookups_set_to_a_press_are_never_queued_on_their_ow
     assert await board.refusal(stash_boxes.STASH_SWEEP) is None
 
 
-async def test_every_governed_follow_on_is_actually_started(
+#: The three passes a landing file is read for, by the one task that reads it once.
+_IDENTIFIED = (faces.FACE_SCAN, semantic.SEMANTIC_DESCRIBE, watermarks.WATERMARK_READ)
+
+
+class _Nowhere:
+    """The content store, asked where a file lives: in no folder, so the library's answer holds."""
+
+    async def locations(self, _asset_id: str) -> list[Any]:
+        return []
+
+
+async def test_the_three_passes_ride_the_import_as_one_task_per_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each switchable pass is handed over as a follow-on, or its switch guards a job never started.
-    Named rather than compared as a set, so a fourth joining does not fail it."""
-    handed = _capture_import_handlers(monkeypatch, _Hub())["follow_on"]
+    """Faces, meaning and the watermark read are handed out as one task that reads the file once,
+    marked as a landing file's so it asks the import switches when it runs."""
+    handed = _capture_import_handlers(monkeypatch, _Hub())
 
-    for job_type, _keys in _GOVERNED:
-        if job_type in (faces.FACE_SCAN, semantic.SEMANTIC_DESCRIBE, watermarks.WATERMARK_READ):
-            assert job_type in handed, f"{job_type} is gated and is started by nothing"
+    assert importing.IDENTIFY_FILE in handed["follow_on"]
+    assert handed["follow_on_payloads"][importing.IDENTIFY_FILE] == {ARRIVED: True}
+    for job_type in _IDENTIFIED:
+        assert job_type not in handed["follow_on"], f"{job_type} would read the file again"
+
+
+async def test_an_arriving_files_one_read_is_priced_from_the_self_tests_rates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The media slice is handed the Build's own answer, asked of the self-test's runner when a
+    file lands rather than when the wiring is built."""
+    handed = _capture_import_handlers(monkeypatch, _Hub())
+    asked: list[Path] = []
+
+    class Machine:
+        async def read_rates(self, path: Path) -> None:
+            asked.append(path)
+
+    monkeypatch.setattr(wiring, "part_of_app", lambda app, part: Machine())
+    assert await handed["read_rates"](Path("clip.mp4")) is None
+    assert asked == [Path("clip.mp4")]
+
+
+@pytest.mark.parametrize("job_type", _IDENTIFIED)
+async def test_the_one_task_is_handed_out_while_any_of_its_passes_is_wanted(
+    monkeypatch: pytest.MonkeyPatch, job_type: str
+) -> None:
+    """One pass switched on is enough to hand the task out, and that pass is what it makes; with
+    all three off no idle task is queued."""
+    keys = dict(_GOVERNED)[job_type]
+    hub = _Hub(**dict.fromkeys(keys, True))
+    handed = _capture_import_handlers(monkeypatch, hub, content=_Nowhere())
+
+    assert await handed["should_generate"](importing.IDENTIFY_FILE, "a1") is True
+    wanted = await imports.arriving_products(handed["policy"], "a1")
+    assert wanted == [key for key, kind in imports.ON_ARRIVAL if kind == job_type]
+    assert await handed["should_generate"](importing.IDENTIFY_FILE, None) is False
+
+    hub.answers[keys[-1]] = False
+    assert await handed["should_generate"](importing.IDENTIFY_FILE, "a1") is False
 
 
 async def test_the_music_follow_on_only_claims(monkeypatch: pytest.MonkeyPatch) -> None:

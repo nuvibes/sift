@@ -130,6 +130,9 @@ class Received:
     #: The leaf of the sender's own name; None means "Swapped file".
     name: str | None = None
     song: ArrivingSong | None = None
+    #: `digest` was read from these staged bytes by the session that wrote them, after the last
+    #: chunk: the landing does not read them again for it.
+    checked: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +173,7 @@ def received_from_offer(
     taken: Collection[int] | None,
     staged: Path,
     digest: str,
+    checked: bool = False,
 ) -> Received:
     """The session's view of one received file, read through the offer's own wire shapes."""
     entry = models.OfferedFile.model_validate(file)
@@ -191,6 +195,7 @@ def received_from_offer(
         key=entry.key,
         staged=staged,
         digest=digest,
+        checked=checked,
         title=entry.title,
         site=entry.site,
         username=entry.username,
@@ -314,10 +319,11 @@ async def land(
         log.warning("swap.file_refused", swap=session.short_id, reason=UNWANTED)
         raise Refused(UNWANTED)
 
-    whole = await asyncio.to_thread(whole_digest, received.staged)
-    if whole != received.digest.strip().lower():
-        log.warning("swap.file_refused", swap=session.short_id, reason=DIGEST)
-        raise Refused(DIGEST)
+    if not received.checked:
+        whole = await asyncio.to_thread(whole_digest, received.staged)
+        if whole != received.digest.strip().lower():
+            log.warning("swap.file_refused", swap=session.short_id, reason=DIGEST)
+            raise Refused(DIGEST)
 
     taken = [person for person in received.people if person.taken]
     scratch = await asyncio.to_thread(

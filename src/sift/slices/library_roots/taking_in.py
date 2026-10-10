@@ -1,5 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Taking a file a walk found into the library: the decision, the read, an archive, the probe."""
+"""Taking a file a walk found into the library: the decision, the read, an archive, the probe.
+
+**On a share, a file's bytes cross the network once.** The take-in copies a picture, or a video
+small enough that the passes after it read it whole (`LOCAL_COPY_VIDEOS_UP_TO`), into the cache in
+one sequential read in its storage's lane; the gate, the identity and every pass after it read that
+copy (`ContentStore.keep_local_copy`, `media_sources.resolve`). A picture out of an archive on a
+share is kept where the passes look for it, rather than pulled out again by each. Every read of a
+share here takes a place in its lane: the gate's, the archive's index and its members.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +21,16 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sift.kernel.archives import ArchiveRefused, Member, extract_member, is_archive
+from sift.kernel import lanes
+from sift.kernel.archives import (
+    ArchiveRefused,
+    CopyChanged,
+    Member,
+    OpenArchive,
+    copy_settled,
+    extract_member,
+    is_archive,
+)
 from sift.kernel.archives import inspect as inspect_archive
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -34,7 +51,7 @@ from sift.kernel.jobs import (
     JobCanceled,
     JobContext,
 )
-from sift.kernel.log import get_logger
+from sift.kernel.log import get_logger, timing_hook
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.sweeping import _folder_for
 from sift.slices.library_roots.walking import _STILL_EXTENSIONS, NO_MOVES, Walked, _root_answer
@@ -57,6 +74,12 @@ NANOSECONDS_PER_SECOND = 1_000_000_000
 #: How long a file has to have sat at zero bytes before it is an empty file rather than one about to
 #: be written: an hour leaves any writer room to start, and a byte written later brings it back.
 EMPTY_SETTLED_SECONDS = 3_600
+
+
+#: The largest video the take-in copies whole from a share for the passes after it: a short clip's
+#: passes read it whole several times over (4.8 to 5.6 times its size, measured), a long film's
+#: seek into it and read a small part. Pictures are always copied: every pass reads one whole.
+LOCAL_COPY_VIDEOS_UP_TO = 64 * 1024**2
 
 
 #: How often a scan's loops write their heartbeat. A cancel is heard sooner: the worker pool's own
@@ -181,27 +204,36 @@ async def _take_in(
     if verdict is not Verdict.READ:
         await _left_as_recorded(context, verdict, root_id=root_id, rel_path=rel_path)
         return {rel_path}
-    checked = await _through_the_gate(
-        item, rel_path=rel_path, root_id=root_id, settings=settings, service=service
-    )
-    if checked is None:
-        return {rel_path}
-    try:
-        ingested = await context.content.ingest(
-            checked,
-            root_id=root_id,
-            rel_path=rel_path,
-            folder_id=await _folder_for(context, root_id, rel_path, folders),
+    async with _read_once(context, item, settings=settings) as copy:
+        if copy is _NOT_READ:
+            log.info("library.file_not_readable_now", root_id=root_id, reason="copy")
+            return {rel_path}
+        checked = await _through_the_gate(
+            item, rel_path=rel_path, root_id=root_id, settings=settings, service=service, copy=copy
         )
-    except FileStillChanging:
-        # Somebody is writing to it right now: not a refusal, so the next pass or the watcher
-        # comes back to it.
-        log.info("library.file_still_changing", root_id=root_id)
-        return {rel_path}
-    except OSError:
-        await _unless_its_folder_went(item)
-        log.info("library.file_not_readable_now", root_id=root_id, reason="gone")
-        return {rel_path}
+        if checked is None:
+            return {rel_path}
+        try:
+            ingested = await context.content.ingest(
+                checked,
+                root_id=root_id,
+                rel_path=rel_path,
+                folder_id=await _folder_for(context, root_id, rel_path, folders),
+                # The walk's for a copy: its own stamp would read "changed" on every later pass.
+                mtime=None if copy is None else item.mtime_ns // NANOSECONDS_PER_SECOND,
+                turn_apart=await _turn_apart(checked),
+            )
+        except FileStillChanging:
+            # Somebody is writing to it right now: not a refusal, so the next pass or the watcher
+            # comes back to it.
+            log.info("library.file_still_changing", root_id=root_id)
+            return {rel_path}
+        except OSError:
+            await _unless_its_folder_went(item)
+            log.info("library.file_not_readable_now", root_id=root_id, reason="gone")
+            return {rel_path}
+        if copy is not None and _passes_will_read(ingested):
+            await context.content.keep_local_copy(ingested.asset.id, copy)
     # It passed. Any refusal written down against this path describes bytes that are not there any
     # more, and a stale refusal would keep a file out on a later pass that happened to match it.
     # Only where one exists: a delete of a row that is not there is a write for nothing.
@@ -262,14 +294,96 @@ async def _left_as_recorded(
     await _probe_if_it_never_was(context, root_id=root_id, rel_path=rel_path)
 
 
-async def _through_the_gate(
-    item: Walked, *, rel_path: str, root_id: str, settings: Settings, service: LibraryService
-) -> IngressResult | None:
-    """The file as the ingress gate passed it, or None where it was turned away."""
+#: What `_read_once` answers for a file it could not copy, compared by identity: left for the next
+#: pass, as a gate's unreadable file is.
+_NOT_READ = Path("not-read")
+
+
+def _worth_a_local_copy(context: JobContext, item: Walked) -> bool:
+    """Whether the take-in copies this file whole from a share for the passes after it."""
+    if not lanes.storage_for(item.path).remote:
+        return False
+    if item.path.suffix.lower() in _STILL_EXTENSIONS:
+        return True
+    # A scan that builds nothing reads a video's identity and its probe's few hundred kilobytes.
+    return not context.payload.get("scan_only") and item.size <= LOCAL_COPY_VIDEOS_UP_TO
+
+
+@asynccontextmanager
+async def _read_once(
+    context: JobContext, item: Walked, *, settings: Settings
+) -> AsyncIterator[Path | None]:
+    """The file copied whole into the cache in one read in its storage's lane, for the gate, the
+    identity and the passes to read; None for a file read where it lies (`_worth_a_local_copy`),
+    `_NOT_READ` for one that would not copy. The scratch folder goes on the way out."""
+    if not _worth_a_local_copy(context, item):
+        yield None
+        return
+    incoming = settings.cache_dir / "incoming"
+    await asyncio.to_thread(incoming.mkdir, parents=True, exist_ok=True)
+    scratch = Path(await asyncio.to_thread(tempfile.mkdtemp, prefix="copy-", dir=incoming))
     try:
-        return await asyncio.to_thread(
-            verify_ingress, item.path, origin=Origin.SCAN, settings=settings
-        )
+        copy = scratch / item.path.name
+        try:
+            with timing_hook("library.take_in.copy", file_size=item.size):
+                async with lanes.reading(item.path):
+                    copied = await asyncio.to_thread(copy_settled, item.path, copy, size=item.size)
+        except CopyChanged:
+            log.info("library.file_still_changing", root_id=context.payload.get("root_id"))
+            yield _NOT_READ
+            return
+        except OSError:
+            await _unless_its_folder_went(item)
+            yield _NOT_READ
+            return
+        lanes.note_read(item.path, copied)
+        yield copy
+    finally:
+        await asyncio.to_thread(shutil.rmtree, scratch, True)
+
+
+async def _turn_apart(checked: IngressResult) -> bool | None:
+    """Whether a browser and ffmpeg turn this JPEG photograph apart, read here from the head of
+    the copy the take-in holds so no pass reads it again; None for any other file."""
+    # Here, not at the top: nothing at start needs it.
+    from sift.kernel import jpeg_turn
+
+    if not jpeg_turn.looked_at(checked.media.mime, str(checked.media.kind)):
+        return None
+    head = await asyncio.to_thread(_head_of, checked.path, jpeg_turn.HEAD_BYTES)
+    return jpeg_turn.drawn_apart_in(head)
+
+
+def _head_of(path: Path, size: int) -> bytes:
+    with path.open("rb") as source:
+        return source.read(size)
+
+
+def _passes_will_read(ingested: Ingested) -> bool:
+    """Whether anything after the take-in will read this file: a new one, or one never probed."""
+    return ingested.asset_is_new or ingested.asset.probed_at is None
+
+
+async def _through_the_gate(
+    item: Walked,
+    *,
+    rel_path: str,
+    root_id: str,
+    settings: Settings,
+    service: LibraryService,
+    copy: Path | None = None,
+) -> IngressResult | None:
+    """The file as the ingress gate passed it, or None where it was turned away. `copy` is the
+    local copy read in its place; otherwise the read is a place in the file's storage lane."""
+    try:
+        if copy is not None:
+            return await asyncio.to_thread(
+                verify_ingress, copy, origin=Origin.SCAN, settings=settings
+            )
+        async with lanes.reading(item.path):
+            return await asyncio.to_thread(
+                verify_ingress, item.path, origin=Origin.SCAN, settings=settings
+            )
     except IngressRejected as rejection:
         if rejection.reason is Reason.UNREADABLE:
             await _unless_its_folder_went(item)
@@ -344,32 +458,47 @@ async def _take_in_archive(
     # Removed from Sift by somebody, and the archive is not Sift's to change, so this is the only
     # place that removal can hold: without it the next scan brings the picture back under a new id.
     removed = await service.removed_inside(root_id=root_id, archive_rel_path=rel_path)
-    for member in members:
-        await beat()
-        member_rel = _member_rel_path(rel_path, member.path)
-        claimed.add(member_rel)
-        if removed.get(member_rel) == member.size_bytes:
-            continue
-        asset_id = await _take_in_member(
-            context,
-            archive=item.path,
-            member=member.path,
-            member_rel=member_rel,
-            archive_rel_path=rel_path,
-            root_id=root_id,
-            folder_id=folder_id,
-            size_bytes=member.size_bytes,
-            mtime_ns=item.mtime_ns,
-            settings=settings,
-            scratch=scratch / Path(member.path).name,
-            taken_in=taken_in,
-        )
-        if asset_id is not None:
-            inside.append(asset_id)
-    await asyncio.to_thread(shutil.rmtree, scratch, True)
+    # Opened once for every picture, not once each: on a share each opening reads the archive's
+    # index again.
+    opened = OpenArchive(item.path)
+    try:
+        for member in members:
+            await beat()
+            member_rel = _member_rel_path(rel_path, member.path)
+            claimed.add(member_rel)
+            if removed.get(member_rel) == member.size_bytes:
+                continue
+            asset_id = await _take_in_member(
+                context,
+                archive=item.path,
+                member=member.path,
+                member_rel=member_rel,
+                archive_rel_path=rel_path,
+                root_id=root_id,
+                folder_id=folder_id,
+                size_bytes=member.size_bytes,
+                mtime_ns=item.mtime_ns,
+                settings=settings,
+                scratch=scratch / Path(member.path).name,
+                taken_in=taken_in,
+                opened=opened,
+            )
+            if asset_id is not None:
+                inside.append(asset_id)
+    finally:
+        await asyncio.to_thread(opened.close)
+        await asyncio.to_thread(shutil.rmtree, scratch, True)
     log.info(
         "library.archive_indexed", root_id=root_id, pictures=len(inside), considered=len(members)
     )
+    await _offer_the_set(archive_settled, root_id=root_id, rel_path=rel_path, inside=inside)
+    return claimed
+
+
+async def _offer_the_set(
+    archive_settled: ArchiveSettled | None, *, root_id: str, rel_path: str, inside: list[str]
+) -> None:
+    """The archive's pictures offered to the grouping as one set, once every picture is in."""
     if archive_settled is not None and inside:
         # After every picture, never per picture: a set is the archive. A listener that refuses must
         # not take the scan down with it (see `_settle_folders`).
@@ -382,7 +511,6 @@ async def _take_in_archive(
                 error_kind=type(refused).__name__,
                 error=str(refused),
             )
-    return claimed
 
 
 async def _archive_members(
@@ -395,7 +523,8 @@ async def _archive_members(
         return []
 
     try:
-        members = await asyncio.to_thread(inspect_archive, item.path, wanted=_STILL_EXTENSIONS)
+        async with lanes.reading(item.path):
+            members = await asyncio.to_thread(inspect_archive, item.path, wanted=_STILL_EXTENSIONS)
     except ArchiveRefused as refused:
         await _unless_its_folder_went(item)
         # Remembered the same way a rejected file is, against the ARCHIVE's own path, so a bomb or a
@@ -433,10 +562,12 @@ async def _take_in_member(
     settings: Settings,
     scratch: Path,
     taken_in: list[str],
+    opened: OpenArchive | None = None,
 ) -> str | None:
     """One picture out of an archive. Its asset id, unchanged ones too, or None if refused.
 
-    The gate is the ordinary one, which is why the member is written to a real file first.
+    The gate is the ordinary one, which is why the member is written to a real file first. On a
+    share that file is kept for the passes after it, where they look for it (`keep_local_copy`).
     """
     unchanged = await _unchanged_since_last_scan(
         context,
@@ -451,12 +582,15 @@ async def _take_in_member(
         return None if location is None else location.asset_id
 
     try:
-        try:
-            await asyncio.to_thread(
-                extract_member, archive, member, scratch, cache_dir=settings.cache_dir
-            )
-        except ArchiveRefused as refused:
-            log.info("library.archive_member_refused", root_id=root_id, reason=str(refused))
+        if not await _extracted(
+            archive,
+            member,
+            scratch,
+            settings=settings,
+            opened=opened,
+            root_id=root_id,
+            size_bytes=size_bytes,
+        ):
             return None
 
         try:
@@ -480,20 +614,56 @@ async def _take_in_member(
                 # The ARCHIVE's: a scratch copy's own timestamp would answer "changed" against the
                 # archive on every later pass.
                 mtime=mtime_ns // NANOSECONDS_PER_SECOND,
+                turn_apart=await _turn_apart(checked),
             )
         except FileStillChanging:  # pragma: no cover (the scratch file is written and closed here)
             return None
+        if _passes_will_read(ingested) and lanes.storage_for(archive).remote:
+            await context.content.keep_local_copy(ingested.asset.id, scratch, from_archive=True)
     finally:
         # The whole point of indexing in place: the bytes do not stay. Removed whichever way this
         # went, including the cancelled path, or the cache fills with a second copy of the library.
         await asyncio.to_thread(scratch.unlink, True)
+    return await _member_taken_in(context, ingested, taken_in)
 
+
+async def _member_taken_in(context: JobContext, ingested: Ingested, taken_in: list[str]) -> str:
+    """A member's probe asked for where it is new or was never probed; its asset id."""
     if ingested.asset_is_new:
         await context.enqueue_child(PROBE, _probe_payload(context, ingested.asset.id))
         taken_in.append(ingested.asset.id)
     elif ingested.asset.probed_at is None:
         await _probe_unless_already_coming(context, ingested.asset.id)
     return ingested.asset.id
+
+
+async def _extracted(
+    archive: Path,
+    member: str,
+    scratch: Path,
+    *,
+    settings: Settings,
+    opened: OpenArchive | None,
+    root_id: str,
+    size_bytes: int,
+) -> bool:
+    """One member written to `scratch`, or False where the archive refused it."""
+    try:
+        with timing_hook("library.take_in.member", file_size=size_bytes):
+            async with lanes.reading(archive):
+                written = await asyncio.to_thread(
+                    extract_member,
+                    archive,
+                    member,
+                    scratch,
+                    cache_dir=settings.cache_dir,
+                    opened=opened,
+                )
+        lanes.note_read(archive, written)
+    except ArchiveRefused as refused:
+        log.info("library.archive_member_refused", root_id=root_id, reason=str(refused))
+        return False
+    return True
 
 
 async def _unchanged_since_last_scan(

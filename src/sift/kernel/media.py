@@ -8,17 +8,14 @@ a pure function returning `list[str]`, so what ffmpeg is asked to do is tested w
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import contextvars
 import json
-import os
 import shutil
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sift.kernel import budget, hardware, lanes, subprocess
+from sift.kernel import lanes, subprocess
 from sift.kernel.config import Settings
 from sift.kernel.log import get_logger
 from sift.kernel.media_card import CARD_SMALLEST_SIDE as CARD_SMALLEST_SIDE
@@ -35,6 +32,9 @@ from sift.kernel.media_frames import FRAMES_PER_SEEK_UNKNOWN as FRAMES_PER_SEEK_
 from sift.kernel.media_frames import PICTURES_PER_INPUT as PICTURES_PER_INPUT
 from sift.kernel.media_frames import PICTURES_PER_THREAD as PICTURES_PER_THREAD
 from sift.kernel.media_frames import REFERENCE_PIXELS as REFERENCE_PIXELS
+from sift.kernel.media_frames import SEEK_THREADS as SEEK_THREADS
+from sift.kernel.media_frames import STILL_LEVEL_FORMAT as STILL_LEVEL_FORMAT
+from sift.kernel.media_frames import STILL_SUFFIX as STILL_SUFFIX
 from sift.kernel.media_frames import FileFacts as FileFacts
 from sift.kernel.media_frames import FrameClock as FrameClock
 from sift.kernel.media_frames import FrameFiles as FrameFiles
@@ -59,6 +59,18 @@ from sift.kernel.media_frames import position_among_pictures as position_among_p
 from sift.kernel.media_frames import seconds as seconds
 from sift.kernel.media_frames import select_expression as select_expression
 from sift.kernel.media_frames import the_moving_picture as the_moving_picture
+from sift.kernel.media_share import _PREPARED as _PREPARED
+from sift.kernel.media_share import BASE_FLAGS as BASE_FLAGS
+from sift.kernel.media_share import MAX_ALLOC_BYTES as MAX_ALLOC_BYTES
+from sift.kernel.media_share import _running_tool as _running_tool
+from sift.kernel.media_share import background_flags as background_flags
+from sift.kernel.media_share import background_threads as background_threads
+from sift.kernel.media_share import jobs_at_once as jobs_at_once
+from sift.kernel.media_share import prepared as prepared
+from sift.kernel.media_share import prepared_now as prepared_now
+from sift.kernel.media_share import set_jobs_at_once as set_jobs_at_once
+from sift.kernel.media_share import set_share as set_share
+from sift.kernel.media_share import tools_sharing as tools_sharing
 from sift.kernel.media_sources import MissingAsset as MissingAsset
 from sift.kernel.media_sources import NoReadableCopy as NoReadableCopy
 from sift.kernel.media_sources import Source as Source
@@ -68,86 +80,9 @@ from sift.kernel.media_sources import resolve_decodable as resolve_decodable
 log = get_logger(__name__)
 
 
-#: The most memory ffmpeg may allocate for one buffer, against a malformed file's huge ask.
-MAX_ALLOC_BYTES = str(1 << 30)
-
 #: How far apart two running times may be and still be the same video, in milliseconds: one
 #: number for both askers, loose because different encodes trim differently.
 MAX_DURATION_GAP_MS = 10_000
-
-#: Prepended to every invocation; without `-nostdin` ffmpeg reads the server's own input.
-BASE_FLAGS: tuple[str, ...] = (
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-nostdin",
-    "-y",
-    "-max_alloc",
-    MAX_ALLOC_BYTES,
-)
-
-
-#: How many jobs the pool really runs, as the settings say; None until the pool is configured.
-_jobs_at_once: int | None = None
-
-
-def set_jobs_at_once(workers: int) -> bool:
-    """Record how many jobs really run together. True when the number actually changed."""
-    global _jobs_at_once
-    if workers < 1 or workers == _jobs_at_once:
-        return False
-    _jobs_at_once = workers
-    return True
-
-
-def jobs_at_once(settings: Settings) -> int:
-    """How many jobs run together: what the pool was told, or the hardware answer before it was."""
-    if _jobs_at_once is not None:
-        return _jobs_at_once
-    return max(1, hardware.worker_concurrency(settings))
-
-
-#: The workers running and the percent of the device they share, or None for the whole device.
-_share: tuple[int, int] | None = None
-
-
-def set_share(*, running: int, percent: int) -> bool:
-    """Record the share in force: `running` workers sharing `percent` of the device.
-
-    Below the whole device, each background tool is also held to its threads by the system.
-    True when the share changed.
-    """
-    global _share
-    share = (max(1, running), min(budget.WHOLE_DEVICE, max(1, percent)))
-    if share == _share:
-        return False
-    _share = share
-    cores = os.cpu_count() or 1
-    threads = budget.tool_threads(cores, running=share[0], percent=share[1])
-    held = share[1] < budget.WHOLE_DEVICE
-    subprocess.hold_background(budget.processor_rate(threads, cores) if held else None)
-    return True
-
-
-def background_threads(settings: Settings) -> int:
-    """How many threads one background ffmpeg may use: its share of the share in force.
-
-    Left alone ffmpeg sizes its pool from the cores, per process, and the app queues behind them.
-    """
-    cores = os.cpu_count() or 1
-    if _share is None:
-        return budget.tool_threads(
-            cores, running=jobs_at_once(settings), percent=budget.WHOLE_DEVICE
-        )
-    running, percent = _share
-    return budget.tool_threads(cores, running=running, percent=percent)
-
-
-def background_flags(settings: Settings) -> tuple[str, ...]:
-    """`BASE_FLAGS` plus a thread cap on decoding and the filter graph; an encoder needs its own."""
-    share = str(background_threads(settings))
-    return (*BASE_FLAGS, "-threads", share, "-filter_threads", share)
-
 
 #: HDR to SDR in software (Hable, back to BT.709 8-bit 4:2:0): one chain for every such encode.
 HDR_TO_SDR = (
@@ -251,9 +186,14 @@ async def run(
     """
     try:
         async with lanes.reading_if(reads):
-            result = await subprocess.run(
-                argv, time_limit=time_limit, capture_stdout=capture, priority=priority, stdin=stdin
-            )
+            with _running_tool():
+                result = await subprocess.run(
+                    argv,
+                    time_limit=time_limit,
+                    capture_stdout=capture,
+                    priority=priority,
+                    stdin=stdin,
+                )
     except subprocess.SubprocessError as error:
         raise FFmpegError(str(error)) from error
 
@@ -355,25 +295,44 @@ async def _reading_of(
     except FFmpegError:
         reading = _UNREAD
     else:
-        listed = said.get("streams")
-        streams = [
-            {"codec_type": "video", **one}
-            for one in (listed if isinstance(listed, list) else [])
-            if isinstance(one, dict)
-        ]
-        video = the_moving_picture(streams)
-        container = said.get("format")
-        reading = _Reading(
-            picture=picture_from(video) if video is not None else None,
-            stream=position_among_pictures(streams, video),
-            clock=clock_from(
-                video, container.get("start_time") if isinstance(container, dict) else None
-            ),
-        )
-    if len(_PICTURES) >= _PICTURES_KEPT:
+        reading = _reading_from(said)
+    _keep(key, reading)
+    return reading
+
+
+def _reading_from(said: dict[str, Any]) -> _Reading:
+    """The reading in an ffprobe answer: the stream query's, or a whole answer's video streams."""
+    listed = said.get("streams")
+    streams = [
+        {"codec_type": "video", **one}
+        for one in (listed if isinstance(listed, list) else [])
+        if isinstance(one, dict) and one.get("codec_type", "video") == "video"
+    ]
+    video = the_moving_picture(streams)
+    container = said.get("format")
+    return _Reading(
+        picture=picture_from(video) if video is not None else None,
+        stream=position_among_pictures(streams, video),
+        clock=clock_from(
+            video, container.get("start_time") if isinstance(container, dict) else None
+        ),
+    )
+
+
+def _keep(key: tuple[str, int, int], reading: _Reading) -> None:
+    if key not in _PICTURES and len(_PICTURES) >= _PICTURES_KEPT:
         _PICTURES.pop(next(iter(_PICTURES)))
     _PICTURES[key] = reading
-    return reading
+
+
+async def remember_reading(source: Path, said: dict[str, Any]) -> None:
+    """Keep the reading in the whole ffprobe answer the probe kept for this file, so the frame
+    readers do not ask the tool again. The answer must be of this very file."""
+    try:
+        found = await asyncio.to_thread(source.stat)
+    except OSError:
+        return
+    _keep((str(source), found.st_size, found.st_mtime_ns), _reading_from(said))
 
 
 async def picture_of(
@@ -413,19 +372,26 @@ async def moments_per_process(
         return fits_line
     fits_memory = moments_in_memory(
         picture,
-        threads=background_threads(settings),
-        budget=subprocess.planned_memory(jobs_at_once(settings)),
+        threads=SEEK_THREADS,
+        budget=subprocess.planned_memory(tools_sharing(settings)),
     )
     return min(fits_line, fits_memory)
 
 
 def _inputs(source: Path, moments: Sequence[Moment], settings: Settings) -> list[str]:
-    """One seeked input per moment, each held to the same thread share as the first."""
-    share = str(background_threads(settings))
+    """One seeked input per moment, each held to `SEEK_THREADS`: the flag reaches one input."""
+    del settings  # each input's share is fixed; see `SEEK_THREADS`
+    share = str(SEEK_THREADS)
     argv: list[str] = []
     for moment in moments:
         argv += [*moment.seek, "-threads", share, "-i", str(source)]
     return argv
+
+
+def seek_flags() -> tuple[str, ...]:
+    """`BASE_FLAGS` for a command of seeked inputs: each output's filters at `SEEK_THREADS` too."""
+    share = str(SEEK_THREADS)
+    return (*BASE_FLAGS, "-threads", share, "-filter_threads", share)
 
 
 def raw_stream_args(
@@ -446,7 +412,7 @@ def raw_stream_args(
     graph = f"{chains};{joined}concat=n={len(moments)}:v=1:a=0[out]"
     return [
         settings.ffmpeg_path,
-        *background_flags(settings),
+        *seek_flags(),
         *_inputs(source, moments, settings),
         "-filter_complex",
         graph,
@@ -503,7 +469,7 @@ def moment_files_args(
 ) -> list[str]:
     """Every moment as its own file, from one process, landing at `destinations` in order."""
     picked = _picked(stream)
-    argv = [settings.ffmpeg_path, *background_flags(settings), *_inputs(source, moments, settings)]
+    argv = [settings.ffmpeg_path, *seek_flags(), *_inputs(source, moments, settings)]
     for index, destination in enumerate(destinations):
         argv += ["-map", f"{index}:{picked}", "-frames:v", "1", "-vf", filters, *output]
         argv.append(str(destination))
@@ -537,8 +503,8 @@ async def raw_moments(
     stream = await moving_stream_of(source, settings=settings, priority=priority)
     for start in range(0, len(moments), size):
         chunk = moments[start : start + size]
-        answer.extend(
-            await _raw_chunk(
+        with _running_tool():
+            read = await _raw_chunk(
                 source,
                 chunk,
                 filters=filters,
@@ -549,7 +515,7 @@ async def raw_moments(
                 priority=priority,
                 stream=stream,
             )
-        )
+        answer.extend(read)
     return answer
 
 
@@ -704,7 +670,7 @@ def moment_stills_args(
 ) -> list[str]:
     """Every moment as a still and as grey pixels, from one process."""
     picked = _picked(stream)
-    argv = [settings.ffmpeg_path, *background_flags(settings), *_inputs(source, moments, settings)]
+    argv = [settings.ffmpeg_path, *seek_flags(), *_inputs(source, moments, settings)]
     for index, (still, level) in enumerate(zip(stills, levels, strict=True)):
         argv += ["-map", f"{index}:{picked}", "-frames:v", "1", "-vf", still_filters, *still_output]
         argv.append(str(still))
@@ -732,6 +698,17 @@ async def moments_to_stills(
         return []
     stills = [into / f"{index:04d}.jpg" for index in range(len(moments))]
     levels = [into / f"{index:04d}.gray" for index in range(len(moments))]
+    ready = _PREPARED.get()
+    if ready is not None:
+        prepared = ready.stills(
+            source,
+            moments,
+            still_filters=still_filters,
+            still_output=still_output,
+            level_filters=level_filters,
+        )
+        if prepared is not None:
+            return await asyncio.to_thread(_cut_from, prepared, stills, level_bytes)
     stream = await moving_stream_of(source, settings=settings, priority=priority)
 
     def argv_for(start: int, end: int) -> list[str]:
@@ -762,16 +739,32 @@ async def moments_to_stills(
                 )
             except FFmpegError as error:
                 log.info("media.stills.moment_refused", source=str(source), detail=str(error))
+    return await asyncio.to_thread(_collected, stills, levels, level_bytes)
 
-    def collect() -> list[CutStill | None]:
-        answer: list[CutStill | None] = []
-        for still, level in zip(stills, levels, strict=True):
-            raw = level.read_bytes() if level.exists() else b""
-            fine = still.exists() and still.stat().st_size > 0 and len(raw) == level_bytes
-            answer.append(CutStill(still=still, levels=raw) if fine else None)
-        return answer
 
-    return await asyncio.to_thread(collect)
+def _collected(
+    stills: Sequence[Path], levels: Sequence[Path], level_bytes: int
+) -> list[CutStill | None]:
+    """What each moment's cut left on disk, as `moments_to_stills` answers. Blocking."""
+    answer: list[CutStill | None] = []
+    for still, level in zip(stills, levels, strict=True):
+        raw = level.read_bytes() if level.exists() else b""
+        fine = still.exists() and still.stat().st_size > 0 and len(raw) == level_bytes
+        answer.append(CutStill(still=still, levels=raw) if fine else None)
+    return answer
+
+
+def _cut_from(
+    prepared: Sequence[tuple[Path | None, bytes | None]], stills: Sequence[Path], level_bytes: int
+) -> list[CutStill | None]:
+    """The prepared stills moved where the caller wanted them, as `moments_to_stills` answers."""
+    made = _moved([still for still, _ in prepared], stills)
+    return [
+        CutStill(still=still, levels=levels)
+        if still is not None and levels is not None and len(levels) == level_bytes
+        else None
+        for still, (_, levels) in zip(made, prepared, strict=True)
+    ]
 
 
 def _moved(prepared: Sequence[Path | None], destinations: Sequence[Path]) -> list[Path | None]:
@@ -850,27 +843,6 @@ def decode_once_fits(argv: Sequence[str]) -> bool:
     return sum(len(one) + 1 for one in argv) <= COMMAND_LINE_BUDGET
 
 
-#: The frames prepared for the task on this stack, unknown to the consumers three features deep.
-_PREPARED: contextvars.ContextVar[PreparedFrames | None] = contextvars.ContextVar(
-    "prepared_frames", default=None
-)
-
-
-def prepared_now() -> PreparedFrames | None:
-    """The frames prepared for the task on this stack, if any."""
-    return _PREPARED.get()
-
-
-@contextlib.contextmanager
-def prepared(frames: PreparedFrames) -> Iterator[None]:
-    """Hand these frames to every `raw_moments` and `moments_to_files` call inside."""
-    token = _PREPARED.set(frames)
-    try:
-        yield
-    finally:
-        _PREPARED.reset(token)
-
-
 def _collect(source: Path, requests: Sequence[FrameRequest], workspace: Path) -> PreparedFrames:
     """Read what the decode produced. Blocking, for a thread."""
     frames = PreparedFrames()
@@ -925,9 +897,10 @@ async def decode_once(
         raise FFmpegError("too many moments for one command line")
     try:
         async with lanes.reading(source):
-            result = await subprocess.run(
-                argv, time_limit=time_limit, capture_stdout=False, priority=priority
-            )
+            with _running_tool():
+                result = await subprocess.run(
+                    argv, time_limit=time_limit, capture_stdout=False, priority=priority
+                )
     except subprocess.SubprocessError as error:
         raise FFmpegError(str(error)) from error
     frames = await asyncio.to_thread(_collect, source, requests, workspace)

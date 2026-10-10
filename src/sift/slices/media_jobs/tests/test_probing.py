@@ -659,9 +659,20 @@ async def test_an_unreachable_copy_is_worth_retrying_and_a_missing_asset_is_not(
     retrying is exactly right. An asset that has been deleted is not coming back, and every
     attempt finds the same nothing.
     """
-    video.unlink()
+    unplugged = video.parent.with_name(video.parent.name + "-unplugged")
+    video.parent.rename(unplugged)
 
     with pytest.raises(jobs.NoReadableCopy, match="not connected"):
+        await jobs.probe(
+            await context_for("probe", {"asset_id": ingested_video.asset.id}),
+            settings=settings,
+            hardware=hardware,
+        )
+
+    # Back, and the file deleted from it: every attempt would find the same nothing.
+    unplugged.rename(video.parent)
+    video.unlink()
+    with pytest.raises(jobs.NoReadableCopy, match="moved or deleted"):
         await jobs.probe(
             await context_for("probe", {"asset_id": ingested_video.asset.id}),
             settings=settings,
@@ -888,8 +899,9 @@ async def test_every_read_a_probe_makes_of_a_file_takes_its_storage_lane(
     )
 
     of_the_file = [one for one in asked if one == video]
-    # The gate, the metadata, the hash frames, the stash-box stills, the interleave and the ends.
-    assert len(of_the_file) >= 6, asked
+    # The gate, the metadata, the interleave, the one decode the fingerprints read and the ends.
+    # The fingerprint asks the tool nothing: it reads the answer the probe kept.
+    assert len(of_the_file) >= 5, asked
     assert all(one == video for one in asked), "a read of something that is not the file"
 
 

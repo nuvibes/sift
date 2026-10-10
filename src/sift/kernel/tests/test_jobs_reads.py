@@ -1364,3 +1364,29 @@ async def test_a_quiet_top_with_a_failed_step_stays_listed_with_its_failure(
     assert failures[top].type == "probe" and failures[top].error == "it broke"
     assert failures[top].asset_id == "F1"
     assert await job_queue.family_failures([]) == {}
+
+
+async def test_a_read_of_a_long_queue_is_kept_by_its_cost_and_a_cheap_one_never(
+    job_queue: JobQueue,
+) -> None:
+    """The Tasks screen polls reads of every live row; at a long queue each costs a second, so it
+    is kept for ten times its cost and shared by callers asking together, while a cheap read is
+    read every time and stays exact."""
+    from sift.kernel.jobs.queue_core import KEPT_FROM_SECONDS
+
+    reads: list[int] = []
+
+    async def dear() -> int:
+        reads.append(1)
+        await asyncio.sleep(KEPT_FROM_SECONDS)
+        return len(reads)
+
+    async def cheap() -> int:
+        reads.append(1)
+        return len(reads)
+
+    together = await asyncio.gather(*(job_queue._kept_read(("dear",), dear) for _ in range(3)))
+    assert together == [1, 1, 1], "one read for callers asking together"
+    assert await job_queue._kept_read(("dear",), dear) == 1, "kept for ten times its cost"
+    assert await job_queue._kept_read(("cheap",), cheap) == 2
+    assert await job_queue._kept_read(("cheap",), cheap) == 3, "a cheap read is read again"

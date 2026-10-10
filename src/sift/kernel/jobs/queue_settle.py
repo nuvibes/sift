@@ -346,6 +346,7 @@ class Settling(HandOffs):
         released = [row["id"] for row in rows]
         if released:
             log.info("job.unblocked", job_count=len(released), job_type=job_type)
+            self._work_arrived_unknown()
         return released
 
     async def pause(self, job_id: str, *, for_benchmark: bool = False) -> bool:
@@ -405,6 +406,7 @@ class Settling(HandOffs):
                 return True
 
         log.info("job.resumed", job_id=job_id)
+        self._work_arrived_unknown()
         return True
 
     async def resume_after_benchmark(self, *, chunk: int = PAUSE_CHUNK) -> list[str]:
@@ -415,6 +417,7 @@ class Settling(HandOffs):
                 rows = await _fetch(connection, _RESUME_AFTER_BENCHMARK, (self._now(), chunk))
             resumed += [str(row["id"]) for row in rows]
             if len(rows) < chunk:
+                self._work_arrived_unknown()
                 return resumed
 
     async def beat(self, job_id: str, worker_id: str) -> Beat | None:
@@ -496,5 +499,6 @@ class Settling(HandOffs):
                 (_for_the_record(error), now, stale_before, stale_before),
             )
             requeued = await _fetch(connection, _RECLAIM_REQUEUE, (now, stale_before, stale_before))
-
+        if requeued:
+            self._work_arrived_unknown()
         return [row["id"] for row in requeued], [row["id"] for row in exhausted]

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from sift.kernel import media
+from sift.kernel import media, media_share
 from sift.kernel.config import Settings
 from sift.kernel.hardware import HardwareReport
 from sift.kernel.sampling import Piece
@@ -58,12 +58,12 @@ def _share_for(workers: int) -> str:
     Cleared for the read, and pinned for the tests by the fixture below: the same fault from both
     ends, so the arithmetic is what is pinned rather than whatever ran first.
     """
-    was = media._jobs_at_once
-    media._jobs_at_once = None
+    was = media_share._jobs_at_once
+    media_share._jobs_at_once = None
     try:
         return str(media.background_threads(Settings(worker_concurrency=workers)))
     finally:
-        media._jobs_at_once = was
+        media_share._jobs_at_once = was
 
 
 #: The thread cap every background command carries. Read from the same helper the code uses. What
@@ -74,7 +74,7 @@ SHARE = _share_for(WORKERS)
 @pytest.fixture(autouse=True)
 def _the_pool_has_not_spoken(monkeypatch: pytest.MonkeyPatch) -> None:
     """Pin what `jobs_at_once` answers, for the reason `_share_for` gives at length."""
-    monkeypatch.setattr(media, "_jobs_at_once", WORKERS)
+    monkeypatch.setattr(media_share, "_jobs_at_once", WORKERS)
 
 
 @pytest.fixture

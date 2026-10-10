@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""A big read on a share holds back its own per-file work until its reads end."""
+"""A big read on a share holds back none of its own per-file work: a file's work runs as it lands."""
 
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ RELEASED = "test_released_work"
 
 
 class HoldWatcher(RecordingReindexer):
-    """At the first batch, per-file work made from a probe, as a probe makes it."""
+    """At the first batch, per-file work made from a probe, as a probe makes it, and what another
+    worker could claim while the read goes on."""
 
-    def __init__(self, queue: JobQueue, *, fail: bool = False) -> None:
+    def __init__(self, queue: JobQueue) -> None:
         super().__init__()
         self.queue = queue
-        self.fail = fail
         self.batches: list[int] = []
         self.holder: list[str | None] = []
-        self.probes_held: list[str | None] = []
+        self.claimed: list[str | None] = []
 
     async def touched_many(self, asset_ids: Sequence[str]) -> None:
         if not self.batches:
@@ -41,9 +41,8 @@ class HoldWatcher(RecordingReindexer):
             await self.queue.enqueue(RELEASED, {}, parent_id=probe.id, priority=probe.priority)
         self.batches.append(len(asset_ids))
         self.holder.append(await self.queue.holder_of([RELEASED, taking_in.PROBE]))
-        self.probes_held.append(await self.queue.holder_of([taking_in.PROBE]))
-        if self.fail:
-            raise RuntimeError("the read failed")
+        job = await self.queue.claim("another worker", limits={taking_in.PROBE: 0})
+        self.claimed.append(None if job is None else job.type)
         await super().touched_many(asset_ids)
 
 
@@ -51,7 +50,6 @@ class HoldWatcher(RecordingReindexer):
 def three_files(monkeypatch: pytest.MonkeyPatch, root_path: Path) -> None:
     for n in range(3):
         draw(root_path / f"shot-{n}.png", f"testsrc2=size={32 + 8 * n}x32:rate=1")
-    monkeypatch.setattr(jobs, "SCAN_FIRST_FILES", 3)
     monkeypatch.setattr(jobs, "PROBE_HANDOUT_BATCH", 2)
     monkeypatch.setattr(lanes, "storage_for", lambda _path: Storage(key="//nas/", remote=True))
 
@@ -78,7 +76,7 @@ async def _scan(
 
 
 @pytest.mark.usefixtures("three_files")
-async def test_a_big_read_on_a_share_holds_its_own_work_until_its_reads_end(
+async def test_a_big_read_on_a_share_holds_none_of_its_own_work(
     job_queue: JobQueue,
     capabilities: SystemCapabilities,
     settings: Settings,
@@ -87,73 +85,9 @@ async def test_a_big_read_on_a_share_holds_its_own_work_until_its_reads_end(
 ) -> None:
     watcher = HoldWatcher(job_queue)
 
-    scan_id = await _scan(
-        job_queue, capabilities, settings, service, watcher, jobs.scan_shape(root.id)
-    )
+    await _scan(job_queue, capabilities, settings, service, watcher, jobs.scan_shape(root.id))
 
     assert watcher.batches == [2, 1], "the index hears each batch as it arrives"
-    assert watcher.holder == [scan_id, None], "held while reading, lifted before the sweep"
-    assert watcher.probes_held == [None, None], "its probes are the read"
+    assert watcher.holder == [None, None], "nothing held while reading"
+    assert watcher.claimed[0] == RELEASED, "a file's work is claimed while the read goes on"
     assert await job_queue.held_for_family_by_type() == {}
-
-
-@pytest.mark.usefixtures("three_files")
-@pytest.mark.parametrize("case", ["local disk", "named paths", "too few", "switched off"])
-async def test_a_read_that_is_not_big_or_not_on_a_share_holds_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-    job_queue: JobQueue,
-    capabilities: SystemCapabilities,
-    settings: Settings,
-    service: LibraryService,
-    root: Root,
-    case: str,
-) -> None:
-    shape = jobs.scan_shape(root.id)
-    if case == "local disk":
-        monkeypatch.setattr(lanes, "storage_for", lambda _path: Storage(key="C:/", remote=False))
-    elif case == "named paths":
-        shape["paths"] = [f"shot-{n}.png" for n in range(3)]
-    elif case == "too few":
-        monkeypatch.setattr(jobs, "SCAN_FIRST_FILES", 4)
-    else:
-        monkeypatch.setattr(jobs, "HOLD_WHILE_READING", False)
-    watcher = HoldWatcher(job_queue)
-
-    await _scan(job_queue, capabilities, settings, service, watcher, shape)
-
-    assert watcher.holder == [None, None]
-
-
-@pytest.mark.usefixtures("three_files")
-async def test_a_read_that_fails_lifts_its_hold(
-    job_queue: JobQueue,
-    capabilities: SystemCapabilities,
-    settings: Settings,
-    service: LibraryService,
-    root: Root,
-) -> None:
-    watcher = HoldWatcher(job_queue, fail=True)
-
-    with pytest.raises(RuntimeError):
-        await _scan(job_queue, capabilities, settings, service, watcher, jobs.scan_shape(root.id))
-
-    assert watcher.holder[0] is not None
-    assert await job_queue.holder_of([RELEASED]) is None
-
-
-@pytest.mark.usefixtures("three_files")
-async def test_the_reads_last_probes_go_before_the_work_its_hold_released(
-    job_queue: JobQueue,
-    capabilities: SystemCapabilities,
-    settings: Settings,
-    service: LibraryService,
-    root: Root,
-) -> None:
-    await _scan(
-        job_queue, capabilities, settings, service, HoldWatcher(job_queue), jobs.scan_shape(root.id)
-    )
-
-    claimed = []
-    while (job := await job_queue.claim("after the read")) is not None:
-        claimed.append(job.type)
-    assert claimed == [taking_in.PROBE] * 3 + [RELEASED]

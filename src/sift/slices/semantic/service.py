@@ -21,6 +21,7 @@ from sift.kernel.hardware import HardwareReport
 from sift.kernel.ledger import Actor
 from sift.kernel.log import get_logger
 from sift.kernel.memo import PacedAnswer
+from sift.kernel.ml import pictures
 from sift.kernel.ml.child import devices_here
 from sift.kernel.ml.runtime import DeviceUnavailable, resolve_provider
 from sift.kernel.ml.weights import Progress, WeightError
@@ -443,11 +444,23 @@ class SemanticService:
                 transient=True,
             )
             return 0
-        moments = await self._reader.read(
-            source.path,
-            media_type=str(source.asset.media_type),
-            duration_ms=int(source.asset.duration_ms or 0),
-        )
+        try:
+            moments = await self._reader.read(
+                source.path,
+                media_type=str(source.asset.media_type),
+                duration_ms=int(source.asset.duration_ms or 0),
+            )
+        except media.FFmpegError as error:
+            # Damaged bytes do not mend: one verdict, in the decoder's words, and no retry.
+            if not media.is_broken_data(str(error)):
+                raise
+            await self._give_up(
+                asset_id,
+                code="no_frame" if source.asset.media_type != "video" else "no_frame_decoded",
+                reason=pictures.damaged(str(error)),
+                transient=False,
+            )
+            return 0
         if not moments:
             await self._give_up(
                 asset_id,

@@ -25,6 +25,7 @@ from sift.kernel.jobs import (
     BACKGROUND_PRIORITY,
     DEFAULT_PRIORITY,
     MAX_PAGE_SIZE,
+    STOP_TO_CANCEL,
     WAITED_ON_PRIORITY,
     JobContext,
     JobQueue,
@@ -33,13 +34,14 @@ from sift.kernel.jobs import (
     register_handler,
 )
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.queue_plans import PLAN_WRITE_BATCH, PlanStep
 from sift.kernel.jobs.quiet_hours import AT_NOW
 from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.seams import ReindexSeam, SettingsSeam
 from sift.slices.library_roots import quarantine
 from sift.slices.library_roots.catch_up import _differences, _folders_that_moved
 from sift.slices.library_roots.moved_folders import _reconcile_folders
-from sift.slices.library_roots.scan_plan import count_to_read, kind_by_name
+from sift.slices.library_roots.scan_plan import count_to_read, kind_by_name, size_said
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.sweeping import (
     _folder_for,
@@ -157,7 +159,10 @@ async def count_scan(context: JobContext, *, service: LibraryService) -> None:
         return
     written = await context.queue.set_waiting_units(scan_id, counted.files)
     await context.queue.set_to_read(scan_id, counted.kinds)
-    await context.set_note(f"{counted.files:,} file{'' if counted.files == 1 else 's'} to read.")
+    await context.set_note(
+        f"{counted.files:,} file{'' if counted.files == 1 else 's'},"
+        f" {size_said(counted.size)} to import."
+    )
     log.info(
         "library.scan_counted",
         root_id=root.id,
@@ -188,10 +193,13 @@ ArchiveSettled = Callable[[str, str, str, list[str]], Awaitable[None]]
 #: Small enough that a stopped pass strands little; large enough not to write the queue per file.
 PROBE_HANDOUT_BATCH = 100
 
-#: A read this big on a share holds back its own per-file work until its reads end.
-SCAN_FIRST_FILES = 2_000
+#: A walk of fewer files is cheaper to decide again after a restart than to write down.
+PLAN_FROM = 500
 
-HOLD_WHILE_READING = True
+#: The steps past a checkpoint that its claim may have opened before it stopped: a checkpoint is
+#: written every `PLAN_WRITE_BATCH` settled steps, and the reads take their places in the walk's
+#: order, a lane's width at a time. Only these are decided again on a restart.
+RECHECKED = 2 * PLAN_WRITE_BATCH
 
 STOPPED_ANSWERING = (
     "The folder stopped answering partway through the scan, so nothing in it was marked missing"
@@ -277,8 +285,18 @@ class _ScanPass:
         # Prefixes of the folders that would not answer: nothing under one is read or judged.
         self.unjudged = {subtree_prefix(self.prefix + one) for one in walk.unlisted}
         self.went_quiet: set[str] = set()
-        self.holding = False
         self.beat = Heartbeat(context)
+        # The plan: the steps a claim before a restart settled are `base`; this claim's follow.
+        self.base = 0
+        self.planned = False
+        self.stale_steps = 0
+        self.settled_before: list[tuple[str, Verdict]] = []
+        self.taken_before: list[str] = []
+        self.started: set[int] = set()
+        self.done: list[bool] = []
+        self.mark = 0
+        self.checkpointed = 0
+        self.settling = asyncio.Lock()
 
     @property
     def ended(self) -> bool:
@@ -318,29 +336,49 @@ class _ScanPass:
         # will read.
         context = self.context
         self.refusals = await self.service.rejections_of_root(self.root_id)
+        earlier = await self.earlier_plan()
         reading = 0
         for item in self.found:
             # The count lands as it grows, a beat at a time, never below one counted ahead.
             if await self.beat() and reading > context.units:
                 await context.set_units(reading)
             rel_path = self.prefix + item.rel_path
-            verdict = await _decide(
-                item,
-                rel_path=rel_path,
-                root_id=self.root_id,
-                service=self.service,
-                context=context,
-                refused=self.refusals,
-            )
+            step = earlier.get(rel_path)
+            if step is not None and (step.size, step.mtime_ns) != (item.size, item.mtime_ns):
+                step = None
+            if step is not None and step.seq < self.base:
+                # Settled by the claim a restart cut short: neither decided nor opened again.
+                self.settled_before.append((rel_path, Verdict(step.verdict)))
+                reading += Verdict(step.verdict).reads
+                continue
+            if step is not None and step.seq >= self.base + RECHECKED:
+                # Past anything that claim could have opened: its verdict stands.
+                verdict = Verdict(step.verdict)
+            else:
+                verdict = await _decide(
+                    item,
+                    rel_path=rel_path,
+                    root_id=self.root_id,
+                    service=self.service,
+                    context=context,
+                    refused=self.refusals,
+                )
+            if step is not None and step.verdict == Verdict.READ and not verdict.reads:
+                # Taken in by that claim after its last checkpoint, so owed its index entry, and
+                # read by this walk.
+                self.taken_before.append(rel_path)
+                reading += 1
             self.decided.append((item, rel_path, verdict))
             reading += verdict.reads
         self.unread = Counter(
             kind_by_name(item, verdict) for item, _rel, verdict in self.decided if verdict.reads
         )
-        self.to_read = to_read = self.unread.total()
+        # Files read of files to read: what an earlier claim settled counts as read.
+        self.to_read = to_read = reading
         await context.set_units(to_read)
         await self.write_unread()
-        await self.hold_own_work(to_read)
+        await self.claim_settled()
+        await self.write_plan()
         # Resolved once each before the concurrent reads, so two files of one directory do not race.
         for _item, rel_path, verdict in self.decided:
             if verdict is Verdict.READ:
@@ -348,6 +386,130 @@ class _ScanPass:
         log.info(
             "library.scan_counted", root_id=self.root_id, files=len(self.found), to_read=to_read
         )
+
+    async def earlier_plan(self) -> dict[str, PlanStep]:
+        """The plan an earlier claim of this walk wrote, by path; `base` is how much it settled."""
+        if self.named is not None:
+            return {}
+        steps, self.base = await self.context.queue.plan_of(self.context.job.id)
+        self.stale_steps = steps[-1].seq + 1 if steps else 0
+        return {step.rel_path: step for step in steps}
+
+    async def claim_settled(self) -> None:
+        """Claim for the sweep what the settled steps claimed: the file, or an archive's pictures
+        as the rows record them (one read of the root's rows, only when an archive settled)."""
+        archives: set[str] = set()
+        for rel_path, verdict in self.settled_before:
+            self.opened += verdict.reads
+            if verdict is Verdict.ARCHIVE:
+                archives.add(rel_path)
+            else:
+                self.seen.add(rel_path)
+        if archives:
+            async for location in self.context.library.iter_locations_in_root(
+                self.root_id, under=self.under
+            ):
+                if location.archive_rel_path in archives:
+                    self.seen.add(location.rel_path)
+        for rel_path in self.taken_before:
+            found = await self.context.content.location_at(self.root_id, rel_path)
+            # Read as unchanged a moment ago; only a writer racing this pass could make it go.
+            if found is not None:  # pragma: no branch (a race)
+                self.taken_in.append(found.asset_id)
+
+    async def write_plan(self) -> None:
+        """Write down what this claim will work through, after what an earlier one settled, so a
+        restart carries on from the last checkpoint; a batch of steps per write."""
+        self.done = [False] * len(self.decided)
+        if self.named is not None or (not self.stale_steps and len(self.decided) < PLAN_FROM):
+            return
+        queue, job = self.context.queue, self.context.job
+        if self.stale_steps > self.base:
+            await queue.drop_plan_from(job.id, self.base, self.stale_steps)
+        # A file taken in before the restart is still one this walk read, whatever it reads as now.
+        read_before = set(self.taken_before)
+        steps = [
+            PlanStep(
+                seq=self.base + seq,
+                rel_path=rel_path,
+                size=item.size,
+                mtime_ns=item.mtime_ns,
+                kind=kind_by_name(item, verdict),
+                verdict=(Verdict.READ if rel_path in read_before else verdict).value,
+            )
+            for seq, (item, rel_path, verdict) in enumerate(self.decided)
+        ]
+        self.planned = await queue.write_plan(job.id, self.context.worker_id, steps)
+        log.info("library.scan_planned", root_id=self.root_id, steps=len(steps), settled=self.base)
+
+    async def settle(self, seq: int) -> None:
+        """Mark one step done, and checkpoint the plan once a batch below the mark is done."""
+        self.done[seq] = True
+        while self.mark < len(self.done) and self.done[self.mark]:
+            self.mark += 1
+        if self.mark - self.checkpointed >= PLAN_WRITE_BATCH:
+            await self.checkpoint()
+
+    async def checkpoint(self) -> None:
+        """Every file below the mark has its probe handed out and its index entry before the mark
+        is written, so a restart from it owes nothing for them."""
+        if not self.planned:
+            return
+        async with self.settling:
+            through = self.mark
+            if through <= self.checkpointed:
+                return
+            await self.hand_out()
+            await self.index_arrivals()
+            context = self.context
+            await context.queue.settle_plan(context.job.id, context.worker_id, self.base + through)
+            self.checkpointed = through
+
+    async def forget_plan(self) -> None:
+        if self.planned or self.stale_steps:
+            await self.context.queue.forget_plan(
+                self.context.job.id, max(self.stale_steps, self.base + len(self.decided))
+            )
+
+    async def if_canceled(self) -> None:
+        """A cancel takes the walk's waiting probes with it. What it took in keeps its read and its
+        place in the search: the probes are asked again outside the stopped family, at the floor
+        a stopped scan gets (`read_unread`'s), and the search is told now."""
+        context = self.context
+        if context.stopping() != STOP_TO_CANCEL:
+            return
+        owed = set(self.to_probe) | set(self.to_check)
+        queue, job = context.queue, context.job
+        offset = 0
+        while True:
+            page = await queue.list(
+                parent_id=job.id,
+                job_type=PROBE,
+                state=JobState.CANCELED,
+                limit=MAX_PAGE_SIZE,
+                offset=offset,
+            )
+            owed.update(str(one.payload["asset_id"]) for one in page.jobs)
+            if len(page.jobs) < MAX_PAGE_SIZE:
+                break
+            offset += MAX_PAGE_SIZE
+        # A read the cancel cut off after its rows were written.
+        for seq in self.started:
+            if not self.done[seq] and self.decided[seq][2] is Verdict.READ:
+                location = await context.content.location_at(self.root_id, self.decided[seq][1])
+                if location is not None:
+                    owed.add(location.asset_id)
+                    self.taken_in.append(location.asset_id)
+        await self.index_arrivals()
+        payloads: list[dict[str, object]] = []
+        for asset_id in sorted(owed):
+            asset = await context.content.get(asset_id)
+            if asset is not None and asset.probed_at is None:
+                payloads.append({"asset_id": asset_id, "scan_only": True})
+        for at in range(0, len(payloads), PLAN_WRITE_BATCH):
+            await queue.enqueue_many(PROBE, payloads[at : at + PLAN_WRITE_BATCH], dedupe=True)
+        await self.forget_plan()
+        log.info("library.scan_canceled", root_id=self.root_id, probes_asked=len(payloads))
 
     async def write_unread(self) -> None:
         context = self.context
@@ -369,40 +531,12 @@ class _ScanPass:
         self.indexed = len(self.taken_in)
         await self.reindexer.touched_many(batch)
 
-    async def hold_own_work(self, to_read: int) -> None:
-        """A big read on a share keeps its own per-file work waiting until its reads end."""
-        # A named-path scan is a few hundred files, and a local disk has no places to share.
-        if not HOLD_WHILE_READING or self.named is not None or to_read < SCAN_FIRST_FILES:
-            return
-        if not lanes.storage_for(self.root_abs / "walk").remote:
-            return
-        # Its probes are the read, and the walk goes first in the lane: they pass.
-        await self.context.hold_own_family(spared=(SCAN, SCAN_COUNT, LIBRARY_SCAN, PROBE))
-        self.holding = True
-        log.info("library.scan_holding", root_id=self.root_id, to_read=to_read)
-
-    async def ahead_of_what_it_held(self) -> None:
-        """Ask again, a step ahead, for this read's probes still waiting as its hold lifts: the
-        per-file work it releases is older than they are, and would otherwise go first."""
-        queue, job = self.context.queue, self.context.job
-        more, offset = self.holding, 0
-        while more:
-            page = await queue.list(
-                parent_id=job.id,
-                job_type=PROBE,
-                state=JobState.QUEUED,
-                limit=MAX_PAGE_SIZE,
-                offset=offset,
-            )
-            for one in page.jobs:
-                await queue.enqueue(PROBE, one.payload, dedupe=True, priority=job.priority - 1)
-            more, offset = len(page.jobs) == MAX_PAGE_SIZE, offset + MAX_PAGE_SIZE
-
     async def take(
-        self, gate: asyncio.Semaphore, item: Walked, rel_path: str, verdict: Verdict
+        self, gate: asyncio.Semaphore, seq: int, item: Walked, rel_path: str, verdict: Verdict
     ) -> None:
         async with gate:
             await self.beat()
+            self.started.add(seq)
             claimed = {rel_path}
             try:
                 if not rel_path.startswith(tuple(self.unjudged)):
@@ -435,22 +569,29 @@ class _ScanPass:
                 await self.index_arrivals()
             # Files read of files to read, so what is left is what the read still has to open.
             await self.context.report_progress(1 - self.unread.total() / max(1, self.to_read))
+            await self.settle(seq)
 
     async def read(self) -> None:
         # The reads, a few at a time and first in the lane. The set is what each take-in CLAIMED.
         gate = asyncio.Semaphore(max(1, lanes.reads_at_once(self.root_abs)))
         # `gather`, so a take-in's refusal reaches the caller unwrapped.
         async with lanes.first():
-            pending = [asyncio.ensure_future(self.take(gate, *one)) for one in self.decided]
+            pending = [
+                asyncio.ensure_future(self.take(gate, seq, *one))
+                for seq, one in enumerate(self.decided)
+            ]
             try:
                 await asyncio.gather(*pending)
             except BaseException:
                 for task in pending:
                     task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
                 raise
         await self.hand_out()
         for asset_id in self.to_check:
             await _probe_unless_already_coming(self.context, asset_id)
+        # The whole read settled: a restart in the sweep re-reads nothing.
+        await self.checkpoint()
 
     async def sweep(self) -> None:
         if not self.walk.looked:
@@ -492,6 +633,18 @@ async def _ask_for_what_settles(context: JobContext, settles_into: Sequence[str]
             log.info("library.settling_skipped", job_type=job_type, reason="switched off")
 
 
+async def _decide_and_read(one: _ScanPass, root_id: str) -> None:
+    """`scan`'s decide and read; a cancel cleans up, and what was read is logged either way."""
+    try:
+        await one.decide()
+        await one.read()
+    except BaseException:
+        await one.if_canceled()
+        raise
+    finally:
+        log.info("library.scan_read", root_id=root_id, read=one.finished)
+
+
 async def scan(
     context: JobContext,
     *,
@@ -514,6 +667,7 @@ async def scan(
     root_abs = Path(root.abs_path)
     # The files a change notification named, relative to the root, or None for a whole walk.
     named = _named_paths(context)
+    lanes.ahead_of_passes(named is not None or "folder_id" in context.payload)
     walk = await _walk_for_scan(context, root_id, root_abs, root_abs / under, named)
     one = _ScanPass(
         context,
@@ -530,14 +684,7 @@ async def scan(
     walked_dirs = one.walked_dirs()
     if named is None:
         await one.settle_moved_folders()
-    try:
-        await one.decide()
-        await one.read()
-        await one.ahead_of_what_it_held()
-    finally:
-        # Before the sweep, and on a cancel, a pause or a failure.
-        held = context.lift_own_hold()
-        log.info("library.scan_read", root_id=root_id, read=one.finished, held=held)
+    await _decide_and_read(one, root_id)
     # Before the sweep, so a pass that dies on the way out still leaves its files findable.
     await one.index_arrivals()
     # Counted for History: files new to the library, archive members included.
@@ -547,18 +694,25 @@ async def scan(
         await context.set_units(one.opened)
     if one.ended:
         raise FolderStoppedAnswering(STOPPED_ANSWERING)
-    await one.sweep()
-    # After the sweep, so a folder is judged on what is really still in it.
-    await _settle_folders(context, root_id=root_id, dirs=walked_dirs, folder_settled=folder_settled)
-    # Recorded for the catch-up at start, and only after a real listing.
-    if named is None:
-        await _record_what_was_seen(
-            context, root_id=root_id, under=under, walk=walk, unjudged=one.unjudged
+    try:
+        await one.sweep()
+        # After the sweep, so a folder is judged on what is really still in it.
+        await _settle_folders(
+            context, root_id=root_id, dirs=walked_dirs, folder_settled=folder_settled
         )
+        # Recorded for the catch-up at start, and only after a real listing.
+        if named is None:
+            await _record_what_was_seen(
+                context, root_id=root_id, under=under, walk=walk, unjudged=one.unjudged
+            )
+    except BaseException:
+        await one.if_canceled()
+        raise
     await context.set_progress(1.0)
     if one.went_quiet:
         await context.set_note(_went_quiet(len(one.went_quiet)))
     await _ask_for_what_settles(context, settles_into)
+    await one.forget_plan()
     log.info(
         "library.scan_finished",
         root_id=root_id,

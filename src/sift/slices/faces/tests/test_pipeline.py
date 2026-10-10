@@ -77,6 +77,7 @@ def build(
     *,
     bar: Bar | None = None,
     budget_seconds: float | None = None,
+    batched: bool = False,
 ) -> tuple[Pipeline, ScriptedReader]:
     reader = ScriptedReader(frames=frames)
     pipeline = Pipeline(
@@ -85,6 +86,7 @@ def build(
         recognizer,  # type: ignore[arg-type]
         bar=bar or Bar(min_pixels=48, min_sharpness=1.0, min_frontality=0.05),
         budget_seconds=budget_seconds,
+        batched=batched,
     )
     return pipeline, reader
 
@@ -128,6 +130,31 @@ async def test_following_one_face_across_frames_describes_it_a_few_times_not_eve
     assert outcome.frames_examined == len(frames)
     assert recognizer.calls == tuning.FRAMES_PER_TRACK
     assert recognizer.calls < len(frames) / 3
+
+
+async def test_on_a_card_a_files_faces_are_described_in_one_run_of_the_model(
+    detector: FakeDetector, recognizer: FakeRecognizer
+) -> None:
+    """Every face kept across every run of the file goes to the recognizer together, and comes
+    back as the same appearances one face at a time gives; the processor keeps one per call."""
+    frames, placed = moving_face(8)
+    detector.placed = placed
+    one_at_a_time = await run(build(frames, detector, recognizer)[0])
+    assert recognizer.many_calls == 0 and recognizer.calls == tuning.FRAMES_PER_TRACK
+
+    recognizer.calls = recognizer.many_calls = 0
+    together = await run(build(frames, detector, recognizer, batched=True)[0])
+
+    assert recognizer.many_calls == 1 and recognizer.calls == tuning.FRAMES_PER_TRACK
+
+    def described(outcome: Outcome) -> list[tuple[int, int, tuple[float, ...], float]]:
+        return [
+            (one.started_ms, one.ended_ms, face.vector, face.quality.score)
+            for one in outcome.appearances
+            for face in one.faces
+        ]
+
+    assert described(together) == described(one_at_a_time)
 
 
 async def test_a_face_that_jumps_across_the_frame_is_still_one_appearance(

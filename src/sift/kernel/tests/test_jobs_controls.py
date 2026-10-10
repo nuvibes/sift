@@ -770,7 +770,7 @@ async def test_a_queued_job_is_told_to_whoever_listens_for_work(job_queue: JobQu
     unlisten()  # stopping twice is nothing more
     await job_queue.enqueue("download", require_handler=False)
 
-    assert heard == [1, 1], "once per enqueue call, and nothing once it stopped listening"
+    assert heard == [1, 1, 1], "once per row a worker could take, nothing once it stopped listening"
 
 
 @pytest.mark.integration

@@ -587,6 +587,62 @@ def test_cancel_stops_the_linking_between_two_ids() -> None:
     assert doors.asked == [("link", "person", "01JANE", "p1"), ("link_file", "01A", "s1")]
 
 
+def test_a_run_stopped_partway_asks_the_boxes_again_only_for_what_it_had_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The links are paced requests to somebody else's service: a restart resumes them, and a
+    new read starts from nothing."""
+    from sift.slices.stash_migration import service_base as checkpoint
+
+    monkeypatch.setattr(checkpoint, "EVERY", 1)
+    endpoint = "https://stash-box.example/graphql"
+    stashed = SimpleNamespace(
+        box_ids={
+            "scene": [BoxId(1, endpoint, "s1"), BoxId(2, endpoint, "s2")],
+            "performer": [BoxId(1, endpoint, "p1"), BoxId(2, endpoint, "p2")],
+            "studio": [],
+            "tag": [],
+        }
+    )
+    known = Known(
+        person={1: ("01JANE", _entity(1, "Jane Doe")), 2: ("01ROE", _entity(2, "Jane Roe"))}
+    )
+    scenes = {1: "01A", 2: "01B"}
+
+    async def a_run(stopping: str | None, read_at: int, doors: _Doors, tally: Tally) -> None:
+        migration = _migration(doors=doors)
+        kept = checkpoint.Checkpoint(tmp_path, read_at)
+        await kept.load()
+        try:
+            await migration._links(_Context(stopping), stashed, tally, known, kept)  # type: ignore[arg-type]
+            await migration._file_links(_Context(stopping), stashed, tally, scenes, kept)  # type: ignore[arg-type]
+        finally:
+            await kept.flush()
+        await kept.finish()
+
+    first = _Doors()
+    with pytest.raises(JobCanceled):
+        _run(a_run("cancel", 7, first, Tally()))
+    assert first.asked == [("link", "person", "01JANE", "p1")]
+
+    again, tally = _Doors(), Tally()
+    _run(a_run(None, 7, again, tally))
+    assert again.asked == [
+        ("link", "person", "01ROE", "p2"),
+        ("link_file", "01A", "s1"),
+        ("link_file", "01B", "s2"),
+    ]
+    assert tally.links == {"linked": 2} and tally.file_links == {"linked": 2}
+    assert not (tmp_path / checkpoint.CHECKPOINT_NAME).exists(), "a finished run keeps nothing"
+
+    first = _Doors()
+    with pytest.raises(JobCanceled):
+        _run(a_run("cancel", 7, first, Tally()))
+    newer = _Doors()
+    _run(a_run(None, 8, newer, Tally()))
+    assert len(newer.asked) == 4, "another read's answers are not this one's"
+
+
 def test_a_moment_becomes_a_loop_of_its_own_length_even_where_its_tag_cannot_be_made() -> None:
     """A marker with no end is a Loop of the set length; the tag that says so is added where it
     can be made, and the Loop is made without it where it cannot."""

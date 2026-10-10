@@ -8,20 +8,26 @@ writes something other than the JSON it promised, reported as that rather than a
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
+import errno
 import json
 import os
 from pathlib import Path
 from typing import Any, cast
+from zipfile import BadZipFile
 
 import pytest
 
-from sift.kernel import media, subprocess
+from sift.kernel import media, media_share, media_sources, subprocess
+from sift.kernel.archives import ArchiveRefused
 from sift.kernel.config import Settings
 from sift.kernel.content import Asset, ContentStore, Location, LocationStatus
 from sift.kernel.hardware import HardwareReport
+from sift.kernel.jobs import JobFailedPermanently, held_for
 from sift.kernel.jobs.failure_words import kind_of
-from sift.kernel.media import Encoder, FFmpegError, MissingAsset, NoReadableCopy, render_node
+from sift.kernel.jobs.retrying import ROOM_WAIT, WaitingForSpace
+from sift.kernel.media import Encoder, FFmpegError, MissingAsset, render_node
 from sift.testing.tools import stand_in_tool
 
 pytestmark = pytest.mark.unit
@@ -461,6 +467,9 @@ class _Store:
     async def locations(self, asset_id: str) -> list[Location]:
         return self._locations
 
+    async def local_copy(self, asset_id: str) -> Path | None:
+        return None
+
     async def path_of(self, location: Location) -> Path:
         answer = self._paths[location.id]
         if isinstance(answer, Exception):
@@ -535,14 +544,91 @@ async def test_a_copy_whose_path_no_longer_validates_is_passed_over_for_the_next
 
 
 async def test_no_copy_that_opens_says_what_the_person_should_check(tmp_path: Path) -> None:
+    """A copy whose root does not answer waits for it, its attempt handed back."""
     store = _store(
         asset=_asset(),
         locations=[_location("one"), _location("two")],
-        paths={"one": tmp_path / "gone.mp4", "two": ValueError("outside its root")},
+        paths={
+            "one": tmp_path / "unplugged" / "clips" / "one.mp4",
+            "two": ValueError("outside its root"),
+        },
     )
 
-    with pytest.raises(NoReadableCopy, match="not connected"):
+    with pytest.raises(media_sources.CopiesAway, match="not connected") as raised:
         await media.resolve(store, "01HX0000000000000000000A01")
+
+    assert held_for(raised.value) == media_sources.AWAY_WAIT
+
+
+async def test_a_copy_gone_from_a_folder_that_answers_is_not_retried(tmp_path: Path) -> None:
+    """Its root answers and the file is not in it: no retry brings it back, so none is spent."""
+    (tmp_path / "root" / "clips").mkdir(parents=True)
+    store = _store(
+        asset=_asset(),
+        locations=[_location("one")],
+        paths={"one": tmp_path / "root" / "clips" / "one.mp4"},
+    )
+
+    with pytest.raises(media_sources.CopiesGone, match="moved or deleted") as raised:
+        await media.resolve(store, "01HX0000000000000000000A01")
+
+    assert isinstance(raised.value, JobFailedPermanently)
+    assert held_for(raised.value) is None
+
+
+async def test_an_asset_with_no_copies_at_all_is_not_retried() -> None:
+    store = _store(asset=_asset(), locations=[], paths={})
+
+    with pytest.raises(media_sources.CopiesGone, match="none of the 0"):
+        await media.resolve(store, "01HX0000000000000000000A01")
+
+
+async def test_a_drive_that_stops_answering_is_waited_for_not_hung_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A share that hangs a stat is given `ANSWER_WITHIN`, then the job waits for it."""
+    import threading
+
+    hung = threading.Event()
+    store = _store(asset=_asset(), locations=[_location("one")], paths={"one": tmp_path / "x"})
+    monkeypatch.setattr(media_sources, "ANSWER_WITHIN", 0.2)
+    monkeypatch.setattr(Path, "is_file", lambda _self: hung.wait(5) or False)
+    try:
+        with pytest.raises(media_sources.CopiesAway):
+            await asyncio.wait_for(media.resolve(store, "01HX0000000000000000000A01"), 3)
+    finally:
+        hung.set()
+
+
+async def test_a_member_whose_archive_drops_mid_read_waits_and_a_broken_one_is_refused(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "root" / "set.zip"
+    archive.parent.mkdir()
+    archive.write_bytes(b"zip")
+    inside = dataclasses.replace(
+        _location("one"), rel_path="set.zip/a.jpg", archive_rel_path="set.zip", member_path="a.jpg"
+    )
+
+    async def refused_with(cause: BaseException) -> BaseException:
+        fake = _Store(asset=_asset(), locations=[inside], paths={})
+
+        async def container_path_of(location: Location) -> Path:
+            return archive
+
+        async def path_of(location: Location) -> Path:
+            raise ArchiveRefused("that file could not be read out of the archive") from cause
+
+        fake.container_path_of = container_path_of  # type: ignore[attr-defined]
+        fake.path_of = path_of  # type: ignore[method-assign]
+        with pytest.raises(Exception) as raised:
+            await media.resolve(cast("ContentStore", fake), "01HX0000000000000000000A01")
+        return raised.value
+
+    assert isinstance(await refused_with(OSError("the share dropped")), media_sources.CopiesAway)
+    assert isinstance(await refused_with(BadZipFile("not a zip")), JobFailedPermanently)
+    full = await refused_with(OSError(errno.ENOSPC, "No space left on device"))
+    assert isinstance(full, WaitingForSpace) and held_for(full) == ROOM_WAIT
 
 
 async def test_a_file_a_decoder_can_already_read_is_handed_over_untouched(
@@ -694,7 +780,7 @@ def test_the_pool_answer_wins_over_the_settings_it_is_handed(
 ) -> None:
     """What the pool was told, else the settings' hardware answer: once the pool has spoken, the
     setting is not consulted."""
-    monkeypatch.setattr(media, "_jobs_at_once", None)
+    monkeypatch.setattr(media_share, "_jobs_at_once", None)
     settings = Settings(worker_concurrency=2)
 
     assert media.jobs_at_once(settings) == 2
@@ -707,7 +793,7 @@ def test_setting_the_same_number_again_reports_no_change(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A change is reported only when the number moved, or the pools would be resized on a timer."""
-    monkeypatch.setattr(media, "_jobs_at_once", None)
+    monkeypatch.setattr(media_share, "_jobs_at_once", None)
 
     assert media.set_jobs_at_once(4) is True
     assert media.set_jobs_at_once(4) is False
@@ -717,7 +803,7 @@ def test_a_worker_count_below_one_is_refused_rather_than_recorded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A number under one is refused at the door: `background_threads` divides by it."""
-    monkeypatch.setattr(media, "_jobs_at_once", 3)
+    monkeypatch.setattr(media_share, "_jobs_at_once", 3)
 
     assert media.set_jobs_at_once(0) is False
     assert media.set_jobs_at_once(-1) is False
@@ -727,23 +813,52 @@ def test_a_worker_count_below_one_is_refused_rather_than_recorded(
 def test_the_thread_share_is_the_machine_divided_by_what_is_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A share of at least one thread, whatever the arithmetic says."""
-    monkeypatch.setattr(media, "_jobs_at_once", 4)
+    """The tools actually running divide the machine, never more of them than the workers; a share
+    of at least one thread, whatever the arithmetic says."""
+    monkeypatch.setattr(media_share, "_share", None)
+    monkeypatch.setattr(media_share, "_jobs_at_once", 4)
     monkeypatch.setattr(os, "cpu_count", lambda: 24)
+    # Alone, a tool has the machine: a file read by itself is not held to one worker's share.
+    monkeypatch.setattr(media_share, "_tools_running", 0)
+    assert media.background_threads(Settings()) == 24
+    monkeypatch.setattr(media_share, "_tools_running", 3)
+    assert media.background_threads(Settings()) == 6
+    # Never fewer than one worker's share, however many tools say they run.
+    monkeypatch.setattr(media_share, "_tools_running", 40)
     assert media.background_threads(Settings()) == 6
 
     # More workers than threads, which the self-test can recommend.
-    monkeypatch.setattr(media, "_jobs_at_once", 50)
+    monkeypatch.setattr(media_share, "_jobs_at_once", 50)
     assert media.background_threads(Settings()) == 1
+
+
+async def test_a_running_tool_is_counted_once_and_not_against_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A tool sizes itself by the others: inside its own count it is not one of them, and a run
+    of tools inside one count is one."""
+    monkeypatch.setattr(media_share, "_share", None)
+    monkeypatch.setattr(media_share, "_jobs_at_once", 12)
+    monkeypatch.setattr(media_share, "_tools_running", 1)
+    monkeypatch.setattr(os, "cpu_count", lambda: 24)
+    assert media.tools_sharing(Settings()) == 2
+    with media._running_tool():
+        assert media_share._tools_running == 2
+        assert media.tools_sharing(Settings()) == 2
+        with media._running_tool():
+            assert media_share._tools_running == 2
+    assert media_share._tools_running == 1
 
 
 def test_the_thread_share_while_stepping_back_is_the_share_of_the_cores_over_what_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Three workers at a quarter of twenty-four processors get two threads each."""
+    """Three workers at a quarter of twenty-four processors get two threads each, however few
+    tools run: the processor rate each tool is held to was set from the share."""
     from sift.kernel import subprocess as tools
 
-    monkeypatch.setattr(media, "_jobs_at_once", 12)
+    monkeypatch.setattr(media_share, "_jobs_at_once", 12)
+    monkeypatch.setattr(media_share, "_tools_running", 2)
     monkeypatch.setattr(os, "cpu_count", lambda: 24)
     held: list[int | None] = []
     monkeypatch.setattr(tools, "hold_background", held.append)
@@ -754,12 +869,12 @@ def test_the_thread_share_while_stepping_back_is_the_share_of_the_cores_over_wha
     # Nothing moved: no change, nothing held again.
     assert media.set_share(running=3, percent=25) is False
     assert held == [833]
-    # Nobody here: the whole device.
+    # Nobody here: the whole device, divided by the tools running (two others and this one).
     assert media.set_share(running=12, percent=100) is True
-    assert media.background_threads(Settings()) == 2
+    assert media.background_threads(Settings()) == 8
     assert held == [833, None]
-    assert media.set_share(running=4, percent=100) is True
-    assert media.background_threads(Settings()) == 6
+    assert media.set_share(running=2, percent=100) is True
+    assert media.background_threads(Settings()) == 12
 
 
 class TestTellingBrokenBytesFromABadMoment:

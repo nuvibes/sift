@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 # Registers the component: a library records a "benchmarks" version.
 import sift.kernel.benchmarks  # noqa: F401
 from sift import client
-from sift.kernel import lifecycle
+from sift.kernel import foreground, lifecycle
 from sift.kernel.config import ConfigError, Settings, ensure_directories, get_settings
 from sift.kernel.db import (
     DatabaseError,
@@ -175,7 +175,11 @@ def _add_middleware(app: FastAPI, settings: Settings) -> None:
         correlation_id = new_id()
         started = time.perf_counter()
 
-        response = await call_next(request)
+        foreground.request_began()
+        try:
+            response = await call_next(request)
+        finally:
+            foreground.request_ended()
 
         route = request.scope.get("route")
         log.info(

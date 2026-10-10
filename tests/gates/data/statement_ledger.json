@@ -648,7 +648,7 @@
     "20000": 96,
     "80000": 96
    },
-   "count": 899
+   "count": 920
   },
   "insert:backlog_files#d9fa6ccb": {
    "stage": "db.write",
@@ -656,7 +656,7 @@
     "20000": 15504,
     "80000": 15504
    },
-   "count": 899
+   "count": 920
   },
   "insert:backlog_terms#d29c6586": {
    "stage": "db.write",
@@ -968,7 +968,7 @@
     "20000": 33440,
     "80000": 33440
    },
-   "count": 141
+   "count": 147
   },
   "select:asset_locations#89742260": {
    "stage": "db.write",
@@ -992,7 +992,7 @@
     "20000": 8512,
     "80000": 8512
    },
-   "count": 140
+   "count": 141
   },
   "select:asset_locations#c4bbfcbb": {
    "stage": "db.write",
@@ -1008,7 +1008,7 @@
     "20000": 35840,
     "80000": 35856
    },
-   "count": 160
+   "count": 161
   },
   "select:asset_locations#da2aa158": {
    "stage": "db.read",
@@ -1033,7 +1033,7 @@
     "20000": 39168,
     "80000": 39184
    },
-   "count": 152
+   "count": 159
   },
   "select:asset_locations#fb05fab9": {
    "stage": "db.write",
@@ -1041,7 +1041,7 @@
     "20000": 29520,
     "80000": 29520
    },
-   "count": 307
+   "count": 314
   },
   "select:asset_people#a8bae942": {
    "stage": "db.read",
@@ -1373,7 +1373,7 @@
     "20000": 6528,
     "80000": 6528
    },
-   "count": 1705
+   "count": 1727
   },
   "select:backlog_terms#401e5329": {
    "stage": "db.write",
@@ -1860,14 +1860,6 @@
    },
    "count": 2
   },
-  "select:jobs#5c07de56": {
-   "stage": "db.read",
-   "steps": {
-    "20000": 48,
-    "80000": 48
-   },
-   "count": 1
-  },
   "select:jobs#65eb48bf": {
    "stage": "db.read",
    "steps": {
@@ -1948,6 +1940,16 @@
    },
    "count": 1,
    "why": "round P wave 1, recorded together because the ledger takes every new statement in one run: the Tasks and Smart Search status reads count family tallies kept by triggers (jobs 17); a probe's children land in one insert; the done-lately, in-run and arrivals reads name their indexes, and the person's O count, the username filter and the facets by site and by rating drive from the files by CROSS JOIN, since the boot's fresh planner statistics had turned each round; every one bounded by the library or its window as before",
+   "per": "library"
+  },
+  "select:jobs#ba27b686": {
+   "stage": "db.read",
+   "steps": {
+    "20000": 48,
+    "80000": 48
+   },
+   "count": 1,
+   "why": "round P wave 2: the live lookup answers both shapes of an archive picture in one read; the schema read counts the queue's three new indexes and two plan tables",
    "per": "library"
   },
   "select:jobs#d886afa2": {
@@ -2393,10 +2395,12 @@
   "select:sqlite_master#1deab927": {
    "stage": "db.write",
    "steps": {
-    "20000": 4736,
-    "80000": 4736
+    "20000": 5424,
+    "80000": 5424
    },
-   "count": 1
+   "count": 1,
+   "why": "round P wave 2: the live lookup answers both shapes of an archive picture in one read; the schema read counts the queue's three new indexes and two plan tables",
+   "per": "library"
   },
   "select:sqlite_master#2f6283ec": {
    "stage": "db.write",
@@ -2740,7 +2744,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1722,
+   "count": 1745,
    "why": "an act marks itself and its two neighbours of the same press, three index seeks a row, flat with the library, so the History feed reads a page and not the record; a file's counts move once per write: a change records what the file held and one fold moves the counts before the write commits, so a file costs a read of its members where a thousand cost one fold; the hook asks once per connection whether the tables exist and once per write whether anything was touched"
   },
   "select:visibility_owed#c9f07d5a": {
@@ -2868,7 +2872,7 @@
     "20000": 16,
     "80000": 16
    },
-   "count": 1722,
+   "count": 1745,
    "why": "rounds O2 and O3: the rediscovered read counts its gap in local days; a recap keeps the usual figures its voice compares against; the sharing press sets and clears its may-defer flag around its writes and reads whether a widening is still being filed, one row each; a write marks what it left owed and sums it once before it commits (the hook reads the owed rows, sums each press thing and subject again, and clears them: flat per row at any size, its table check and pragma once per write), so a new act adds its share by key and a merge marks its moved subjects per row; a default cover is a picture only, so the hide trigger and the merge read the kind of the file"
   },
   "settings.app_value": {
@@ -3069,6 +3073,14 @@
    "count": 1
   },
   "update:jobs#295b91ab": {
+   "stage": "db.write",
+   "steps": {
+    "20000": 16,
+    "80000": 16
+   },
+   "count": 1
+  },
+  "update:jobs#446ee1a4": {
    "stage": "db.write",
    "steps": {
     "20000": 16,

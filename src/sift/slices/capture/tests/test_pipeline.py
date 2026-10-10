@@ -649,3 +649,70 @@ def test_a_library_that_is_not_there_is_refused_by_name(
     assert root.name in str(refusal.value)
     assert "attached" in str(refusal.value)
     assert not root_path.exists(), "the missing library was recreated instead of being reported"
+
+
+def test_a_library_disk_without_room_holds_the_file_and_writes_nothing(
+    root: Root, root_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The file waits for room with its attempt handed back; nothing half-written is left."""
+    import shutil
+    from collections import namedtuple
+
+    from sift.kernel.jobs import held_for
+    from sift.kernel.jobs.retrying import ROOM_WAIT, WaitingForSpace
+    from sift.slices.capture import pipeline
+
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"the bytes")
+    usage = namedtuple("usage", "total used free")
+    room = [pipeline.ROOM_TO_SPARE + 8]
+    monkeypatch.setattr(shutil, "disk_usage", lambda _path: usage(0, 0, room[0]))
+
+    with pytest.raises(WaitingForSpace, match=f'"{root.name}"') as raised:
+        pipeline._copy_into_folder(source, root, "")
+    assert held_for(raised.value) == ROOM_WAIT
+    assert list(root_path.iterdir()) == []
+
+    room[0] = 10**12
+
+    def full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(shutil, "copyfile", full)
+    with pytest.raises(WaitingForSpace):
+        pipeline._copy_into_folder(source, root, "")
+    assert list(root_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("remote", [True, False])
+async def test_a_file_landed_on_a_share_keeps_its_local_bytes_for_the_passes(
+    remote: bool,
+    context_for: Context,
+    settings: Settings,
+    content_store: ContentStore,
+    tmp_path: Path,
+    reindexer: RecordingReindexer,
+    default_folder: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probe and every pass after it read the cache's copy, not the share it landed on."""
+    from types import SimpleNamespace
+
+    from sift.kernel import lanes
+    from sift.kernel.media_sources import resolve
+
+    monkeypatch.setattr(lanes, "storage_for", lambda _path: SimpleNamespace(remote=remote))
+    source = draw(tmp_path / "staging" / "a" / "clip.mp4", "testsrc2=size=64x64:rate=5", 1)
+    landed = await import_file(
+        path=source,
+        origin=Origin.DOWNLOAD,
+        dest_folder_id=default_folder,
+        ctx=await context_for("import", {"staging_id": "a"}),
+        settings=settings,
+        reindexer=reindexer,
+    )
+
+    read = await resolve(content_store, landed.asset_id)
+    assert (settings.cache_dir in read.path.parents) is remote
+    assert read.path.read_bytes() == source.read_bytes()
+    assert source.is_file(), "the caller's own file is left where it was"

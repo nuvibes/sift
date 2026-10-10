@@ -14,6 +14,7 @@ from sift.kernel import lanes, media
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
+    Asset,
     DerivativeKind,
 )
 from sift.kernel.hardware import HardwareReport
@@ -24,8 +25,16 @@ from sift.kernel.log import get_logger, timing_hook
 from sift.kernel.media import (
     resolve_decodable,
 )
-from sift.slices.media_jobs import ffmpeg, tuning
-from sift.slices.media_jobs.job_types import _GIF, _IMAGE, PREVIEW, THUMBNAIL
+from sift.slices.media_jobs import ffmpeg, fingerprints, tuning
+from sift.slices.media_jobs.job_types import (
+    _GIF,
+    _IMAGE,
+    FINGERPRINT_FILE,
+    PREVIEW,
+    THUMBNAIL,
+    SettlingJobs,
+    ShouldGenerate,
+)
 from sift.slices.media_jobs.shared import Unusable, _asset_id, _at_ms, _made_for, _render, _size_of
 
 log = get_logger(__name__)
@@ -90,6 +99,26 @@ def still_level_filter() -> str:
     return f"scale={STILL_LEVEL_SIZE}:{STILL_LEVEL_SIZE}:flags=area,format=gray"
 
 
+def still_requests(span_ms: int) -> list[media.FrameRequest]:
+    """Every moment `_cut_by_content` may cut, as a reader that decodes the file once is asked:
+    the first frame and the candidates, each a still and its grey levels."""
+    moments = tuple(ffmpeg.hash_frame_moment(at) for at in (0, *still_candidates(span_ms)))
+    return [
+        media.FrameFiles(
+            moments=moments,
+            filters=ffmpeg.still_filter(height=tuning.THUMBNAIL_HEIGHT),
+            suffix=media.STILL_SUFFIX,
+            output=ffmpeg.still_output(tuning.THUMBNAIL_QUALITY),
+        ),
+        media.RawFrames(
+            moments=moments,
+            filters=still_level_filter(),
+            pixel_format=media.STILL_LEVEL_FORMAT,
+            frame_bytes=STILL_LEVEL_SIZE * STILL_LEVEL_SIZE,
+        ),
+    ]
+
+
 def still_candidates(span_ms: int) -> tuple[int, ...]:
     """Where a still is tried after the first frame, in the order they are tried. Nothing for a
     file with no length to spread across."""
@@ -133,14 +162,23 @@ async def _cut_stills(
     return [(at, one) for at, one in zip(moments, cut, strict=True) if one is not None]
 
 
-async def thumbnail(context: JobContext, *, settings: Settings, hardware: HardwareReport) -> None:
+async def thumbnail(
+    context: JobContext,
+    *,
+    settings: Settings,
+    hardware: HardwareReport,
+    should_generate: ShouldGenerate | None = None,
+    fingerprints_settle_into: SettlingJobs = (),
+) -> None:
     """The still the grid draws, chosen by what the frame shows.
 
     The first frame is cut with a few grey pixels beside it, from one read; if it is black, a fade
     or one flat colour, moments spread across the whole picture are cut the same way from one more
     read, and the first worth showing is kept (the least dark, where none is). The moment is
     stored (`still_at_ms`) and the hover clip starts there, so the tile does not jump under a
-    pointer. A photograph is its one frame, unmeasured.
+    pointer. A photograph is its one frame, unmeasured; the decode that draws it also gives its
+    fingerprint frame, recorded here where the file lacks it and its switch wants it, and what
+    reads the fingerprints (`fingerprints_settle_into`) is then asked for here.
     """
     asset_id = _asset_id(context)
     store = context.content
@@ -151,9 +189,15 @@ async def thumbnail(context: JobContext, *, settings: Settings, hardware: Hardwa
     span = sampler.picture_span(asset.duration_ms, asset.video_duration_ms)
     chosen_at = 0
     # Read with the file's own read on a share, so a picture keeps pace with it.
+    frame: bytes | None = None
+    fingerprinted = asset.media_type == _IMAGE and await _fingerprint_wanted(
+        asset_id, asset, should_generate
+    )
     async with lanes.the_read():
         with timing_hook("thumbnail.render", asset_id=asset_id):
-            if asset.media_type == _IMAGE or span <= 0:
+            if fingerprinted:
+                frame = await _render_with_frame(source.path, destination, settings=settings)
+            elif asset.media_type == _IMAGE or span <= 0:
                 args = ffmpeg.thumbnail_args(
                     source.path, destination, timestamp_ms=0, settings=settings
                 )
@@ -178,6 +222,60 @@ async def thumbnail(context: JobContext, *, settings: Settings, hardware: Hardwa
         and not await store.lacking_derivative(DerivativeKind.PREVIEW, [asset_id])
     ):
         await context.queue.enqueue(PREVIEW, {"asset_id": asset_id}, dedupe=True)
+    if frame is not None and await _record_fingerprint(context, source, frame, settings=settings):
+        await context.queue.settle_into(fingerprints_settle_into)
+
+
+async def _fingerprint_wanted(
+    asset_id: str, asset: Asset, should_generate: ShouldGenerate | None
+) -> bool:
+    """Whether a still's fingerprint rides on its tile's decode: lacking, and switched on."""
+    if fingerprints._has_its_fingerprints(asset):
+        return False
+    return should_generate is None or await should_generate(FINGERPRINT_FILE, asset_id)
+
+
+async def _render_with_frame(
+    source: Path, destination: Path, *, settings: Settings
+) -> bytes | None:
+    """A still's tile and its fingerprint frame from one decode; the frame, or None where none
+    came out whole."""
+    request = fingerprints.still_request()
+    with tempfile.TemporaryDirectory(prefix="sift-still-") as workspace:
+        raw = Path(workspace) / "frame.raw"
+        args = ffmpeg.still_and_frame_args(
+            source,
+            destination,
+            frame=raw,
+            frame_filters=request.filters,
+            pixel_format=request.pixel_format,
+            settings=settings,
+        )
+        await _render(args, destination, reads=source)
+        frame = await asyncio.to_thread(lambda: raw.read_bytes() if raw.exists() else b"")
+    return frame if len(frame) == request.frame_bytes else None
+
+
+async def _record_fingerprint(
+    context: JobContext, source: media.Source, frame: bytes, *, settings: Settings
+) -> bool:
+    """Record the still's fingerprint from the frame its tile's decode gave; whether it was. A
+    failure here is left to the file's own fingerprint job, which reads the file itself."""
+    with media.prepared(_prepared_still(source.path, frame)):
+        try:
+            written = await fingerprints.fingerprint_one(
+                context.content, source.asset.id, settings=settings, arriving=True, source=source
+            )
+        except (ffmpeg.FFmpegError, OSError) as error:
+            log.info("thumbnail.fingerprint_left", asset_id=source.asset.id, detail=str(error))
+            return False
+    return written is not None
+
+
+def _prepared_still(path: Path, frame: bytes) -> media.PreparedFrames:
+    held = media.PreparedFrames()
+    held.put_raw(path, fingerprints.still_request(), [frame])
+    return held
 
 
 async def _cut_by_content(source: Path, destination: Path, span: int, *, settings: Settings) -> int:

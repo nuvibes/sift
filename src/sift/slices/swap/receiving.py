@@ -48,7 +48,7 @@ from sift.slices.swap.live import (
     _wanted_indexes,
 )
 from sift.slices.swap.models import Diff, Offer, OfferScreen
-from sift.slices.swap.transfer import CHUNK_SIZE, MAX_RETRIES
+from sift.slices.swap.transfer import CHUNK_SIZE, MAX_RETRIES, RECORD_EVERY, RECORD_SECONDS
 
 log = get_logger(__name__)
 
@@ -179,17 +179,15 @@ class _Receiving(_Figures):
     async def receive(self, conn: Conn, *, delivered: Callable[[], None] | None = None) -> bool:
         """Receive files on one stream. True when the sender says there are none left for it.
 
-        `delivered` is told once, at the first frame this connection carries: the caller counts
-        dials that failed in a row, and a frame is what proves this one did not.
+        `delivered` is told at each thing this connection moved (a chunk written, a file
+        answered): the caller counts connections that failed in a row having moved nothing, and a
+        frame alone does not prove a connection worked if its first chunk fails the same way.
         """
         live = self.live
-        first = True
+        worked = delivered or _nothing
         while not live.ended.is_set():
             header = await conn.read()
             live.watchdog.heard()
-            if first and delivered is not None:
-                delivered()
-            first = False
             if isinstance(header, Chunk):
                 raise ProtocolError("a chunk before its file")
             if header.get("none"):
@@ -200,17 +198,16 @@ class _Receiving(_Figures):
             if index in self.verified:
                 # Verified already, and the word was lost with a dropped stream: say it again.
                 await conn.send({"file_done": index})
-                continue
-            if index not in self.wanted_set or index in self.failed_files:
+            elif index not in self.wanted_set or index in self.failed_files:
                 # REFUSED AND COUNTED: a file nobody asked for is not received, whatever it is.
                 self.unwanted += 1
                 await conn.send({"skip": index})
-                continue
-            if header.get("cannot"):
+            elif header.get("cannot"):
                 self.failed_files.add(index)
                 self.check_resolved()
-                continue
-            await self._receive_file(conn, index, header)
+            else:
+                await self._receive_file(conn, index, header, worked)
+            worked()
         return False
 
     async def _manifest_for(
@@ -284,11 +281,22 @@ class _Receiving(_Figures):
             path, done = await self._manifest_for(self.key_of(index), size, digest, once)
             count = transfer.chunk_count(size)
             missing = set(transfer.missing(done, count))
-            state = _Incoming(path, size, digest, count, missing, once=once)
+            state = _Incoming(
+                path,
+                size,
+                digest,
+                count,
+                missing,
+                once=once,
+                recorded=count - len(missing),
+                recorded_at=self.live.owner.clock(),
+            )
             self.incoming[index] = state
             return state
 
-    async def _receive_file(self, conn: Conn, index: int, header: Mapping[str, Any]) -> None:
+    async def _receive_file(
+        self, conn: Conn, index: int, header: Mapping[str, Any], worked: Callable[[], None]
+    ) -> None:
         """Receive one share of a file on one stream: the chunks the header names, or the whole
         file when it names none (a sender that sends whole files)."""
         if self.offer is None:  # pragma: no cover (files are received only after the offer)
@@ -323,19 +331,48 @@ class _Receiving(_Figures):
                 if await self._refused_again(conn, index, state, frame.index):
                     return
                 continue
-            await asyncio.to_thread(transfer.write_chunk, state.path, frame.index, frame.data)
+            await _on_disk(transfer.write_chunk, state.path, frame.index, frame.data)
             if state.is_dropped():
                 # Failed on another stream while this chunk was written: nothing of it stays.
                 await asyncio.to_thread(_remove, state.path)
                 await conn.send({"skip": index})
                 return
-            await live.owner.store.mark_done(live.id, key, frame.index, live.owner.now())
             if frame.index in state.missing:
                 state.missing.discard(frame.index)
                 self.moved(len(frame.data))
+            worked()
+            await self._record(state, key)
             remaining.discard(frame.index)
             await conn.send({"ack": frame.index, "file": index})
         await self._conclude(conn, index, state)
+
+    def _due(self, state: _Incoming) -> bool:
+        unrecorded = state.count - len(state.missing) - state.recorded
+        waited = self.live.owner.clock() - state.recorded_at
+        return unrecorded >= RECORD_EVERY or (unrecorded > 0 and waited >= RECORD_SECONDS)
+
+    async def _record(self, state: _Incoming, key: str, *, final: bool = False) -> None:
+        """Write down the chunks the file holds, the staged file synced to the disk first: every
+        `RECORD_EVERY` chunks or `RECORD_SECONDS`, and with `final` whatever is unrecorded."""
+        if not (final or self._due(state)):
+            return
+        live = self.live
+        async with state.recording:
+            done = set(range(state.count)) - state.missing
+            if state.is_dropped() or len(done) == state.recorded:
+                return
+            await _on_disk(transfer.sync_file, state.path)
+            if state.is_dropped():
+                return
+            await live.owner.store.record_done(live.id, key, done, live.owner.now())
+            state.recorded, state.recorded_at = len(done), live.owner.clock()
+
+    async def record_all(self) -> None:
+        """Every file part-way through written down as it stands, for a later swap to resume. A
+        failure here costs only the chunks since that file's last record."""
+        for index, state in list(self.incoming.items()):
+            with contextlib.suppress(Exception):
+                await self._record(state, self.key_of(index), final=True)
 
     async def _refused_again(self, conn: Conn, index: int, state: _Incoming, chunk: int) -> bool:
         """Ask for a bad chunk again, or past the retries drop the file; True when dropped."""
@@ -359,6 +396,7 @@ class _Receiving(_Figures):
             return
         state.checking = True
         try:
+            await self._record(state, self.key_of(index), final=True)
             whole = await self._whole_of(conn, index, state)
         except BaseException:
             state.checking = False
@@ -409,6 +447,7 @@ class _Receiving(_Figures):
                     taken=[n for n in range(len(people)) if n not in self.skipped],
                     staged=path,
                     digest=digest,
+                    checked=True,
                 )
                 # The landing counts the file on this row itself, in the transaction that files it
                 # (`store.count_landed_on`): a count written here as well would be a second one.
@@ -427,6 +466,20 @@ class _Receiving(_Figures):
                     await live.owner.store.drop_manifest(live.id, self.key_of(index))
                 self.landing.task_done()
                 self.check_resolved()
+
+
+def _nothing() -> None:
+    """No one counting what a connection moved."""
+
+
+async def _on_disk(write: Callable[..., None], *args: Any) -> None:
+    """A write to a staged file, off the loop; a full disk raised as `DiskFull`."""
+    try:
+        await asyncio.to_thread(write, *args)
+    except OSError as error:
+        if transfer.is_disk_full(error):
+            raise transfer.DiskFull from error
+        raise
 
 
 def _checked_header(header: Mapping[str, Any], offered: int) -> tuple[int, str, bool]:

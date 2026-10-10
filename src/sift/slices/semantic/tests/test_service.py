@@ -315,6 +315,37 @@ async def test_a_file_with_nothing_readable_is_a_verdict_and_not_recorded_as_don
     assert await service.indexed_frames() == 0
 
 
+async def test_a_damaged_picture_is_one_verdict_in_the_decoders_words_and_no_retry(
+    wired: Any, content_store: ContentStore, settings: Settings, tmp_path: Path
+) -> None:
+    """A decoder that says the bytes are broken is answered with a verdict carrying its words,
+    never a failure the queue would try again; any other refusal is still raised."""
+    from sift.kernel import media
+
+    service, preferences, _embedder, reader = wired
+    preferences.values[semantic_settings.ENABLED_KEY] = True
+    asset_id = await _an_asset(content_store, settings, tmp_path)
+
+    async def refused(path: Path, *, media_type: str, duration_ms: int) -> list[Moment]:
+        raise media.FFmpegError(
+            "'ffmpeg.exe' failed with exit code 69: [mjpeg @ 000001c4ab] "
+            "Decode error rate 1 exceeds maximum 0.666667"
+        )
+
+    reader.read = refused
+    assert await service.describe_asset(asset_id) == 0
+    verdict = await content_store.verdict_of(asset_id, VerdictProduct.MEANING)
+    assert verdict is not None and verdict.code == "no_frame" and not verdict.transient
+    assert "[mjpeg] Decode error rate 1" in verdict.reason and "@" not in verdict.reason
+
+    async def stalled(path: Path, *, media_type: str, duration_ms: int) -> list[Moment]:
+        raise media.FFmpegError("the share stopped answering")
+
+    reader.read = stalled
+    with pytest.raises(media.FFmpegError, match="stopped answering"):
+        await service.describe_asset(asset_id)
+
+
 async def test_a_later_read_that_yields_nothing_keeps_what_the_earlier_one_held(
     wired: Any, content_store: ContentStore, settings: Settings, tmp_path: Path
 ) -> None:

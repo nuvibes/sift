@@ -164,6 +164,8 @@ class ToRead:
     files: int
     #: The same files by media kind, as their names say (`kind_by_name`).
     kinds: dict[str, int] = field(default_factory=dict)
+    #: Their bytes, as the listing gave them: an archive counts whole.
+    size: int = 0
 
 
 #: The kind a name says, the first listed winning: a `.webp` is a still until it is read.
@@ -198,6 +200,7 @@ async def count_to_read(
     moves = NO_MOVES if folders is None else folders.moves
     refusals = await service.rejections_of_root(root.id)
     kinds: dict[str, int] = {}
+    size = 0
     for item in walk.files:
         verdict = await _decide(
             item,
@@ -211,7 +214,22 @@ async def count_to_read(
         if verdict.reads:
             kind = kind_by_name(item, verdict)
             kinds[kind] = kinds.get(kind, 0) + 1
-    return ToRead(files=sum(kinds.values()), kinds=kinds)
+            size += item.size
+    return ToRead(files=sum(kinds.values()), kinds=kinds, size=size)
+
+
+_SIZE_UNITS = ("B", "kB", "MB", "GB", "TB")
+
+
+def size_said(size: int) -> str:
+    """A byte count as the screen writes one (`facts.ts` `size`): 5.9 MB, 23 GB."""
+    amount, step = float(max(0, size)), 0
+    while amount >= 1000 and step < len(_SIZE_UNITS) - 1:
+        amount /= 1000
+        step += 1
+    if step == 0 or amount >= 10:
+        return f"{round(amount)} {_SIZE_UNITS[step]}"
+    return f"{amount:.1f} {_SIZE_UNITS[step]}"
 
 
 def _claimed_inside(item: Walked) -> set[str]:

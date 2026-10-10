@@ -64,6 +64,11 @@ HELLO_WAIT_SECONDS = 60.0
 #: A guest gives up redialling a stream after this many failures in a row: the session is cut off.
 REDIAL_LIMIT = 5
 
+#: The pause before a stream dials again after a failure: the first, doubled per failure in a row,
+#: and the longest, so a failure that repeats never turns into a loop of dials.
+REDIAL_PAUSE_FIRST = 0.5
+REDIAL_PAUSE_MOST = 8.0
+
 #: How often a side that was cut off tries again: the host to host on its tunnel, the guest to dial.
 RETRY_SECONDS = 10.0
 
@@ -89,6 +94,8 @@ USED = "used"
 #: The host started a swap both ways and the guest's Sift cannot send back: an older one, whose
 #: hello does not say `both` (see "Both ways"). Nothing was offered either way.
 OLDER = "older"
+#: The disk the received files are written to is full: dialling again would fail the same way.
+DISK_FULL = "disk full"
 REASONS = (
     REASON_DONE,
     ENDED_BY_YOU,
@@ -99,6 +106,7 @@ REASONS = (
     EXPIRED,
     USED,
     OLDER,
+    DISK_FULL,
 )
 
 #: Which state each reason leaves the row in.
@@ -112,10 +120,25 @@ _STATE_OF = {
     USED: "ended",
     OLDER: "ended",
     LOST: "failed",
+    DISK_FULL: "failed",
+}
+
+#: What the session's task says when the swap did not happen or did not finish: the task fails with
+#: it. Done, and an end either person pressed, are not failures.
+FAILED_WORDS = {
+    LOST: "The connection to them was lost.",
+    EXPIRED: "The token ran out before anyone joined, so nothing was sent.",
+    REFUSED: "The codes didn't match, so nothing was sent.",
+    WRONG_DEVICE: "A different device answered the token, so nothing was sent.",
+    USED: "That token has been used already, so nothing was sent.",
+    OLDER: "Their Sift can't send files back, so nothing was sent.",
+    DISK_FULL: (
+        "This device ran out of disk space, so the swap stopped. Free some space, then swap again."
+    ),
 }
 
 #: What a session told to end says to the other side, and what the other side then records.
-_TELL = {ENDED_BY_YOU: "ended", REFUSED: "refused"}
+_TELL = {ENDED_BY_YOU: "ended", REFUSED: "refused", DISK_FULL: "ended"}
 _HEARD = {"ended": ENDED_BY_THEM, "refused": REFUSED}
 
 _HELLO_CONTEXT = b"sift-swap-hello-1"

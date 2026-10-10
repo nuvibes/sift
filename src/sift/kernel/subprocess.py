@@ -59,6 +59,10 @@ class ToolFailed(SubprocessError):
 SAID_TAIL_CHARS = 2000
 
 
+class TookTooLong(SubprocessError):
+    """A tool ran past its time limit and was stopped: a hung read more often than broken bytes."""
+
+
 def said_tail(stderr: bytes | None) -> str:
     """The last `SAID_TAIL_CHARS` of what a tool wrote to its errors, as text."""
     return (stderr or b"").decode("utf-8", "replace").strip()[-SAID_TAIL_CHARS:]
@@ -343,7 +347,7 @@ async def _collect_within(
         return await asyncio.wait_for(_collect(process, stdin, on_line), timeout=time_limit)
     except TimeoutError:
         await _kill(process)
-        raise SubprocessError(f"{argv[0]!r} took too long and was stopped") from None
+        raise TookTooLong(f"{argv[0]!r} took too long and was stopped") from None
     except asyncio.CancelledError:
         await _kill(process)
         raise
@@ -704,11 +708,11 @@ async def capture(
     time_limit: float,
     priority: Priority = Priority.NORMAL,
 ) -> bytes:
-    """Run `argv` in a thread and hand back all it wrote, uncapped; a non-zero exit raises
-    `ToolFailed` with the end of what the tool said."""
+    """Run `argv` on threads and hand back all it wrote, uncapped; killed past `time_limit` or on
+    cancel. A non-zero exit raises `ToolFailed` with the end of what the tool said."""
+    started = time.perf_counter()
 
-    def go() -> bytes:
-        started = time.perf_counter()
+    def launch() -> subprocess.Popen[bytes]:
         try:
             process = subprocess.Popen(  # noqa: S603 (a list, never a shell; see the module header)
                 [*launch_prefix(priority), *argv],
@@ -724,27 +728,55 @@ async def capture(
             _contain(
                 process, memory_limit_for(priority), background=priority is Priority.BACKGROUND
             )
-            try:
-                output, errors = process.communicate(timeout=time_limit)
-            except subprocess.TimeoutExpired as exc:
-                process.kill()
-                process.communicate()
-                raise SubprocessError(f"{argv[0]!r} took too long and was stopped") from exc
-        finally:
-            _ran(process, started)
-            _release(process)
-        if process in _OVER_MEMORY:
-            raise SubprocessError(_over_memory(argv))
-        if process.returncode != 0:
-            said = said_tail(errors) or unsaid(process.returncode)
-            raise ToolFailed(
-                f"{argv[0]!r} failed with exit code {process.returncode}: {said}",
-                returncode=process.returncode,
-                said=said,
-            )
-        return output or b""
+        except BaseException:
+            process.kill()
+            process.communicate()
+            raise
+        return process
 
-    return await asyncio.to_thread(go)
+    def talk(process: subprocess.Popen[bytes]) -> tuple[bytes, bytes]:
+        try:
+            return process.communicate(timeout=time_limit)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            process.communicate()
+            raise TookTooLong(f"{argv[0]!r} took too long and was stopped") from exc
+
+    launching = asyncio.ensure_future(asyncio.to_thread(launch))
+    try:
+        process = await asyncio.shield(launching)
+    except asyncio.CancelledError:
+        with contextlib.suppress(Exception):
+            abandoned = await launching
+            abandoned.kill()
+            await asyncio.to_thread(abandoned.communicate)
+            _release(abandoned)
+        raise
+    talking = asyncio.ensure_future(asyncio.to_thread(talk, process))
+    try:
+        output, errors = await asyncio.shield(talking)
+    except asyncio.CancelledError:
+        # The thread cannot be cancelled: ending the tool and all it started closes its pipes,
+        # which ends the thread.
+        with contextlib.suppress(OSError):
+            process.kill()
+        _release(process)
+        with contextlib.suppress(Exception):
+            await talking
+        raise
+    finally:
+        _ran(process, started)
+        _release(process)
+    if process in _OVER_MEMORY:
+        raise SubprocessError(_over_memory(argv))
+    if process.returncode != 0:
+        said = said_tail(errors) or unsaid(process.returncode)
+        raise ToolFailed(
+            f"{argv[0]!r} failed with exit code {process.returncode}: {said}",
+            returncode=process.returncode,
+            said=said,
+        )
+    return output or b""
 
 
 async def _collect(
@@ -909,7 +941,7 @@ async def stream(
         finished = True
         await process.wait()
     except TimeoutError:
-        raise SubprocessError(f"{argv[0]!r} took too long and was stopped") from None
+        raise TookTooLong(f"{argv[0]!r} took too long and was stopped") from None
     finally:
         feeding.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -933,6 +965,7 @@ __all__ = [
     "Priority",
     "SubprocessError",
     "SubprocessResult",
+    "TookTooLong",
     "ToolFailed",
     "background_memory_limit",
     "background_rate",

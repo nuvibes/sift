@@ -630,6 +630,58 @@ async def test_a_file_none_of_whose_moments_decoded_is_a_verdict_and_keeps_what_
     assert other_clip.asset.id not in waiting, "and a settled one still is not"
 
 
+async def test_a_damaged_file_is_one_verdict_in_the_decoders_words_and_no_retry(
+    service: FaceService,
+    clip: Ingested,
+    content_store: ContentStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The decoder saying the bytes are broken is a verdict carrying its words, never a failure
+    the queue would try again; a refusal of any other kind is still raised."""
+    from sift.kernel import media
+    from sift.slices.faces import pipeline as pipeline_module
+
+    await content_store.record_probe(clip.asset.id, width=400, height=300, duration_ms=10_000)
+
+    async def damaged(self: object, path: object, **_kwargs: object) -> object:
+        raise media.FFmpegError("failed: [h264 @ 0x5e] Invalid NAL unit size (512 > 30)")
+
+    monkeypatch.setattr(pipeline_module.Pipeline, "run", damaged)
+    await service.scan(clip.asset.id)
+    verdict = await content_store.verdict_of(clip.asset.id, VerdictProduct.FACES)
+    assert verdict is not None and verdict.code == "no_frame_decoded" and not verdict.transient
+    assert (
+        verdict.reason == "The decoder refused the picture: [h264] Invalid NAL unit size (512 > 30)"
+    )
+
+    async def stalled(self: object, path: object, **_kwargs: object) -> object:
+        raise media.FFmpegError("the share stopped answering")
+
+    monkeypatch.setattr(pipeline_module.Pipeline, "run", stalled)
+    with pytest.raises(media.FFmpegError, match="stopped answering"):
+        await service.scan(clip.asset.id)
+
+
+async def test_a_file_read_and_found_to_have_no_picture_is_a_verdict_not_no_faces(
+    service: FaceService,
+    clip: Ingested,
+    content_store: ContentStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Read, and with no size: looked at, it would be a two pixel square filed as nobody in it."""
+    from sift.slices.faces import pipeline as pipeline_module
+
+    await content_store.record_probe(clip.asset.id, duration_ms=10_000)
+
+    async def opened(self: object, path: object, **_kwargs: object) -> object:
+        raise AssertionError("a file with no picture was looked at")
+
+    monkeypatch.setattr(pipeline_module.Pipeline, "run", opened)
+    await service.scan(clip.asset.id)
+    verdict = await content_store.verdict_of(clip.asset.id, VerdictProduct.FACES)
+    assert verdict is not None and verdict.code == "no_picture"
+
+
 async def test_a_file_whose_pass_did_not_finish_is_offered_again(
     service: FaceService,
     store: Store,

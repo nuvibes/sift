@@ -33,6 +33,7 @@ from sift.kernel.log import set_stage_sink
 from sift.slices.importing import jobs as jobs_module
 from sift.slices.importing import products as products_module
 from sift.slices.importing.jobs import (
+    ARRIVED,
     GENERATE,
     GENERATE_FILE,
     IDENTIFY,
@@ -504,7 +505,9 @@ async def test_the_task_reads_the_file_once_for_every_product(
 
     class Recording:
         @asynccontextmanager
-        async def prepared(self, asset_id: str, products: Sequence[Product]) -> AsyncIterator[None]:
+        async def prepared(
+            self, asset_id: str, products: Sequence[Product], *, again: bool = False
+        ) -> AsyncIterator[None]:
             opened.append((asset_id, [one.key for one in products]))
             yield
             inside.extend(pictures.built + faces.built)
@@ -515,6 +518,97 @@ async def test_the_task_reads_the_file_once_for_every_product(
 
     assert opened == [(a, ["pictures", "faces"])]
     assert inside == [a, a], "both products were made inside the read"
+
+
+async def test_the_identify_task_decodes_a_still_once_around_every_product(
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    settings: Settings,
+    context_for: Any,
+) -> None:
+    """The still reader opens inside the video reader, once, with the products in order, and every
+    product is made inside it; Generate's task is handed no still reader."""
+    from collections.abc import AsyncIterator, Sequence
+    from contextlib import asynccontextmanager
+
+    a = await a_probed_file(library_root, content_store, settings, "a.mp4")
+    faces = Made("faces", {a}, family=Family.IDENTIFY)
+    meaning = Made("meaning", {a}, family=Family.IDENTIFY)
+    registry = registry_of(faces, meaning)
+    opened: list[tuple[str, list[str]]] = []
+    inside: list[str] = []
+
+    class Still:
+        @asynccontextmanager
+        async def prepared(self, asset_id: str, passes: Sequence[Product]) -> AsyncIterator[None]:
+            opened.append((asset_id, [one.key for one in passes]))
+            yield
+            inside.extend(faces.built + meaning.built)
+
+    handler = jobs_module._file_handler(registry, Still(), None, None)
+    context = await context_for(IDENTIFY_FILE, {"asset_id": a, "products": ["faces", "meaning"]})
+    await handler(context)
+
+    assert opened == [(a, ["faces", "meaning"])]
+    assert inside == [a, a], "both products were made inside the one decode"
+
+
+async def test_a_landing_files_task_makes_what_the_switches_want_when_it_runs(
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    settings: Settings,
+    context_for: Any,
+) -> None:
+    """A task handed out as the file landed names no products: the import switches are asked when
+    it runs, so a switch turned off since leaves its pass out, and none left makes nothing."""
+    a = await a_probed_file(library_root, content_store, settings, "a.mp4")
+    faces = Made("faces", {a}, family=Family.IDENTIFY)
+    marks = Made("watermarks", {a}, family=Family.IDENTIFY)
+    registry = registry_of(faces, marks)
+    asked: list[str] = []
+    answer = ["watermarks"]
+
+    async def arriving(asset_id: str) -> list[str]:
+        asked.append(asset_id)
+        return list(answer)
+
+    context = await context_for(IDENTIFY_FILE, {"asset_id": a, ARRIVED: True})
+    await build_file(context, products=registry, arriving=arriving)
+    assert asked == [a]
+    assert marks.built == [a] and faces.built == []
+
+    answer.clear()
+    context = await context_for(IDENTIFY_FILE, {"asset_id": a, ARRIVED: True})
+    await build_file(context, products=registry, arriving=arriving)
+    assert marks.built == [a] and faces.built == [], "nothing wanted, nothing made"
+
+
+async def test_a_file_not_yet_read_is_held_for_its_read_and_then_made(
+    content_store: ContentStore,
+    library_root: LibraryRoot,
+    settings: Settings,
+    context_for: Any,
+) -> None:
+    """Pressed before its read, a picture of unknown size would be looked at as two pixels square
+    and filed as having nobody in it: the task waits for the read, then makes it."""
+    landed = library_root.path / "early.mp4"
+    landed.write_bytes((CORPUS / "accepted.mp4").read_bytes() + b"early")
+    checked = verify_ingress(landed, origin=Origin.SCAN, settings=settings)
+    a = (
+        await content_store.ingest(checked, root_id=library_root.id, rel_path="early.mp4")
+    ).asset.id
+    faces = Made("faces", {a}, family=Family.IDENTIFY)
+    handler = jobs_module._file_handler(registry_of(faces), None, None, content_store)
+    context = await context_for(IDENTIFY_FILE, {"asset_id": a, "products": ["faces"]})
+
+    with pytest.raises(JobHeld, match="read first") as held:
+        await handler(context)
+    assert held.value.retry_in == jobs_module.NOT_READ_YET_SECONDS
+    assert faces.built == []
+
+    await content_store.record_probe(a, width=640, height=480, duration_ms=1000)
+    await handler(context)
+    assert faces.built == [a]
 
 
 async def test_a_products_housekeeping_runs_once_before_the_first_page(

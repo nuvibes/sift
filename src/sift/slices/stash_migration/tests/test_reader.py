@@ -426,3 +426,25 @@ def test_names_are_read_only_from_the_three_tables_that_hold_them(tmp_path: Path
             reader.names_of(connection, "scenes")
     finally:
         connection.close()
+
+
+def test_a_copy_that_fills_the_disk_says_so_rather_than_blaming_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = sqlite3.connect
+
+    class Full:
+        def __init__(self, connection: sqlite3.Connection) -> None:
+            self._connection = connection
+
+        def backup(self, *_args: object, **_kwargs: object) -> None:
+            raise sqlite3.OperationalError("database or disk is full")
+
+        def close(self) -> None:
+            self._connection.close()
+
+    made = make_stash(tmp_path / "stash.sqlite")
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **k: Full(real(*a, **k)))
+
+    with pytest.raises(reader.NotAStashDatabase, match="isn't room"):
+        reader.copy_in(made, tmp_path / "copy" / "stash.sqlite")

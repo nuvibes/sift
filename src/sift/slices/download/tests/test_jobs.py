@@ -1472,3 +1472,31 @@ async def test_a_failure_nothing_foresaw_goes_through_untouched_and_writes_nothi
         )
 
     assert raised.value is unforeseen
+
+
+async def test_a_lookup_that_failed_for_now_is_retried_and_written_down_only_at_the_last() -> None:
+    """The network was down, not the address wrong: retried after the wait, and the row told the
+    network's sentence only once no try is left."""
+    from types import SimpleNamespace
+
+    from sift.slices.download.url_guard import LOOKUP_FAILED_FOR_NOW, LookupFailedForNow
+
+    written: list[str] = []
+
+    class Service:
+        async def mark_failed(self, download_id: str, *, error: str) -> None:
+            written.append(error)
+
+    for attempt_number, expected in ((1, []), (3, [LOOKUP_FAILED_FOR_NOW])):
+        written.clear()
+        context = SimpleNamespace(attempt=attempt_number, job=SimpleNamespace(max_attempts=3))
+        failure = LookupFailedForNow(LOOKUP_FAILED_FOR_NOW)
+        with pytest.raises(LookupFailedForNow):
+            await attempt._fetch_failed(
+                context,  # type: ignore[arg-type]
+                Service(),  # type: ignore[arg-type]
+                new_id(),
+                failure,
+                direct=True,
+            )
+        assert written == expected

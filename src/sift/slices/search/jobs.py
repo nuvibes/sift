@@ -154,7 +154,8 @@ async def ensure_scheduled(*, queue: JobQueue, database: Database) -> None:
     if await _pending(queue):
         return
     if await anything_unindexed(database):
-        await queue.enqueue(FTS_REINDEX)
+        # A catch-up, never the whole index: a restart leaves a few files behind, not all.
+        await queue.enqueue(FTS_REINDEX, {SCOPE: CATCH_UP})
 
 
 async def catch_up_if_behind(*, queue: JobQueue, database: Database) -> bool:

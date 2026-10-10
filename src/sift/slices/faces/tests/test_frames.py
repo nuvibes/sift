@@ -541,21 +541,100 @@ async def test_the_plan_and_the_ask_agree_so_a_build_can_read_the_file_once(
     assert [frame.timestamp_ms for frame in got] == list(face_frames(4000, density=1.0))
 
 
-def test_a_still_or_a_gif_plans_nothing() -> None:
-    from sift.kernel import media
+def _facts(kind: str, width: int, height: int) -> media.FileFacts:
+    return media.FileFacts(
+        asset_id="a",
+        path=Path("x"),
+        media_type=kind,
+        duration_ms=1000,
+        width=width,
+        height=height,
+        fps=10.0,
+        size_bytes=1,
+    )
 
-    for kind in ("image", "gif"):
-        facts = media.FileFacts(
-            asset_id="a",
-            path=Path("x"),
-            media_type=kind,
-            duration_ms=1000,
-            width=320,
-            height=240,
-            fps=10.0,
-            size_bytes=1,
+
+def test_a_gif_plans_nothing() -> None:
+    """A GIF is read whole in one go of its own (`_gif`), which no shared decode answers."""
+    assert frames_module.frame_requests(_facts("gif", 320, 240), density=1.0) == []
+
+
+def test_a_still_plans_its_working_frame_and_its_closer_look() -> None:
+    """The two sizes `Reader.stream` and `Reader.windows` ask a still for, so a task decodes it
+    once for both; a still no bigger than the working frame is one ask."""
+    big = frames_module.frame_requests(_facts("image", 2000, 3000), density=1.0)
+    assert [(one.moments, one.filters, one.frame_bytes) for one in big] == [  # type: ignore[union-attr]
+        ((media.Moment(seek=()),), "scale=852:1280", 852 * 1280 * 3),
+        ((media.Moment(seek=()),), "scale=2000:3000", 2000 * 3000 * 3),
+    ]
+    small = frames_module.frame_requests(_facts("image", 320, 240), density=1.0)
+    assert [(one.filters, one.frame_bytes) for one in small] == [  # type: ignore[union-attr]
+        ("scale=320:240", 320 * 240 * 3)
+    ]
+
+
+async def test_a_still_decoded_once_is_read_from_that_decode_and_never_again(
+    settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The working frame and the closer look come out of the one decode, the same pixels the
+    pass's own reads give, and nothing is launched for either."""
+    from sift.kernel.ml import pictures
+    from sift.slices.faces.models import Box
+
+    target = _tall_picture(settings, tmp_path / "tall.png")
+    asked = frames_module.frame_requests(_facts("image", 2000, 3000), density=1.0)
+    box = Box(x=100, y=100, width=200, height=200)
+    reader = Reader(settings)
+    own = [
+        frame.pixels
+        async for frame in reader.stream(
+            target, media_type="image", width=2000, height=3000, timestamps=(0,)
         )
-        assert frames_module.frame_requests(facts, density=1.0) == []
+    ]
+    (own_piece,) = await reader.windows(
+        target, media_type="image", width=2000, height=3000, wanted=[(0, box)]
+    )
+    prepared = await pictures.decode_still(
+        target,
+        [one for one in asked if isinstance(one, media.RawFrames)],
+        workspace=tmp_path,
+        settings=settings,
+    )
+
+    async def nothing_launched(*_args: object, **_kwargs: object) -> bytes:
+        raise AssertionError("a still the task decoded was decoded again")
+
+    monkeypatch.setattr(frames_module, "subprocess_capture", nothing_launched)
+    with media.prepared(prepared):
+        held = [
+            frame.pixels
+            async for frame in reader.stream(
+                target, media_type="image", width=2000, height=3000, timestamps=(0,)
+            )
+        ]
+        (held_piece,) = await reader.windows(
+            target, media_type="image", width=2000, height=3000, wanted=[(0, box)]
+        )
+
+    assert len(held) == 1 and np.array_equal(held[0], own[0])
+    assert own_piece is not None and held_piece is not None
+    assert np.array_equal(held_piece.pixels, own_piece.pixels)
+
+
+async def test_a_still_the_one_decode_refused_is_refused_in_the_decoders_words(
+    settings: Settings,
+) -> None:
+    from sift.kernel.ml import pictures
+
+    path = CORPUS / "accepted.jpg"
+    with (
+        pictures._refusing(path, "Decode error rate 1 exceeds maximum"),
+        pytest.raises(FFmpegError, match="Decode error rate"),
+    ):
+        async for _frame in Reader(settings).stream(
+            path, media_type="image", width=16, height=16, timestamps=(0,)
+        ):
+            pass
 
 
 # --- faces are cut from the file's own pixels -----------------------------------------------------

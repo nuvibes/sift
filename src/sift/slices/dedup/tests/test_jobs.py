@@ -94,6 +94,57 @@ async def test_the_plan_is_what_the_sweep_files_and_writes_nothing(
     assert (await service.plan()).pairs == ()
 
 
+async def test_a_settle_over_unchanged_fingerprints_compares_nothing_and_says_why(
+    temp_db: Database,
+    service: DedupService,
+    managed: Library,
+    add_file: Any,
+    job_queue: JobQueue,
+    clean_handlers: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A whole-library comparison runs every fifteen minutes of an import and on a large library takes
+    over a minute for no new pair; with every fingerprint as the last pass found it, it is a read
+    and a digest. A fingerprint changed, its version included, or a press, compares again."""
+    first = await add_file(managed, "one.jpg", "accepted.jpg")
+    second = await add_file(managed, "two.png", "accepted.png")
+    await temp_db.execute("UPDATE assets SET phash = ? WHERE id = ?", (_PHASH, first.asset.id))
+    await temp_db.execute("UPDATE assets SET phash = ? WHERE id = ?", (_NEAR, second.asset.id))
+    register_handlers(service=service)
+    compared: list[int] = []
+    find = Matcher.find
+
+    def counted(matcher: Matcher, fingerprints: Any) -> Any:
+        compared.append(len(fingerprints))
+        return find(matcher, fingerprints)
+
+    monkeypatch.setattr(Matcher, "find", counted)
+
+    async def a_pass(requested_by: str | None = None) -> float:
+        await job_queue.enqueue(DEDUP_SCAN, {}, requested_by=requested_by)
+        claimed = await job_queue.claim("worker-one")
+        assert claimed is not None
+        began = time.monotonic()
+        await dedup_scan(
+            JobContext(job=claimed, worker_id="worker-one", queue=job_queue), service=service
+        )
+        await job_queue.complete(claimed.id, "worker-one")
+        return time.monotonic() - began
+
+    await a_pass()
+    assert compared == [2]
+    assert await a_pass() < 2.0
+    assert compared == [2], "nothing changed: nothing compared"
+    await temp_db.execute(
+        "UPDATE assets SET fingerprint_version = 1, phash = ? WHERE id = ?",
+        (_PHASH, second.asset.id),
+    )
+    await a_pass()
+    assert compared == [2, 2], "a fingerprint taken again is compared"
+    await a_pass(requested_by="u1")
+    assert compared == [2, 2, 2], "a press always compares"
+
+
 # --- the corners ------------------------------------------------------------------------------
 
 

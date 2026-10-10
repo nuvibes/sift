@@ -24,7 +24,7 @@ from sift.kernel.content import (
     perceptual,
 )
 from sift.kernel.media import FileFacts, Source
-from sift.slices.media_jobs import ffmpeg, jobs, one_pass, tuning
+from sift.slices.media_jobs import ffmpeg, fingerprints, jobs, one_pass, tuning
 from sift.slices.media_jobs.tests.conftest import VIDEO_SECONDS
 
 pytestmark = pytest.mark.integration
@@ -121,12 +121,19 @@ async def test_the_pictures_plan_the_sprite_only_when_it_is_wanted_and_missing(
     assert len(planned) == 1 and isinstance(planned[0], media.FrameFiles)
     assert planned[0].suffix == ".jpg"
     assert await sprite(content=content_store, allowed=no) == []
-    # The thumbnail is one seek and the preview its own decode: neither reads prepared frames.
-    for kind in (DerivativeKind.THUMB, DerivativeKind.PREVIEW):
-        assert (
-            await one_pass.picture_frames(facts, kind=kind, content=content_store, allowed=yes)
-            == []
+    # The tile's stills are planned too, each moment a still and its grey levels; the preview is
+    # its own decode and reads no prepared frames.
+    still, levels = await one_pass.picture_frames(
+        facts, kind=DerivativeKind.THUMB, content=content_store, allowed=yes
+    )
+    assert isinstance(still, media.FrameFiles) and isinstance(levels, media.RawFrames)
+    assert still.moments == levels.moments and still.moments[0] == media.Moment(seek=())
+    assert (
+        await one_pass.picture_frames(
+            facts, kind=DerivativeKind.PREVIEW, content=content_store, allowed=yes
         )
+        == []
+    )
 
     await content_store.add_derivative(
         ingested_video.asset.id, DerivativeKind.SPRITE, extension="jpg", params={}, size_bytes=1
@@ -134,6 +141,13 @@ async def test_the_pictures_plan_the_sprite_only_when_it_is_wanted_and_missing(
     assert await sprite(content=content_store, allowed=yes) == [], (
         "a sprite already there is not read for"
     )
+    # Unless a person pressed for it again: the press makes it, so the one read plans it.
+    from dataclasses import replace
+
+    again = await one_pass.picture_frames(
+        replace(facts, again=True), kind=DerivativeKind.SPRITE, content=content_store, allowed=yes
+    )
+    assert len(again) == 1
 
 
 async def test_a_pictures_term_names_its_own_kind_and_nothing_when_switched_off() -> None:
@@ -429,3 +443,34 @@ def test_the_decode_time_limit_has_a_floor_where_the_machine_was_never_measured(
     assert limit(facts, None) == floor
     assert limit(facts, media.ReadRates(decode_fps=0.0, seek_seconds=1.0)) == floor
     assert limit(facts, media.ReadRates(decode_fps=0.001, seek_seconds=1.0)) > floor
+
+
+async def test_the_plan_divides_the_running_time_the_ask_divides(
+    video: Path, ingested_video: Ingested
+) -> None:
+    """The stash-box grid is planned from the unrounded running time the probe kept, as the ask
+    reads it: from the millisecond the row keeps, 10.00469 s plans a moment the ask never makes,
+    and that file is read a second time."""
+    seconds = 10.00469
+    facts = dataclasses.replace(
+        facts_of(video, ingested_video, duration_ms=round(seconds * 1000)),
+        duration_seconds=seconds,
+    )
+    probed = ffmpeg.parse_probe({"format": {"duration": str(seconds)}})
+    asked = [
+        one
+        for one in fingerprints.fingerprint_requests(probed)
+        if isinstance(one, media.FrameFiles)
+    ]
+    planned = [
+        one for one in await one_pass.fingerprint_frames(facts) if isinstance(one, media.FrameFiles)
+    ]
+    assert [one.moments for one in planned] == [one.moments for one in asked]
+    rounded = [
+        one
+        for one in await one_pass.fingerprint_frames(
+            dataclasses.replace(facts, duration_seconds=None)
+        )
+        if isinstance(one, media.FrameFiles)
+    ]
+    assert [one.moments for one in rounded] != [one.moments for one in asked]

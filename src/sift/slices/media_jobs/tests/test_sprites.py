@@ -25,6 +25,7 @@ from sift.kernel.content import (
 from sift.kernel.hardware import HardwareReport
 from sift.slices.media_jobs import (
     ffmpeg,
+    fingerprints,
     jobs,
     sprites,
     tuning,
@@ -383,3 +384,91 @@ async def test_the_sheet_is_tiled_on_the_grid_the_row_records(
     )
     assert sheet.width == columns * tuning.SPRITE_TILE_WIDTH, "the sheet is not the stored grid"
     assert rows > 1, "the fixture stopped being able to show this"
+
+
+# --- one decode for the strip and the fingerprints ------------------------------------------------
+
+
+async def test_a_short_video_gives_its_strip_and_fingerprints_from_one_decode(
+    ingested_video: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On a machine whose rates were measured, a short clip is decoded once for its strip and its
+    fingerprints: one decode and the sheet's stitch, the fingerprints the ones the file's own job
+    reads, and that job then starts no tool."""
+    from sift.kernel import subprocess as kernel_subprocess
+
+    asset_id = ingested_video.asset.id
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    source = await media.resolve_decodable(content_store, asset_id, settings=settings)
+    probed = await fingerprints.probed_of(content_store, source, settings=settings)
+    frame, whole = await fingerprints._fingerprint(source, probed, settings=settings)
+    scene = await fingerprints._video_phash(source, probed, settings=settings)
+
+    async def measured(_path: Path) -> media.ReadRates:
+        return media.ReadRates(decode_fps=600.0, seek_seconds=0.04)
+
+    started: list[list[str]] = []
+    real_run, real_capture = kernel_subprocess.run, kernel_subprocess.capture
+
+    async def counted_run(argv: list[str], **kwargs: Any) -> Any:
+        started.append(argv)
+        return await real_run(argv, **kwargs)
+
+    async def counted_capture(argv: list[str], **kwargs: Any) -> bytes:
+        started.append(argv)
+        return await real_capture(argv, **kwargs)
+
+    monkeypatch.setattr(kernel_subprocess, "run", counted_run)
+    monkeypatch.setattr(kernel_subprocess, "capture", counted_capture)
+    await jobs.sprite(
+        await context_for("sprite", {"asset_id": asset_id}),
+        settings=settings,
+        hardware=hardware,
+        read_rates=measured,
+    )
+
+    assert len(started) == 2, started
+    assert await content_store.lacking_derivative(DerivativeKind.SPRITE, [asset_id]) == set()
+    asset = await content_store.get(asset_id)
+    assert asset is not None
+    assert (asset.phash, asset.videohash, asset.video_phash) == (frame, whole, scene)
+    assert asset.oshash
+    started.clear()
+    await jobs.fingerprint_arrival(
+        await context_for(jobs.FINGERPRINT_FILE, {"asset_id": asset_id}), settings=settings
+    )
+    assert started == []
+
+
+async def test_an_unmeasured_machine_seeks_the_strip_and_leaves_the_fingerprints(
+    ingested_video: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+) -> None:
+    """Without measured rates the frame count would price the strip's seeks too high and decode a
+    long file whole: the strip seeks as before and the fingerprints are their own job's."""
+    asset_id = ingested_video.asset.id
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+
+    async def never(_path: Path) -> None:
+        return None
+
+    await jobs.sprite(
+        await context_for("sprite", {"asset_id": asset_id}),
+        settings=settings,
+        hardware=hardware,
+        read_rates=never,
+    )
+    asset = await content_store.get(asset_id)
+    assert asset is not None and asset.phash is None

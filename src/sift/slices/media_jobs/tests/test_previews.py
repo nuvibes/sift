@@ -471,6 +471,7 @@ async def test_the_shape_stored_on_performance_is_the_shape_each_queued_preview_
     # claimed in their place; the registry is put back after the test.
     monkeypatch.setattr(registry, "_HANDLERS", {})
     wiring_imports._register_media(
+        stored,  # type: ignore[arg-type]
         settings,
         hardware,
         stored,  # type: ignore[arg-type]

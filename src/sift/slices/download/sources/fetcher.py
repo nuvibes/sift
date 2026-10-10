@@ -395,7 +395,7 @@ async def _one_attempt(
         for _hop in range(MAX_REDIRECT_HOPS + 1):
             # Per hop: a redirect can send the ask to another host, which has answered nothing yet.
             answered = False
-            check_url(current, here=here)
+            await asyncio.to_thread(check_url, current, here=here)
             async with session.get(
                 current, headers=headers, timeout=_make_timeout(policy), allow_redirects=False
             ) as resp:

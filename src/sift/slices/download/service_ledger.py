@@ -48,6 +48,17 @@ SELECT d.id FROM downloads d
    AND (SELECT j.state FROM jobs j WHERE j.id = d.job_id) = 'failed'
 """
 
+#: Rows with no job behind them, from before this start: an older version wrote the row and its
+#: job apart, and a stop between the two left a row nothing would ever run.
+_NEVER_QUEUED = """
+SELECT d.id FROM downloads d
+ WHERE d.state = 'queued' AND d.created_at < ?
+   AND (d.job_id IS NULL OR NOT EXISTS (SELECT 1 FROM jobs j WHERE j.id = d.job_id))
+"""
+
+#: When this process began, in unix seconds: no row older than this is mid-submission here.
+_STARTED = int(time.time())
+
 # A completed download counts as already-fetched whether it added new media ('done') or found it all
 # already in the library ('duplicate'): either way this URL has been through, so a re-paste skips.
 #
@@ -333,10 +344,15 @@ class DownloadLedger(DownloadControls):
             await self._content.seed_download_url(asset_id, str(row["url"]))
 
     async def settle_orphans(self) -> int:
-        """Settle every ledger row whose job gave up without telling it. Returns how many."""
+        """Settle every ledger row whose job gave up without telling it, and queue the job a row
+        never got. Returns how many rows were settled either way."""
         stuck = [str(row["id"]) for row in await self._db.fetch_all(_ORPHANED)]
         for download_id in stuck:
             await self.mark_failed(download_id, error=_INTERRUPTED)
+        unqueued = await self._db.fetch_all(_NEVER_QUEUED, (_STARTED,))
+        for row in unqueued:
+            await self._queue_for(str(row["id"]), {"download_id": str(row["id"])})
+        stuck.extend(str(row["id"]) for row in unqueued)
         # The count goes back to the caller rather than into a log from here. This module has never
         # logged, and whoever asks for this is at boot, which is where saying so belongs.
         return len(stuck)

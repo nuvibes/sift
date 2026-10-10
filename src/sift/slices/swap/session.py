@@ -57,13 +57,13 @@ import contextlib
 import hmac
 import os
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from sift.kernel.access import Viewer
 from sift.kernel.ids import new_id
-from sift.kernel.jobs import JobContext, register_handler
+from sift.kernel.jobs import JobContext, JobFailedPermanently, register_handler
 from sift.kernel.jobs.families import OwnEstimate, estimate_itself
 from sift.kernel.jobs.tuning import WAITED_ON_PRIORITY
 from sift.kernel.log import get_logger
@@ -90,6 +90,7 @@ from sift.slices.swap.handshake import (
     CHOOSE_FIRST,
     ENDED_BY_YOU,
     EXIT_WAIT_SECONDS,
+    FAILED_WORDS,
     FOLDER_FIELD,
     HELLO_WAIT_SECONDS,
     LOCKED,
@@ -110,6 +111,9 @@ from sift.slices.swap.handshake import (
 )
 from sift.slices.swap.handshake import (
     CUT_OFF_NOTE as CUT_OFF_NOTE,
+)
+from sift.slices.swap.handshake import (
+    DISK_FULL as DISK_FULL,
 )
 from sift.slices.swap.handshake import (
     ENDED_BY_THEM as ENDED_BY_THEM,
@@ -197,9 +201,11 @@ from sift.slices.swap.token import Token, TokenRefused, mint, parse, server_or_n
 
 __all__ = [
     "CUT_OFF_NOTE",
+    "DISK_FULL",
     "ENDED_BY_THEM",
     "ENDED_BY_YOU",
     "EXPIRED",
+    "FAILED_WORDS",
     "FOLDER_FIELD",
     "LOCKED",
     "LOST",
@@ -323,6 +329,7 @@ class SwapSessions:
         rate_window: float = RATE_WINDOW_SECONDS,
         hello_wait: float = HELLO_WAIT_SECONDS,
         retry_seconds: float = RETRY_SECONDS,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self.store = store
         self.secrets = secrets
@@ -349,6 +356,7 @@ class SwapSessions:
         self.rate_window = rate_window
         self.hello_wait = hello_wait
         self.retry_seconds = retry_seconds
+        self.sleep = sleep
         self._live: dict[str, _Live] = {}
         self._by_job: dict[str, str] = {}
 
@@ -719,24 +727,32 @@ class SwapSessions:
 
     # --- the task ------------------------------------------------------------------------------
 
-    async def run(self, context: JobContext) -> None:
-        """The session, held for its life. The device key is opened here and dropped at the end."""
+    async def task(self, context: JobContext) -> None:
+        """The session's task: failed in the swap's own words when the swap did not happen or did
+        not finish, done when it finished or a person ended it."""
+        reason = await self.run(context)
+        if reason in FAILED_WORDS:
+            raise JobFailedPermanently(FAILED_WORDS[reason])
+
+    async def run(self, context: JobContext) -> str | None:
+        """The session, held for its life. The device key is opened here and dropped at the end.
+        The reason it ended with, or None when it had ended before the task ran."""
         session_id = context.require_str("session_id", "a swap task needs its session's id")
         row = await self.store.get(session_id)
         if row is None or not row.live:
-            return
+            return None
         live = self._live.get(session_id)
         if live is None:
             # Nothing in memory: this device restarted since the press, and the token's secret
             # went with it. The session cannot be carried on.
             await self.store.end(session_id, state="failed", reason=LOST, now=self.now())
-            return
+            return LOST
         try:
             device = await device_of(self.store, self.secrets, await context.master_key())
         except DeviceLocked:
             log.info("swap.device_locked", swap=live.short_id)
             await live.end(LOST, tell=False)
-            return
+            return live.reason
         live.attach(device, context)
         await live.say(WAITING_NOTE)
         await self.sweep_manifests()
@@ -756,6 +772,7 @@ class SwapSessions:
         if live.reason is None:
             await live.end(LOST, tell=False)
         await live.finished.wait()
+        return live.reason
 
     async def on_settled(self, job_id: str) -> None:
         """A session task settled. One that never ran (cancelled while it waited for a worker),
@@ -798,5 +815,5 @@ SESSIONS: Part[SwapSessions] = Part("swap_sessions")
 def register_handlers(sessions: SwapSessions) -> None:
     """The session task. Family `OTHER` with a place among Activity's housekeeping (`Swaps`,
     `kernel/jobs/families.py`), like a download: it is not a pass over the library."""
-    register_handler(SWAP_SESSION, sessions.run, name="Swapping with another Sift")
+    register_handler(SWAP_SESSION, sessions.task, name="Swapping with another Sift")
     estimate_itself(SWAP_SESSION, sessions.time_left)

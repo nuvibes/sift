@@ -20,11 +20,17 @@ reader taking its place again for every block (a swap's whole-file digest) would
 back each time before anybody it woke has run, and two of them would hold both places of a
 two-place share for the whole of their files.
 
-**Three kinds of reader, and every fourth place to the kinds below.** A reader that asked to go
-first (`first()`: a scan's walk, a swap somebody is watching) is handed a place before a file's
-read (`the_read()`: a probe), and that before everything else (a picture, a fingerprint). Strictly
-so, the rest would wait out a whole import; so of the places handed on while a lower kind also
-waits, every `ORDINARY_TURN`th goes to the lower kinds, by the same rule.
+**Four kinds of reader, and every fourth place to the kinds below.** A scan somebody or the
+watcher asked for (`ahead_of_passes()`: a move, a rename, a pressed folder) is handed a place before
+a reader that asked to go first (`first()`: a whole walk's reads, a swap somebody is watching), that
+before a file's read (`the_read()`: a probe), and that before everything else (a picture, a
+fingerprint). Strictly so, the rest would wait out a whole import; so of the places handed on while
+a lower kind also waits, every `ORDINARY_TURN`th goes to the lower kinds, by the same rule.
+
+**What a storage gives is recorded as it is read**: the bytes each read says it took
+(`note_read`) over the time the lane had a reader in it, per minute for the last
+`ACHIEVED_MINUTES`, so the screen can set what a share delivers against what it measured. While
+anybody waits, each lane says once a minute who holds its places and who waits (`lanes.state`).
 """
 
 from __future__ import annotations
@@ -64,7 +70,13 @@ ORDINARY_TURN = 4
 READS_FIRST = False
 
 #: The kinds of reader, lowest first.
-ORDINARY, READ, FIRST = 0, 1, 2
+ORDINARY, READ, FIRST, ASKED = 0, 1, 2, 3
+
+#: How often a lane with somebody waiting says so, in seconds.
+REPORT_SECONDS = 60.0
+
+#: How many whole minutes of reading the achieved rate is taken over.
+ACHIEVED_MINUTES = 10
 
 
 @functools.lru_cache(maxsize=4096)
@@ -99,15 +111,23 @@ class Lane:
     ordinary_wait: float = 0.0
     #: When a file's read last took a place here (`time.monotonic`), or None.
     read_at: float | None = None
-    #: Who is waiting, oldest first, by kind (`ORDINARY`, `READ`, `FIRST`).
+    #: Who is waiting, oldest first, by kind (`ORDINARY`, `READ`, `FIRST`, `ASKED`).
     _waiters: tuple[deque[asyncio.Future[None]], ...] = field(
-        default_factory=lambda: (deque(), deque(), deque())
+        default_factory=lambda: (deque(), deque(), deque(), deque())
     )
     #: The reads holding a place for a whole file start to end (`whole_file`), and who waits to.
     whole: int = 0
     _whole_waiters: deque[asyncio.Future[None]] = field(default_factory=deque)
     #: How many places were handed on while a lower kind also waited, by kind. See `_next`.
-    _contested: list[int] = field(default_factory=lambda: [0, 0, 0])
+    _contested: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    #: Bytes read here since Sift started, by what the reads said (`note_read`).
+    bytes_read: int = 0
+    #: Per minute of the clock (`time.monotonic() // 60`): bytes read and seconds with a reader in.
+    _minutes: dict[float, list[float]] = field(default_factory=dict)
+    #: Since when a reader has held a place (`time.monotonic`), or None while nobody does.
+    _busy_since: float | None = None
+    #: The pending once-a-minute report while somebody waits, or None.
+    _report: asyncio.TimerHandle | None = None
 
     @property
     def capped(self) -> bool:
@@ -128,13 +148,13 @@ class Lane:
                 return
             if waiter.done():
                 continue
-            self.active += 1
+            self._occupy()
             waiter.set_result(None)
 
     def _next(self) -> asyncio.Future[None] | None:
         """The oldest waiter of the highest kind waiting, except every `ORDINARY_TURN`th place
         handed on while a lower kind also waits, which goes to the lower kinds by the same rule."""
-        ranks = [rank for rank in (FIRST, READ, ORDINARY) if self._waiters[rank]]
+        ranks = [rank for rank in (ASKED, FIRST, READ, ORDINARY) if self._waiters[rank]]
         for at, rank in enumerate(ranks):
             if at + 1 < len(ranks):
                 self._contested[rank] += 1
@@ -147,12 +167,15 @@ class Lane:
         """Take a place, queueing for one when none is free. How long it waited, or None when it
         did not wait at all."""
         if self._free_for(rank):
-            self.active += 1
+            self._occupy()
             return None
         began = time.monotonic()
-        waiter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
         queue = self._waiters[rank]
         queue.append(waiter)
+        if self._report is None:
+            self._report = loop.call_later(REPORT_SECONDS, self._say_state)
         self.waiting += 1
         self.waits += 1
         urgent = rank > ORDINARY
@@ -162,7 +185,7 @@ class Lane:
         except BaseException:
             if waiter.done() and not waiter.cancelled():
                 # Handed a place in the same moment it was given up: the place goes on.
-                self.active -= 1
+                self._vacate()
                 self.hand_on()
             else:
                 with contextlib.suppress(ValueError):
@@ -174,8 +197,83 @@ class Lane:
         return time.monotonic() - began
 
     def give_back(self) -> None:
-        self.active -= 1
+        self._vacate()
         self.hand_on()
+
+    def _occupy(self) -> None:
+        if self.active == 0:
+            self._busy_since = time.monotonic()
+        self.active += 1
+
+    def _vacate(self) -> None:
+        self.active -= 1
+        if self.active == 0 and self._busy_since is not None:
+            self._count(busy=self._busy_since)
+            self._busy_since = None
+
+    def _minute(self, minute: float) -> list[float]:
+        """That minute's [bytes, busy seconds]."""
+        return self._minutes.setdefault(minute, [0.0, 0.0])
+
+    @staticmethod
+    def _window_start(now: float) -> float:
+        return (now // 60 - ACHIEVED_MINUTES + 1) * 60
+
+    def _count(self, *, busy: float | None = None, nbytes: int = 0) -> None:
+        """Add bytes read, or the reading time since `busy`, to the minutes they fell in; minutes
+        older than the window are let go."""
+        now = time.monotonic()
+        start = self._window_start(now)
+        for old in [minute for minute in self._minutes if minute * 60 < start]:
+            del self._minutes[old]
+        if busy is not None:
+            # Split at each minute's end, so a long read lands in the minutes it took.
+            at = max(busy, start)
+            while at < now:
+                upto = min(now, (at // 60 + 1) * 60)
+                self._minute(at // 60)[1] += upto - at
+                at = upto
+        if nbytes:
+            self.bytes_read += nbytes
+            self._minute(now // 60)[0] += nbytes
+
+    def note_read(self, nbytes: int) -> None:
+        self._count(nbytes=nbytes)
+
+    @property
+    def achieved_megabytes_per_second(self) -> float | None:
+        """Bytes over the seconds a reader was in the lane, over the last minutes; None before a
+        second of reading, which is too little to say anything by."""
+        now = time.monotonic()
+        start = self._window_start(now)
+        kept = [one for minute, one in self._minutes.items() if minute * 60 >= start]
+        busy = sum(one[1] for one in kept)
+        if self._busy_since is not None:
+            busy += now - max(self._busy_since, start)
+        if busy < 1.0:
+            return None
+        return sum(one[0] for one in kept) / busy / 1_000_000
+
+    def _say_state(self) -> None:
+        """Once a minute while anybody waits: the places, who waits by kind, what was given."""
+        self._report = None
+        if not self.waiting:
+            return
+        achieved = self.achieved_megabytes_per_second
+        log.info(
+            "lanes.state",
+            storage=self.storage.key,
+            limit=self.limit,
+            active=self.active,
+            waiting=self.waiting,
+            asked=len(self._waiters[ASKED]),
+            first=len(self._waiters[FIRST]),
+            read=len(self._waiters[READ]),
+            ordinary=len(self._waiters[ORDINARY]),
+            worst_wait_seconds=round(self.worst_wait, 3),
+            achieved_mb_per_second=None if achieved is None else round(achieved, 2),
+        )
+        self._report = asyncio.get_running_loop().call_later(REPORT_SECONDS, self._say_state)
 
     @property
     def whole_limit(self) -> int:
@@ -213,6 +311,7 @@ class Lane:
         self.hand_on_whole()
 
     def as_dict(self) -> dict[str, object]:
+        achieved = self.achieved_megabytes_per_second
         return {
             "remote": self.storage.remote,
             "limit": self.limit or None,
@@ -222,6 +321,8 @@ class Lane:
             "worst_wait_seconds": round(self.worst_wait, 3),
             "urgent_wait_seconds": round(self.urgent_wait, 3),
             "ordinary_wait_seconds": round(self.ordinary_wait, 3),
+            "bytes_read": self.bytes_read,
+            "achieved_mb_per_second": None if achieved is None else round(achieved, 2),
         }
 
 
@@ -314,10 +415,16 @@ class StorageLanes:
                 log.info(
                     "lanes.waited", storage=lane.storage.key, seconds=round(waited, 3), first=urgent
                 )
+        held = _HOLDING.set(_HOLDING.get() | {lane.storage.key})
         try:
             yield
         finally:
+            _HOLDING.reset(held)
             lane.give_back()
+
+    def note_read(self, path: Path, nbytes: int) -> None:
+        """`nbytes` were read from `path`'s storage, for what it is achieving."""
+        self.lane_for(path).note_read(nbytes)
 
     def readings(self) -> dict[str, dict[str, object]]:
         """Every lane's figures, for /health and the Performance screen."""
@@ -337,6 +444,9 @@ _LANES: StorageLanes | None = None
 #: by `reading()`; a context variable so it follows a job through every helper it calls.
 _RANK: ContextVar[int] = ContextVar("lanes_rank", default=ORDINARY)
 
+#: The capped storages this task holds a place in right now, by key: what a gate asks of a read.
+_HOLDING: ContextVar[frozenset[str]] = ContextVar("lanes_holding", default=frozenset())
+
 #: How many files one reader keeps open on a local disk nobody has measured: enough to keep an
 #: NVMe busy without turning a spinning disk into a seek storm.
 LOCAL_READS_AT_A_TIME = 4
@@ -345,12 +455,25 @@ LOCAL_READS_AT_A_TIME = 4
 @asynccontextmanager
 async def first() -> AsyncIterator[None]:
     """Every read made under this goes to the front of its storage's lane: a scan's walk, so its
-    files are taken in ahead of their probes, and a swap somebody is watching."""
+    files are taken in ahead of their probes, and a swap somebody is watching. Never below a kind
+    already asked for (`ahead_of_passes`)."""
+    if _RANK.get() >= FIRST:
+        yield
+        return
     token = _RANK.set(FIRST)
     try:
         yield
     finally:
         _RANK.reset(token)
+
+
+def ahead_of_passes(asked: bool = True) -> None:
+    """When `asked`, every read for the rest of the calling task goes ahead of a whole walk's
+    (`first`): a scan somebody or the watcher asked for, of a moved folder or a named file, would
+    otherwise wait out every read a walk of the same share has queued. A job runs in a task of its
+    own, so this ends with the job."""
+    if asked:
+        _RANK.set(ASKED)
 
 
 @asynccontextmanager
@@ -371,6 +494,23 @@ def reads_at_once(path: Path) -> int:
     """How many files a reader of `path`'s storage keeps open; one where no lanes are installed."""
     lanes = _LANES
     return 1 if lanes is None else lanes.reads_at_once(path)
+
+
+def note_read(path: Path, nbytes: int) -> None:
+    """`nbytes` were read from `path`'s storage: what the lane records as achieved. Nothing where no
+    lanes are installed."""
+    lanes = _LANES
+    if lanes is not None:
+        lanes.note_read(path, nbytes)
+
+
+def holding(path: Path) -> bool:
+    """Whether this task holds a place in `path`'s storage lane now, or that storage has no cap."""
+    lanes = _LANES
+    if lanes is None:
+        return True
+    lane = lanes.lane_for(path)
+    return not lane.capped or lane.storage.key in _HOLDING.get()
 
 
 def install(lanes: StorageLanes | None) -> None:

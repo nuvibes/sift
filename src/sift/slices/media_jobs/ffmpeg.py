@@ -59,6 +59,7 @@ __all__ = [
     "run",
     "run_json",
     "sprite_grid",
+    "still_and_frame_args",
     "still_args",
     "strip_places",
     "thumbnail_args",
@@ -504,6 +505,24 @@ def thumbnail_args(
         quality=tuning.THUMBNAIL_QUALITY,
         settings=settings,
     )
+
+
+def still_and_frame_args(
+    source: Path,
+    destination: Path,
+    *,
+    frame: Path,
+    frame_filters: str,
+    pixel_format: str,
+    settings: Settings,
+) -> list[str]:
+    """A still's tile and one raw frame of it from one decode: `thumbnail_args` at the first frame,
+    with the raw frame written to `frame` first, so the tile stays the last argument `_render`
+    stages."""
+    tile = thumbnail_args(source, destination, timestamp_ms=0, settings=settings)
+    at = tile.index("-frames:v")
+    raw = ["-frames:v", "1", "-vf", frame_filters, "-pix_fmt", pixel_format, "-f", "rawvideo"]
+    return [*tile[:at], *raw, str(frame), *tile[at:]]
 
 
 def preview_args(

@@ -1028,6 +1028,70 @@ async def test_a_session_whose_drive_fails_or_stops_without_an_end_is_lost(
 
 @pytest.mark.integration
 @pytest.mark.skipif(not lock.PSK_AVAILABLE, reason="TLS with a key needs CPython 3.13")
+@pytest.mark.parametrize(
+    "reason",
+    [
+        swap.LOST,
+        swap.EXPIRED,
+        swap.REFUSED,
+        swap.DISK_FULL,
+        swap.REASON_DONE,
+        swap.ENDED_BY_YOU,
+        swap.ENDED_BY_THEM,
+    ],
+)
+async def test_a_swap_that_failed_fails_its_task_in_its_own_words_and_one_that_finished_does_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    from sift.kernel.jobs import JobFailedPermanently
+
+    database = await _database(tmp_path / "s.sqlite3")
+    sessions = _sessions(database, tmp_path)
+    try:
+        started = await _start_host(sessions)
+        live = sessions.live(started.session_id)
+        assert live is not None
+
+        async def drive() -> None:
+            await live.end(reason, tell=False)
+
+        monkeypatch.setattr(live, "drive", drive)
+        context = _Context(started.session_id, tmp_path / "ws")
+
+        if reason in (swap.REASON_DONE, swap.ENDED_BY_YOU, swap.ENDED_BY_THEM):
+            await sessions.task(context)  # type: ignore[arg-type]
+        else:
+            with pytest.raises(JobFailedPermanently) as failed:
+                await sessions.task(context)  # type: ignore[arg-type]
+            assert str(failed.value) == swap.FAILED_WORDS[reason]
+
+        row = await sessions.row(started.session_id)
+        assert row is not None and row.end_reason == reason
+    finally:
+        await database.close()
+
+
+@pytest.mark.integration
+async def test_a_task_for_a_swap_lost_to_a_restart_fails_and_one_already_over_does_not(
+    tmp_path: Path,
+) -> None:
+    from sift.kernel.jobs import JobFailedPermanently
+
+    database = await _database(tmp_path / "s.sqlite3")
+    sessions = _sessions(database, tmp_path)
+    try:
+        await sessions.task(_Context("01HNOSUCHSESSION000000001", tmp_path / "ws"))  # type: ignore[arg-type]
+        await sessions.store.create(
+            "01HRESTARTEDTASK000000001", role="host", started_at=1, started_by=VIEWER
+        )
+        with pytest.raises(JobFailedPermanently, match="lost"):
+            await sessions.task(_Context("01HRESTARTEDTASK000000001", tmp_path / "ws"))  # type: ignore[arg-type]
+    finally:
+        await database.close()
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not lock.PSK_AVAILABLE, reason="TLS with a key needs CPython 3.13")
 async def test_a_task_cancelled_on_activity_ends_the_session_as_this_sides_doing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1190,11 +1254,11 @@ def test_the_session_task_is_registered_under_its_name() -> None:
     from sift.kernel.jobs.worker_pool import registered_handlers
 
     sessions: Any = SimpleNamespace(
-        run=lambda _context: None, time_left=lambda: OwnEstimate(seconds=7)
+        task=lambda _context: None, time_left=lambda: OwnEstimate(seconds=7)
     )
     swap.register_handlers(sessions)
 
-    assert registered_handlers()[swap.SWAP_SESSION] is sessions.run
+    assert registered_handlers()[swap.SWAP_SESSION] is sessions.task
     assert registered_job_names()[swap.SWAP_SESSION] == "Swapping with another Sift"
     assert own_estimate(swap.SWAP_SESSION) == OwnEstimate(seconds=7), "Activity asks the swaps"
 

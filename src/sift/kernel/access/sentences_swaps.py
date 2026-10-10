@@ -34,13 +34,13 @@ SWAP_ENDED: Mapping[str, str] = {
     "lost": "{swap} lost the connection {after}",
     # The code is compared before anything is offered, so nothing crosses on a refusal.
     "refused": "{swap} ended with nothing sent: the codes didn't match",
-    # The token named one device and another answered. No code was compared, so this is not a
-    # refusal; it is a stranger, and the line says so.
+    # Another device answered the token: no code was compared, so this is not a refusal.
     "wrong device": "{swap} ended with nothing sent: a different device answered",
-    # The host's token ran out with nobody joining, and the guest's had been used already. Nothing
-    # was connected in either case, so neither is a connection lost.
+    # The host's token ran out, or the guest's was used: nothing connected, so nothing was lost.
     "expired": "{swap} ended with nothing sent: nobody joined in time",
     "used": "{swap} ended with nothing sent: that swap had been joined already",
+    # A write on the receiving side found no room: the swap ends rather than dialling again.
+    "disk full": "{swap} stopped: this device ran out of disk space",
     # A swap that sends and receives, and the other device's Sift cannot send back.
     "older": "{swap} ended with nothing sent: their Sift can't send files back",
 }
@@ -53,15 +53,13 @@ def _files_moved(payload: Mapping[str, object]) -> int | None:
 
 
 def _files_back(payload: Mapping[str, object]) -> int | None:
-    """How many files crossed the other way, in a swap that sends and receives. None for a swap
-    that goes one way: its payload carries no such count."""
+    """How many files crossed back in a swap that sends and receives; None for a one-way swap."""
     count = payload.get("back")
     return count if isinstance(count, int) and not isinstance(count, bool) else None
 
 
 def _both_ways(sent: int | None, received: int | None) -> str:
-    """What a swap that sends and receives moved, from this side: "38 files sent and 4 received",
-    "nothing sent and 4 files received", "nothing sent or received"."""
+    """What a swap that sends and receives moved, from this side: "38 files sent and 4 received"."""
     if not sent and not received:
         return "nothing sent or received"
     if not sent:

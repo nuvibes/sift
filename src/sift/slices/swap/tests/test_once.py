@@ -18,7 +18,7 @@ from blake3 import blake3
 
 from sift.slices.swap import guest as guest_side
 from sift.slices.swap import host as host_side
-from sift.slices.swap import pieces, transfer
+from sift.slices.swap import pieces, receiving, transfer
 from sift.slices.swap import session as swap
 from sift.slices.swap.models import Diff, Offer, OfferedFile, OfferScreen
 from sift.slices.swap.session import Chunk, Taken, hello
@@ -366,10 +366,12 @@ async def test_a_guest_lands_a_file_only_when_the_pieces_digest_matches(
 @pytest.mark.integration
 @_needs_psk
 async def test_a_guest_resumes_by_version_across_a_cut(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The chunks a guest holds are kept by the sender's version of the file: a stream that comes
     back with the same version is told what the guest has, and the whole is still checked."""
+    # Every chunk written down as it is verified, so the manifest can be read after two.
+    monkeypatch.setattr(receiving, "RECORD_EVERY", 1)
     async with _guest_rig(tmp_path, {"a": _DATA}, retry_seconds=0.1) as rig:
         control = await rig.connected()
         await rig.offer_to(control)
@@ -433,7 +435,7 @@ async def test_an_earlier_swaps_chunks_are_adopted_by_the_same_version_alone(
             now=1,
             version="v" * 64,
         )
-        await store.mark_done("01HONCESESSION00000000001", "a", 0, 2)
+        await store.record_done("01HONCESESSION00000000001", "a", [0], 2)
 
         def adoptable(**named: str | None) -> Any:
             return store.adoptable(

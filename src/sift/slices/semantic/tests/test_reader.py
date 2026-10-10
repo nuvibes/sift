@@ -75,6 +75,31 @@ async def test_a_still_is_read_once_at_its_only_moment(
     assert len(decoder.argvs) == 1
 
 
+async def test_a_still_the_task_decoded_once_is_not_decoded_again(
+    settings: Settings, decoder: Decoder
+) -> None:
+    """The square a task's one decode prepared is the picture, and nothing is launched."""
+    from sift.kernel.ml import pictures
+
+    path = Path("still.jpg")
+    ready = media.PreparedFrames()
+    ready.put_raw(
+        path,
+        media.RawFrames(
+            moments=(pictures.STILL,),
+            filters=semantic_frames.FRAME_FILTER,
+            pixel_format=semantic_frames.FRAME_PIXELS,
+            frame_bytes=STRIDE,
+        ),
+        [one_picture(7)],
+    )
+    with media.prepared(ready):
+        moments = await Reader(settings).read(path, media_type="image", duration_ms=0)
+
+    assert decoder.argvs == []
+    assert len(moments) == 1 and int(moments[0].pixels[0, 0, 0]) == 7
+
+
 async def test_a_video_is_read_at_every_moment_of_the_ladder(
     settings: Settings, decoder: Decoder
 ) -> None:

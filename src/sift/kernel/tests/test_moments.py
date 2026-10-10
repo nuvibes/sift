@@ -94,11 +94,13 @@ UHD = media.Picture(width=3840, height=2160, bytes_per_pixel=1.5)
 
 def test_every_input_gets_the_thread_share_and_not_only_the_first(settings: Settings) -> None:
     """An input option reaches the one input after it. With the share written once, before the
-    first input, every other decoder started a thread and a picture in flight per processor."""
+    first input, every other decoder started a thread and a picture in flight per processor. A
+    seeked input has `SEEK_THREADS`, however many the tool may use: the inputs decode side by
+    side."""
     argv = media.raw_stream_args(
         SOURCE, _moments(3), filters="scale=32:32", pixel_format="gray", settings=settings
     )
-    share = str(media.background_threads(settings))
+    share = str(media.SEEK_THREADS)
     inputs = [i for i, one in enumerate(argv) if one == "-i"]
     assert len(inputs) == 3
     for at in inputs:
@@ -217,8 +219,7 @@ async def test_a_read_is_cut_into_chunks_that_fit_the_memory_planned_for_it(
     async def four_k(*_args: object, **_kwargs: object) -> media.Picture:
         return UHD
 
-    threads = media.background_threads(settings)
-    room = 3 * media.input_bytes(UHD, threads=threads) + 1
+    room = 3 * media.input_bytes(UHD, threads=media.SEEK_THREADS) + 1
     monkeypatch.setattr(media, "picture_of", four_k)
     monkeypatch.setattr("sift.kernel.subprocess.planned_memory", lambda _at_once: room)
 
@@ -963,11 +964,23 @@ def test_a_share_whose_throughput_was_never_measured_charges_only_its_seeks() ->
     )
 
 
-def test_local_rates_do_not_move_the_rule() -> None:
-    """Both sides decode the same pictures, so how fast this machine decodes cancels out."""
-    for rates in (None, _rates(decode_fps=50.0, seek=5.0), _rates(decode_fps=5000.0, seek=0.001)):
-        assert _shape(seconds=2749, fps=1, rates=rates) is media.ReadShape.DECODE_ONCE
-        assert _shape(seconds=2750, fps=1, rates=rates) is media.ReadShape.SEEK
+def test_measured_rates_price_both_sides_in_seconds_on_a_local_disk() -> None:
+    """A machine's own decode rate and seek time decide, not a frame count: a 208 s 1080p H.264
+    file whose strip and fingerprints ask 124 moments decodes in 4,990 frames, which the table
+    prices below 124 seeks (6,200 frames), while seeking it is 3.4 times quicker. At that
+    machine's own rates (568 frames a second, 36.7 ms a seek, at 720p) it seeks; a
+    ten second clip asking 75 moments is decoded once either way."""
+    measured = _rates(decode_fps=568.4, seek=0.0367)
+    assert _shape(moments=124, seconds=208.128, fps=23.976) is media.ReadShape.DECODE_ONCE
+    assert _shape(moments=124, seconds=208.128, fps=23.976, rates=measured) is media.ReadShape.SEEK
+    assert (
+        _shape(moments=75, seconds=9.976, fps=29.97, rates=measured) is media.ReadShape.DECODE_ONCE
+    )
+    # A codec that seeks dearer is priced so: HEVC's seek is 115 / 50 of H.264's.
+    assert (
+        _shape(moments=124, seconds=208.128, fps=23.976, codec="hevc", rates=measured)
+        is media.ReadShape.DECODE_ONCE
+    )
 
 
 def test_a_file_with_no_timeline_or_no_moments_seeks() -> None:
@@ -1287,3 +1300,54 @@ async def test_a_timed_file_with_nothing_selectable_launches_nothing(
     )
     assert prepared.count == 0
     assert not (workspace / "graph.txt").exists()
+
+
+@pytest.mark.integration
+async def test_the_tiles_stills_are_served_from_one_decode_byte_for_byte(
+    clip: Path, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`moments_to_stills` inside prepared frames launches nothing and hands back the stills and
+    grey levels the seeks cut, byte for byte."""
+    moments = [Moment(seek=())] + [Moment(seek=("-ss", f"{i * 1.3:.3f}")) for i in range(1, 9)]
+    still = media.FrameFiles(
+        moments=tuple(moments),
+        filters="scale=-2:min(480\\,ih)",
+        suffix=media.STILL_SUFFIX,
+        output=("-q:v", "5"),
+    )
+    levels = media.RawFrames(
+        moments=tuple(moments),
+        filters="scale=16:16:flags=area,format=gray",
+        pixel_format=media.STILL_LEVEL_FORMAT,
+        frame_bytes=256,
+    )
+    workspace = tmp_path / "once"
+    workspace.mkdir()
+    prepared = await media.decode_once(
+        clip, [still, levels], workspace=workspace, settings=settings, time_limit=120
+    )
+
+    def cut(into: Path) -> object:
+        into.mkdir()
+        return media.moments_to_stills(
+            clip,
+            moments,
+            into=into,
+            still_filters=still.filters,
+            still_output=still.output,
+            level_filters=levels.filters,
+            level_bytes=levels.frame_bytes,
+            settings=settings,
+            time_limit=120,
+        )
+
+    seeked = await cut(tmp_path / "seeked")  # type: ignore[misc]
+    launched: list[object] = []
+    monkeypatch.setattr(media, "run", lambda *a, **k: launched.append(a))
+    with media.prepared(prepared):
+        served = await cut(tmp_path / "served")  # type: ignore[misc]
+    assert launched == []
+    assert all(one is not None for one in seeked)
+    assert [(one.still.read_bytes(), one.levels) for one in served] == [
+        (one.still.read_bytes(), one.levels) for one in seeked
+    ]

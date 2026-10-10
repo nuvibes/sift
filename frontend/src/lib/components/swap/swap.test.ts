@@ -180,6 +180,9 @@ describe('the words around a swap', () => {
 		expect(endedWords(session({ state: 'ended', end_reason: 'wrong device' }))).toBe(
 			'A different device answered the token, so nothing was sent.'
 		);
+		expect(endedWords(session({ state: 'failed', end_reason: 'disk full' }))).toBe(
+			'The swap stopped: this device ran out of disk space. Free some space, then swap again.'
+		);
 	});
 
 	it('groups a device id in fours', () => {

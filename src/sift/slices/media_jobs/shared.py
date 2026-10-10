@@ -13,6 +13,7 @@ from sift.kernel.content import Asset, DerivativeKind, VerdictProduct
 from sift.kernel.content.identity import made_for
 from sift.kernel.ingress import TRANSIENT_REASONS, Reason
 from sift.kernel.jobs import JobContext, JobFailedPermanently
+from sift.kernel.jobs.retrying import WaitingForSpace, is_disk_full
 from sift.kernel.media import FFmpegError
 from sift.slices.media_jobs import ffmpeg
 
@@ -100,6 +101,8 @@ async def _render(argv: list[str], destination: Path, *, reads: Path | None = No
     staging = destination.with_name(f".{destination.stem}.partial{destination.suffix}")
     argv = [*argv[:-1], str(staging)]
     await asyncio.to_thread(destination.parent.mkdir, parents=True, exist_ok=True)
+    if await asyncio.to_thread(_free_bytes, destination.parent) < ROOM_FLOOR:
+        raise WaitingForSpace(_NO_ROOM)
     try:
         await ffmpeg.run(argv, reads=reads)
         # ffmpeg can exit 0 having written nothing: a seek past the end of a file whose duration
@@ -111,8 +114,27 @@ async def _render(argv: list[str], destination: Path, *, reads: Path | None = No
                 "the kind of media it claims to be"
             )
         await asyncio.to_thread(shutil.move, staging, destination)
+    except (OSError, FFmpegError) as error:
+        if is_disk_full(error):
+            raise WaitingForSpace(_NO_ROOM) from error
+        raise
     finally:
         await asyncio.to_thread(staging.unlink, True)
+
+
+#: The free space a picture is not written below: the database shares the disk and must keep room
+#: to write, and a preview or a repackaged video can take hundreds of megabytes.
+ROOM_FLOOR = 1024**3
+
+_NO_ROOM = (
+    "Waiting for space: the disk Sift keeps its pictures on has less than 1 GB free. "
+    "Free some space and it carries on."
+)
+
+
+def _free_bytes(folder: Path) -> int:
+    """Bytes free on the disk `folder` is on; blocking."""
+    return shutil.disk_usage(folder).free
 
 
 async def _size_of(path: Path) -> int:

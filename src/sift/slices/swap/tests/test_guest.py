@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import os
 import threading
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -434,7 +436,7 @@ async def test_a_file_an_earlier_swap_with_the_same_host_left_half_done_resumes_
             staged_path=str(staged),
             now=now,
         )
-        await store.mark_done(earlier, "a", 0, now)
+        await store.record_done(earlier, "a", [0], now)
         rig.task = asyncio.create_task(rig.sessions.run(rig.context))  # type: ignore[arg-type]
         control = await rig.connected()
         await rig.offer_to(control)
@@ -794,7 +796,7 @@ async def test_a_files_map_a_stopped_stream_left_in_this_session_is_taken_up_by_
             staged_path=str(staged),
             now=now,
         )
-        await store.mark_done(rig.id, "a", 0, now)
+        await store.record_done(rig.id, "a", [0], now)
 
         await stream.send(_header(0, whole))
 
@@ -901,19 +903,20 @@ async def test_a_file_failed_on_another_stream_while_this_share_was_recorded_is_
     """The share's last chunk is in, and the file failed elsewhere meanwhile: the share ends with
     the file turned down, not with a word that it is done."""
     monkeypatch.setattr(receiving_side, "MAX_RETRIES", 0)
+    monkeypatch.setattr(receiving_side, "RECORD_EVERY", 1)
     data = os.urandom(CHUNK_SIZE + 5)
     async with _guest_rig(tmp_path, {"a": data, "b": _ANOTHER}) as rig:
         store = rig.sessions.store
         recording, release = asyncio.Event(), asyncio.Event()
-        real = store.mark_done
+        real = store.record_done
 
-        async def held(session_id: str, key: str, index: int, now: int) -> None:
-            if index == 0:
+        async def held(session_id: str, key: str, done: Any, now: int) -> None:
+            if list(done) == [0]:
                 recording.set()
                 await release.wait()
-            await real(session_id, key, index, now)
+            await real(session_id, key, done, now)
 
-        monkeypatch.setattr(store, "mark_done", held)
+        monkeypatch.setattr(store, "record_done", held)
         one, two = await _two_shares(rig, data)
         await one.send_chunk(0, 0, data[:CHUNK_SIZE])
         await asyncio.wait_for(recording.wait(), 5)
@@ -967,3 +970,113 @@ async def test_a_chunk_two_streams_wrote_at_the_same_time_is_counted_once(
             ends.add(next(iter(said)))
         assert ends == {"file_done", "share_done"}
         assert live.moved_bytes == len(data)
+
+
+# --- a full disk, and a failure that repeats --------------------------------------------------------
+
+
+class _WindowsDiskFull(OSError):
+    """What Windows raises for a full disk: its own code beside the errno."""
+
+    winerror = 112
+
+
+@pytest.mark.integration
+@_needs_psk
+@pytest.mark.parametrize(
+    "full",
+    [OSError(errno.ENOSPC, "No space left on device"), _WindowsDiskFull(0, "The disk is full")],
+    ids=["errno", "winerror"],
+)
+async def test_a_full_disk_ends_the_swap_in_its_own_words_and_dials_no_more(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, full: OSError
+) -> None:
+    def write(path: Path, index: int, data: bytes, *rest: Any) -> None:
+        raise full
+
+    monkeypatch.setattr(transfer, "write_chunk", write)
+    data = b"a small file"
+    async with _guest_rig(tmp_path, {"a": data}) as rig:
+        control = await rig.connected()
+        await rig.offer_to(control)
+        await rig.take(control)
+        _first, number = await rig.stream()
+        stream: swap.Conn | None = _first
+        dials = 0
+
+        async def answer_every_dial() -> None:
+            nonlocal dials, stream
+            while True:
+                if stream is None:
+                    stream, _ = await rig.stream(number)
+                dials += 1
+                with suppress(Exception):
+                    await stream.send(_header(0, data))
+                    await stream.read(5)
+                    await stream.send_chunk(0, 0, data)
+                stream = None
+
+        host = asyncio.create_task(answer_every_dial())
+        began = asyncio.get_running_loop().time()
+        try:
+            row = await rig.ended()
+        except TimeoutError:
+            seconds = asyncio.get_running_loop().time() - began
+            raise AssertionError(f"{dials} dials in {seconds:.1f} s and still dialling") from None
+        finally:
+            host.cancel()
+
+        assert (row.state, row.end_reason) == ("failed", swap.DISK_FULL)
+        assert dials == 1, "nothing is dialled again on a full disk"
+        assert "disk space" in swap.FAILED_WORDS[swap.DISK_FULL]
+
+
+@pytest.mark.integration
+@_needs_psk
+async def test_a_stream_that_fails_the_same_way_each_time_waits_longer_and_is_cut_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A connection whose first chunk fails has moved nothing: it does not start the count of
+    failures in a row again, and each dial after one waits longer than the last."""
+    paused: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        paused.append(seconds)
+        await asyncio.sleep(0)
+
+    def write(path: Path, index: int, data: bytes, *rest: Any) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(transfer, "write_chunk", write)
+    data = b"a small file"
+    async with _guest_rig(tmp_path, {"a": data}, sleep=sleep) as rig:
+        control = await rig.connected()
+        await rig.offer_to(control)
+        rig.live.ladder = Ladder(streams=1, climbing=False)
+        await rig.take(control)
+        dials = 0
+
+        async def answer_every_dial() -> None:
+            nonlocal dials
+            while True:
+                stream, _ = await rig.stream(0)
+                dials += 1
+                with suppress(Exception):
+                    await stream.send(_header(0, data))
+                    await stream.read(5)
+                    await stream.send_chunk(0, 0, data)
+
+        host = asyncio.create_task(answer_every_dial())
+        try:
+            await _until(lambda: rig.live.cut_at or dials > 3 * REDIAL_LIMIT, 5)
+        finally:
+            host.cancel()
+
+        assert rig.live.cut_at is not None, f"{dials} dials and never cut off"
+        assert dials == REDIAL_LIMIT
+        assert paused == [0.5, 1.0, 2.0, 4.0]
+
+
+@pytest.mark.unit
+def test_the_pause_before_a_dial_again_doubles_and_stops_growing() -> None:
+    assert [guest_side.redial_pause(n) for n in range(1, 8)] == [0.5, 1, 2, 4, 8, 8, 8]

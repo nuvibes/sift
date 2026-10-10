@@ -87,6 +87,8 @@ class Failure:
 #: Read from the tools' output: the response itself is gone by then.
 _STATUS = re.compile(
     r"\bHTTP Error (\d{3})\b|\b(\d{3}):? (?:Client|Server) Error\b|\bstatus[= ](\d{3})\b"
+    # gallery-dl's own: HttpError: '429 Too Many Requests' for '<address>'.
+    r"|\bHttpError: '(\d{3}) "
 )
 
 #: Tier 2 conditions that are not statuses; the flag is true only where the failure is
@@ -411,7 +413,7 @@ def _status(output: str) -> int | None:
     for group in found.groups():
         if group:
             return int(group)
-    return None  # pragma: no cover (a match always fills exactly one of the three groups)
+    return None  # pragma: no cover (a match always fills exactly one of the groups)
 
 
 def _status_words(status: int) -> str:

@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+import os
+import shutil
+import time
+from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from sift.kernel.archives import extract_member
+from sift.kernel import lanes
+from sift.kernel.archives import PART_SUFFIX, extract_member
 from sift.kernel.changes import announce_arrival
 from sift.kernel.content.identity_models import Carrier, Location, location_from_row
 from sift.kernel.content.identity_paths import _confine_to_root, check_rel_path
@@ -54,6 +58,31 @@ RETURNING *
 """
 
 _DELETE_LOCATION = "DELETE FROM asset_locations WHERE id = ? RETURNING id"
+
+#: Which of these assets still have work queued or running: their local copies are kept for it.
+_WORK_OWED = """
+SELECT DISTINCT json_extract(payload, '$.asset_id') AS asset_id
+  FROM jobs
+ WHERE state IN ('queued', 'running', 'blocked', 'paused')
+   AND json_extract(payload, '$.asset_id') IN (SELECT value FROM json_each(?))
+"""
+
+#: How long a copy handed to a reader is never dropped, in seconds: longer than any one job reads a
+#: file it resolved, so a copy cannot go between the resolve and the read.
+HANDED_OUT_SECONDS = 900.0
+
+#: How long one answer to "which copies have work owed" stands, in seconds: the question reads the
+#: queue, and a cache at its cap is asked it on every pull.
+OWED_ANSWER_SECONDS = 30.0
+
+#: How far over its budget a cache may grow to keep copies whose work is still owed, as a multiple
+#: of the budget, and never past a quarter of the disk's free space.
+OWED_CEILING_TIMES = 8
+OWED_CEILING_FREE_SHARE = 4
+
+#: Each local copy handed out, and when (`time.monotonic`): for the whole process, as every store
+#: of it reads the same cache.
+_HANDED_OUT: dict[Path, float] = {}
 
 _DELETE_LOCATIONS = "DELETE FROM asset_locations WHERE id IN (?*) RETURNING asset_id"
 
@@ -297,11 +326,18 @@ class Places(StoreCore):
     #: than a library of them.
     ARCHIVE_CACHE_BUDGET = 2 * 1024**3
 
+    #: Where a file read from a share at its take-in is kept for the passes after it, under the
+    #: cache: in flight, so a duplicate of the library leaves it out.
+    LOCAL_COPIES = Path("incoming") / "copies"
+
+    #: The local copies' cap for copies no work is owed, as the archives' is.
+    LOCAL_COPIES_BUDGET = 2 * 1024**3
+
     async def _materialised(self, location: Location) -> Path:
         """One picture pulled out of its archive into the cache, when a reader needs it: a cache,
         never an unpacking. Filed under the ASSET's id (minted per set of bytes), so a copy already
         there is correct. The archive is confined as every read is; `extract_member` re-proves the
-        member's name.
+        member's name. The pull is a read of the archive's storage, so it takes a place in its lane.
         """
         archive = await self.container_path_of(location)
         member = location.member_path or ""
@@ -309,48 +345,203 @@ class Places(StoreCore):
             self._settings.cache_dir / self.ARCHIVE_CACHE / location.asset_id / Path(member).name
         )
         if await asyncio.to_thread(destination.is_file):
-            return destination
-        await asyncio.to_thread(
-            extract_member, archive, member, destination, cache_dir=self._settings.cache_dir
-        )
+            return _handed_out(destination)
+        async with lanes.reading(archive):
+            written = await asyncio.to_thread(
+                extract_member, archive, member, destination, cache_dir=self._settings.cache_dir
+            )
+        lanes.note_read(archive, written)
+        _handed_out(destination)
         # Only after writing a NEW one: on every hit, a free read would become a directory walk.
-        await asyncio.to_thread(
-            _keep_under_budget,
-            self._settings.cache_dir / self.ARCHIVE_CACHE,
-            self.ARCHIVE_CACHE_BUDGET,
-            destination,
-        )
+        await self._keep(self.ARCHIVE_CACHE, self.ARCHIVE_CACHE_BUDGET, destination)
         return destination
 
+    async def local_copy(self, asset_id: str) -> Path | None:
+        """The copy of this asset kept in the cache, where one is: read from a share at its take-in,
+        or a picture already pulled out of its archive."""
+        cache = self._settings.cache_dir
+        folders = (cache / self.LOCAL_COPIES / asset_id, cache / self.ARCHIVE_CACHE / asset_id)
+        found = await asyncio.to_thread(_the_first_copy_in, folders)
+        return None if found is None else _handed_out(found)
 
-def _keep_under_budget(directory: Path, budget: int, keep: Path) -> None:
-    """Drop the least recently ACCESSED pictures until the directory fits its budget; blocking,
-    best-effort, and never `keep`, which a caller is about to open."""
+    async def keep_local_copy(
+        self, asset_id: str, scratch: Path, *, from_archive: bool = False
+    ) -> Path:
+        """File a copy just read from a share under its asset, for the passes after the take-in to
+        read instead of the share; the scratch file is gone either way. A picture out of an archive
+        goes where `_materialised` looks for it, so it is not pulled out again."""
+        folder, budget = (
+            (self.ARCHIVE_CACHE, self.ARCHIVE_CACHE_BUDGET)
+            if from_archive
+            else (self.LOCAL_COPIES, self.LOCAL_COPIES_BUDGET)
+        )
+        destination = self._settings.cache_dir / folder / asset_id / scratch.name
+        await asyncio.to_thread(_place_copy, scratch, destination)
+        _handed_out(destination)
+        await self._keep(folder, budget, destination)
+        return destination
+
+    #: The last answer to which assets have work owed: when, what was asked, and what was owed.
+    _owed_answer: tuple[float, frozenset[str], frozenset[str]] = (
+        float("-inf"),
+        frozenset(),
+        frozenset(),
+    )
+
+    async def _work_owed(self, asset_ids: Iterable[str]) -> frozenset[str]:
+        """Which of these assets still have work queued or running, asked of the queue at most once
+        per `OWED_ANSWER_SECONDS`; an asset the last answer was not asked about counts as owed."""
+        wanted = frozenset(asset_ids)
+        at, asked, owed = self._owed_answer
+        if time.monotonic() - at < OWED_ANSWER_SECONDS:
+            return owed | (wanted - asked)
+        rows = await self._db.fetch_all(_WORK_OWED, (json.dumps(sorted(wanted)),))
+        owed = frozenset(str(row["asset_id"]) for row in rows)
+        self._owed_answer = (time.monotonic(), wanted, owed)
+        return owed
+
+    async def _keep(self, folder: Path | str, budget: int, keep: Path) -> None:
+        """Hold a cache folder to its budget: never the copy just made, one handed out lately, or,
+        up to a ceiling, one whose asset still has work owed (`_drop`)."""
+        directory = self._settings.cache_dir / folder
+        held = await asyncio.to_thread(_cached, directory)
+        if sum(size for _, size, _ in held) <= budget:
+            return
+        owed = await self._work_owed(_asset_of(directory, path) for _, _, path in held)
+        ceiling = await asyncio.to_thread(_owed_ceiling, directory, budget)
+        dropped, owed_dropped = await asyncio.to_thread(
+            _drop, directory, held, budget, keep, owed=owed, ceiling=ceiling
+        )
+        if owed_dropped:
+            log.warning(
+                "content.cache_dropped_owed",
+                cache=str(folder),
+                dropped=dropped,
+                owed=owed_dropped,
+                ceiling_bytes=ceiling,
+            )
+
+
+#: How many notes of copies handed out are kept before the stale ones are let go.
+_HANDED_OUT_NOTES = 10_000
+
+
+def _handed_out(path: Path) -> Path:
+    _HANDED_OUT[path] = time.monotonic()
+    if len(_HANDED_OUT) > _HANDED_OUT_NOTES:
+        _lately_handed_out()
+    return path
+
+
+def _lately_handed_out() -> frozenset[Path]:
+    """The copies handed out within `HANDED_OUT_SECONDS`; older notes are let go."""
+    now = time.monotonic()
+    for path in [one for one, at in _HANDED_OUT.items() if now - at >= HANDED_OUT_SECONDS]:
+        del _HANDED_OUT[path]
+    return frozenset(_HANDED_OUT)
+
+
+def _the_copy_in(folder: Path) -> Path | None:
+    """The one whole file in an asset's copy folder, or None. Blocking."""
     try:
-        files = [path for path in directory.rglob("*") if path.is_file()]
+        for entry in os.scandir(folder):
+            if entry.is_file() and not entry.name.endswith(PART_SUFFIX):
+                return Path(entry.path)
+    except OSError:
+        return None
+    return None
+
+
+def _the_first_copy_in(folders: Sequence[Path]) -> Path | None:
+    return next((found for one in folders if (found := _the_copy_in(one)) is not None), None)
+
+
+def _place_copy(scratch: Path, destination: Path) -> None:
+    """Rename a scratch copy into its place; one already there is the same bytes, so it stays."""
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.is_file():
+            scratch.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+            return
+        # The cache's own scratch file into its place, nobody's file.
+        os.replace(scratch, destination)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+    except OSError:
+        scratch.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        raise
+
+
+def _asset_of(directory: Path, path: Path) -> str:
+    """The asset a cached copy is filed under: the folder named for it."""
+    return path.relative_to(directory).parts[0]
+
+
+def _owed_ceiling(directory: Path, budget: int) -> int:
+    """How far the copies owed work may take a cache: `OWED_CEILING_TIMES` its budget, and never
+    past a share of the disk's free space. Blocking."""
+    try:
+        free = shutil.disk_usage(directory).free
+    except OSError:  # pragma: no cover (the cache's disk went away)
+        return budget
+    return max(budget, min(budget * OWED_CEILING_TIMES, free // OWED_CEILING_FREE_SHARE))
+
+
+def _cached(directory: Path) -> list[tuple[float, int, Path]]:
+    """Every whole file under a cache folder, with when it was last read and its size. Blocking."""
+    try:
+        files = [
+            path
+            for path in directory.rglob("*")
+            if path.is_file() and not path.name.endswith(PART_SUFFIX)
+        ]
     except OSError:  # pragma: no cover (the directory was removed under us)
-        return
-    total = 0
-    aged: list[tuple[float, int, Path]] = []
+        return []
+    held: list[tuple[float, int, Path]] = []
     for path in files:
         try:
             stat = path.stat()
         except OSError:  # pragma: no cover (it went away between listing and asking)
             continue
-        total += stat.st_size
-        aged.append((stat.st_atime, stat.st_size, path))
-    if total <= budget:
-        return
-    for _, size, path in sorted(aged):
-        if total <= budget:
-            break
-        if path == keep:
-            continue
-        try:
-            path.unlink()  # nosemgrep: sift-no-file-removal-outside-delete-trash
-        except OSError:  # pragma: no cover (somebody else got there first)
-            continue
-        total -= size
-        # Its directory holds only this picture, so it goes too.
-        with suppress(OSError):
-            path.parent.rmdir()  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        held.append((stat.st_atime, stat.st_size, path))
+    return held
+
+
+def _drop(
+    directory: Path,
+    held: list[tuple[float, int, Path]],
+    budget: int,
+    keep: Path,
+    *,
+    owed: frozenset[str] = frozenset(),
+    ceiling: int | None = None,
+) -> tuple[int, int]:
+    """Drop the least recently ACCESSED copies until the folder fits its budget; blocking and
+    best-effort. Never `keep`, which a caller is about to open. A copy handed out lately, or whose
+    asset still has work owed, goes only while the folder is over `ceiling`, oldest first. How
+    many went, and how many of those were spared until then."""
+    total = sum(size for _, size, _ in held)
+    lately = _lately_handed_out()
+    others = [one for one in sorted(held) if one[2] != keep]
+    spared = {one[2] for one in others if one[2] in lately or _asset_of(directory, one[2]) in owed}
+    free = [one for one in others if one[2] not in spared]
+    still = [one for one in others if one[2] in spared]
+    dropped = owed_dropped = 0
+    for limit, pool in ((budget, free), (budget if ceiling is None else ceiling, still)):
+        for _, size, path in pool:
+            if total <= limit:
+                break
+            try:
+                path.unlink()  # nosemgrep: sift-no-file-removal-outside-delete-trash
+            except OSError:  # pragma: no cover (somebody else got there first)
+                continue
+            total -= size
+            dropped += 1
+            owed_dropped += pool is still
+            # Its directory holds only this picture, so it goes too.
+            with suppress(OSError):
+                path.parent.rmdir()  # nosemgrep: sift-no-file-removal-outside-delete-trash
+    return dropped, owed_dropped
+
+
+def _keep_under_budget(directory: Path, budget: int, keep: Path) -> None:
+    """`_drop` with no work owed: the least recently read copies go until the folder fits."""
+    _drop(directory, _cached(directory), budget, keep)

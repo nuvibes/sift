@@ -109,6 +109,22 @@ KINDS: tuple[FailureKind, ...] = (
         "The connection dropped partway. Check the internet connection, then run it again.",
     ),
     _kind(
+        "waiting-for-space",
+        r"waiting for space:",
+        "It's waiting for space: the disk is full. Free some space and it carries on.",
+    ),
+    _kind(
+        "database-busy",
+        r"database is locked|database is busy",
+        "Sift's database was busy with other work for too long. Run it again.",
+    ),
+    _kind(
+        "took-too-long",
+        r"took too long and was stopped",
+        "A tool took too long and was stopped. The drive or share the file is on may have "
+        "stopped answering.",
+    ),
+    _kind(
         "disk-full",
         r"no space left on device|not enough space on the disk|\[errno 28\]|\[winerror 112\]",
         "The disk ran out of room. Free some space, then run it again.",
@@ -116,6 +132,7 @@ KINDS: tuple[FailureKind, ...] = (
     _kind(
         "missing",
         r"filenotfounderror|no such file|cannot find the (?:file|path)|noreadablecopy"
+        r"|known copies of this file"
         r"|\[winerror [23]\]|\[errno 2\]",
         "A file it needed wasn't there. It may have been moved or deleted, or its drive isn't "
         "connected.",

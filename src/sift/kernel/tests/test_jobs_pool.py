@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import os
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -40,6 +41,7 @@ from sift.kernel.jobs.tuning import (
     DEFAULT_PRIORITY,
     WAITED_ON_PRIORITY,
 )
+from sift.kernel.media_sources import NoReadableCopy
 from sift.kernel.tests.jobs_helpers import (
     OTHER_WORKER,
     WORKER,
@@ -500,7 +502,7 @@ async def test_a_download_kind_that_fails_waits_longer_each_time_and_others_do_n
     job_queue: JobQueue,
 ) -> None:
     async def dropped(context: JobContext) -> None:
-        raise ConnectionError("the connection dropped")
+        raise RuntimeError("the handler broke")
 
     register_handler("fetch_a", dropped, name="Test fetch")
     register_handler("other_a", dropped, name="Test job")
@@ -527,6 +529,71 @@ async def test_a_download_kind_that_fails_waits_longer_each_time_and_others_do_n
         assert plain is not None and plain.attempts == 2 and plain.run_after is None
     finally:
         retrying._BACKS_OFF.discard("fetch_a")
+
+
+def test_a_failure_is_classified_before_its_retry_is_spent() -> None:
+    """The same second finds the same disk, share or busy database; broken bytes never change."""
+    import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error class only)
+
+    from sift.kernel.subprocess import TookTooLong, ToolFailed
+
+    assert backoff("plain_a", 1) is None
+    assert backoff("plain_a", 1, RuntimeError("a bug")) is None
+    assert backoff("plain_a", 1, OSError("the share dropped")) == 30
+    assert backoff("plain_a", 2, ConnectionError("reset")) == 60
+    assert backoff("plain_a", 1, sqlite3.OperationalError("database is locked")) == 30
+    assert backoff("plain_a", 1, sqlite3.OperationalError("no such table: x")) is None
+    assert backoff("plain_a", 1, TookTooLong("'ffmpeg.exe' took too long and was stopped")) == 30
+    full = OSError(28, "No space left on device")
+    assert backoff("plain_a", 1, full) == retrying.LONGEST_WAIT
+    assert retrying.is_disk_full(RuntimeError("wrapped").with_traceback(None)) is False
+    try:
+        raise RuntimeError("could not write") from full
+    except RuntimeError as wrapped:
+        assert retrying.is_disk_full(wrapped)
+    assert retrying.is_disk_full(sqlite3.OperationalError("database or disk is full"))
+    assert retrying.is_disk_full(OSError(28, "full"))
+    assert retrying.is_disk_full(OSError(0, "full", None, 112)) is (sys.platform == "win32")
+
+    poison = ToolFailed(
+        "'ffmpeg.exe' failed with exit code 69: Decode error rate 1 exceeds maximum 0.666667",
+        returncode=69,
+        said="Decode error rate 1 exceeds maximum 0.666667",
+    )
+    assert retrying.cannot_change(poison)
+    assert not retrying.cannot_change(ToolFailed("exit code 1", returncode=1, said="moov atom"))
+
+
+@pytest.mark.integration
+async def test_broken_bytes_fail_once_and_a_busy_database_waits(job_queue: JobQueue) -> None:
+    import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error class only)
+
+    async def poison(context: JobContext) -> None:
+        raise RuntimeError("[mjpeg] Decode error rate 1 exceeds maximum 0.666667")
+
+    async def busy(context: JobContext) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    register_handler("poison_a", poison, name="Test poison")
+    register_handler("busy_a", busy, name="Test busy")
+    refused = await job_queue.enqueue("poison_a", max_attempts=3)
+    waited = await job_queue.enqueue("busy_a", max_attempts=3)
+    pool = WorkerPool(job_queue, concurrency=2, poll_interval=0.01)
+    await pool.start()
+    try:
+        await wait_for_state(job_queue, refused, JobState.FAILED)
+        deadline = time.monotonic() + 10
+        while (job := await job_queue.get(waited)) is not None and job.attempts < 1:
+            assert time.monotonic() < deadline, "the busy job never ran"
+            await asyncio.sleep(0.01)
+    finally:
+        await pool.stop()
+    failed = await job_queue.get(refused)
+    assert failed is not None and failed.attempts == 1
+    assert failed.error is not None and "Decode error rate" in failed.error
+    job = await job_queue.get(waited)
+    assert job is not None and job.state is JobState.QUEUED and job.attempts == 1
+    assert job.run_after is not None and job.run_after - job.updated_at == 30
 
 
 # --- what the ledger is told: no handler knows a ledger exists -------------------------------
@@ -591,7 +658,7 @@ async def test_the_ledger_is_told_what_a_job_ended_with_only_once_it_will_not_be
     monkeypatch.setattr(registry, "_FAMILIES", {})
 
     async def missing(_context: JobContext) -> None:
-        raise FileNotFoundError("clip.mp4")
+        raise NoReadableCopy("clip.mp4")
 
     async def gone(_context: JobContext) -> None:
         raise JobFailedPermanently("The folder stopped answering partway through the scan.")
@@ -634,7 +701,7 @@ async def test_a_done_jobs_note_reaches_the_report_and_a_failed_ones_does_not(
 
     async def gone(context: JobContext) -> None:
         await context.set_note("The folder stopped answering partway through the scan.")
-        raise FileNotFoundError("clip.mp4")
+        raise NoReadableCopy("clip.mp4")
 
     register_handler("scan", left_one, name="Test walk", family=Family.SCAN)
     register_handler("probe", gone, name="Test job", family=Family.SCAN)
@@ -1670,10 +1737,7 @@ async def test_a_job_whose_family_was_cleared_while_it_ran_is_nobodys_press(
 
 async def test_work_arriving_wakes_the_supervisor_immediately(job_queue: JobQueue) -> None:
     pool = WorkerPool(job_queue, concurrency=1, poll_interval=0.01)
-    waited_on = pool._waking.arrived
     pool.work_arrived()
-    assert waited_on.is_set(), "every idle worker claims now"
-    assert pool._waking.arrived is not waited_on, "the next wait is a fresh event"
     assert not pool._waking.reconfigure.is_set()
     pool._waking.wake()
     assert pool._waking.reconfigure.is_set(), "a press for turbo or eco is taken within a moment"
@@ -1764,7 +1828,7 @@ async def test_each_job_ends_with_one_line_saying_what_became_of_it_and_where_it
         raise JobHeld("busy", retry_in=60)
 
     async def broken(context: JobContext) -> None:
-        raise ConnectionError("the connection dropped")
+        raise RuntimeError("the handler broke")
 
     for job_type, handler in (
         ("sum_ok", works),
@@ -1843,3 +1907,67 @@ def test_the_wait_in_the_queue_counts_from_when_the_job_could_first_be_claimed()
     assert worker_pool._queued_s(later) == 5
     # A clock that stepped back is no wait at all.
     assert worker_pool._queued_s(dataclasses.replace(job, created_at=100, started_at=90)) == 0
+
+
+async def test_one_job_arriving_wakes_one_idle_worker_and_a_wake_is_kept_for_one_about_to_wait() -> (
+    None
+):
+    """Every idle worker woken for one row is one claim and the rest claim nothing inside the
+    writer's lock; a wake with nobody idle is kept, so work queued between a worker's empty claim
+    and its wait is not left to the longest wait."""
+    from sift.kernel.jobs.waking import WAKES_KEPT, Waking
+
+    waking = Waking()
+    stop = asyncio.Event()
+    idle = [asyncio.create_task(waking.idle((stop,), 5.0)) for _ in range(3)]
+    await asyncio.sleep(0)
+    assert waking.idle_workers == 3
+    waking.work_arrived()
+    await asyncio.sleep(0.01)
+    assert sum(task.done() for task in idle) == 1
+    waking.wake_all()
+    await asyncio.gather(*idle)
+    assert waking.idle_workers == 0
+
+    waking = Waking()
+    for _ in range(WAKES_KEPT + 2):
+        waking.work_arrived()
+    kept = 0
+    while True:
+        try:
+            await asyncio.wait_for(waking.idle((stop,), 5.0), 0.05)
+        except TimeoutError:
+            break
+        kept += 1
+    assert kept == WAKES_KEPT
+
+
+@pytest.mark.integration
+async def test_an_idle_worker_claims_a_row_put_off_when_it_comes_due(job_queue: JobQueue) -> None:
+    """With no wake to hear, an idle worker waits for the next row put off to a moment, not for its
+    longest wait: a settle runs when it is due."""
+    seen = Recorder()
+    register_handler("sweep", seen.handler, name="Test job")
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=60.0, watchdog=False)
+    await pool.start()
+    try:
+        await asyncio.sleep(0.05)
+        await job_queue.enqueue("sweep", run_after=int(time.time()) + 1)
+        started = time.monotonic()
+        await drain(job_queue, give_up_after=5.0)
+        assert len(seen.seen) == 1 and time.monotonic() - started < 3.0
+    finally:
+        await pool.stop()
+
+
+async def test_a_cap_raised_wakes_every_idle_worker(job_queue: JobQueue) -> None:
+    """Work held at a cap names no arrival when the cap is raised: every idle worker claims."""
+    pool = WorkerPool(job_queue, concurrency=1, poll_interval=60.0, limits={"probe": 1})
+    woken: list[str] = []
+    pool._waking.wake_all = lambda: woken.append("all")  # type: ignore[method-assign]
+    pool.reconcile(limits={"probe": 1, "thumbnail": 2})
+    assert woken == [], "a new cap holds more back"
+    pool.reconcile(limits={"probe": 2, "thumbnail": 2})
+    assert woken == ["all"]
+    pool.reconcile(limits={"probe": 2})
+    assert woken == ["all", "all"], "a cap lifted"

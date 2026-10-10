@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
-from sift.kernel import heif, lanes, mp4
+from sift.kernel import heif, lanes, media, mp4
 from sift.kernel.config import Settings
 from sift.kernel.content import (
     Asset,
@@ -21,6 +22,7 @@ from sift.kernel.ingress import (
     Origin,
     verify_decodable,
     verify_ingress,
+    verify_probed,
 )
 from sift.kernel.jobs import (
     BACKGROUND_PRIORITY,
@@ -104,12 +106,12 @@ async def _probe(
     source = await resolve_decodable(store, asset_id, settings=settings)
 
     with timing_hook("probe.verify", asset_id=asset_id):
-        checked = await _verified(source, settings=settings)
+        checked, answer = await _verified(source, settings=settings)
 
     if await _sent_back_to_the_classifier(context, asset_id, source, checked):
         return
 
-    probed, keep = await _read_and_keep(source, asset_id, settings=settings)
+    probed, keep = await _read_and_keep(source, asset_id, settings=settings, answer=answer)
 
     # Read off the pool's heartbeat, which a stop wakes immediately: no write of its own.
     if context.stopping() == STOP_TO_CANCEL:
@@ -187,19 +189,22 @@ async def _sent_back_to_the_classifier(
 
 
 async def _read_and_keep(
-    source: Source, asset_id: str, *, settings: Settings
+    source: Source, asset_id: str, *, settings: Settings, answer: dict[str, Any] | None = None
 ) -> tuple[ffmpeg.Probed, ProbeKeep]:
     """The fields read out of the file, and the tool's whole answer as it is kept on the row.
 
     The whole answer is kept, not only the fields read out of it, so a field somebody needs later
     is not another pass over the library. Places are stripped before it is stored; see
-    `ffmpeg.probe_body`.
+    `ffmpeg.probe_body`. `answer` is the one the gate's check already asked for (a still).
     """
     with timing_hook("probe.metadata", asset_id=asset_id):
-        payload, probed = await _reading_of(source, settings=settings)
+        payload, probed = await _reading_of(source, settings=settings, answer=answer)
         keep = ProbeKeep(
             body=ffmpeg.probe_body(payload), tool=await ffmpeg.probe_tool(settings=settings)
         )
+    if _described(source) == source.path:
+        # The frame readers that come next read this file: they need not ask the tool again.
+        await media.remember_reading(source.path, payload)
     return probed, keep
 
 
@@ -352,19 +357,35 @@ async def _settle(
             log.info("media.settling_skipped", job_type=job_type, reason="switched off")
 
 
+def _whole_heif(source: Source) -> bool:
+    return heif.is_heif_still(source.asset) and source.path != source.original
+
+
+def _described(source: Source) -> Path:
+    """The file the reading describes: the copy a decoder reads, but a HEIF photograph's own."""
+    return source.original if _whole_heif(source) else source.path
+
+
+def _reading_args(source: Source, *, settings: Settings) -> list[str]:
+    return ffmpeg.probe_args(
+        _described(source), settings=settings, still=source.asset.media_type == _IMAGE
+    )
+
+
 async def _reading_of(
-    source: Source, *, settings: Settings
+    source: Source, *, settings: Settings, answer: dict[str, Any] | None = None
 ) -> tuple[dict[str, Any], ffmpeg.Probed]:
     """What ffprobe says the file is: its whole answer, and the fields read out of it.
 
     A HEIF photograph is described from its OWN bytes and measured from its decoded copy, the grid
     assembled and turned upright, since ffprobe's size for it is one tile (see `kernel.heif`).
     """
-    whole = heif.is_heif_still(source.asset) and source.path != source.original
-    described = source.original if whole else source.path
-    payload = await ffmpeg.run_json(
-        ffmpeg.probe_args(described, settings=settings, still=source.asset.media_type == _IMAGE),
-        reads=described,
+    whole = _whole_heif(source)
+    described = _described(source)
+    payload = (
+        answer
+        if answer is not None
+        else await ffmpeg.run_json(_reading_args(source, settings=settings), reads=described)
     )
     probed = ffmpeg.parse_probe(payload)
     if whole:
@@ -398,13 +419,19 @@ def _picture_length_of(media_type: str, probed: ffmpeg.Probed) -> int | None:
     return probed.video_duration_ms or 0
 
 
-async def _verified(source: Source, *, settings: Settings) -> IngressResult:
+async def _verified(
+    source: Source, *, settings: Settings
+) -> tuple[IngressResult, dict[str, Any] | None]:
     """Put the file back through the gate, and refuse to go on if it does not pass.
 
     Re-verified rather than trusted: a file in a library root can be replaced under a path that is
     still indexed. `Origin.SCAN`, because that is where the file is now, and a scanned file is
     never moved when it is refused: it is the person's file, indexed where it lies.
+
+    A still read where it lies is checked through the reading's own answer, returned with the
+    result: one decode of the picture rather than two.
     """
+    answer: dict[str, Any] | None = None
     try:
         # On a thread, like every caller of `verify_ingress`: against a network share it would stall
         # the loop, and with it the API, the job feed and every video being watched.
@@ -412,13 +439,29 @@ async def _verified(source: Source, *, settings: Settings) -> IngressResult:
             checked = await asyncio.to_thread(
                 verify_ingress, source.original, origin=Origin.SCAN, settings=settings
             )
-            await verify_decodable(checked, settings=settings)
+            if _read_with_the_check(source, checked):
+                answer = await verify_probed(
+                    checked, _reading_args(source, settings=settings), settings=settings
+                )
+            else:
+                await verify_decodable(checked, settings=settings)
     except IngressRejected as exc:
         raise Unusable(
             f"this file could not be read as {source.asset.media_type} ({exc.reason})",
             reason=exc.reason,
         ) from exc
-    return checked
+    return checked, answer
+
+
+def _read_with_the_check(source: Source, checked: IngressResult) -> bool:
+    """Whether the gate's decode check is asked of the reading itself: a still the gate takes as a
+    still, whose reading is of the file the gate read."""
+    return (
+        source.asset.media_type == _IMAGE
+        and str(checked.media.kind) == _IMAGE
+        and checked.media.name != "webp-animated"
+        and _described(source) == source.original
+    )
 
 
 async def keep_probes(

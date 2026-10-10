@@ -9,7 +9,7 @@ from typing import Any
 
 from sift.kernel.db import Connection
 from sift.kernel.ids import new_id
-from sift.kernel.jobs.queue_core import Arrival, QueueCore
+from sift.kernel.jobs.queue_core import ASKED_AT, Arrival, QueueCore
 from sift.kernel.jobs.queue_rows import UnknownJobType, _check_payload, _fetch
 from sift.kernel.jobs.quiet_hours import AT_NOW, ATS
 from sift.kernel.jobs.switchboard import JobSwitchedOff
@@ -57,9 +57,11 @@ def _under(row: tuple[Any, ...], head: str) -> tuple[Any, ...]:
 
 # An identical job already WAITING, for `enqueue(dedupe=True)`. Never one running: it may have
 # walked past the change that prompted the new request, and collapsing onto it would lose that.
+# The live states said too, word for word, so the live rows' index (`ix_jobs_live_payload`) serves it.
 _PENDING_LIKE = (
     "SELECT id, priority, requested_by, timing, run_after, created_at FROM jobs"
-    " WHERE type = ? AND payload = ? AND state = 'queued' LIMIT 1"
+    " WHERE type = ? AND payload = ? AND state IN ('queued', 'running', 'blocked', 'paused')"
+    " AND state = 'queued' LIMIT 1"
 )
 
 # A settle collapsing onto the one already waiting: the waiting row is put off to a minute after
@@ -137,6 +139,7 @@ class Enqueuing(QueueCore):
         requested_by: str | None = None,
         at: str | None = None,
         settling: bool = False,
+        with_row: tuple[str, tuple[Any, ...]] | None = None,
     ) -> str:
         """Add a job. Returns its id.
 
@@ -154,6 +157,9 @@ class Enqueuing(QueueCore):
         handler's children). `at` says when: `now` runs whatever quiet hours say, `quiet` waits for
         them; left out, a press is `now` and anything else follows its task's When. `settling` is
         `enqueue_when_settled`'s: a collapse puts the waiting row off to this request's `run_after`.
+
+        `with_row` is a caller's own statement written in the same transaction, its first parameter
+        the job id: the row joins whichever job the enqueue answers, a collapsed one included.
         """
         priority, timing = await self._admit(
             job_type,
@@ -176,19 +182,16 @@ class Enqueuing(QueueCore):
         )
 
         if dedupe:
-            # The look and the insert share one write transaction, so two callers noticing the same
-            # folder in the same instant cannot both find nothing waiting and both queue.
-            async with self._writing() as connection:
-                placed, family = await self._collapse_or_insert(
-                    connection,
-                    job_type,
-                    serialized,
-                    row,
-                    priority=priority,
-                    requested_by=requested_by,
-                    timing=timing,
-                    settle_at=run_after if settling else None,
-                )
+            placed, family = await self._enqueue_collapsing(
+                job_type,
+                serialized,
+                row,
+                priority=priority,
+                requested_by=requested_by,
+                timing=timing,
+                settle_at=run_after if settling else None,
+                with_row=with_row,
+            )
             if family is None:
                 return placed
         else:
@@ -196,6 +199,8 @@ class Enqueuing(QueueCore):
             # quiet insert would leave it off the screen until something else in the queue moved.
             async with self._writing() as connection:
                 family = await _place(connection, row)
+                if with_row is not None:
+                    await connection.execute(with_row[0], (job_id, *with_row[1]))
 
         log.info("job.enqueued", job_id=job_id, job_type=job_type, parent_id=parent_id)
         self._work_arrived([Arrival(job_type, family, timing, run_after)])
@@ -422,6 +427,36 @@ class Enqueuing(QueueCore):
         )
         return job_id, row, serialized
 
+    async def _enqueue_collapsing(
+        self,
+        job_type: str,
+        serialized: str,
+        row: tuple[Any, ...],
+        *,
+        priority: int,
+        requested_by: str | None,
+        timing: str | None,
+        settle_at: int | None,
+        with_row: tuple[str, tuple[Any, ...]] | None,
+    ) -> tuple[str, str | None]:
+        """`enqueue`'s `dedupe`: the id answered and the family joined, None where it collapsed."""
+        # The look and the insert share one write transaction, so two callers noticing the same
+        # folder in the same instant cannot both find nothing waiting and both queue.
+        async with self._writing() as connection:
+            placed, family = await self._collapse_or_insert(
+                connection,
+                job_type,
+                serialized,
+                row,
+                priority=priority,
+                requested_by=requested_by,
+                timing=timing,
+                settle_at=settle_at,
+            )
+            if with_row is not None:
+                await connection.execute(with_row[0], (placed, *with_row[1]))
+        return placed, family
+
     async def _collapse_or_insert(
         self,
         connection: Connection,
@@ -463,6 +498,7 @@ class Enqueuing(QueueCore):
                 waiting[0]["timing"] != AT_NOW or waiting[0]["run_after"] is not None
             ):
                 await connection.execute(_RUN_NOW, (now, already))
+                self._work_arrived([Arrival(job_type, already, AT_NOW, None)])
             # AND A SETTLE IS A MINUTE AFTER THE LAST FILE, NOT THE FIRST, so the pass runs once
             # the batch has landed.
             elif settle_at is not None:
@@ -492,7 +528,16 @@ class Enqueuing(QueueCore):
 
         A row already waiting until about then is left as it is, after a read and no write: a
         thousand files each asking move it once per `SETTLE_SLACK_SECONDS`, not once each.
+
+        Asked from inside a job, it is at least as urgent as that job: a settle a pressed run asks
+        for runs during the run, not after it.
         """
+        asking = ASKED_AT.get()
+        if asking is not None:
+            from sift.kernel.jobs.worker_pool import registered_urgency
+
+            # Never past the type's own urgency, which `_admit` would only hold it to.
+            priority = max(min(priority, asking), registered_urgency(job_type) or PRIORITY_MIN)
         if requested_by is None:
             waiting = await self._settle_still_waiting(job_type, payload, delay, priority)
             if waiting is not None:

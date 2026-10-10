@@ -198,6 +198,7 @@ _cov_ingress() { _cov src/sift/kernel/tests/test_ingress.py --cov=sift.kernel.in
 # not run the gate would report tested code as untested.
 _cov_jobs() {
   _cov src/sift/kernel/tests/test_jobs.py src/sift/kernel/tests/test_jobs_settle.py src/sift/kernel/tests/test_job_tallies.py \
+    src/sift/kernel/tests/test_job_plans.py src/sift/kernel/tests/test_foreground.py \
     src/sift/kernel/tests/test_jobs_workers.py src/sift/kernel/tests/test_jobs_reads.py \
     src/sift/kernel/tests/test_jobs_controls.py src/sift/kernel/tests/test_jobs_pool.py \
     src/sift/kernel/tests/test_ledger.py \
@@ -207,7 +208,7 @@ _cov_jobs() {
     src/sift/kernel/tests/test_task_timing.py src/sift/kernel/tests/test_work_ahead.py \
     src/sift/kernel/tests/test_failure_words.py src/sift/kernel/tests/test_jobs_line.py \
     src/sift/kernel/tests/test_waiting_for_password.py src/sift/kernel/tests/test_history_pressed.py \
-    --cov=sift.kernel.jobs --cov=sift.kernel.paging
+    --cov=sift.kernel.jobs --cov=sift.kernel.paging --cov=sift.kernel.foreground
 }
 # What Sift is running on. Its own gate, because measured as part of the queue's it would be
 # measured while only the queue's tests ran: a module pinned to a test file that is never opened
@@ -790,7 +791,7 @@ _cov_numbers() { _cov src/sift/kernel/tests/test_numbers.py --cov=sift.kernel.nu
 _cov_attribution() { _cov src/sift/kernel/tests/test_attribution.py --cov=sift.kernel.attribution; }
 # The ffmpeg seam: which encoder this machine gets, and finding a copy of a file that opens. Its
 # own file plus the slices that drive it. The failures here are a job that cannot run.
-_cov_media() { _cov src/sift/kernel/tests/test_media.py src/sift/kernel/tests/test_moments.py src/sift/kernel/tests/test_moving_stream.py --cov=sift.kernel.media --cov=sift.kernel.media_card --cov=sift.kernel.media_frames --cov=sift.kernel.media_sources; }
+_cov_media() { _cov src/sift/kernel/tests/test_media.py src/sift/kernel/tests/test_moments.py src/sift/kernel/tests/test_moving_stream.py --cov=sift.kernel.media --cov=sift.kernel.media_share --cov=sift.kernel.media_card --cov=sift.kernel.media_frames --cov=sift.kernel.media_sources; }
 # The shapes a write to the library is described by, and the permission behind them. Reached
 # through the editor and the deleter, which are the two features allowed to move a FILE, and
 # through the library slice, which is the one allowed to arrange the FOLDERS they sit in.

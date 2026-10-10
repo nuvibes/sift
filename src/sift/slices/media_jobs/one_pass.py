@@ -43,7 +43,10 @@ from sift.kernel.media import (
     resolve_decodable,
 )
 from sift.slices.media_jobs import ffmpeg, tuning
-from sift.slices.media_jobs.jobs import SPRITE, ShouldGenerate
+from sift.slices.media_jobs.fingerprints import probed_of
+from sift.slices.media_jobs.jobs import SPRITE, THUMBNAIL, ShouldGenerate
+from sift.slices.media_jobs.sprites import sprite_request
+from sift.slices.media_jobs.thumbnails import still_requests
 
 log = get_logger(__name__)
 
@@ -79,12 +82,14 @@ async def fingerprint_frames(facts: FileFacts) -> list[FrameRequest]:
             frame_bytes=size * size,
         )
     ]
-    if facts.duration_ms > 0:
+    # The running time unrounded where the probe kept it, as `_video_phash` divides it: the
+    # rounded one moves a moment by a digit one file in a few dozen, and that file is read twice.
+    seconds = facts.duration_seconds or facts.duration_ms / 1000
+    if seconds > 0:
         requests.append(
             FrameFiles(
                 moments=tuple(
-                    ffmpeg.stash_box_moment(at)
-                    for at in perceptual.scene_frame_times(facts.duration_ms / 1000)
+                    ffmpeg.stash_box_moment(at) for at in perceptual.scene_frame_times(seconds)
                 ),
                 filters=ffmpeg.stash_box_filter(perceptual.SCENE_SHOT_WIDTH),
                 suffix=".bmp",
@@ -99,31 +104,40 @@ def sprite_tile_frames(facts: FileFacts) -> list[FrameRequest]:
     filter and encoding `_render_sprite` asks for."""
     if facts.media_type != _VIDEO or facts.duration_ms <= 0:
         return []
-    return [
-        FrameFiles(
-            moments=tuple(
-                ffmpeg.hash_frame_moment(at) for at in sampler.sprite_frames(facts.duration_ms)
-            ),
-            filters=ffmpeg.still_filter(width=tuning.SPRITE_TILE_WIDTH),
-            suffix=".jpg",
-            output=ffmpeg.still_output(tuning.SPRITE_QUALITY),
-        )
-    ]
+    return [sprite_request(facts.duration_ms)]
+
+
+def thumbnail_frames(facts: FileFacts) -> list[FrameRequest]:
+    """What the tile's still reads of a video: the first frame and every candidate after it, each
+    a still and its grey levels, as `_cut_by_content` asks for them."""
+    span = sampler.picture_span(facts.duration_ms, facts.video_duration_ms)
+    if facts.media_type != _VIDEO or span <= 0:
+        return []
+    return still_requests(span)
+
+
+#: The picture products whose reads a decode can serve, and what each would ask for.
+_PLANNED = {
+    DerivativeKind.SPRITE: (SPRITE, sprite_tile_frames),
+    DerivativeKind.THUMB: (THUMBNAIL, thumbnail_frames),
+}
 
 
 async def picture_frames(
     facts: FileFacts, *, kind: DerivativeKind, content: ContentStore, allowed: ShouldGenerate
 ) -> list[FrameRequest]:
-    """What one picture product would read for this file: the sprite's tiles, when the sprite is
-    wanted and missing. The thumbnail is one seek and the preview is its own decode; neither is
-    served from prepared frames, so for those two this is nothing."""
-    if kind is not DerivativeKind.SPRITE:
+    """What one picture product would read for this file: the sprite's tiles and the tile's
+    stills, when the picture is wanted and missing or pressed for again. The preview is its own
+    decode, so for it this is nothing."""
+    planned = _PLANNED.get(kind)
+    if planned is None:
         return []
-    if not await allowed(SPRITE, facts.asset_id):
+    job_type, frames = planned
+    if not await allowed(job_type, facts.asset_id):
         return []
-    if not await content.lacking_derivative(DerivativeKind.SPRITE, [facts.asset_id]):
+    if not facts.again and not await content.lacking_derivative(kind, [facts.asset_id]):
         return []
-    return sprite_tile_frames(facts)
+    return frames(facts)
 
 
 class OnePassReader:
@@ -143,10 +157,13 @@ class OnePassReader:
         measured. Answered by the self-test's runner, through the composition root."""
 
     @asynccontextmanager
-    async def prepared(self, asset_id: str, products: Sequence[PlansFrames]) -> AsyncIterator[None]:
+    async def prepared(
+        self, asset_id: str, products: Sequence[PlansFrames], *, again: bool = False
+    ) -> AsyncIterator[None]:
         """Read the file once for these products, where that is the cheaper shape, and hand the
-        frames to everything inside. Inside, the products read as they would without it."""
-        requests, facts = await self._plan(asset_id, products)
+        frames to everything inside. Inside, the products read as they would without it. `again`
+        is a person's press for products the file has, which are planned as if it lacked them."""
+        requests, facts = await self._plan(asset_id, products, again=again)
         if facts is None or not requests:
             yield
             return
@@ -195,7 +212,7 @@ class OnePassReader:
                 yield
 
     async def _plan(
-        self, asset_id: str, products: Sequence[PlansFrames]
+        self, asset_id: str, products: Sequence[PlansFrames], *, again: bool = False
     ) -> tuple[list[FrameRequest], FileFacts | None]:
         try:
             source = await resolve_decodable(self._content, asset_id, settings=self._settings)
@@ -204,6 +221,8 @@ class OnePassReader:
         asset = source.asset
         if asset.media_type != _VIDEO:
             return [], None
+        # The kept answer only: a plan asks no tool, and a file never read seeks as before.
+        probed = await probed_of(self._content, source, settings=self._settings, ask=False)
         facts = FileFacts(
             asset_id=asset_id,
             path=source.path,
@@ -215,6 +234,8 @@ class OnePassReader:
             fps=asset.fps or 0.0,
             size_bytes=source.location.size_bytes or asset.size_bytes or 0,
             vcodec=asset.vcodec,
+            duration_seconds=probed.duration_seconds,
+            again=again,
         )
         requests: list[FrameRequest] = []
         for product in products:

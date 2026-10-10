@@ -10,7 +10,8 @@ import numpy as np
 
 from sift.kernel import lanes, media
 from sift.kernel.config import Settings
-from sift.kernel.subprocess import Priority
+from sift.kernel.ml import pictures
+from sift.kernel.subprocess import Priority, SubprocessError
 from sift.kernel.subprocess import capture as subprocess_capture
 
 #: Fractions of the frame (left, top, right, bottom): the lower band finds nearly every mark.
@@ -27,6 +28,9 @@ MAX_WIDTH = 1920
 
 #: Generous: a seek on a network share is slow and still working.
 READ_TIMEOUT = 120.0
+
+#: The crops as raw colour bytes.
+PIXELS = "rgb24"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +100,24 @@ def moment_of(media_type: str, duration_ms: int | None) -> media.Moment:
     return media.Moment(seek=("-ss", media.seconds(int(duration_ms * FRACTION))))
 
 
+def request(media_type: str, width: int, height: int, duration_ms: int | None) -> media.RawFrames:
+    """The one frame this pass reads, as an ask a task's one decode can answer."""
+    across, down = stacked_size(width, height)
+    return media.RawFrames(
+        moments=(moment_of(media_type, duration_ms),),
+        filters=filtergraph(width, height),
+        pixel_format=PIXELS,
+        frame_bytes=across * down * 3,
+    )
+
+
+async def frame_requests(facts: media.FileFacts) -> list[media.FrameRequest]:
+    """What reading this file's mark asks for, so one task can read the file once."""
+    if facts.media_type not in ("image", "video") or not facts.width or not facts.height:
+        return []
+    return [request(facts.media_type, facts.width, facts.height, facts.duration_ms)]
+
+
 async def read(
     path: Path,
     *,
@@ -106,15 +128,22 @@ async def read(
     settings: Settings,
     priority: Priority = Priority.BACKGROUND,
 ) -> list[Piece]:
-    """The crops of one file's frame, or nothing where it could not be read."""
-    argv = media.raw_frame_args(
-        path,
-        moment_of(media_type, duration_ms),
-        filters=filtergraph(width, height),
-        pixel_format="rgb24",
-        settings=settings,
+    """The crops of one file's frame, or nothing where it could not be read; `FFmpegError` where
+    the decoder refused it."""
+    asked = request(media_type, width, height, duration_ms)
+    # A frame the task already decoded for every pass is not decoded again.
+    held = pictures.held(
+        path, filters=asked.filters, pixel_format=asked.pixel_format, moment=asked.moments[0]
     )
-    # Through the storage lane, like every library read, so a share is not overloaded.
-    async with lanes.reading(path):
-        raw = await subprocess_capture(argv, time_limit=READ_TIMEOUT, priority=priority)
+    if held is not None:
+        return unstack(held, width, height)
+    argv = media.raw_frame_args(
+        path, asked.moments[0], filters=asked.filters, pixel_format=PIXELS, settings=settings
+    )
+    try:
+        # Through the storage lane, like every library read, so a share is not overloaded.
+        async with lanes.reading(path):
+            raw = await subprocess_capture(argv, time_limit=READ_TIMEOUT, priority=priority)
+    except SubprocessError as error:
+        raise media.FFmpegError(str(error)) from error
     return unstack(raw, width, height)

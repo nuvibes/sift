@@ -36,6 +36,7 @@ from sift.kernel.ingress import (
     unguarded_ingress,
     verify_decodable,
     verify_ingress,
+    verify_probed,
 )
 from sift.kernel.log import REDACTED, configure_logging, hashed
 from sift.testing.tools import stand_in_tool
@@ -800,6 +801,68 @@ async def test_a_broken_ffprobe_refuses_rather_than_waves_through(
     )
     with pytest.raises((IngressRejected, OSError)):
         await verify_decodable(result, settings=settings)
+
+
+# --- The decoder check asked of a reading's own answer (a still read once)
+
+
+def _answering(tmp_path: Path, name: str, body: str) -> Settings:
+    tool = stand_in_tool(tmp_path / "tools", name, body)
+    return Settings(data_dir=tmp_path / "data", cache_dir=tmp_path / "cache", ffprobe_path=tool)
+
+
+@pytest.mark.integration
+async def test_a_readings_own_answer_passes_the_decoder_check_and_is_returned(
+    incoming: Path, settings: Settings
+) -> None:
+    path = copy_fixture("accepted.mp4", incoming)
+    result = verify_ingress(path, origin=Origin.SCAN, settings=settings)
+    argv = [settings.ffprobe_path, "-v", "error", "-print_format", "json", "-show_streams"]
+    answer = await verify_probed(result, [*argv, str(path.resolve())], settings=settings)
+    assert any(one.get("codec_type") == "video" for one in answer["streams"])
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        ('print(\'{"streams": [{"codec_type": "audio"}]}\')', Reason.NO_VIDEO_STREAM),
+        (
+            'print(\'{"streams": [{"codec_type": "video", "width": 45000, "height": 45000}]}\')',
+            Reason.PIXELS_EXCEEDED,
+        ),
+        ("import sys; sys.stderr.write('moov atom not found'); sys.exit(1)", Reason.NOT_DECODABLE),
+        ("print('not an answer')", Reason.NOT_DECODABLE),
+    ],
+)
+async def test_a_readings_answer_is_refused_for_what_verify_decodable_refuses(
+    incoming: Path, tmp_path: Path, body: str, reason: Reason
+) -> None:
+    """The same refusals, with the same reasons, as the separate check: no picture, a frame over
+    the pixel ceiling, a tool that failed or said nothing readable."""
+    settings = _answering(tmp_path, "ffprobe-answers", body)
+    result = verify_ingress(
+        copy_fixture("accepted.mp4", incoming), origin=Origin.SCAN, settings=settings
+    )
+    with pytest.raises(IngressRejected) as caught:
+        await verify_probed(result, [settings.ffprobe_path, "x"], settings=settings)
+    assert caught.value.reason is reason
+
+
+@pytest.mark.integration
+async def test_a_readings_hung_tool_is_refused_as_a_stall_in_the_checks_time(
+    incoming: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The check's own limit holds for the reading that asks it: a stall is transient."""
+    monkeypatch.setattr(ingress, "_PROBE_TIMEOUT_SECONDS", 0.2)
+    settings = _answering(tmp_path, "ffprobe-that-hangs", "import time; time.sleep(5)")
+    result = verify_ingress(
+        copy_fixture("accepted.mp4", incoming), origin=Origin.SCAN, settings=settings
+    )
+    with pytest.raises(IngressRejected) as caught:
+        await verify_probed(result, [settings.ffprobe_path], settings=settings)
+    assert caught.value.reason is Reason.TIMED_OUT
+    assert caught.value.detected == "timeout"
 
 
 # --- Properties: a byte-signature parser's interesting inputs are the ones nobody wrote down

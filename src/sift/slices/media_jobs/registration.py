@@ -47,7 +47,7 @@ from sift.slices.media_jobs.previews import preview, rebuild_previews
 from sift.slices.media_jobs.probing import keep_probes, probe, read_unread
 from sift.slices.media_jobs.repairs import remux
 from sift.slices.media_jobs.shared import recording_verdicts
-from sift.slices.media_jobs.sprites import sprite
+from sift.slices.media_jobs.sprites import ReadRatesFor, sprite
 from sift.slices.media_jobs.thumbnails import loop_thumbnail, rebuild_thumbnails, thumbnail
 
 #: The types here that may only have ONE running at a time: two fingerprint passes would read the
@@ -102,6 +102,7 @@ def register_handlers(
     follow_on_payloads: FollowOnPayloads | None = None,
     settles_into: SettlingJobs = (),
     fingerprints_settle_into: SettlingJobs = (),
+    read_rates: ReadRatesFor | None = None,
 ) -> None:
     """Claim the job types this feature owns. Called once, at boot.
 
@@ -111,26 +112,17 @@ def register_handlers(
     preview's too, and SHARED with the player: one graphics card, one memory of its faults; a
     test in the composition root proves the real application passes it. And
     `fingerprints_settle_into` is what reads the fingerprints, asked for by whatever wrote them.
+    `read_rates` is this machine's measured rates for a file, which let the strip and the
+    fingerprints share one decode; the thumbnail and the strip ask `should_generate` whether the
+    fingerprints that ride on their decode are wanted.
     """
-    # Probing's verdict is the read itself, wrapped here because the table below does not hold it.
-    register_handler(
-        PROBE,
-        recording_verdicts(
-            partial(
-                probe,
-                settings=settings,
-                hardware=hardware,
-                should_generate=should_generate,
-                follow_on=follow_on,
-                follow_on_payloads=follow_on_payloads,
-                settles_into=settles_into,
-            ),
-            VerdictProduct.PROBE,
-        ),
-        name="Probing file",
-        family=Family.SCAN,
-        counts=_COUNTED[PROBE],
-        by_itself=True,
+    _register_probing(
+        settings=settings,
+        hardware=hardware,
+        should_generate=should_generate,
+        follow_on=follow_on,
+        follow_on_payloads=follow_on_payloads,
+        settles_into=settles_into,
     )
     # Each picture is refused under its own verdict; the other two are wrapped by the table below.
     register_handler(
@@ -169,12 +161,53 @@ def register_handlers(
         family=Family.GENERATE,
     )
     _register_the_rest(
-        settings=settings, hardware=hardware, fingerprints_settle_into=fingerprints_settle_into
+        settings=settings,
+        hardware=hardware,
+        fingerprints_settle_into=fingerprints_settle_into,
+        should_generate=should_generate,
+        read_rates=read_rates,
+    )
+
+
+def _register_probing(
+    *,
+    settings: Settings,
+    hardware: HardwareReport,
+    should_generate: ShouldGenerate | None,
+    follow_on: FollowOnJobs,
+    follow_on_payloads: FollowOnPayloads | None,
+    settles_into: SettlingJobs,
+) -> None:
+    """The probe's handler, bound to what it reads per file and what follows it."""
+    # Probing's verdict is the read itself, wrapped here because the table below does not hold it.
+    register_handler(
+        PROBE,
+        recording_verdicts(
+            partial(
+                probe,
+                settings=settings,
+                hardware=hardware,
+                should_generate=should_generate,
+                follow_on=follow_on,
+                follow_on_payloads=follow_on_payloads,
+                settles_into=settles_into,
+            ),
+            VerdictProduct.PROBE,
+        ),
+        name="Probing file",
+        family=Family.SCAN,
+        counts=_COUNTED[PROBE],
+        by_itself=True,
     )
 
 
 def _register_the_rest(
-    *, settings: Settings, hardware: HardwareReport, fingerprints_settle_into: SettlingJobs
+    *,
+    settings: Settings,
+    hardware: HardwareReport,
+    fingerprints_settle_into: SettlingJobs,
+    should_generate: ShouldGenerate | None = None,
+    read_rates: ReadRatesFor | None = None,
 ) -> None:
     """The handlers bound to the settings and the hardware report alone."""
     for job_type, handler, name, family in (
@@ -206,9 +239,28 @@ def _register_the_rest(
             )
         # The two pictures this table claims are refused under their own verdicts.
         if job_type == THUMBNAIL:
-            bound = recording_verdicts(bound, VerdictProduct.THUMBNAILS)
+            bound = recording_verdicts(
+                partial(
+                    thumbnail,
+                    settings=settings,
+                    hardware=hardware,
+                    should_generate=should_generate,
+                    fingerprints_settle_into=fingerprints_settle_into,
+                ),
+                VerdictProduct.THUMBNAILS,
+            )
         elif job_type == SPRITE:
-            bound = recording_verdicts(bound, VerdictProduct.SPRITES)
+            bound = recording_verdicts(
+                partial(
+                    sprite,
+                    settings=settings,
+                    hardware=hardware,
+                    should_generate=should_generate,
+                    read_rates=read_rates,
+                    fingerprints_settle_into=fingerprints_settle_into,
+                ),
+                VerdictProduct.SPRITES,
+            )
         register_handler(
             job_type,
             bound,

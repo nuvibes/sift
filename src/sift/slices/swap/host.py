@@ -54,12 +54,22 @@ from sift.slices.swap import lock
 from sift.slices.swap.frames import Chunk as Chunk
 from sift.slices.swap.frames import Conn as Conn
 from sift.slices.swap.frames import ProtocolError as ProtocolError
-from sift.slices.swap.handshake import EXPIRED, LOST, OLDER, REASON_DONE, code_of, hello, read_hello
+from sift.slices.swap.handshake import (
+    DISK_FULL,
+    EXPIRED,
+    LOST,
+    OLDER,
+    REASON_DONE,
+    code_of,
+    hello,
+    read_hello,
+)
 from sift.slices.swap.live import Hosting, _Live
 from sift.slices.swap.models import Chosen
 from sift.slices.swap.receiving import _Receiving
 from sift.slices.swap.sending import _Sending
 from sift.slices.swap.token import Token, mint
+from sift.slices.swap.transfer import DiskFull
 
 if TYPE_CHECKING:
     from sift.slices.swap.session import SwapSessions
@@ -300,7 +310,11 @@ class HostSession(_Sending, _Live):
             return
         self.streams_in.add(task)
         self.watchdog.heard()
-        await receiving.receive(conn)
+        try:
+            await receiving.receive(conn)
+        except DiskFull:
+            log.info("swap.disk_full", swap=self.short_id)
+            await self.end(DISK_FULL)
 
     async def hosting_moved(self, hosting: Hosting) -> None:
         """The provider moved the public port at a renewal. Before anybody has joined, the token is

@@ -267,6 +267,8 @@ export function endedWords(session: SwapSession): string {
 			return 'The token ran out before anyone joined, so nothing was sent. Start a new swap to make another.';
 		case 'used':
 			return 'That token has been used already, so nothing was sent. Ask them to start a new swap.';
+		case 'disk full':
+			return 'The swap stopped: this device ran out of disk space. Free some space, then swap again.';
 		default:
 			return session.end_reason ? `The swap ended: ${session.end_reason}.` : 'The swap ended.';
 	}

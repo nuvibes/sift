@@ -19,6 +19,7 @@ from sift.kernel.jobs import JobContext, JobQueue
 from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.quiet_hours import next_opening
 from sift.kernel.media import Accelerator
+from sift.kernel.ml.pictures import OnePicture
 from sift.kernel.tunnels import EGRESS
 from sift.kernel.wiring import provide
 from sift.kernel.workbench import Workbench
@@ -39,7 +40,9 @@ from sift.slices import (
     watermarks,
 )
 from sift.slices.download.sources.net import guarded_session
+from sift.slices.watermarks.frames import frame_requests as marks_frame_requests
 from sift.wiring.built import Storage, Understanding
+from sift.wiring.imports import arriving_products
 from sift.wiring.readiness import marks_cannot_run, meaning_cannot_run
 
 
@@ -241,8 +244,9 @@ def _register_watermarks(products: importing.ProductRegistry, app: FastAPI, want
             # `read_asset` reads the file every time it is asked.
             again=True,
             cannot_run=partial(marks_cannot_run, marks_service),
-            # No frames: this pass cuts two crops out of one frame with a graph of its own, which
-            # is not a moment the kernel can prepare for it.
+            # Its one frame, the two crops cut by a graph of its own, which a task's one decode
+            # carries as it carries the faces' and meaning's moments.
+            frames=marks_frame_requests,
         )
     )
 
@@ -449,6 +453,13 @@ def build_products(
         )
     )
     provide(app, importing.PRODUCTS, products)
-    # The pass's run and task, registered once the products they read are there.
-    importing.register_handlers(content=store.content, products=products)
+    # The pass's run and task, registered once the products they read are there. A file's task
+    # decodes a still once for its passes, and a file that just landed is asked for by the import
+    # switches (`arriving_products`), the way `build_imports` hands its task out.
+    importing.register_handlers(
+        content=store.content,
+        products=products,
+        pictures=OnePicture(store.content, settings=settings),
+        arriving=partial(arriving_products, policy),
+    )
     return products

@@ -742,8 +742,24 @@ async def test_a_captured_tool_that_will_not_start_is_reported() -> None:
 async def test_a_captured_tool_that_overruns_is_stopped() -> None:
     """Its own timeout, enforced on its own thread rather than by the loop: there is no loop
     involved here to enforce one."""
-    with pytest.raises(sp.SubprocessError, match="took too long"):
+    with pytest.raises(sp.TookTooLong, match="took too long"):
         await sp.capture([sys.executable, "-c", "import time; time.sleep(30)"], time_limit=0.3)
+
+
+async def test_a_cancelled_capture_ends_its_tool(tmp_path: Path) -> None:
+    """A cancelled job must not leave its decoder running to its own time limit."""
+    marker = tmp_path / "still-running"
+    argv = [sys.executable, "-c", f"import time; time.sleep(2); open({str(marker)!r}, 'w')"]
+    task = asyncio.ensure_future(sp.capture(argv, time_limit=60))
+    await asyncio.sleep(0.5)
+    began = time.monotonic()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert time.monotonic() - began < 5
+    await asyncio.sleep(3)
+    assert not marker.exists()
 
 
 async def test_a_captured_tool_that_failed_raises_rather_than_reading_as_empty() -> None:

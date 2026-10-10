@@ -12,7 +12,7 @@ LIBRARY_COMPONENT = "library"
 LIBRARY_VERSION = 7
 
 CONTENT_COMPONENT = "content"
-CONTENT_VERSION = 31
+CONTENT_VERSION = 32
 
 USER_STATE_COMPONENT = "user_state"
 USER_STATE_VERSION = 6
@@ -225,7 +225,9 @@ CREATE TABLE IF NOT EXISTS assets (
   -- The moment the tile's still was cut at, chosen by what the frame shows (a black or faded
   -- frame is refused). NULL is a still not cut yet, or cut before that choice existed; either is
   -- read as the first frame.
-  still_at_ms         INTEGER
+  still_at_ms         INTEGER,
+  -- A JPEG a browser draws apart from its stored pixels: NULL never looked, 0 alike, 1 apart.
+  turn_apart          INTEGER
 )
 """
 
@@ -397,6 +399,10 @@ _DROP_AVIF_PREVIEWS_CUT_FROM_THE_COVER = (
     "(SELECT id FROM assets WHERE media_type = 'gif' AND mime = 'image/avif')"
 )
 
+#: Content version 32: whether a browser draws a JPEG apart from its stored pixels (NULL never
+#: looked, 0 alike, 1 apart), written at the take-in from the head already read.
+_ADD_TURN_APART = "ALTER TABLE assets ADD COLUMN turn_apart INTEGER"
+
 #: Content version 25: the moment a tile's still was cut at.
 _ADD_STILL_AT = "ALTER TABLE assets ADD COLUMN still_at_ms INTEGER"
 
@@ -431,6 +437,7 @@ _STEPS: tuple[tuple[int, tuple[str, ...]], ...] = (
     (29, (_REREAD_THE_HEIF_STILLS,)),
     (30, _START_INDEXES),
     (31, _BACKLOG),
+    (32, (_ADD_TURN_APART,)),
 )
 
 

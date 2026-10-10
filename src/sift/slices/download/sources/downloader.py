@@ -117,6 +117,12 @@ _NOTHING_MARKERS = re.compile(
     r"(?i)(\b404\b|not\s+found|unavailable|deleted|removed|no\s+video|no\s+media|"
     r"unable\s+to\s+extract)"
 )
+#: A Site's answers that pass: a limit on requests, or trouble of its own. Read before the markers,
+#: which take a 429 for a login and a 503's "Service Unavailable" for a removed post.
+_COMES_BACK = frozenset(
+    {"rate-limited"}
+    | {f"http-{status}" for status in (408, 429, 500, 502, 503, 504, 520, 521, 522, 524, 527)}
+)
 # A Site no tool Sift ships can read: permanent, so never retried.
 _UNSUPPORTED_MARKERS = re.compile(
     r"(?i)(unsupported\s+url|no\s+suitable\s+extractor|is\s+not\s+a\s+supported\s+(site|url))"
@@ -581,6 +587,9 @@ class Downloader:
         # Final answers are recorded once and not retried.
         if known is not None and known.final:
             return NothingFound(known.sentence, **extra)
+        # A Site that is limiting requests or having trouble answers later: retried, in its words.
+        if known is not None and known.code in _COMES_BACK:
+            return DownloadError(known.sentence, **extra)
 
         if _LOGIN_MARKERS.search(stderr):
             return LoginRequired(_worded(known, stderr, self._login_message(url)), **extra)

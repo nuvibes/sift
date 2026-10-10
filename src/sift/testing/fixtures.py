@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from sift.kernel import attention, media, when
+from sift.kernel import attention, media_share, when
 from sift.kernel import subprocess as tools
 from sift.kernel.access import Repository, Role, Viewer
 from sift.kernel.config import Settings
@@ -236,7 +236,7 @@ def clean_handlers() -> Iterator[None]:
 def nobody_at_the_keyboard(monkeypatch: pytest.MonkeyPatch) -> None:
     """Read the computer as left alone, so a booted pool runs its full count in every test."""
     monkeypatch.setattr(attention, "ATTENTION", attention.Attention(lambda: None))
-    monkeypatch.setattr(media, "_share", None)
+    monkeypatch.setattr(media_share, "_share", None)
     monkeypatch.setattr(tools, "_background_rate", None)
 
 

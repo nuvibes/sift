@@ -14,7 +14,9 @@ nothing about a guard until the guard has been removed and the test has been wat
 from __future__ import annotations
 
 import asyncio
+import json
 import re
+import sqlite3  # nosemgrep: sift-no-database-driver-outside-kernel (the error class only)
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -227,6 +229,32 @@ async def test_a_fresh_queue_does_not_also_run_the_migration(temp_db: Database) 
     assert [row["name"] for row in columns].count("run_after") == 1
 
 
+@pytest.mark.integration
+async def test_version_20_lets_a_stored_stash_box_key_go(job_queue: JobQueue) -> None:
+    """A master key carried in an enrich payload before round P is dropped by the step, and the
+    rest of the payload is kept; a payload with no key is left as it is."""
+    handler = noop_handler()
+    keyed = await job_queue.enqueue(handler, {"asset_id": "A"})
+    plain = await job_queue.enqueue(handler, {"asset_id": "B"})
+    async with job_queue._db.write() as connection:
+        await connection.execute(
+            "UPDATE jobs SET type = 'stash_box_enrich', payload = json_set(payload, '$.key', 'k')"
+            " WHERE id = ?",
+            (keyed,),
+        )
+        await connection.execute("UPDATE jobs SET type = 'stash_box_enrich' WHERE id = ?", (plain,))
+        await jobs_schema.initialize(connection, on_disk=19)
+
+    rows = {
+        row["id"]: json.loads(row["payload"])
+        for row in await job_queue._db.fetch_all(
+            "SELECT id, payload FROM jobs WHERE id IN (?, ?)", (keyed, plain)
+        )
+    }
+    assert rows[keyed] == {"asset_id": "A"}
+    assert rows[plain] == {"asset_id": "B"}
+
+
 # --- enqueue ----------------------------------------------------------------------------
 
 
@@ -268,6 +296,35 @@ async def test_a_deduped_job_collapses_onto_the_one_already_waiting(job_queue: J
     second = await job_queue.enqueue(scan, {"folder_id": "01HQ"}, dedupe=True)
 
     assert second == first, "the second ask collapsed onto the job already waiting"
+
+
+@pytest.mark.integration
+async def test_a_callers_row_is_written_with_its_job_or_not_at_all(job_queue: JobQueue) -> None:
+    """A row naming its job, written in the job's own transaction: a stop leaves both or neither,
+    and a collapsed ask joins the job that was already waiting."""
+    await job_queue._db.execute("CREATE TABLE asked (job_id TEXT NOT NULL, what TEXT UNIQUE)")
+    scan = noop_handler()
+    row = "INSERT INTO asked (job_id, what) VALUES (?, ?)"
+
+    first = await job_queue.enqueue(scan, {"folder_id": "01HQ"}, with_row=(row, ("one",)))
+    collapsed = await job_queue.enqueue(
+        scan, {"folder_id": "01HR"}, dedupe=True, with_row=(row, ("two",))
+    )
+    again = await job_queue.enqueue(
+        scan, {"folder_id": "01HR"}, dedupe=True, with_row=(row, ("three",))
+    )
+    with pytest.raises(sqlite3.IntegrityError):
+        await job_queue.enqueue(scan, {"folder_id": "01HS"}, with_row=(row, ("one",)))
+
+    asked = await job_queue._db.fetch_all("SELECT job_id, what FROM asked ORDER BY what")
+    assert [(r["what"], r["job_id"]) for r in asked] == [
+        ("one", first),
+        ("three", collapsed),
+        ("two", collapsed),
+    ]
+    assert again == collapsed
+    jobs = await job_queue._db.fetch_all("SELECT payload FROM jobs WHERE payload LIKE '%01HS%'")
+    assert jobs == [], "the refused row took its job with it"
 
 
 @pytest.mark.integration
@@ -1189,3 +1246,157 @@ async def test_a_press_is_headed_by_a_row_in_its_own_words_over_every_file(
     )
     assert collapsed == [placed[0]]
     assert len((await job_queue.list(tops_only=True)).jobs) == 1, "a head that heads nothing"
+
+
+@pytest.mark.integration
+async def test_a_settle_that_has_come_due_goes_before_the_work_of_its_urgency(
+    temp_db: Database,
+) -> None:
+    """A settle asked for during a run waits its minute, then goes ahead of the run's rows at its
+    urgency, so its answer appears during the run; work more urgent still goes first."""
+    await temp_db.initialize_schema()
+    clock = FakeClock(1000)
+    queue = JobQueue(temp_db, clock=clock.now)
+    kind = noop_handler()
+    backlog = [await queue.enqueue(kind, {"asset_id": f"A{n}"}) for n in range(3)]
+    sweep = await queue.enqueue(noop_handler("sweep"), run_after=1060)
+    pressed = await queue.enqueue(noop_handler("pressed"), priority=50)
+    clock.advance(60)
+
+    claimed = []
+    while (job := await queue.claim(WORKER)) is not None:
+        claimed.append(job.id)
+    assert claimed == [pressed, sweep, *backlog]
+
+
+@pytest.mark.integration
+async def test_a_claim_passes_a_kind_at_its_cap_without_reading_its_rows(
+    job_queue: JobQueue,
+) -> None:
+    """The claim seeks each kind's head, so work at its cap costs nothing however much of it waits,
+    rather than a walk of every waiting row ahead of the first it may take."""
+    from sift.kernel.jobs.queue_claim import _CLAIM, claim_parameters
+
+    capped, other = noop_handler("capped"), noop_handler("other")
+    for n in range(30):
+        await job_queue.enqueue(capped, {"asset_id": f"A{n}"})
+    last = await job_queue.enqueue(other)
+
+    job = await job_queue.claim(WORKER, limits={capped: 0})
+
+    assert job is not None and job.id == last
+    asked = claim_parameters(WORKER, 0, [capped], (True, "[]"), (True, "[]", "[]"), None)
+    explained = "EXPLAIN QUERY PLAN " + _CLAIM  # nosemgrep: sift-no-string-built-sql
+    plan = await job_queue._db.fetch_all(explained, asked)  # nosemgrep: sift-no-string-built-sql
+    details = " ".join(str(row["detail"]) for row in plan)
+    assert "USING INDEX ix_jobs_claim_heads" in details
+    assert "ix_jobs_claim_by_id" not in details
+
+
+@pytest.mark.integration
+async def test_work_of_a_kind_at_its_cap_wakes_nobody(job_queue: JobQueue) -> None:
+    """The worker that ends the running one claims next, so an idle worker woken for it would claim
+    nothing inside the writer's lock."""
+    woken: list[int] = []
+    job_queue.listen_for_work(lambda: woken.append(1))
+    capped = noop_handler("capped")
+    await job_queue.enqueue(capped)
+    assert len(woken) == 1
+    assert await job_queue.claim(WORKER, limits={capped: 1}) is not None
+    assert await job_queue.claim(OTHER_WORKER, limits={capped: 1}) is None
+    await job_queue.enqueue(capped)
+    assert len(woken) == 1, "at its cap as the last claim found it"
+    await job_queue.enqueue(noop_handler("free"))
+    assert len(woken) == 2
+
+
+@pytest.mark.integration
+async def test_a_retry_wakes_every_idle_worker(job_queue: JobQueue) -> None:
+    """Rows a retry or a resume puts back name no arrival: every idle worker is told."""
+    told: list[int] = []
+    job_queue.listen_for_anything(lambda: told.append(1))
+    job_id = await job_queue.enqueue(noop_handler())
+    await job_queue.cancel(job_id)
+    assert await job_queue.retry(job_id)
+    assert told == [1]
+
+
+@pytest.mark.integration
+async def test_a_settle_asked_from_a_job_is_as_urgent_as_that_job(job_queue: JobQueue) -> None:
+    """A pressed run's files ask for their whole-library passes at the run's urgency, so the pass
+    runs during the run rather than after the whole of it; outside a job the asked one holds."""
+    from sift.kernel.jobs.queue_core import ASKED_AT
+
+    sweep, other = noop_handler("sweep"), noop_handler("other")
+    token = ASKED_AT.set(50)
+    try:
+        asked = await job_queue.enqueue_when_settled(sweep, priority=200)
+    finally:
+        ASKED_AT.reset(token)
+    alone = await job_queue.enqueue_when_settled(other, priority=200)
+    first, second = await job_queue.get(asked), await job_queue.get(alone)
+    assert first is not None and first.priority == 50
+    assert second is not None and second.priority == 200
+
+
+@pytest.mark.integration
+async def test_the_live_lookups_read_the_live_rows_index(job_queue: JobQueue) -> None:
+    """ "Is this already asked for" is a seek of the live rows by type and payload, never a walk of
+    a type's rows; one read answers for a job asked for in two shapes."""
+    from sift.kernel.jobs.queue_enqueue import _PENDING_LIKE
+    from sift.kernel.jobs.queue_reads import _LIVE_LIKE
+
+    kind = noop_handler()
+    await job_queue.enqueue(kind, {"asset_id": "A", "shape": 2})
+    assert await job_queue.any_live(kind, [{"asset_id": "A"}, {"asset_id": "A", "shape": 2}])
+    assert not await job_queue.any_live(kind, [{"asset_id": "A"}, {"asset_id": "B"}])
+    for sql, params in ((_PENDING_LIKE, (kind, "{}")), (_LIVE_LIKE, (kind, '["{}"]'))):
+        explained = "EXPLAIN QUERY PLAN " + sql  # nosemgrep: sift-no-string-built-sql
+        db = job_queue._db
+        plan = await db.fetch_all(explained, params)  # nosemgrep: sift-no-string-built-sql
+        assert any("ix_jobs_live_payload" in str(row["detail"]) for row in plan), plan
+
+
+@pytest.mark.integration
+async def test_a_walk_asked_for_runs_beside_a_whole_walk_at_its_cap(job_queue: JobQueue) -> None:
+    """A walk at its cap of one is the whole library's for hours; a folder somebody pressed or a few
+    files the watcher named take one place of their own beside it, and only one."""
+    from sift.kernel.jobs.families import Family
+
+    async def walk(_context: JobContext) -> None:
+        return None
+
+    register_handler("walk", walk, name="Test walk", family=Family.SCAN)
+    whole = await job_queue.enqueue("walk", {"root_id": "r"})
+    named = await job_queue.enqueue("walk", {"root_id": "r", "paths": ["a.png"]})
+    folder = await job_queue.enqueue("walk", {"root_id": "r", "folder_id": "f"})
+    first = await job_queue.claim(WORKER, limits={"walk": 1})
+    assert first is not None and first.id == whole
+    assert await job_queue.claim("paused", limits={"walk": 0}) is None, "paused is paused"
+
+    beside = await job_queue.claim(OTHER_WORKER, limits={"walk": 1})
+    assert beside is not None and beside.id == named
+    assert await job_queue.claim("a third", limits={"walk": 1}) is None, "one place, not two"
+    await job_queue.complete(named, OTHER_WORKER)
+    after = await job_queue.claim(OTHER_WORKER, limits={"walk": 1})
+    assert after is not None and after.id == folder
+
+
+@pytest.mark.integration
+async def test_a_files_first_read_goes_before_older_work_of_its_urgency(
+    job_queue: JobQueue,
+) -> None:
+    """With no hold, the files a walk has yet to read would wait behind every older file's later
+    steps; the read goes first up to its cap, and the oldest work takes every other worker."""
+    from sift.kernel.jobs.families import Family
+
+    async def read(_context: JobContext) -> None:
+        return None
+
+    register_handler("read", read, name="Test read", family=Family.SCAN)
+    later = noop_handler("later")
+    older = [await job_queue.enqueue(later, {"asset_id": f"A{n}"}) for n in range(2)]
+    first = await job_queue.enqueue("read", {"asset_id": "B"})
+
+    claimed = [await job_queue.claim(WORKER, limits={"read": 1}) for _ in range(3)]
+    assert [job.id for job in claimed if job is not None] == [first, *older]

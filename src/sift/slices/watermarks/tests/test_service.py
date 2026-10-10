@@ -302,6 +302,47 @@ async def test_a_file_with_no_mark_is_written_down_as_looked_at_and_answers_noth
         await database.close()
 
 
+async def test_a_damaged_picture_is_one_verdict_in_the_decoders_words_and_no_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The decoder saying the bytes are broken is a verdict with its words, never a failure the
+    queue would try again; any other refusal is still raised, and nothing is read for either."""
+    _open_as(monkeypatch, tmp_path, media_type="image", duration_ms=None)
+    filed: list[tuple[str, str, str, str]] = []
+
+    class Content:
+        async def record_verdict(
+            self, asset_id: str, product: str, *, code: str, reason: str, transient: bool = False
+        ) -> None:
+            filed.append((asset_id, product, code, reason))
+
+    async def damaged(path: Path, **rest: Any) -> list[frames.Piece]:
+        raise media.FFmpegError("failed: [mjpeg @ 0x1f] Decode error rate 1 exceeds maximum")
+
+    monkeypatch.setattr(frames, "read", damaged)
+    models = Models()
+    service = _service(models=models)
+    service._content = cast(Any, Content())
+
+    assert await service.read_asset(A_STILL) is None
+    assert filed == [
+        (
+            A_STILL,
+            "watermarks",
+            "no_frame",
+            "The decoder refused the picture: [mjpeg] Decode error rate 1 exceeds maximum",
+        )
+    ]
+    assert models.asked == []
+
+    async def stalled(path: Path, **rest: Any) -> list[frames.Piece]:
+        raise media.FFmpegError("the share stopped answering")
+
+    monkeypatch.setattr(frames, "read", stalled)
+    with pytest.raises(media.FFmpegError, match="stopped answering"):
+        await service.read_asset(A_STILL)
+
+
 async def test_a_file_whose_copies_are_all_out_of_reach_is_left_unread(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

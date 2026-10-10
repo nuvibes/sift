@@ -8,11 +8,13 @@ that survives a restart. Nothing about a job lives in memory that is not first w
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "jobs"
-VERSION = 17
+VERSION = 21
 
 # The state list is repeated in `JobState`, since a CHECK takes no placeholder; a test holds the two
 # in step. `paused` is a state, not a flag, so nothing that asks of the state can claim it.
@@ -229,6 +231,18 @@ _LATER_INDEX = (
 )
 
 
+# What the claim and the queue's "is this already asked for" read, few rows however long the queue.
+# Each WHERE is its readers' terms word for word. Version 18.
+_LIVE_INDEXES = (
+    # The claim's seek per kind of work and timing: the most urgent, oldest row that never waited.
+    "CREATE INDEX IF NOT EXISTS ix_jobs_claim_heads ON jobs(type, timing, priority, id)"
+    " WHERE state = 'queued' AND run_after IS NULL",
+    # One job, by its type and exact payload, among the live rows only.
+    "CREATE INDEX IF NOT EXISTS ix_jobs_live_payload ON jobs(type, payload)"
+    " WHERE state IN ('queued', 'running', 'blocked', 'paused')",
+)
+
+
 async def _keep_family_tallies(connection: Connection) -> None:
     await connection.execute(_CREATE_FAMILY_TALLIES)
     await connection.execute("DELETE FROM job_family_tallies")
@@ -245,23 +259,102 @@ async def _keep_tallies(connection: Connection) -> None:
         await connection.execute(statement)
 
 
+# A long job's plan, written before it starts, and how far it got: a walk's restart carries on from
+# the last settled batch. `worker_id` is the claim that settled it, so boot can tell a restart that
+# cut work short from a job that never got anywhere. Gone with the job. Version 19.
+_CREATE_PLAN = """
+CREATE TABLE IF NOT EXISTS job_plan (
+  job_id   TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  seq      INTEGER NOT NULL,
+  rel_path TEXT NOT NULL,
+  size     INTEGER NOT NULL,
+  mtime_ns INTEGER NOT NULL,
+  kind     TEXT NOT NULL,
+  verdict  TEXT NOT NULL,
+  PRIMARY KEY (job_id, seq)
+) WITHOUT ROWID
+"""
+
+_CREATE_PLAN_MARKS = """
+CREATE TABLE IF NOT EXISTS job_plan_marks (
+  job_id    TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+  settled   INTEGER NOT NULL,
+  worker_id TEXT NOT NULL
+) WITHOUT ROWID
+"""
+
+
+#: Jobs version 21: the live rows by the file they concern, so a cache's "is work still owed on
+#: this file" and any other lookup by asset among live rows is a seek (`_WORK_OWED`).
+_LIVE_ASSET_INDEX = (
+    "CREATE INDEX IF NOT EXISTS ix_jobs_live_asset ON jobs(json_extract(payload, '$.asset_id'))"
+    " WHERE state IN ('queued', 'running', 'blocked', 'paused')"
+)
+
+#: Jobs version 20: a stash-box master key was carried in the enrich job's payload until round P;
+#: the job reads it from the sealed store now, and the rows that still hold one let it go.
+_FORGET_STASH_BOX_KEYS = (
+    "UPDATE jobs SET payload = json_remove(payload, '$.key') "
+    "WHERE type = 'stash_box_enrich' AND json_extract(payload, '$.key') IS NOT NULL"
+)
+
+
+async def _to_version_13(connection: Connection) -> None:
+    for index in _BY_TYPE_INDEXES:
+        await connection.execute(index)
+
+
+async def _to_version_14(connection: Connection) -> None:
+    await connection.execute("DROP INDEX IF EXISTS ix_jobs_claim_by_id")
+    await connection.execute(_CLAIM_INDEX)
+
+
+async def _to_version_15(connection: Connection) -> None:
+    if not await column_exists(connection, "jobs", "to_read"):
+        await connection.execute("ALTER TABLE jobs ADD COLUMN to_read TEXT")
+
+
+async def _to_version_18(connection: Connection) -> None:
+    for index in _LIVE_INDEXES:
+        await connection.execute(index)
+
+
+async def _to_version_19(connection: Connection) -> None:
+    await connection.execute(_CREATE_PLAN)
+    await connection.execute(_CREATE_PLAN_MARKS)
+
+
+async def _to_version_20(connection: Connection) -> None:
+    await connection.execute(_FORGET_STASH_BOX_KEYS)
+
+
+async def _to_version_21(connection: Connection) -> None:
+    await connection.execute(_LIVE_ASSET_INDEX)
+
+
+#: (version, the step to it, whether a fresh table needs it too): a fresh install runs the CREATE
+#: and then every step marked so, a database behind runs every step past its version.
+_STEPS: tuple[tuple[int, Callable[[Connection], Awaitable[None]], bool], ...] = (
+    (13, _to_version_13, False),
+    (14, _to_version_14, False),
+    (15, _to_version_15, False),
+    (16, _keep_tallies, True),
+    (17, _keep_family_tallies, True),
+    (18, _to_version_18, True),
+    (19, _to_version_19, True),
+    (20, _to_version_20, False),
+    (21, _to_version_21, True),
+)
+
+
 async def initialize(connection: Connection, on_disk: int) -> None:
     if on_disk < 1:
         await connection.execute(_CREATE_TABLE)
         for index in (*_INDEXES, *_BY_TYPE_INDEXES):
             await connection.execute(index)
-    if 0 < on_disk < 13:
-        for index in _BY_TYPE_INDEXES:
-            await connection.execute(index)
-    if 0 < on_disk < 14:
-        await connection.execute("DROP INDEX IF EXISTS ix_jobs_claim_by_id")
-        await connection.execute(_CLAIM_INDEX)
-    if 0 < on_disk < 15 and not await column_exists(connection, "jobs", "to_read"):
-        await connection.execute("ALTER TABLE jobs ADD COLUMN to_read TEXT")
-    if on_disk < 16:
-        await _keep_tallies(connection)
-    if on_disk < 17:
-        await _keep_family_tallies(connection)
+    for version, step, fresh_too in _STEPS:
+        if on_disk < version and (fresh_too or on_disk > 0):
+            await step(connection)
 
 
 register_schema_initializer(COMPONENT, VERSION, initialize, baseline=12)

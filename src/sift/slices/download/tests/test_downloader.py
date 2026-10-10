@@ -155,6 +155,27 @@ async def test_a_login_failure_becomes_login_required(
         )  # catch-all -> subprocess
 
 
+_PASSING = [
+    ("ERROR: [generic] 1: Unable to download webpage: HTTP Error 429: Too Many Requests", "429"),
+    ("[gallery-dl][error] HttpError: '429 Too Many Requests' for 'the address'", "429"),
+    ("ERROR: [generic] 1: Unable to download webpage: HTTP Error 503: Service Unavailable", "503"),
+    ("[gallery-dl][error] HttpError: '503 Service Unavailable' for 'the address'", "503"),
+    ("[gallery-dl][error] HttpError: '502 Bad Gateway' for 'the address'", "502"),
+]
+
+
+@pytest.mark.parametrize(("said", "status"), _PASSING, ids=[one[0][:24] for one in _PASSING])
+def test_a_site_limiting_requests_or_in_trouble_is_retried_in_its_own_words(
+    said: str, status: str
+) -> None:
+    """Neither a login wanted nor a post removed: the next try, after a wait, can succeed."""
+    failure = Downloader()._interpret("https://public.example/x", said, had_cookies=False)
+
+    assert type(failure) is DownloadError
+    assert f"answered {status}" in str(failure)
+    assert "cookies" not in str(failure) and "private" not in str(failure)
+
+
 async def test_a_tool_that_gave_up_on_a_silent_site_is_no_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

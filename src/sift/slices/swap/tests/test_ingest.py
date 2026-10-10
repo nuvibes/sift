@@ -19,6 +19,7 @@ import shutil
 import struct
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from dataclasses import replace
 from functools import partial
 from pathlib import Path
 from typing import Any
@@ -403,6 +404,25 @@ async def test_bytes_that_are_not_the_bytes_announced_are_refused(
     assert caught.value.reason == ingest.DIGEST
     assert await _asset_count(temp_db) == 0
     assert await _received_count(temp_db, session.id) == 0
+
+
+async def test_bytes_the_session_read_for_their_digest_are_not_read_again_to_land(
+    lander: tuple[Lander, Told, Faces], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run, _, _ = lander
+    received = _received(_staged(tmp_path, "k1.part", _photo_with_location()))
+    reads: list[Path] = []
+    real = ingest.whole_digest
+
+    def counted(path: Path) -> str:
+        reads.append(path)
+        return real(path)
+
+    monkeypatch.setattr(ingest, "whole_digest", counted)
+
+    await run(replace(received, checked=True))
+
+    assert reads == []
 
 
 async def test_a_file_the_strip_cannot_read_is_refused_rather_than_let_in_unstripped(

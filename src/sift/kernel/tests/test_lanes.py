@@ -681,3 +681,133 @@ async def test_a_wait_for_a_place_is_filed_to_the_job_that_waited() -> None:
     await holder
 
     assert cost.summary()["storage_wait_ms"] >= 150
+
+
+# --- a scan somebody asked for, what a storage gives, and who holds a place ----------------------
+
+
+async def test_a_scan_somebody_asked_for_is_handed_a_place_before_a_walks_queued_reads() -> None:
+    """A moved folder's scan is handed the next place, ahead of every read a walk has queued."""
+    lanes = StorageLanes(network_reads_at_once=1)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+    await lane.take(lanes_module.ORDINARY)
+    order: list[str] = []
+
+    async def wait(kind: int, name: str) -> None:
+        await lane.take(kind)
+        order.append(name)
+
+    walk = [asyncio.create_task(wait(lanes_module.FIRST, "W")) for _ in range(20)]
+    await asyncio.sleep(0)
+    asked = asyncio.create_task(wait(lanes_module.ASKED, "A"))
+    await asyncio.sleep(0)
+    lane.give_back()
+    await asyncio.sleep(0)
+
+    assert order == ["A"]
+    for task in [*walk, asked]:
+        task.cancel()
+    await asyncio.gather(*walk, asked, return_exceptions=True)
+
+
+async def test_a_task_asked_ahead_stays_ahead_inside_a_reader_that_goes_first() -> None:
+    async def asked() -> int:
+        lanes_module.ahead_of_passes()
+        async with lanes_module.first():
+            return lanes_module._RANK.get()
+
+    async def not_asked() -> int:
+        lanes_module.ahead_of_passes(False)
+        async with lanes_module.first():
+            return lanes_module._RANK.get()
+
+    assert await asyncio.create_task(asked()) == lanes_module.ASKED
+    assert await asyncio.create_task(not_asked()) == lanes_module.FIRST
+    assert lanes_module._RANK.get() == lanes_module.ORDINARY
+
+
+async def test_what_a_share_gives_is_its_bytes_over_the_time_it_had_a_reader(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [6_000.0]
+    monkeypatch.setattr("sift.kernel.lanes.time.monotonic", lambda: clock[0])
+    lanes = StorageLanes(network_reads_at_once=2)
+    lanes_module.install(lanes)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+    assert lane.achieved_megabytes_per_second is None
+
+    async with lanes.reading(Path("/nas/a/1")):
+        clock[0] += 90.0
+        lanes_module.note_read(Path("/nas/a/1"), 180_000_000)
+        # Read while the reader is still in: the time so far counts.
+        assert lane.achieved_megabytes_per_second == pytest.approx(2.0)
+    clock[0] += 300.0
+    lanes_module.note_read(Path("/disk/a"), 1)
+
+    assert lane.bytes_read == 180_000_000
+    assert lane.achieved_megabytes_per_second == pytest.approx(2.0)
+    assert lane.as_dict()["achieved_mb_per_second"] == 2.0
+    assert lane.as_dict()["bytes_read"] == 180_000_000
+    # Past the window, what was read then says nothing about now.
+    clock[0] += lanes_module.ACHIEVED_MINUTES * 60.0
+    lane.note_read(0)
+    lane._count(nbytes=1)
+    assert lane.achieved_megabytes_per_second is None
+
+
+async def test_no_lanes_note_no_bytes_and_hold_every_storage() -> None:
+    lanes_module.note_read(Path("/nas/a"), 10)
+    assert lanes_module.holding(Path("/nas/a"))
+
+
+async def test_a_reader_holds_its_storage_only_while_it_is_in_the_lane() -> None:
+    lanes = StorageLanes(network_reads_at_once=1)
+    lanes_module.install(lanes)
+    assert not lanes_module.holding(Path("/nas/a/1"))
+    assert lanes_module.holding(Path("/disk/a/1")), "a disk has no places to hold"
+    async with lanes_module.reading(Path("/nas/a/1")):
+        assert lanes_module.holding(Path("/nas/b/2"))
+        assert await asyncio.to_thread(lanes_module.holding, Path("/nas/a/1"))
+    assert not lanes_module.holding(Path("/nas/a/1"))
+
+
+async def test_a_lane_says_who_holds_and_who_waits_once_a_minute_while_anybody_waits() -> None:
+    from structlog.testing import capture_logs
+
+    lanes = StorageLanes(network_reads_at_once=1)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+    await lane.take(lanes_module.ORDINARY)
+    waiting = asyncio.create_task(lane.take(lanes_module.ASKED))
+    await asyncio.sleep(0)
+    armed = lane._report
+    assert armed is not None, "a wait began with no report coming"
+    armed.cancel()
+
+    with capture_logs() as logs:
+        lane._say_state()
+        again = lane._report
+        lane.give_back()
+        await waiting
+        lane._say_state()
+
+    said = [one for one in logs if one["event"] == "lanes.state"]
+    assert len(said) == 1
+    assert said[0]["waiting"] == 1 and said[0]["asked"] == 1 and said[0]["active"] == 1
+    assert again is not None, "a lane with somebody waiting stopped reporting"
+    again.cancel()
+    assert lane._report is None, "a lane nobody waits on kept reporting"
+    lane.give_back()
+
+
+async def test_a_long_read_is_counted_in_the_minutes_it_took(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = [6_030.0]
+    monkeypatch.setattr("sift.kernel.lanes.time.monotonic", lambda: clock[0])
+    lane = StorageLanes(network_reads_at_once=1).lane_for(Path("/nas/a/x"))
+    await lane.take(lanes_module.ORDINARY)
+    clock[0] += 150.0
+    lane.give_back()
+
+    assert sorted(lane._minutes) == [100.0, 101.0, 102.0]
+    assert [round(one[1]) for _, one in sorted(lane._minutes.items())] == [30, 60, 60]

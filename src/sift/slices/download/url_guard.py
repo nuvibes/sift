@@ -5,6 +5,7 @@ Every resolved address and every redirect hop must be public; the tool proxy gua
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -39,11 +40,53 @@ class UrlRejected(Exception):
         self.reason = reason
 
 
+class LookupFailedForNow(Exception):
+    """The name could not be looked up because the network or its resolver is not answering: a
+    wait for the network, never a verdict on the address."""
+
+
+LOOKUP_FAILED_FOR_NOW = (
+    "The address couldn't be looked up just now, so the network may be down. Sift tries again "
+    "in a little while."
+)
+
+#: A resolver's "try later" answers: POSIX's, then Windows' own numbers for the same two.
+_FOR_NOW = frozenset(
+    code
+    for code in (
+        getattr(socket, "EAI_AGAIN", None),
+        getattr(socket, "EAI_FAIL", None),
+        11002,
+        11003,
+    )
+    if code is not None
+)
+
+#: Documentation addresses: a datagram socket's connect to one asks the routing table only and
+#: sends nothing.
+_NO_ONE = (("192.0.2.1", socket.AF_INET), ("2001:db8::1", socket.AF_INET6))
+
+
+def _has_a_route() -> bool:
+    """Whether this machine has any way out to the internet at all; nothing leaves it."""
+    for address, family in _NO_ONE:
+        try:
+            with socket.socket(family, socket.SOCK_DGRAM) as probe:
+                probe.connect((address, 9))
+        except OSError:
+            continue
+        return True
+    return False
+
+
 def _resolve(host: str) -> list[str]:
-    """Every address a host resolves to. Raises `UrlRejected` if it does not resolve at all."""
+    """Every address a host resolves to. Raises `UrlRejected` if it does not resolve at all, and
+    `LookupFailedForNow` where the resolver or the network is what failed. Blocking."""
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
     except socket.gaierror as exc:
+        if exc.errno in _FOR_NOW or not _has_a_route():
+            raise LookupFailedForNow(LOOKUP_FAILED_FOR_NOW) from exc
         raise UrlRejected(
             "That address could not be found. Check it and try again.", reason="unresolvable"
         ) from exc
@@ -101,22 +144,31 @@ async def guard_url(
     url: str, *, follow: Follower, here: bool = True, max_hops: int = MAX_REDIRECT_HOPS
 ) -> None:
     """Refuse a URL the server must not fetch, checking every redirect hop the same way."""
-    _check_address(url, here=here)
+    await vet_url(url, here=here)
 
     current = url
     for _ in range(max_hops):
         nxt = await follow(current)
         if nxt is None:
             return
-        _check_address(nxt, here=here)
+        await vet_url(nxt, here=here)
         current = nxt
 
     _refuse(url, "too_many_redirects", "That link redirects too many times to be downloaded.")
 
 
 def check_url(url: str, *, here: bool = True) -> None:
-    """Refuse a URL by scheme and resolved address, for a caller that never follows redirects."""
+    """Refuse a URL by scheme and resolved address, for a caller that never follows redirects.
+    Blocking where it resolves: from the event loop, `vet_url`."""
     _check_address(url, here=here)
+
+
+async def vet_url(url: str, *, here: bool = True) -> None:
+    """`check_url` on a thread, so a resolver that is not answering never holds the event loop."""
+    if here:
+        await asyncio.to_thread(_check_address, url, here=here)
+    else:
+        _check_address(url, here=here)
 
 
 def confine_to(root: Path, candidate: Path) -> Path:
@@ -132,13 +184,16 @@ def confine_to(root: Path, candidate: Path) -> Path:
 
 
 __all__ = [
+    "LOOKUP_FAILED_FOR_NOW",
     "MAX_REDIRECT_HOPS",
     "SAFE_SCHEMES",
     "Follower",
+    "LookupFailedForNow",
     "UrlRejected",
     "address_is_public",
     "check_url",
     "confine_to",
     "guard_url",
     "next_hop",
+    "vet_url",
 ]

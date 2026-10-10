@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from sift.kernel import media
+from sift.kernel import heif, media
 from sift.kernel import sampling as sampler
 from sift.kernel.config import Settings
 from sift.kernel.content import (
@@ -67,6 +67,52 @@ def fingerprint_requests(probed: ffmpeg.Probed) -> list[media.FrameRequest]:
             )
         )
     return requests
+
+
+def still_request() -> media.RawFrames:
+    """The frame `_fingerprint` reads of a still, as a request a reader that decodes the still for
+    something else can fill (`thumbnails.thumbnail`)."""
+    size = perceptual.HASH_FRAME_SIZE
+    return media.RawFrames(
+        moments=(ffmpeg.hash_frame_moment(0),),
+        filters=ffmpeg.hash_frame_filter(size),
+        pixel_format=ffmpeg.HASH_PIXEL_FORMAT,
+        frame_bytes=size * size,
+    )
+
+
+async def probed_of(
+    store: ContentStore, source: Source, *, settings: Settings, ask: bool = True
+) -> ffmpeg.Probed:
+    """What the probe read of this file, from the answer it kept; the tool is asked again only
+    where none was kept or it holds no picture, and only if `ask`. A still's fingerprint needs
+    none of it.
+
+    The kept answer is also handed to the frame readers, so they do not ask the tool either.
+    """
+    if source.asset.media_type == _IMAGE:
+        return ffmpeg.parse_probe({})
+    body = await store.kept_probe(source.asset.id)
+    payload: dict[str, object] = {}
+    if body is not None:
+        try:
+            payload = ffmpeg.read_kept_probe(body)
+        except ValueError as error:
+            log.info(
+                "fingerprint.kept_probe_unreadable", asset_id=source.asset.id, detail=str(error)
+            )
+    probed = ffmpeg.parse_probe(payload)
+    if probed.vcodec is None:
+        if not ask:
+            return probed
+        payload = await ffmpeg.run_json(
+            ffmpeg.probe_args(source.path, settings=settings), reads=source.path
+        )
+        probed = ffmpeg.parse_probe(payload)
+    # The kept answer describes the file a decoder reads, but a HEIF photograph's own bytes.
+    if not (heif.is_heif_still(source.asset) and source.path != source.original):
+        await media.remember_reading(source.path, payload)
+    return probed
 
 
 @asynccontextmanager
@@ -397,26 +443,29 @@ async def _after_the_page(
 
 
 async def fingerprint_one(
-    store: ContentStore, asset_id: str, *, settings: Settings, arriving: bool = False
+    store: ContentStore,
+    asset_id: str,
+    *,
+    settings: Settings,
+    arriving: bool = False,
+    source: Source | None = None,
 ) -> bool | None:
     """Every near-duplicate fingerprint for one file, recorded. The unit the sweep, the Build and an
     arriving file's own job share; `arriving` is that last one's, and writes no line of history
-    (see `ContentStore.record_fingerprints`).
+    (see `ContentStore.record_fingerprints`). `source` is the file as a caller already resolved it.
 
     None where the file could not be reached, left for the next pass. Otherwise whether the
     stash-box grid was made; a file that is there and will not be read gets empty fingerprints.
     """
-    try:
-        source = await resolve_decodable(store, asset_id, settings=settings)
-    except (MissingAsset, NoReadableCopy):
-        return None
+    if source is None:
+        try:
+            source = await resolve_decodable(store, asset_id, settings=settings)
+        except (MissingAsset, NoReadableCopy):
+            return None
 
     video = source.asset.media_type not in (_IMAGE, _GIF)
     try:
-        payload = await ffmpeg.run_json(
-            ffmpeg.probe_args(source.path, settings=settings), reads=source.path
-        )
-        probed = ffmpeg.parse_probe(payload)
+        probed = await probed_of(store, source, settings=settings)
         async with _read_once(source, probed, settings=settings):
             frame, whole = await _fingerprint(source, probed, settings=settings)
             # Video only, as probing has it: a stash-box value for a photograph or a GIF would

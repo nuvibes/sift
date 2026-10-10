@@ -26,6 +26,8 @@ async def recover(queue: JobQueue) -> tuple[list[str], list[str]]:
 
     A job out of attempts is failed: one that brings the process down every time must stop.
     """
+    # First, so a walk the restart cut short keeps the attempt its work did not fail.
+    refunded = await queue.refund_progressed()
     requeued, failed = await queue.reclaim(stale_after=None, error=_INTERRUPTED)
     # After the reclaim, which lands a benchmark's pause still asked as a paused row.
     resumed = await queue.resume_after_benchmark()
@@ -36,6 +38,7 @@ async def recover(queue: JobQueue) -> tuple[list[str], list[str]]:
             requeued=len(requeued),
             failed=len(failed),
             resumed_after_benchmark=len(resumed),
+            not_charged=len(refunded),
         )
 
     return requeued, failed

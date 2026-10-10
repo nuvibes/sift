@@ -334,6 +334,11 @@ class _Incoming:
     dropped: bool = False
     #: The sender checks the whole after the last piece (`pieces`).
     once: bool = False
+    #: How many chunks the manifest holds as written down, and when (`owner.clock`) it was.
+    recorded: int = 0
+    recorded_at: float = 0.0
+    #: One record of the file at a time, so an older list never lands after a newer one.
+    recording: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def is_dropped(self) -> bool:
         """Read afresh after every wait: another stream can drop the file meanwhile."""
@@ -657,6 +662,10 @@ class _Live(_Figures):
                 await asyncio.wait_for(control.send({"end": _TELL[reason]}), 2.0)
         self.ended.set()
         await self.teardown()
+        receiving = self.receiving_half()
+        if receiving is not None:
+            # What arrived of a file part-way through, for a later swap with the same device.
+            await receiving.record_all()
         for flow in self.flows():
             if flow._writing is not None:
                 with contextlib.suppress(Exception):

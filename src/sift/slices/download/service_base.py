@@ -29,9 +29,9 @@ from sift.slices.download.sources import url_hash
 
 _INSERT_DOWNLOAD = (
     "INSERT INTO downloads"
-    " (id, url, url_hash, dest_folder_id, aimed_kind, aimed_id, aimed_by, created_at,"
+    " (job_id, id, url, url_hash, dest_folder_id, aimed_kind, aimed_id, aimed_by, created_at,"
     " remember, requested_by)"
-    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 #: What a dropped link was aimed at, read back when the file has landed. Three columns and nothing
@@ -180,23 +180,28 @@ class DownloadBase:
     ) -> str:
         """Record a download and queue the job that runs it. Returns the ledger row id."""
         download_id = new_id()
-        await self._say(
-            _INSERT_DOWNLOAD,
-            (
-                download_id,
-                url,
-                url_hash(url),
-                dest_folder_id,
-                aimed_kind,
-                aimed_id,
-                aimed_by,
-                int(time.time()),
-                _flag(choices.remember),
-                requested_by,
+        # The row and its job in one write: a stop between the two can leave neither alone.
+        await self._queue.enqueue(
+            DOWNLOAD,
+            {"download_id": download_id},
+            priority=WAITED_ON_PRIORITY,
+            with_row=(
+                _INSERT_DOWNLOAD,
+                (
+                    download_id,
+                    url,
+                    url_hash(url),
+                    dest_folder_id,
+                    aimed_kind,
+                    aimed_id,
+                    aimed_by,
+                    int(time.time()),
+                    _flag(choices.remember),
+                    requested_by,
+                ),
             ),
-            About.DOWNLOADS,
         )
-        await self._queue_for(download_id, {"download_id": download_id})
+        announce_now(EVERY_ADMIN, About.DOWNLOADS)
         return download_id
 
     async def _queue_for(self, download_id: str, payload: dict[str, Any]) -> None:

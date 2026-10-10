@@ -1,20 +1,30 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Reading a ZIP of pictures in place, refusing an unsafe archive from its index alone.
+"""Reading a ZIP of pictures in place, refusing an unsafe archive from its index alone, and the
+local copies a share's bytes are read into once.
 
-Nothing is decompressed until the central directory passes every check; videos are skipped."""
+Nothing is decompressed until the central directory passes every check; videos are skipped. A file
+written into the cache is written under a name of its own (`PART_SUFFIX`) and renamed into place, so
+a reader never opens half of one and two writers of the same picture never meet."""
 
 from __future__ import annotations
 
+import contextlib
+import os
+import stat
+import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from sift.kernel.paths import PathEscape, confine
+from sift.kernel.paths import O_NONBLOCK, PathEscape, confine
 
 __all__ = [
     "ARCHIVE_EXTENSIONS",
     "ArchiveRefused",
+    "CopyChanged",
     "Member",
+    "OpenArchive",
+    "copy_settled",
     "extract_member",
     "inspect",
     "is_archive",
@@ -34,6 +44,16 @@ MAX_RATIO = 200
 
 #: Small enough that a member is never held in memory whole, big enough not to syscall per kilobyte.
 _CHUNK = 1 << 20
+
+#: A share's own read size: plain 4 MB reads gave 24.5 to 26.4 MB/s where 128 KB samples gave 11.5
+#: to 14.9 on the same share.
+COPY_CHUNK = 4 * 1024 * 1024
+
+#: The end of a file still being written into the cache; whatever keeps the cache passes it over.
+PART_SUFFIX = ".part"
+
+#: How many times a cache write tries again when its folder went in the moment it was made.
+_PLACE_TRIES = 3
 
 
 class ArchiveRefused(Exception):
@@ -100,20 +120,68 @@ def inspect(archive: Path, *, wanted: frozenset[str]) -> list[Member]:
     return found
 
 
-def extract_member(archive: Path, member: str, destination: Path, *, cache_dir: Path) -> int:
-    """Write one member out, re-checking its name and measuring it; a liar is deleted."""
-    _safe_name(member, archive)
-    try:
-        target = confine(cache_dir, destination)
-    except PathEscape as escaped:
-        raise ArchiveRefused("that is not a place inside the cache") from escaped
+def _cache_place(destination: Path, cache_dir: Path) -> Path:
+    """`destination` proved inside the cache, its folder made. Asked again when the folder goes in
+    the moment it is made: the cache's keeper removes a picture's folder with its last picture."""
+    for attempt in range(1, _PLACE_TRIES + 1):
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            return confine(cache_dir, destination)
+        except (PathEscape, OSError) as failed:
+            going = not isinstance(failed, PathEscape) or isinstance(failed.__cause__, OSError)
+            if not going or attempt == _PLACE_TRIES:
+                raise ArchiveRefused("that is not a place inside the cache") from failed
+    raise AssertionError("unreachable")  # pragma: no cover
 
-    target.parent.mkdir(parents=True, exist_ok=True)
+
+def _part_of(target: Path) -> Path:
+    """A name of this write's own beside `target`, renamed onto it once whole."""
+    return target.with_name(f"{target.name}.{uuid.uuid4().hex}{PART_SUFFIX}")
+
+
+class OpenArchive:
+    """An archive opened at its first member and kept open for the rest, so a share is not asked
+    for its index once per picture. Used from one thread at a time."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._zip: zipfile.ZipFile | None = None
+
+    def zip(self) -> zipfile.ZipFile:
+        """The archive, opened on first asking. Blocking."""
+        if self._zip is None:
+            self._zip = zipfile.ZipFile(self.path)
+        return self._zip
+
+    def close(self) -> None:
+        """Blocking."""
+        if self._zip is not None:
+            self._zip.close()
+            self._zip = None
+
+
+def extract_member(
+    archive: Path,
+    member: str,
+    destination: Path,
+    *,
+    cache_dir: Path,
+    opened: OpenArchive | None = None,
+) -> int:
+    """Write one member out, re-checking its name and measuring it; a liar is deleted. `opened`
+    reads it through an archive already open, and leaves it open."""
+    _safe_name(member, archive)
+    target = _cache_place(destination, cache_dir)
+    part = _part_of(target)
     written = 0
     try:
-        with zipfile.ZipFile(archive) as opened:
-            declared = opened.getinfo(member).file_size
-            with opened.open(member) as inside, target.open("wb") as out:
+        with contextlib.ExitStack() as closing:
+            if opened is None:
+                zipped = closing.enter_context(zipfile.ZipFile(archive))
+            else:
+                zipped = opened.zip()
+            declared = zipped.getinfo(member).file_size
+            with zipped.open(member) as inside, part.open("wb") as out:
                 for chunk in iter(lambda: inside.read(_CHUNK), b""):
                     written += len(chunk)
                     if written > MAX_MEMBER_BYTES:
@@ -123,14 +191,59 @@ def extract_member(archive: Path, member: str, destination: Path, *, cache_dir: 
                     out.write(chunk)
         if written != declared:
             raise ArchiveRefused("that file inside the archive is not the size the archive claimed")
+        # The cache's own part file into its place.
+        os.replace(part, target)  # nosemgrep: sift-no-file-removal-outside-delete-trash
     except (KeyError, zipfile.BadZipFile, OSError) as broken:
         # Only the half-written file this call created, never anything indexed.
-        target.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        part.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
         raise ArchiveRefused("that file could not be read out of the archive") from broken
     except ArchiveRefused:
-        target.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        part.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
         raise
     return written
+
+
+class CopyChanged(OSError):
+    """The file changed while it was being copied, so the copy describes nothing."""
+
+
+def copy_settled(source: Path, destination: Path, *, size: int) -> int:
+    """Copy a file whole in the share's own read size, refusing one that is not the size the walk
+    saw or that moves while it is read, as the identity read does. Blocking. Bytes copied.
+
+    Opened non-blocking and checked on the descriptor, as the gate does, so a named pipe cannot
+    hang it. `destination` is written under its own name and renamed into place.
+    """
+    fd = os.open(source, os.O_RDONLY | O_NONBLOCK | getattr(os, "O_BINARY", 0))
+    with os.fdopen(fd, "rb") as handle:
+        before = os.fstat(handle.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise CopyChanged(f"{source.name} is not a regular file")
+        if before.st_size != size:
+            raise CopyChanged(f"{source.name} changed since it was listed")
+        part = _part_of(destination)
+        copied = 0
+        try:
+            with part.open("wb") as out:
+                while copied < size:
+                    chunk = handle.read(min(COPY_CHUNK, size - copied))
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    copied += len(chunk)
+            after = os.fstat(handle.fileno())
+            if (
+                copied != size
+                or after.st_size != before.st_size
+                or after.st_mtime_ns != before.st_mtime_ns
+            ):
+                raise CopyChanged(f"{source.name} is still being written to")
+            # The cache's own part file into its place.
+            os.replace(part, destination)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+        except BaseException:
+            part.unlink(missing_ok=True)  # nosemgrep: sift-no-file-removal-outside-delete-trash
+            raise
+    return copied
 
 
 def _safe_name(raw: str, archive: Path) -> str:

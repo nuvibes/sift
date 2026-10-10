@@ -118,7 +118,7 @@ class OnePass(Protocol):
     task's products by the composition root's reader. See `media_jobs.OnePassReader`."""
 
     def prepared(
-        self, asset_id: str, products: Sequence[Product]
+        self, asset_id: str, products: Sequence[Product], *, again: bool = False
     ) -> AbstractAsyncContextManager[None]: ...
 
 
@@ -127,7 +127,9 @@ class EachOnItsOwn:
     the composition root hands it a reader, and what a test that is not about reading gets."""
 
     @asynccontextmanager
-    async def prepared(self, asset_id: str, products: Sequence[Product]) -> AsyncIterator[None]:
+    async def prepared(
+        self, asset_id: str, products: Sequence[Product], *, again: bool = False
+    ) -> AsyncIterator[None]:
         yield
 
 

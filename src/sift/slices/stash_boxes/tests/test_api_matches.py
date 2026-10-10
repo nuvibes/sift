@@ -1029,6 +1029,8 @@ def test_a_press_naming_no_box_asks_what_is_set_up_and_all_asks_every_box_box_pa
         )
         assert answer.status_code == 200, answer.text
     assert [one["box"] for one in _payloads(client, STASH_ENRICH)] == ["fansdb", "", "stashdb"]
+    # The boxes' keys are read when the job runs; the queue keeps a payload for days.
+    assert all("key" not in one for one in _payloads(client, STASH_ENRICH))
 
     _a_library(client, tmp_path, AN_ASSET)
     client.post("/api/stash-boxes/scan", json={"assets": [AN_ASSET], "auto": True})
@@ -1069,6 +1071,7 @@ def test_a_person_a_confirmed_page_invents_is_queued_to_be_linked_by_the_boxs_ow
 
     assert answer.status_code == 200, answer.text
     (queued,) = _payloads(client, STASH_ENRICH)
+    assert "key" not in queued
     subjects = queued["subjects"]
     assert isinstance(subjects, list)
     by_name = {one["name"]: one for one in subjects}

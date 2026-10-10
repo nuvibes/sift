@@ -14,7 +14,7 @@ from sift.kernel.content import LibraryStore, Root
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobContext, JobQueue, JobState, SystemCapabilities
 from sift.kernel.jobs.tuning import WAITED_ON_PRIORITY
-from sift.slices.library_roots import jobs, taking_in
+from sift.slices.library_roots import jobs, scan_plan, taking_in
 from sift.slices.library_roots.service import LibraryService
 from sift.slices.library_roots.tests.conftest import RecordingReindexer, draw
 from sift.testing.logs import uncached_log
@@ -77,7 +77,8 @@ async def test_a_count_writes_the_files_to_read_onto_the_waiting_scan(
     assert scan is not None and scan.state is JobState.QUEUED and scan.units == 3
     done = await job_queue.get(context.job.id)
     assert done is not None and done.units == 0, "a count is not a file of the Scan run"
-    assert done.note == "3 files to read."
+    # The listing's own sizes, three files of 19 bytes: known before a byte is read.
+    assert done.note == "3 files, 57 B to import."
     counted = [one for one in logs if one["event"] == "library.scan_counted"]
     assert counted and counted[0]["ahead"] is True and counted[0]["waited_seconds"] >= 0
 
@@ -290,3 +291,17 @@ async def test_every_part_of_a_whole_library_pass_is_counted(
     parts = {child.id for child in await job_queue.children(pass_id)}
     counts = await _counts(job_queue)
     assert {scan_id for scan_id, _priority in counts} == parts and len(parts) == 2
+
+
+@pytest.mark.parametrize(
+    ("size", "said"),
+    [
+        (0, "0 B"),
+        (999, "999 B"),
+        (5_900_000, "5.9 MB"),
+        (23_400_000_000, "23 GB"),
+        (10**16, "10000 TB"),
+    ],
+)
+def test_a_count_says_its_bytes_as_the_screen_writes_a_size(size: int, said: str) -> None:
+    assert scan_plan.size_said(size) == said

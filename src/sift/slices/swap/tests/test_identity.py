@@ -273,8 +273,8 @@ async def test_a_session_ends_once_and_a_manifest_resumes(tmp_path: Path) -> Non
             staged_path=staged,
             now=_NOW,
         )
-        for chunk in (0, 2, 0):
-            await store.mark_done("01HOLDSESSION000000000001", "key-1", chunk, _NOW)
+        for done in ([0], [0, 2, 0]):
+            await store.record_done("01HOLDSESSION000000000001", "key-1", done, _NOW)
         kept = await store.manifest("01HOLDSESSION000000000001", "key-1")
         assert kept is not None
         assert kept.done == (0, 2)

@@ -72,6 +72,8 @@ ON CONFLICT(asset_id) DO UPDATE SET
     probed_at     = excluded.probed_at
 """
 
+_KEPT_PROBE = "SELECT body FROM asset_probes WHERE asset_id = ?"
+
 _PROBE_CURRENT = (
     "UPDATE asset_probes SET probe_version = ? WHERE asset_id = ? AND probe_version >= ?"
     " RETURNING asset_id"
@@ -486,6 +488,11 @@ class Probes(StoreCore):
             await connection.execute(
                 _KEEP_PROBE, (asset_id, keep.version, keep.tool, keep.body, self._now())
             )
+
+    async def kept_probe(self, asset_id: str) -> bytes | None:
+        """The tool's whole answer as the probe kept it (`ProbeKeep.body`), or None where none is."""
+        rows = await self._db.fetch_all(_KEPT_PROBE, (asset_id,))
+        return bytes(rows[0]["body"]) if rows and rows[0]["body"] is not None else None
 
     async def probe_still_current(self, asset_id: str) -> bool:
         """Mark a file's kept reading current where it was kept at all: for a file this version

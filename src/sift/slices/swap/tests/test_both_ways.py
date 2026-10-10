@@ -33,6 +33,7 @@ from sift.kernel.access import Repository
 from sift.kernel.access import sentences as say
 from sift.kernel.vocabulary import VIA_SWAP
 from sift.slices.swap import guest as guest_side
+from sift.slices.swap import receiving as receiving_side
 from sift.slices.swap import session as swap
 from sift.slices.swap import transfer
 from sift.slices.swap.ingest import LandingSession
@@ -432,6 +433,8 @@ async def test_both_ways_cut_part_way_is_joined_again_and_both_directions_finish
     """Every connection drops while files go both ways: neither side ends, the guest dials again,
     each side says again what the other may not have heard, and both directions carry on from the
     chunks already verified to the end."""
+    # Every chunk written down as it is verified, so the cut comes at a known point.
+    monkeypatch.setattr(receiving_side, "RECORD_EVERY", 1)
     mine, theirs = tmp_path / "host-files", tmp_path / "guest-files"
     mine.mkdir()
     theirs.mkdir()
@@ -482,24 +485,25 @@ async def test_both_ways_cut_part_way_is_joined_again_and_both_directions_finish
                 return bool(await real(session_id))
 
             monkeypatch.setattr(store, "rejoined", counted)
-            real_mark = store.mark_done
+            real_record = store.record_done
 
             # The cut comes once the receivers have written two chunks down as verified, so what
             # carries on afterwards is measured against a known point, however far the senders had
             # run ahead of them.
             async def marked(
-                session_id: str, file_key: str, chunk: int, now: int, real: Any = real_mark
+                session_id: str, file_key: str, done: Any, now: int, real: Any = real_record
             ) -> None:
-                await real(session_id, file_key, chunk, now)
+                await real(session_id, file_key, done, now)
                 if sent["cuts"]:
                     return
                 staged = transfer.staged_path(Path(), session_id, file_key)
-                verified.add(written[(session_id, staged.name, chunk)])
-                if len(verified) == 2:
+                for chunk in done:
+                    verified.add(written[(session_id, staged.name, chunk)])
+                if len(verified) >= 2:
                     sent["cuts"] += 1
                     cutting[0].cut()
 
-            monkeypatch.setattr(store, "mark_done", marked)
+            monkeypatch.setattr(store, "record_done", marked)
         await rig.connected()
         await rig.both_match([Chosen(kind="person", id="guest-person")])
         await rig.host.sessions.take(rig.host.id, Taken())
@@ -513,7 +517,7 @@ async def test_both_ways_cut_part_way_is_joined_again_and_both_directions_finish
         for row in (await rig.host.row(), await rig.guest.row()):
             assert (row.state, row.end_reason, row.cut_off_at) == ("done", "done", None)
             assert (row.sent_files, row.back_files) == (2, 2)
-        assert len(verified) == 2
+        assert len(verified) >= 2
         again = sorted(verified.intersection(sent_after_cut))
         assert not again, f"carried on from what is verified, not sent again: {again}"
 

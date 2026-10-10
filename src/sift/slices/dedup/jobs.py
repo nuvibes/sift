@@ -9,6 +9,8 @@ them hides nothing.
 
 from __future__ import annotations
 
+from weakref import WeakKeyDictionary
+
 from sift.kernel.jobs import BACKGROUND_PRIORITY, JobContext, register_handler
 from sift.kernel.log import get_logger
 from sift.slices.dedup.service import DedupService
@@ -18,13 +20,21 @@ log = get_logger(__name__)
 DEDUP_SCAN = "dedup_scan"
 
 
+#: What each service last compared, so a settle that finds the fingerprints as they were compares
+#: nothing again. Kept for the process: the first pass after a start compares.
+_COMPARED: WeakKeyDictionary[DedupService, str] = WeakKeyDictionary()
+
+
 async def dedup_scan(context: JobContext, *, service: DedupService) -> None:
     """Compare the library's fingerprints and file the pairs worth asking about.
 
     Whole-library, since the comparison index is built from every fingerprint anyway: once after a
-    batch settles beats once per file. It reads fingerprints and writes rows, nothing else.
+    batch settles beats once per file. It reads fingerprints and writes rows, nothing else. A
+    settle over fingerprints unchanged since the last pass files nothing and compares nothing; a
+    press always compares.
     """
-    filed = await service.scan()
+    compared = None if context.job.requested_by is not None else _COMPARED.get(service)
+    filed, _COMPARED[service] = await service.scan_unless_unchanged(compared)
     # The run's own sentence: the Tasks row and Organize's Duplicates bar say it as the last run.
     await context.set_note(
         "Found no new pairs to review." if filed == 0 else f"Found {filed:,} new pairs to review."

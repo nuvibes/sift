@@ -162,6 +162,8 @@ class Asset:
     """Which generation of the ingress classifier decided `media_type` and `mime`. A row below
     `ingress.CLASSIFIER_VERSION` is waiting for the reclassify pass."""
     still_at_ms: int | None = None
+    #: A JPEG a browser draws apart from its stored pixels; None until the head was looked at.
+    turn_apart: bool | None = None
     """The moment the tile's still was cut at, chosen by what the frame shows. None for a still
     cut before the choice was made (the first frame, whatever it was), which the black-still
     catch-up measures once; the hover clip starts here so the tile does not jump under a pointer."""
@@ -380,6 +382,13 @@ class Ingested:
     asset_is_new: bool
 
 
+def _flag_or_none(row: Row, key: str) -> bool | None:
+    """A nullable 0/1 column as a flag; None where the column is absent or NULL."""
+    # `in row` would search the VALUES: a Row iterates them, and only `keys()` names columns.
+    value = row[key] if key in row.keys() else None  # noqa: SIM118
+    return None if value is None else bool(value)
+
+
 def asset_from_row(row: Row) -> Asset:
     return Asset(
         id=row["id"],
@@ -417,6 +426,7 @@ def asset_from_row(row: Row) -> Asset:
         fingerprint_version=row["fingerprint_version"],
         classified_version=row["classified_version"],
         still_at_ms=row["still_at_ms"],
+        turn_apart=_flag_or_none(row, "turn_apart"),
     )
 
 

@@ -79,6 +79,7 @@ from sift.slices.stash_migration.service_base import REPORT_NAME as REPORT_NAME
 from sift.slices.stash_migration.service_base import SOURCE as SOURCE
 from sift.slices.stash_migration.service_base import STASH_ARRIVED as STASH_ARRIVED
 from sift.slices.stash_migration.service_base import STASH_IMPORT as STASH_IMPORT
+from sift.slices.stash_migration.service_base import Checkpoint
 from sift.slices.stash_migration.service_base import StashRefused as StashRefused
 from sift.slices.stash_migration.service_doors import DoorsMixin
 from sift.slices.stash_migration.service_read import ReadMixin
@@ -151,17 +152,24 @@ class StashMigration(ReadMixin, DoorsMixin):
         decided = decide(stashed, set(matched))
         known = await self._catalog(context, stashed, tally, actor, decided)
         await self._opinions(tally, user_id, known)
-        await self._links(context, stashed, tally, known)
-        if plan.get("pictures"):
-            await self._pictures(tally, known, _blobs_of(plan), actor)
-        scenes = await self._items(context, stashed, tally, actor, user_id, matched)
-        await self._file_links(context, stashed, tally, scenes)
+        kept = Checkpoint(self.folder, read_at)
+        await kept.load()
+        try:
+            await self._links(context, stashed, tally, known, kept)
+            if plan.get("pictures"):
+                await self._pictures(tally, known, _blobs_of(plan), actor)
+            scenes = await self._items(context, stashed, tally, actor, user_id, matched)
+            await self._file_links(context, stashed, tally, scenes, kept)
+        finally:
+            # Whatever was asked before a stop is kept for the next run.
+            await kept.flush()
         await self._galleries(stashed, tally, matched, source, actor)
         await self._groups(stashed, tally, scenes, source, actor, user_id)
         await self._marks(stashed, tally, user_id, scenes, known)
         await self._searches(stashed, tally, user_id)
         await self._keep_waiting(stashed, tally, matched, mapping, known, read_at, user_id, source)
         await asyncio.to_thread(write_json_whole, self.folder / REPORT_NAME, asdict(tally))
+        await kept.finish()
         await context.set_progress(1.0)
         await context.set_note(note_of_run(tally))
         log.info(

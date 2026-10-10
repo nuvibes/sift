@@ -93,6 +93,44 @@ async def test_an_unresolvable_host_is_refused() -> None:
         await guard_url("http://nowhere.invalid/", follow=_terminal)
 
 
+@pytest.mark.parametrize("code", [socket.EAI_AGAIN, 11002])
+async def test_a_resolver_that_says_try_later_is_a_wait_not_a_bad_address(
+    monkeypatch: pytest.MonkeyPatch, code: int
+) -> None:
+    def later(*_args: object, **_kwargs: object) -> list[tuple[object, ...]]:
+        raise socket.gaierror(code, "temporary failure in name resolution")
+
+    monkeypatch.setattr(socket, "getaddrinfo", later)
+    with pytest.raises(url_guard.LookupFailedForNow, match="network may be down"):
+        await guard_url("http://public.example/", follow=_terminal)
+
+
+async def test_a_name_not_found_with_no_way_out_is_a_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Offline, every name is "not found": with no route out, that says nothing of the address."""
+    monkeypatch.setattr(url_guard, "_has_a_route", lambda: False)
+    with pytest.raises(url_guard.LookupFailedForNow):
+        await guard_url("http://nowhere.invalid/", follow=_terminal)
+
+
+async def test_the_name_is_looked_up_off_the_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    import threading
+
+    asked_on: list[str] = []
+
+    def lookup(host: str, *args: object, **kwargs: object) -> list[tuple[object, ...]]:
+        asked_on.append(threading.current_thread().name)
+        return _fake_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", lookup)
+    await guard_url("http://public.example/", follow=_terminal)
+
+    assert asked_on and threading.main_thread().name not in asked_on
+
+
+def test_this_machine_with_a_network_has_a_way_out() -> None:
+    assert url_guard._has_a_route()
+
+
 async def test_a_url_with_no_host_is_refused() -> None:
     with pytest.raises(UrlRejected, match="web address"):
         await guard_url("http:///just/a/path", follow=_terminal)

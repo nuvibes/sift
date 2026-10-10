@@ -57,7 +57,7 @@ async def guarded_get(
     policy: RunPolicy | None = None,
 ) -> Fetched:
     """Vet `url`, then GET it as an impersonated browser, never following a redirect."""
-    check_url(url, here=proxy is None)
+    await asyncio.to_thread(check_url, url, here=proxy is None)
     request_headers = ({"User-Agent": user_agent} if user_agent else {}) | (headers or {})
 
     async def once() -> Fetched:
@@ -88,7 +88,7 @@ async def guarded_post(
     policy: RunPolicy | None = None,
 ) -> Fetched:
     """Vet `url`, then POST a form to it as an impersonated browser, never following a redirect."""
-    check_url(url, here=proxy is None)
+    await asyncio.to_thread(check_url, url, here=proxy is None)
     request_headers = ({"User-Agent": user_agent} if user_agent else {}) | (headers or {})
 
     async def once() -> Fetched:

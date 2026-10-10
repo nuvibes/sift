@@ -11,6 +11,7 @@ import numpy as np
 from sift.kernel import lanes, media, sampling
 from sift.kernel.config import Settings
 from sift.kernel.log import get_logger
+from sift.kernel.ml import pictures
 from sift.kernel.subprocess import Priority, SubprocessError
 from sift.kernel.subprocess import capture as subprocess_capture
 from sift.slices.semantic.embed import FRAME_SIZE
@@ -47,12 +48,17 @@ def moment_at(at_ms: int) -> media.Moment:
 
 
 async def frame_requests(facts: media.FileFacts) -> list[media.FrameRequest]:
-    """What describing this video would ask the kernel for, so a Build can read it once."""
-    if facts.media_type != "video":
+    """What describing this file would ask for, so one task can read it once: a video's moments,
+    or a still's one square."""
+    if facts.media_type == "image":
+        moments: tuple[media.Moment, ...] = (pictures.STILL,)
+    elif facts.media_type == "video":
+        moments = tuple(moment_at(at) for at in moments_for(facts.duration_ms))
+    else:
         return []
     return [
         media.RawFrames(
-            moments=tuple(moment_at(at) for at in moments_for(facts.duration_ms)),
+            moments=moments,
             filters=FRAME_FILTER,
             pixel_format=FRAME_PIXELS,
             frame_bytes=_FRAME_BYTES,
@@ -169,6 +175,10 @@ class Reader:
         ]
 
     async def _single(self, path: Path, at_ms: int) -> list[np.ndarray]:
+        # A still the task already decoded for every pass is not decoded again.
+        held = pictures.held(path, filters=FRAME_FILTER, pixel_format=FRAME_PIXELS)
+        if held is not None:
+            return split(held)
         argv = frame_args(path, at_ms, settings=self._settings)
         return split(await self._capture(argv, _FRAME_TIMEOUT, path=path))
 

@@ -355,6 +355,7 @@ class Controls(HandOffs):
                 return False
 
         log.info("job.retried", job_id=job_id)
+        self._work_arrived_unknown()
         return True
 
     async def retry_failed(self) -> int:
@@ -366,6 +367,7 @@ class Controls(HandOffs):
         retried = await self._retry_rows(_RETRY_ALL_FAILED, "failed")
         if retried:
             log.info("job.retried_all", job_count=retried)
+            self._work_arrived_unknown()
         return retried
 
     async def retry_canceled(self) -> int:
@@ -378,6 +380,7 @@ class Controls(HandOffs):
         retried = await self._retry_rows(_RETRY_ALL_CANCELED, "canceled")
         if retried:
             log.info("job.retried_all_canceled", job_count=retried)
+            self._work_arrived_unknown()
         return retried
 
     async def clear_failed(self) -> int:

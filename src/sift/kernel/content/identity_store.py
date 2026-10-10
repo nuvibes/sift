@@ -26,8 +26,8 @@ from sift.kernel.sorting import sort_key
 _UPSERT_ASSET = """
 INSERT INTO assets
        (id, identity, identity_version, media_type, mime, size_bytes, original_filename,
-        filename_sort, added_at, classified_version)
-VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+        filename_sort, added_at, classified_version, turn_apart)
+VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(identity) DO UPDATE SET identity = excluded.identity
 RETURNING *
 """
@@ -147,8 +147,10 @@ class StoreCore:
         size_bytes: int,
         original_filename: str | None,
         now: int,
+        turn_apart: bool | None = None,
     ) -> tuple[Asset, bool]:
-        """Runs on the caller's connection so it can share a transaction with the location."""
+        """Runs on the caller's connection so it can share a transaction with the location. A
+        new row carries the JPEG turn flag the take-in read; an existing row keeps its own."""
         minted = new_id()
         rows = list(
             await connection.execute_fetchall(
@@ -163,6 +165,7 @@ class StoreCore:
                     sort_key(original_filename) if original_filename else None,
                     now,
                     CLASSIFIER_VERSION,
+                    None if turn_apart is None else int(turn_apart),
                 ),
             )
         )

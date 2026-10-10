@@ -21,7 +21,7 @@ from sift.kernel.records import (
 from sift.kernel.seams import SettingsSeam
 from sift.kernel.vocabulary import Subject as DecisionSubject
 from sift.kernel.workbench import Recorder
-from sift.slices.auth import csrf_protect, master_key, require_admin
+from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.stash_boxes.enrich import file_writer, linkable, record_who_invented
 from sift.slices.stash_boxes.jobs import (
     STASH_ENRICH,
@@ -149,7 +149,6 @@ async def apply_matches(
     access: Annotated[Repository, Depends(wiring.access)],
     service: Annotated[StashBoxService, Depends(_service)],
     settings: Annotated[SettingsSeam, Depends(wiring.settings_hub)],
-    key: Annotated[bytes | None, Depends(master_key)],
 ) -> Applied:
     """Say yes to these matches, and write what each one says under the rules for each field.
 
@@ -176,7 +175,6 @@ async def apply_matches(
             STASH_ENRICH,
             {
                 "subjects": unlinked,
-                "key": key.hex() if key else None,
                 "box": await box_for(settings, ""),
             },
         )

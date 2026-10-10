@@ -38,6 +38,12 @@ _NEXT_SCHEDULED = (
     "WHERE type = ? AND state = 'queued' AND run_after IS NOT NULL"
 )
 
+#: The next moment a row put off to later comes due, of any type (`ix_jobs_queued_later`).
+_NEXT_DUE = (
+    "SELECT MIN(run_after) AS due FROM jobs"
+    " WHERE state = 'queued' AND run_after IS NOT NULL AND run_after > ?"
+)
+
 #: The same for several types together, each type a seek of `ix_jobs_by_type`.
 _NEXT_SCHEDULED_OF = (
     "SELECT type, MIN(run_after) AS due FROM jobs"
@@ -78,11 +84,11 @@ SELECT type, COUNT(*) AS lately FROM jobs INDEXED BY ix_jobs_done_by_updated
  WHERE state = 'done' AND updated_at >= ? GROUP BY +type
 """
 
-# Is this work happening AT ALL (waiting, under way, held or paused)? Statistics taken on an empty
-# queue make a walk look cheap, so live statements say `unlikely(...)` (held by `test_queue_plans`).
+# Is this work happening AT ALL (waiting, under way, held or paused), in any of the payloads given?
+# One seek of the live rows' index (`ix_jobs_live_payload`) per payload, whose WHERE this repeats.
 _LIVE_LIKE = (
-    "SELECT id FROM jobs WHERE type = ? AND payload = ? "
-    "AND unlikely(state IN ('queued', 'running', 'blocked', 'paused')) LIMIT 1"
+    "SELECT id FROM jobs WHERE type = ? AND payload IN (SELECT value FROM json_each(?))"
+    " AND state IN ('queued', 'running', 'blocked', 'paused') LIMIT 1"
 )
 
 _LIVE_PAYLOADS = (
@@ -250,10 +256,16 @@ class Reads(QueueCore):
     async def is_live(self, job_type: str, payload: Mapping[str, Any] | None = None) -> bool:
         """Whether this exact job is waiting or under way, its payload serialised as `enqueue` writes
         it so the two agree on "identical"."""
-        body = dict(payload or {})
-        _check_payload(body)
-        row = await self._db.fetch_one(_LIVE_LIKE, (job_type, json.dumps(body)))
-        return row is not None
+        return await self.any_live(job_type, [payload])
+
+    async def any_live(self, job_type: str, payloads: Sequence[Mapping[str, Any] | None]) -> bool:
+        """Whether a job of this type with any of these payloads is waiting or under way: one read
+        for a job asked for in more than one shape."""
+        bodies = [dict(payload or {}) for payload in payloads]
+        for body in bodies:
+            _check_payload(body)
+        texts = json.dumps([json.dumps(body) for body in bodies])
+        return await self._db.fetch_one(_LIVE_LIKE, (job_type, texts)) is not None
 
     async def live_payloads(self, job_type: str) -> list[dict[str, Any]]:
         """The payload of every job of this kind that is waiting or under way: for a counter that
@@ -265,7 +277,10 @@ class Reads(QueueCore):
         """The live rows of these types, counted in SQL by type, state, quiet hours and products."""
         if not job_types:
             return []
-        rows = await self._db.fetch_all(_LIVE_PRODUCTS, (json.dumps(sorted(set(job_types))),))
+        asked = (json.dumps(sorted(set(job_types))),)
+        rows = await self._kept_read(
+            ("live_products", *asked), lambda: self._db.fetch_all(_LIVE_PRODUCTS, asked)
+        )
         return [
             LiveProducts(
                 type=str(row["type"]),
@@ -282,8 +297,9 @@ class Reads(QueueCore):
         person pressed them for some files (`_LIVE_BY_PRESS`): both halves read at one moment."""
         if not job_types:
             return []
-        rows = await self._db.fetch_all(
-            _LIVE_BY_PRESS, (f"$.{AGAIN}", json.dumps(sorted(set(job_types))))
+        asked = (f"$.{AGAIN}", json.dumps(sorted(set(job_types))))
+        rows = await self._kept_read(
+            ("live_by_press", *asked), lambda: self._db.fetch_all(_LIVE_BY_PRESS, asked)
         )
         return [
             LiveWork(
@@ -325,18 +341,24 @@ class Reads(QueueCore):
         run's first page carries its products and folders, and finishes long before its tasks."""
         if not job_types:
             return []
-        rows = await self._db.fetch_all(_LIVE_TOPS, (json.dumps(sorted(set(job_types))),))
+        asked = (json.dumps(sorted(set(job_types))),)
+        rows = await self._kept_read(
+            ("live_tops", *asked), lambda: self._db.fetch_all(_LIVE_TOPS, asked)
+        )
         return [json.loads(row["payload"]) for row in rows]
 
     async def live_asset_ids(self, job_type: str) -> list[str]:
         """The file each waiting or running job of this type is about, where its payload names
         one. See `_LIVE_ASSET_IDS`."""
-        rows = await self._db.fetch_all(_LIVE_ASSET_IDS, (job_type,))
+        rows = await self._kept_read(
+            ("live_asset_ids", job_type), lambda: self._db.fetch_all(_LIVE_ASSET_IDS, (job_type,))
+        )
         return [str(row["asset_id"]) for row in rows]
 
     async def live_files(self) -> list[str]:
         """Every file a waiting or running job of any type is about. See `_LIVE_FILES`."""
-        return [str(row["asset_id"]) for row in await self._db.fetch_all(_LIVE_FILES, ())]
+        rows = await self._kept_read(("live_files",), lambda: self._db.fetch_all(_LIVE_FILES, ()))
+        return [str(row["asset_id"]) for row in rows]
 
     async def newest_of(self, job_type: str, *, limit: int) -> list[Job]:
         """The newest rows of a type that is always a few, in any state (`_NEWEST_OF_TYPE`)."""
@@ -369,7 +391,9 @@ class Reads(QueueCore):
         held = self._work_summary
         if held is not None and now - held[0] < self._summary_fresh_for:
             return held[1]
-        (start,) = await self._db.fetch_all(_BURST_START, (now,))
+        (start,) = await self._kept_read(
+            ("burst_start",), lambda: self._db.fetch_all(_BURST_START, (now,))
+        )
         since = start["since"]
         run_from = since if since is not None else now + 1
         states: dict[str, dict[str, int]] = {}
@@ -378,7 +402,10 @@ class Reads(QueueCore):
             kind = str(row["type"])
             states.setdefault(kind, {})[str(row["state"])] = int(row["n"])
             run.setdefault(kind, WorkKind())
-        for row in await self._db.fetch_all(_LIVE_SUMMARY, (run_from,)):
+        live = await self._kept_read(
+            ("live_summary", run_from), lambda: self._db.fetch_all(_LIVE_SUMMARY, (run_from,))
+        )
+        for row in live:
             here = run.setdefault(str(row["type"]), WorkKind())
             here.outstanding += int(row["in_run"] or 0)
             here.left_units += float(row["left_units"] or 0)
@@ -502,6 +529,13 @@ class Reads(QueueCore):
         (row,) = await self._db.fetch_all(_NEXT_SCHEDULED, (job_type,))
         due = row["due"]
         return None if due is None else int(due)
+
+    async def seconds_until_due(self) -> float | None:
+        """How long until the next row put off to later comes due, or None: what an idle worker
+        waits for when no work arrives."""
+        now = self._clock()
+        (row,) = await self._db.fetch_all(_NEXT_DUE, (int(now),))
+        return None if row["due"] is None else max(0.0, int(row["due"]) - now)
 
     async def next_scheduled_of(self, job_types: Sequence[str]) -> dict[str, int]:
         """`next_scheduled` for several types in one statement; a type with none is absent."""

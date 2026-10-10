@@ -31,6 +31,7 @@ from sift.kernel.jobs import (
 )
 from sift.slices.media_jobs import (
     ffmpeg,
+    fingerprints,
     jobs,
     shared,
     thumbnails,
@@ -580,3 +581,97 @@ async def test_a_video_whose_first_frame_is_a_picture_keeps_it(
     )
     asset = await content_store.get(ingested_video.asset.id)
     assert asset is not None and asset.still_at_ms == 0
+
+
+# --- a still's tile and its fingerprint from one decode --------------------------------------------
+
+
+def _tools_started(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
+    """Every tool the kernel starts, by any of its doors, the real tool still run."""
+    from sift.kernel import ingress
+
+    seen: list[list[str]] = []
+    real_run, real_capture = kernel_subprocess.run, kernel_subprocess.capture
+
+    async def counted_run(argv: list[str], **kwargs: object) -> object:
+        seen.append(argv)
+        return await real_run(argv, **kwargs)  # type: ignore[arg-type]
+
+    async def counted_capture(argv: list[str], **kwargs: object) -> bytes:
+        seen.append(argv)
+        return await real_capture(argv, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(kernel_subprocess, "run", counted_run)
+    monkeypatch.setattr(kernel_subprocess, "capture", counted_capture)
+    monkeypatch.setattr(ingress, "run_tool", counted_run)
+    return seen
+
+
+@pytest.mark.parametrize("wanted", [True, False])
+async def test_a_stills_tile_and_fingerprint_come_from_one_decode(
+    ingested_picture: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+    wanted: bool,
+) -> None:
+    """A still's tile and its fingerprint frame are one decode: the fingerprint is the one the
+    file's own job would read, written where its switch wants it, and that job then starts no
+    tool. Switched off, the tile alone, and no fingerprint."""
+    asset_id = ingested_picture.asset.id
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    source = await media.resolve_decodable(content_store, asset_id, settings=settings)
+    expected, _ = await fingerprints._fingerprint(source, ffmpeg.parse_probe({}), settings=settings)
+    assert expected
+
+    async def switch(job: str, _asset: str | None) -> bool:
+        return wanted or job != jobs.FINGERPRINT_FILE
+
+    started = _tools_started(monkeypatch)
+    await jobs.thumbnail(
+        await context_for("thumbnail", {"asset_id": asset_id}),
+        settings=settings,
+        hardware=hardware,
+        should_generate=switch,
+    )
+
+    assert len(started) == 1, started
+    assert await content_store.lacking_derivative(DerivativeKind.THUMB, [asset_id]) == set()
+    asset = await content_store.get(asset_id)
+    assert asset is not None
+    assert asset.phash == (expected if wanted else None)
+    if not wanted:
+        return
+    started.clear()
+    await jobs.fingerprint_arrival(
+        await context_for(jobs.FINGERPRINT_FILE, {"asset_id": asset_id}), settings=settings
+    )
+    assert started == []
+
+
+async def test_a_stills_read_asks_the_tool_once(
+    ingested_picture: Ingested,
+    content_store: ContentStore,
+    context_for: Context,
+    settings: Settings,
+    hardware: HardwareReport,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gate's decode check is asked of the reading's own answer: one ffprobe reads a still,
+    where there were two, and the reading kept is the same."""
+    asset_id = ingested_picture.asset.id
+    await ffmpeg.probe_tool(settings=settings)  # once per process, asked before the count
+    started = _tools_started(monkeypatch)
+    await jobs.probe(
+        await context_for("probe", {"asset_id": asset_id}), settings=settings, hardware=hardware
+    )
+    assert len(started) == 1, started
+    assert "-show_frames" in started[0]
+    asset = await content_store.get(asset_id)
+    assert asset is not None and asset.width and asset.height
+    kept = await content_store.kept_probe(asset_id)
+    assert kept is not None and ffmpeg.read_kept_probe(kept)["streams"]

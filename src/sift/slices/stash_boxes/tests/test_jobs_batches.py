@@ -132,7 +132,6 @@ async def test_the_batch_asks_about_every_subject_it_was_given(
                 {"subject": "person", "id": "p1", "name": "Jane"},
                 {"subject": "site", "id": "s1", "name": "Northlight"},
             ],
-            "key": A_KEY.hex(),
         },
     )
 
@@ -142,6 +141,21 @@ async def test_the_batch_asks_about_every_subject_it_was_given(
         (Subject.PERSON, "p1", "Jane", A_KEY),
         (Subject.SITE, "s1", "Northlight", A_KEY),
     ]
+
+
+async def test_a_key_left_in_an_older_payload_is_never_used(
+    context_for: Callable[..., Awaitable[JobContext]],
+) -> None:
+    """The key is the sealed store's, read as the job runs; a payload's is not trusted or needed."""
+    entities = _Entities([Outcome.WROTE])
+    context = await context_for(
+        STASH_ENRICH,
+        {"subjects": [{"subject": "person", "id": "p1", "name": "Jane"}], "key": "00" * 32},
+    )
+
+    await enrich_entities(context, entities=entities)  # type: ignore[arg-type]
+
+    assert entities.asked == [(Subject.PERSON, "p1", "Jane", A_KEY)]
 
 
 async def test_the_batch_says_what_it_came_to_where_the_toast_sends_people(
@@ -157,7 +171,6 @@ async def test_the_batch_says_what_it_came_to_where_the_toast_sends_people(
                 {"subject": "person", "id": "p1", "name": "Jane"},
                 {"subject": "person", "id": "p2", "name": "Doe"},
             ],
-            "key": None,
         },
     )
 
@@ -184,13 +197,12 @@ async def test_a_subject_that_has_gone_is_skipped_rather_than_failing_the_batch(
                 {"subject": "person", "id": "p1", "name": ""},
                 {"subject": "person", "id": "p2", "name": "Doe"},
             ],
-            "key": None,
         },
     )
 
     await enrich_entities(context, entities=entities)  # type: ignore[arg-type]
 
-    assert entities.asked == [(Subject.PERSON, "p2", "Doe", None)]
+    assert entities.asked == [(Subject.PERSON, "p2", "Doe", A_KEY)]
 
 
 async def test_one_subject_going_wrong_does_not_stop_the_ones_after_it(
@@ -214,7 +226,6 @@ async def test_one_subject_going_wrong_does_not_stop_the_ones_after_it(
                 {"subject": "person", "id": "p2", "name": "Doe"},
                 {"subject": "person", "id": "p3", "name": "Marla"},
             ],
-            "key": None,
         },
     )
 
@@ -243,7 +254,6 @@ async def test_sealed_keys_still_park_the_whole_batch(
                 {"subject": "person", "id": "p1", "name": "Jane"},
                 {"subject": "person", "id": "p2", "name": "Doe"},
             ],
-            "key": None,
         },
     )
 
@@ -529,7 +539,6 @@ async def test_a_batch_entry_carrying_the_boxs_id_is_linked_by_it_rather_than_se
                 {"subject": "person", "id": "p2", "name": "Jane Roe"},
                 {"subject": "site", "id": "s1", "name": "There", "box": "b2", "remote_id": "r2"},
             ],
-            "key": A_KEY.hex(),
             "box": "b1",
         },
     )

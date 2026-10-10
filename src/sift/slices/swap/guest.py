@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 from sift.kernel.access import Viewer
@@ -25,9 +25,12 @@ from sift.slices.swap.frames import Chunk as Chunk
 from sift.slices.swap.frames import Conn as Conn
 from sift.slices.swap.frames import ProtocolError as ProtocolError
 from sift.slices.swap.handshake import (
+    DISK_FULL,
     LOST,
     REASON_DONE,
     REDIAL_LIMIT,
+    REDIAL_PAUSE_FIRST,
+    REDIAL_PAUSE_MOST,
     USED,
     WRONG_DEVICE,
     code_of,
@@ -39,6 +42,7 @@ from sift.slices.swap.models import Chosen
 from sift.slices.swap.receiving import _Receiving
 from sift.slices.swap.sending import _Sending
 from sift.slices.swap.token import Token, mint
+from sift.slices.swap.transfer import DiskFull
 
 if TYPE_CHECKING:
     from sift.slices.swap.session import SwapSessions
@@ -334,32 +338,27 @@ class GuestSession(_Receiving, _Live):
                     log.info("swap.streams_lost", swap=self.short_id)
                     await self.cut()
                     return
-                await asyncio.sleep(1.0)
+                await self.owner.sleep(redial_pause(failures))
                 continue
             self.conns.add(conn)
-            task = asyncio.current_task()
-            if sending is not None and task is not None:
-                sending.stream_tasks.add(task)
+            task = self._counted_task(sending)
 
             def delivered() -> None:
-                # A connection that carried a frame is a connection that worked: the count is of
-                # dials that failed IN A ROW, so it starts again here and not only when a stream
-                # ends cleanly, which the end's cancel means it never does. Counted only at the
-                # first frame, a stream dropping once per file over a long swap would keep adding
-                # up and the fifth drop would end the whole swap as lost, files received or not.
+                # A connection that moved something worked: the count is of connections that failed
+                # IN A ROW, so it starts again here and not only when a stream ends cleanly, which
+                # the end's cancel means it never does. Without it, a stream dropping once per file
+                # over a long swap would end the whole swap as lost at the fifth drop. A frame alone
+                # is not enough: a connection whose first chunk fails would reset it every time.
                 nonlocal failures
                 failures = 0
 
             try:
-                if sending is not None:
-                    await conn.send({"stream": number, "session": self.host_session, "send": 1})
-                    # It returns only once it has told the host there is nothing left to send.
-                    await sending.serve(conn, delivered=delivered)
+                if await self._carry(conn, number, sending, delivered):
                     return
-                else:
-                    await conn.send({"stream": number, "session": self.host_session})
-                    if await self.receive(conn, delivered=delivered):
-                        return
+            except DiskFull:
+                log.info("swap.disk_full", swap=self.short_id)
+                await self.end(DISK_FULL)
+                return
             except (
                 asyncio.IncompleteReadError,
                 ConnectionError,
@@ -373,11 +372,37 @@ class GuestSession(_Receiving, _Live):
                     return
             finally:
                 self._let_go(conn, sending, task)
+            if failures:
+                await self.owner.sleep(redial_pause(failures))
 
     def _carrying(self, sending: _BackSending | None) -> bool:
         if sending is not None:
             return not sending.resolved
         return not self.received_all
+
+    def _counted_task(self, sending: _BackSending | None) -> asyncio.Task[Any] | None:
+        """This stream's task, counted among the sending half's while it sends."""
+        task = asyncio.current_task()
+        if sending is not None and task is not None:
+            sending.stream_tasks.add(task)
+        return task
+
+    async def _carry(
+        self,
+        conn: Conn,
+        number: int,
+        sending: _BackSending | None,
+        delivered: Callable[[], None],
+    ) -> bool:
+        """Name the session on this connection and carry files; True once the stream is done."""
+        if sending is not None:
+            await conn.send({"stream": number, "session": self.host_session, "send": 1})
+            # It returns only once it has told the host there is nothing left to send.
+            await sending.serve(conn, delivered=delivered)
+            return True
+        else:
+            await conn.send({"stream": number, "session": self.host_session})
+            return await self.receive(conn, delivered=delivered)
 
     def _let_go(
         self, conn: Conn, sending: _BackSending | None, task: asyncio.Task[Any] | None
@@ -392,6 +417,11 @@ class GuestSession(_Receiving, _Live):
         sending = self.sending_half()
         if sending is not None:
             await sending.let_go_of_everything()
+
+
+def redial_pause(failures: int) -> float:
+    """How long a stream waits before it dials again, after `failures` in a row."""
+    return min(REDIAL_PAUSE_MOST, REDIAL_PAUSE_FIRST * (1 << max(0, failures - 1)))
 
 
 class _BackSending(_Sending):

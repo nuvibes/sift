@@ -21,7 +21,15 @@ from sift.slices.faces import quality as quality_module
 from sift.slices.faces import tracking, tuning
 from sift.slices.faces.detect import Detector
 from sift.slices.faces.frames import Frame, Reader
-from sift.slices.faces.models import Appearance, Box, Described, Detection, Finding, Quality
+from sift.slices.faces.models import (
+    Appearance,
+    Box,
+    Described,
+    Description,
+    Detection,
+    Finding,
+    Quality,
+)
 from sift.slices.faces.recognize import Recognizer
 
 log = get_logger(__name__)
@@ -122,6 +130,7 @@ class Pipeline:
         bar: Bar,
         density: float = 1.0,
         budget_seconds: float | None = None,
+        batched: bool = False,
     ) -> None:
         self._reader = reader
         self._detector = detector
@@ -129,6 +138,8 @@ class Pipeline:
         self._bar = bar
         self._density = density
         self._budget = budget_seconds
+        # A file's faces described in one run of the model: on a card, not on the processor.
+        self._batched = batched
 
     async def run(
         self,
@@ -341,10 +352,11 @@ class Pipeline:
         spent.decoding += time.monotonic() - mark
 
         mark = time.monotonic()
-        segments = [
-            await asyncio.to_thread(self._describe, run, looks_of_run, tally)
-            for run, looks_of_run in zip(linker.runs, looks, strict=True)
+        picked = [
+            await asyncio.to_thread(self._pick, looks_of_run, tally) for looks_of_run in looks
         ]
+        described = await asyncio.to_thread(self._describe_all, picked)
+        segments = [_segment(run, faces) for run, faces in zip(linker.runs, described, strict=True)]
         spent.describing += time.monotonic() - mark
         merged = tracking.merge([item for item in segments if item is not None])
         return _Found(merged=merged, tally=tally)
@@ -424,14 +436,12 @@ class Pipeline:
             looks.append(row)
         return looks
 
-    def _describe(
-        self, run: tracking.Run, looks: list[_Look], tally: _Tally
-    ) -> tracking.Segment | None:
-        """Look closely at a run's chosen frames, keep those that clear the bar, and describe them.
+    def _pick(self, looks: list[_Look], tally: _Tally) -> list[_Picked]:
+        """Look closely at a run's chosen frames and keep those that clear the bar, to describe.
 
-        Runs in a thread; boxes come back in the reduced frame's pixels.
+        Runs in a thread.
         """
-        described: list[Described] = []
+        described: list[_Picked] = []
         turned: list[tuple[_Look, Detection, cropping.Aligned, Quality]] = []
         for look in looks:
             sharpened = self._detector.refine(look.picture, look.detection)
@@ -444,32 +454,42 @@ class Pipeline:
                     continue
                 tally.refuse_closer(refined, at=look.detection.timestamp_ms)
                 continue
-            described.append(self._described(look, sharpened, aligned))
+            described.append((look, sharpened, aligned))
 
         # A run whose only faces are turned past the line keeps them (`quality.asked_only`).
         if described:
             for look, _, _, refined in turned:
                 tally.refuse_closer(refined, at=look.detection.timestamp_ms)
+            return described
+        tally.turned_kept += len(turned)
+        return [(look, sharpened, aligned) for look, sharpened, aligned, _ in turned]
+
+    def _describe_all(self, picked: list[list[_Picked]]) -> list[list[Described]]:
+        """Every kept face of the file described: in one run of the model on a card, where a batch
+        costs a third of one run per face, and one face at a time on the processor, where it does
+        not. Runs in a thread; boxes come back in the reduced frame's pixels."""
+        chips = [aligned.chip for faces in picked for _, _, aligned in faces]
+        if self._batched and len(chips) > 1:
+            descriptions = iter(self._recognizer.embed_many(chips))
         else:
-            described = [
-                self._described(look, sharpened, aligned) for look, sharpened, aligned, _ in turned
+            descriptions = iter([self._recognizer.embed(chip) for chip in chips])
+        return [
+            [
+                self._described(look, sharpened, aligned, next(descriptions))
+                for look, sharpened, aligned in faces
             ]
-            tally.turned_kept += len(described)
+            for faces in picked
+        ]
 
-        # Every one refused: the same answer as no appearance.
-        if not described:
-            return None
-
-        return tracking.Segment(
-            started_ms=run.started_ms,
-            ended_ms=run.ended_ms,
-            seen_in=len(run.detections),
-            faces=tuple(described),
-        )
-
-    def _described(self, look: _Look, sharpened: Detection, aligned: cropping.Aligned) -> Described:
-        """One face described, and measured again with how firmly the recognizer answered."""
-        description = self._recognizer.embed(aligned.chip)
+    def _described(
+        self,
+        look: _Look,
+        sharpened: Detection,
+        aligned: cropping.Aligned,
+        description: Description,
+    ) -> Described:
+        """One face with its description, measured again with how firmly the recognizer
+        answered."""
         return Described(
             detection=look.back(sharpened),
             quality=self._measure(
@@ -501,6 +521,22 @@ class Pipeline:
             min_sharpness=self._bar.min_sharpness,
             min_frontality=self._bar.min_frontality,
         )
+
+
+#: One face kept for describing: the look, its refined landmarks and its aligned chip.
+_Picked = tuple["_Look", Detection, cropping.Aligned]
+
+
+def _segment(run: tracking.Run, faces: list[Described]) -> tracking.Segment | None:
+    """A run's described faces as one segment; every one refused is no appearance."""
+    if not faces:
+        return None
+    return tracking.Segment(
+        started_ms=run.started_ms,
+        ended_ms=run.ended_ms,
+        seen_in=len(run.detections),
+        faces=tuple(faces),
+    )
 
 
 @dataclass(slots=True)

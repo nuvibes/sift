@@ -7,6 +7,7 @@ import json
 from collections.abc import Collection, Mapping, Sequence
 
 from sift.kernel.db import Connection, Row, in_clause
+from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.queue_rows import Job, _fetch, _to_job
 from sift.kernel.jobs.queue_settle import PAUSE_CHUNK, PAUSED_FOR_BENCHMARK
 from sift.kernel.jobs.queue_switchboard import SwitchboardReads
@@ -24,65 +25,130 @@ SELECT EXISTS (SELECT 1 FROM jobs
 """
 
 # The claim. `attempts` goes up on the attempt, not on the failure, so a job whose handler takes the
-# process down still runs out of attempts and stops. The last three `?` are a family's hold.
+# process down still runs out of attempts and stops. One seek per kind of work and timing that
+# waits (`ix_jobs_claim_heads`), so a claim reads a few dozen rows however long the queue and
+# whatever is at its cap; and the rows put off to a moment now past (`ix_jobs_queued_later`), which
+# go before the work of their urgency that never waited: a settle asked for during a run runs in it.
+# Then the read (the scan family: a file's first step) up to its cap, so files keep arriving, and
+# every other worker on the oldest work: no kind waits while another runs. A family's hold and held
+# products are read row by row.
 _CLAIM = """
 UPDATE jobs
    SET state = 'running',
-       claimed_by = ?,
-       heartbeat_at = ?,
+       claimed_by = :worker,
+       heartbeat_at = :now,
        attempts = attempts + 1,
        error = NULL,
        stop_wanted = NULL,
-       updated_at = ?,
-       started_at = ?
+       updated_at = :now,
+       started_at = :now
  WHERE id = (
        SELECT id FROM jobs
-        WHERE state = 'queued' AND (run_after IS NULL OR run_after <= ?)
-          AND (? OR NOT (COALESCE(timing, '') = 'quiet'
-                         OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
-          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
-                         AND COALESCE(timing, '') <> 'now'
-                         AND type NOT IN (SELECT value FROM json_each(?))))
-          AND (? IS NULL
-               OR NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
-               OR EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
-                           WHERE made.value NOT IN (SELECT value FROM json_each(?))))
-        ORDER BY priority, id
+        WHERE id IN (
+              SELECT (SELECT head.id FROM jobs AS head
+                       WHERE head.state = 'queued' AND head.run_after IS NULL
+                         AND head.type = kind.type AND head.timing IS kind.timing
+                         AND (:free OR NOT (head.root_id IN (SELECT value FROM json_each(:families))
+                                            AND COALESCE(head.timing, '') <> 'now'
+                                            AND head.type NOT IN (SELECT value FROM json_each(:spared))))
+                         AND (:products IS NULL
+                              OR NOT EXISTS (SELECT 1 FROM json_each(head.payload, '$.products'))
+                              OR EXISTS (SELECT 1 FROM json_each(head.payload, '$.products') AS made
+                                          WHERE made.value NOT IN (SELECT value FROM json_each(:products))))
+                       ORDER BY head.priority, head.id
+                       LIMIT 1)
+                FROM (SELECT tally.type AS type, timing.value AS timing
+                        FROM job_tallies AS tally,
+                             (SELECT NULL AS value UNION ALL SELECT 'now' UNION ALL SELECT 'quiet')
+                             AS timing
+                       WHERE tally.state = 'queued' AND tally.n > 0
+                         AND tally.type NOT IN (SELECT value FROM json_each(:capped))) AS kind
+               WHERE :open OR NOT (kind.timing IS 'quiet'
+                                   OR (kind.timing IS NULL
+                                       AND kind.type IN (SELECT value FROM json_each(:quiet))))
+              UNION ALL
+              SELECT due.id FROM jobs AS due
+               WHERE due.state = 'queued' AND due.run_after IS NOT NULL AND due.run_after <= :now
+                 AND due.type NOT IN (SELECT value FROM json_each(:capped))
+                 AND (:open OR NOT (COALESCE(due.timing, '') = 'quiet'
+                                    OR (due.timing IS NULL
+                                        AND due.type IN (SELECT value FROM json_each(:quiet)))))
+                 AND (:free OR NOT (due.root_id IN (SELECT value FROM json_each(:families))
+                                    AND COALESCE(due.timing, '') <> 'now'
+                                    AND due.type NOT IN (SELECT value FROM json_each(:spared))))
+                 AND (:products IS NULL
+                      OR NOT EXISTS (SELECT 1 FROM json_each(due.payload, '$.products'))
+                      OR EXISTS (SELECT 1 FROM json_each(due.payload, '$.products') AS made
+                                  WHERE made.value NOT IN (SELECT value FROM json_each(:products))))
+              UNION ALL
+              SELECT (SELECT asked.id FROM jobs AS asked INDEXED BY ix_jobs_by_type
+                       WHERE asked.state = 'queued' AND asked.run_after IS NULL
+                         AND asked.type = beside.value
+                         AND (json_type(asked.payload, '$.paths') IS NOT NULL
+                              OR json_type(asked.payload, '$.folder_id') IS NOT NULL)
+                         AND (:open OR NOT (COALESCE(asked.timing, '') = 'quiet'
+                                            OR (asked.timing IS NULL
+                                                AND asked.type IN (SELECT value FROM json_each(:quiet)))))
+                       ORDER BY asked.priority, asked.id
+                       LIMIT 1)
+                FROM json_each(:beside) AS beside
+        )
+        ORDER BY priority, run_after IS NULL, run_after,
+                 type NOT IN (SELECT value FROM json_each(:reading)), id
         LIMIT 1
  )
 RETURNING *
 """
 
-# The same, minus the job types that already have as many running as they are allowed. Sift runs
-# one transcode at a time and a dozen thumbnails; without this a burst of transcodes fills every
-# worker and nothing else moves.
-_CLAIM_EXCLUDING = """
-UPDATE jobs
-   SET state = 'running',
-       claimed_by = ?,
-       heartbeat_at = ?,
-       attempts = attempts + 1,
-       error = NULL,
-       stop_wanted = NULL,
-       updated_at = ?,
-       started_at = ?
- WHERE id = (
-       SELECT id FROM jobs
-        WHERE state = 'queued' AND (run_after IS NULL OR run_after <= ?)
-          AND type NOT IN (?*)
-          AND (? OR NOT (COALESCE(timing, '') = 'quiet'
-                         OR (timing IS NULL AND type IN (SELECT value FROM json_each(?)))))
-          AND (? OR NOT (root_id IN (SELECT value FROM json_each(?))
-                         AND COALESCE(timing, '') <> 'now'
-                         AND type NOT IN (SELECT value FROM json_each(?))))
-          AND (? IS NULL
-               OR NOT EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products'))
-               OR EXISTS (SELECT 1 FROM json_each(jobs.payload, '$.products') AS made
-                           WHERE made.value NOT IN (SELECT value FROM json_each(?))))
-        ORDER BY priority, id
-        LIMIT 1
- )
-RETURNING *
+
+def claim_parameters(
+    worker_id: str,
+    now: int,
+    capped: Collection[str],
+    quiet: tuple[bool, str],
+    families: tuple[bool, str, str],
+    products: str | None,
+    beside: Collection[str] = (),
+) -> dict[str, object]:
+    """`_CLAIM`'s parameters: the types at their cap, quiet hours (open, types), a family's hold
+    (free, families, spared), the held products, and the walks at their cap whose one place
+    beside it is free (`_ASKED_RUNNING`)."""
+    from sift.kernel.jobs.worker_pool import registered_families
+
+    reading = sorted(
+        kind for kind, family in registered_families().items() if family is Family.SCAN
+    )
+    return {
+        "reading": json.dumps(reading),
+        "worker": worker_id,
+        "now": now,
+        "capped": json.dumps(sorted(capped)),
+        "open": quiet[0],
+        "quiet": quiet[1],
+        "free": families[0],
+        "families": families[1],
+        "spared": families[2],
+        "products": products,
+        "beside": json.dumps(sorted(beside)),
+    }
+
+
+# A walk somebody or the watcher asked for (some named files, or one folder) runs beside a whole
+# walk at its type's cap, in one place of its own: which types of these already fill that place.
+_ASKED_RUNNING = """
+SELECT DISTINCT type FROM jobs
+ WHERE type IN (SELECT value FROM json_each(?)) AND state = 'running'
+   AND (json_type(payload, '$.paths') IS NOT NULL OR json_type(payload, '$.folder_id') IS NOT NULL)
+"""
+
+# Which of those types wait as walks (a root and no file, as `_TO_READ` reads a walk): one seek of
+# each type's oldest waiting row, so a type of per-file rows is never read through for an asked-for
+# walk it cannot hold.
+_WALKS_WAITING = """
+SELECT kind.value AS type FROM json_each(?) AS kind
+ WHERE (SELECT json_type(walk.payload, '$.asset_id') IS NULL FROM jobs AS walk
+         WHERE walk.type = kind.value AND walk.state = 'queued'
+         ORDER BY walk.id LIMIT 1)
 """
 
 _RUNNING_BY_TYPE = (
@@ -225,19 +291,14 @@ class Claiming(SwitchboardReads):
                     )
                     return _claimed(rows, worker_id)
 
-            if at_capacity:
-                sql, params = in_clause(_CLAIM_EXCLUDING, sorted(at_capacity))
-                rows = await _fetch(
-                    connection,
-                    sql,
-                    (worker_id, now, now, now, now, *params, *hold, *families, products, products),
-                )
-            else:
-                rows = await _fetch(
-                    connection,
+            self._full = (now, frozenset(at_capacity))
+            beside = await self._beside_the_cap(connection, at_capacity - held_back, limits)
+            rows = list(
+                await connection.execute_fetchall(
                     _CLAIM,
-                    (worker_id, now, now, now, now, *hold, *families, products, products),
+                    claim_parameters(worker_id, now, at_capacity, hold, families, products, beside),
                 )
+            )
 
         return _claimed(rows, worker_id)
 
@@ -260,6 +321,26 @@ class Claiming(SwitchboardReads):
             paused += len(rows)
             if len(rows) < chunk:
                 return paused
+
+    @staticmethod
+    async def _beside_the_cap(
+        connection: Connection, at_capacity: Collection[str], limits: Mapping[str, int] | None
+    ) -> list[str]:
+        """The walks at their cap, not paused, whose place for an asked-for walk is free."""
+        from sift.kernel.jobs.worker_pool import registered_families
+
+        walks = [
+            kind
+            for kind in at_capacity
+            if registered_families().get(kind) is Family.SCAN and (limits or {}).get(kind, 1) > 0
+        ]
+        if walks:
+            rows = await _fetch(connection, _WALKS_WAITING, (json.dumps(sorted(walks)),))
+            walks = [str(row["type"]) for row in rows]
+        if not walks:
+            return []
+        rows = await _fetch(connection, _ASKED_RUNNING, (json.dumps(sorted(walks)),))
+        return sorted(set(walks) - {str(row["type"]) for row in rows})
 
     @staticmethod
     async def _at_capacity(connection: Connection, limits: Mapping[str, int]) -> set[str]:

@@ -8,6 +8,7 @@ satisfies, so this slice holds no filesystem call of its own.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -28,6 +29,7 @@ from sift.kernel.changes import About, announce_now, telling
 from sift.kernel.content.duplicates import (
     Copy,
     DuplicateReads,
+    Fingerprint,
     Place,
     Redundancy,
     RedundantTotals,
@@ -286,6 +288,16 @@ class DedupService:
             filed += await self._file(pair)
         log.info("dedup.filed", assets=planned.compared, pairs=len(planned.pairs), filed=filed)
         return filed
+
+    async def scan_unless_unchanged(self, compared: str | None) -> tuple[int, str]:
+        """`scan`, unless every fingerprint is as it was when `compared` was taken: then there is
+        nothing new to pair. How many pairs were filed, and the digest of what was read."""
+        fingerprints = await self._reads.fingerprints()
+        digest = await asyncio.to_thread(_digest_of, fingerprints)
+        if digest == compared:
+            log.info("dedup.unchanged", digest=digest[:12], assets=len(fingerprints))
+            return 0, digest
+        return await self.scan(), digest
 
     async def plan(self) -> DuplicatePlan:
         """Compare every fingerprint and answer the pairs not recorded yet. Writes nothing."""
@@ -791,6 +803,14 @@ RULE_LABELS: tuple[str, ...] = (
     "Newer",
     "Older",
 )
+
+
+def _digest_of(fingerprints: Sequence[Fingerprint]) -> str:
+    """Every field of every fingerprint a comparison reads, its version included."""
+    digest = hashlib.blake2b(digest_size=16)
+    for one in fingerprints:
+        digest.update(repr(one).encode())
+    return digest.hexdigest()
 
 
 def level_from(stored: object) -> Accuracy:

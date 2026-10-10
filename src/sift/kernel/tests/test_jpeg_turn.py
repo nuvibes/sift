@@ -123,3 +123,30 @@ async def test_a_file_that_is_not_a_jpeg_photograph_gets_no_copy(tmp_path: Path)
     )
     copy = await jpeg_turn.as_the_browser_draws(None, source, settings=None)  # type: ignore[arg-type]
     assert copy is None
+
+
+async def test_the_turn_kept_on_the_row_is_read_instead_of_the_head(tmp_path: Path) -> None:
+    """A photograph whose turn the take-in kept is not opened again to ask it: drawn alike, no
+    copy and no read (the path is not even there); never looked at, its head is read."""
+    from types import SimpleNamespace
+
+    missing = tmp_path / "not-there.jpg"
+
+    def photograph(turn_apart: bool | None) -> object:
+        asset = SimpleNamespace(mime="image/jpeg", media_type="image", turn_apart=turn_apart)
+        return SimpleNamespace(asset=asset, path=missing)
+
+    alike = await jpeg_turn.as_the_browser_draws(None, photograph(False), settings=None)  # type: ignore[arg-type]
+    assert alike is None
+    with pytest.raises(FileNotFoundError):
+        await jpeg_turn.as_the_browser_draws(None, photograph(None), settings=None)  # type: ignore[arg-type]
+
+
+def test_the_take_in_asks_the_same_question_of_the_same_head() -> None:
+    """`looked_at` is `needs_a_look` in the take-in's terms; `drawn_apart_in` is `drawn_apart` of
+    a head already read."""
+    assert jpeg_turn.looked_at("image/jpeg", "image")
+    assert not jpeg_turn.looked_at("image/png", "image")
+    assert not jpeg_turn.looked_at("image/jpeg", "video")
+    assert jpeg_turn.drawn_apart_in(_jpeg(_exif(6), _exif(1)))
+    assert not jpeg_turn.drawn_apart_in(_jpeg(_exif(6)))

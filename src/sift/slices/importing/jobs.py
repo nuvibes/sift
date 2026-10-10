@@ -6,15 +6,23 @@ One task per file makes every ticked product the file lacks on a single read of 
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+import contextlib
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Protocol
 
 from sift.kernel.content import ContentStore
-from sift.kernel.jobs import JobBlocked, JobContext, held_for, register_handler
-from sift.kernel.jobs.families import Family
+from sift.kernel.jobs import JobBlocked, JobContext, JobHeld, held_for, register_handler
+from sift.kernel.jobs.families import AGAIN, Family
 from sift.kernel.jobs.ledger import BUILD_STAGE_PREFIX
 from sift.kernel.log import get_logger, timing_hook
 from sift.slices.importing.coming import take_over
-from sift.slices.importing.products import PAGE, Lacking, ProductRegistry, lacking_on_page
+from sift.slices.importing.products import (
+    PAGE,
+    Lacking,
+    Product,
+    ProductRegistry,
+    lacking_on_page,
+)
 
 log = get_logger(__name__)
 
@@ -37,6 +45,28 @@ MEASURING_FIRST = (
 
 #: The payload key of a first page queued again behind the benchmark it asked for.
 MEASURED_FIRST = "measured_first"
+
+#: The payload key of a file's task handed out as it landed: its products are what the import
+#: switches want for it, asked when it runs (`Arriving`).
+ARRIVED = "arrived"
+
+
+class OnePicture(Protocol):
+    """Reads a still once for every product of a task (`sift.kernel.ml.pictures.OnePicture`)."""
+
+    def prepared(
+        self, asset_id: str, passes: Sequence[Product]
+    ) -> contextlib.AbstractAsyncContextManager[None]: ...
+
+
+#: Which of the identify products the import switches want for a file as it lands, by key.
+Arriving = Callable[[str], Awaitable[list[str]]]
+
+#: How long a task for a file not yet read waits before it asks again: its read is queued ahead.
+NOT_READ_YET_SECONDS = 60.0
+
+#: What a task held for its file's read says on the Tasks screen.
+NOT_READ_YET = "Waiting for this file to be read first, so its size is known."
 
 
 async def build(
@@ -162,17 +192,34 @@ async def _drop_finished(
             ]
 
 
-async def build_file(context: JobContext, *, products: ProductRegistry) -> None:
-    """Make every product this file lacks on one read; one that must wait does not park the rest."""
+async def build_file(
+    context: JobContext,
+    *,
+    products: ProductRegistry,
+    pictures: OnePicture | None = None,
+    arriving: Arriving | None = None,
+    content: ContentStore | None = None,
+) -> None:
+    """Make every product this file lacks on one read; one that must wait does not park the rest.
+
+    Given `content`, a file not yet read waits for its read: a picture of unknown size would be
+    looked at as two pixels square and filed as having nobody in it."""
     asset_id = str(context.payload["asset_id"])
-    wanted = [str(one) for one in context.payload.get("products") or []]
+    if content is not None and await _not_read_yet(content, asset_id):
+        raise JobHeld(NOT_READ_YET, retry_in=NOT_READ_YET_SECONDS)
+    wanted = await _wanted(context, asset_id, arriving)
     made = [products.get(key) for key in wanted]
     steps = [one for one in made if one is not None]
     waiting: JobBlocked | None = None
     # A product this machine cannot make just now is held rather than failed (`held_for`).
     holding: Exception | None = None
     settles: dict[str, None] = {}
-    async with products.one_pass.prepared(asset_id, steps):
+    # A video read once where that is cheaper; a still decoded once for every product.
+    still = pictures.prepared(asset_id, steps) if pictures is not None else contextlib.nullcontext()
+    # A press making a file's pictures again plans them into the one read too (`AGAIN`); asked
+    # only then, so a reader that plans no such thing is asked as before.
+    again = {"again": True} if context.payload.get(AGAIN) is True else {}
+    async with products.one_pass.prepared(asset_id, steps, **again), still:
         for index, product in enumerate(steps):
             await context.raise_if_canceled()
             with timing_hook(BUILD_STAGE_PREFIX + product.key, asset_id=asset_id):
@@ -200,6 +247,25 @@ async def build_file(context: JobContext, *, products: ProductRegistry) -> None:
         raise holding
     if waiting is not None:
         raise waiting
+
+
+async def _wanted(context: JobContext, asset_id: str, arriving: Arriving | None) -> list[str]:
+    """The products this file is to have, as queued or as its folder's switches say now."""
+    wanted = [str(one) for one in context.payload.get("products") or []]
+    if context.payload.get(ARRIVED) and arriving is not None:
+        # A file that just landed: what its folder's switches want now, not when it was queued.
+        wanted = await arriving(asset_id)
+    return wanted
+
+
+async def _not_read_yet(content: ContentStore, asset_id: str) -> bool:
+    asset = await content.get(asset_id)
+    return (
+        asset is not None
+        and asset.probed_at is None
+        and asset.media_type in ("image", "video")
+        and not (asset.width and asset.height)
+    )
 
 
 def _page_key(value: object) -> tuple[int, str] | None:
@@ -241,8 +307,33 @@ def _page_handler(
     return page
 
 
-def register_handlers(*, content: ContentStore, products: ProductRegistry) -> None:
-    """Claim both runs' job types, each under its own family; neither waits on readiness."""
+def _file_handler(
+    products: ProductRegistry,
+    pictures: OnePicture | None,
+    arriving: Arriving | None,
+    content: ContentStore | None,
+) -> Callable[[JobContext], Awaitable[None]]:
+    """One family's task per file, as a closure, not a loop lambda: the Generate run's products
+    read no still and wait for no read, so only Identify's task is handed the two."""
+
+    async def one_file(context: JobContext) -> None:
+        await build_file(
+            context, products=products, pictures=pictures, arriving=arriving, content=content
+        )
+
+    return one_file
+
+
+def register_handlers(
+    *,
+    content: ContentStore,
+    products: ProductRegistry,
+    pictures: OnePicture | None = None,
+    arriving: Arriving | None = None,
+) -> None:
+    """Claim both runs' job types, each under its own family; neither waits on readiness.
+
+    `arriving` answers a file's task handed out as it landed (`ARRIVED`)."""
     for family, (run_type, file_type) in RUNS.items():
         register_handler(
             run_type,
@@ -259,7 +350,12 @@ def register_handlers(*, content: ContentStore, products: ProductRegistry) -> No
         )
         register_handler(
             file_type,
-            lambda context: build_file(context, products=products),
+            _file_handler(
+                products,
+                pictures if family is Family.IDENTIFY else None,
+                arriving,
+                content if family is Family.IDENTIFY else None,
+            ),
             # Named per family, because the two carry different products.
             name=(
                 "Generating missing thumbnails and fingerprints"

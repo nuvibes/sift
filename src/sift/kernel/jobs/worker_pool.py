@@ -32,6 +32,7 @@ from sift.kernel.jobs.queue import (
     JobQueue,
     JobState,
 )
+from sift.kernel.jobs.queue_core import ASKED_AT
 from sift.kernel.jobs.registry import (
     _ALONE,
     _BY_ITSELF,
@@ -70,17 +71,16 @@ from sift.kernel.jobs.registry import (
     registered_urgency,
     unlisted_job_types,
 )
-from sift.kernel.jobs.retrying import backoff
+from sift.kernel.jobs.retrying import backoff, cannot_change
 from sift.kernel.jobs.tuning import (
     HEARTBEAT_SECONDS,
-    IDLE_POLL_SECONDS,
     PROGRESS_INTERVAL_SECONDS,
     RECONFIGURE_SECONDS,
     SHUTDOWN_GRACE_SECONDS,
     STALE_AFTER_SECONDS,
     SWEEP_INTERVAL_SECONDS,
 )
-from sift.kernel.jobs.waking import Listen, Waking, first_of
+from sift.kernel.jobs.waking import LONGEST_IDLE_SECONDS, Listen, Waking, first_of
 from sift.kernel.jobs.watchdog import run_watchdog
 from sift.kernel.jobs.workspaces import Workspaces
 from sift.kernel.log import JobCost, costing, get_logger, timing_hook
@@ -375,7 +375,7 @@ class WorkerPool:
         concurrency: int,
         capabilities: SystemCapabilities | None = None,
         limits: Mapping[str, int] | None = None,
-        poll_interval: float = IDLE_POLL_SECONDS,
+        poll_interval: float = LONGEST_IDLE_SECONDS,
         heartbeat_interval: float = HEARTBEAT_SECONDS,
         shutdown_grace: float = SHUTDOWN_GRACE_SECONDS,
         watchdog: bool = True,
@@ -413,7 +413,7 @@ class WorkerPool:
         #: The switch that makes a running job's heartbeat beat now, so a stop lands in one beat.
         self._wake: dict[str, asyncio.Event] = {}
         self._unlisten: Callable[[], None] | None = None
-        self.holding = Holding(self._waking.work_arrived)
+        self.holding = Holding(self._waking.wake_all)
 
     @property
     def concurrency(self) -> int:
@@ -437,7 +437,11 @@ class WorkerPool:
         self._stop.clear()
         await self._sweep_stale_workspaces()
         self._unlisten = self._queue.listen_for_stops(self._stop_asked)
-        self._waking.listen(self._queue.listen_for_work)
+        self._waking.listen(
+            self._queue.listen_for_work,
+            self._queue.listen_for_anything,
+            self._queue.listen_for_retime,
+        )
         for _ in range(self._concurrency):
             self._spawn_worker()
         if self._watchdog:
@@ -526,8 +530,15 @@ class WorkerPool:
 
     def _set_limits(self, limits: Mapping[str, int]) -> None:
         _check_limits(limits)
+        before = self._limits
+        raised = any(
+            job_type not in limits or limits[job_type] > limit for job_type, limit in before.items()
+        )
         # Rebound, never mutated: a claim reads the old dict across awaits.
         self._limits = dict(limits)
+        if raised:
+            # A cap raised or lifted frees work no arrival will name.
+            self._waking.wake_all()
 
     def _set_concurrency(self, target: int) -> None:
         _check_concurrency(target)
@@ -597,8 +608,13 @@ class WorkerPool:
                 await self._idle(own_stop)
 
     async def _idle(self, own_stop: asyncio.Event) -> None:
-        """Wait out the poll interval, waking early for either stop or for work arriving."""
-        await first_of((self._stop, own_stop, self._waking.arrived), self._poll_interval)
+        """Wait for work a worker could take, a stop, or the next row put off to a moment, whichever
+        is first; `poll_interval` at the longest, so a missed wake costs that, never a stall."""
+        while True:
+            due = await self._queue.seconds_until_due()
+            within = self._poll_interval if due is None else min(self._poll_interval, due)
+            if await self._waking.idle((self._stop, own_stop), within):
+                return
 
     async def _run(self, job: Job, worker_id: str) -> None:
         # Asked again: a switch turned off must stop rows already queued. Cancelled, not failed.
@@ -723,13 +739,13 @@ class WorkerPool:
             held = await self._queue.hold(job.id, worker_id, str(error), retry_in=hold)
             landed = held
             outcome = "held"
-        elif isinstance(error, JobFailedPermanently):
+        elif isinstance(error, JobFailedPermanently) or cannot_change(error):
             state = await self._queue.fail(job.id, worker_id, str(error), permanent=True)
             landed = state is not None
         else:
             # A pause asked since the last heartbeat makes `fail` answer `paused`.
             failed = f"{type(error).__name__}: {error}"
-            wait = backoff(job.type, job.attempts)
+            wait = backoff(job.type, job.attempts, error)
             state = await self._queue.fail(job.id, worker_id, failed, retry_in=wait)
             landed = state is not None
             paused = state is JobState.PAUSED
@@ -800,6 +816,7 @@ class WorkerPool:
     async def _invoke(self, handler: Handler, context: JobContext) -> None:
         # So the timing hook files each stage against its run, unknown to the handler.
         token = CURRENT_FAMILY.set(family_of(context.job.type))
+        asked_at = ASKED_AT.set(context.job.priority)
         try:
             # Every record the handler writes names its job, so a stage joins to it.
             with (
@@ -811,6 +828,7 @@ class WorkerPool:
                 await handler(context)
         finally:
             CURRENT_FAMILY.reset(token)
+            ASKED_AT.reset(asked_at)
             self._queue.lift_hold(context.job.id)
 
     async def _beat(self, context: JobContext, wake: asyncio.Event | None = None) -> None:

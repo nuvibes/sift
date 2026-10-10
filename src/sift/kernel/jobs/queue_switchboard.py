@@ -148,8 +148,12 @@ class SwitchboardReads(QueueCore):
         from then on, `waiting_only` what has started."""
         if types is None:
             types = (await self._held()).types
-        rows = await self._db.fetch_all(
-            _HELD_BY_TYPE, (json.dumps(sorted(types)), due_before, due_before)
+        listed = json.dumps(sorted(types))
+        # Kept like the Tasks page's other long reads: exact on a small queue, answered from the
+        # last reading and read again behind it on a large one.
+        rows = await self._kept_read(
+            ("held_by_type", listed, due_before),
+            lambda: self._db.fetch_all(_HELD_BY_TYPE, (listed, due_before, due_before)),
         )
         held: dict[str, int] = {}
         for row in rows:
@@ -162,7 +166,11 @@ class SwitchboardReads(QueueCore):
         self, types: frozenset[str]
     ) -> tuple[dict[str, int], dict[str, int]]:
         """`held_by_type` for these types, and its `waiting_only` reading, from one statement."""
-        rows = await self._db.fetch_all(_HELD_BY_TYPE, (json.dumps(sorted(types)), None, None))
+        listed = json.dumps(sorted(types))
+        rows = await self._kept_read(
+            ("held_by_type", listed, None),
+            lambda: self._db.fetch_all(_HELD_BY_TYPE, (listed, None, None)),
+        )
         held: dict[str, int] = {}
         waiting: dict[str, int] = {}
         for row in rows:

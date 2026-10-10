@@ -188,14 +188,16 @@ async def test_the_plan_and_the_ask_agree_so_a_build_can_read_the_file_once(
     assert all(one.pixels.shape == (FRAME_SIZE, FRAME_SIZE, 3) for one in moments)
 
 
-async def test_a_still_or_a_gif_plans_nothing() -> None:
+async def test_a_still_plans_its_one_square_and_a_gif_plans_nothing() -> None:
+    """A still's one square is what a task's one decode hands it (`Reader._single` asks for the
+    same); a GIF is read whole in a go of its own."""
     from pathlib import Path
 
     from sift.kernel import media
-    from sift.slices.semantic.frames import frame_requests
+    from sift.slices.semantic.frames import FRAME_FILTER, frame_requests
 
-    for kind in ("image", "gif"):
-        facts = media.FileFacts(
+    def facts(kind: str) -> media.FileFacts:
+        return media.FileFacts(
             asset_id="a",
             path=Path("x"),
             media_type=kind,
@@ -205,4 +207,9 @@ async def test_a_still_or_a_gif_plans_nothing() -> None:
             fps=10.0,
             size_bytes=1,
         )
-        assert await frame_requests(facts) == []
+
+    assert await frame_requests(facts("gif")) == []
+    (still,) = await frame_requests(facts("image"))
+    assert isinstance(still, media.RawFrames)
+    assert still.moments == (media.Moment(seek=()),) and still.filters == FRAME_FILTER
+    assert still.frame_bytes == FRAME_SIZE * FRAME_SIZE * 3

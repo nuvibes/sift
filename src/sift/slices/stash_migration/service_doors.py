@@ -16,7 +16,7 @@ from sift.slices.stash_migration.deciding import Known, Stashed, _master_key
 from sift.slices.stash_migration.ports import LinkOn, OpinionOn
 from sift.slices.stash_migration.reader import Entity
 from sift.slices.stash_migration.saved_filters import translate
-from sift.slices.stash_migration.service_base import COPY_NAME, StashBase
+from sift.slices.stash_migration.service_base import COPY_NAME, Checkpoint, StashBase
 from sift.slices.stash_migration.tally import Tally
 from sift.slices.stash_migration.waiting import KeptGallery, KeptGroup
 
@@ -200,7 +200,12 @@ class DoorsMixin(StashBase):
             tally.entity_ratings += 1 if one.rating is not None else 0
 
     async def _links(
-        self, context: JobContext, stashed: Stashed, tally: Tally, known: Known
+        self,
+        context: JobContext,
+        stashed: Stashed,
+        tally: Tally,
+        known: Known,
+        kept: Checkpoint | None = None,
     ) -> None:
         """The stash-box ids Stash kept on its performers, studios and tags, linked here.
 
@@ -221,12 +226,24 @@ class DoorsMixin(StashBase):
                 local = rows.get(one.owner)
                 if local is None:
                     continue
-                await self._link(kind, local[0], one.endpoint, one.remote_id, key, tally)
+                asked = f"{kind} {local[0]} {one.endpoint} {one.remote_id}"
+                went = None if kept is None else kept.went(asked)
+                if went is not None:
+                    tally.links[went] = tally.links.get(went, 0) + 1
+                else:
+                    went = await self._link(kind, local[0], one.endpoint, one.remote_id, key, tally)
+                    if kept is not None:
+                        await kept.note(asked, went)
                 if context.stopping() == "cancel":
                     raise JobCanceled
 
     async def _file_links(
-        self, context: JobContext, stashed: Stashed, tally: Tally, scenes: Mapping[int, str]
+        self,
+        context: JobContext,
+        stashed: Stashed,
+        tally: Tally,
+        scenes: Mapping[int, str],
+        kept: Checkpoint | None = None,
     ) -> None:
         """The stash-box ids Stash kept on the scenes matched here, each its file's answer from that
         box, fetched by the id and applied as an exact match is (`StashDoors.link_file`)."""
@@ -236,17 +253,26 @@ class DoorsMixin(StashBase):
         for one in stashed.box_ids["scene"]:
             asset_id = scenes.get(one.owner)
             if asset_id is not None:
-                await self._link_file(asset_id, one.endpoint, one.remote_id, key, tally)
+                asked = f"file {asset_id} {one.endpoint} {one.remote_id}"
+                went = None if kept is None else kept.went(asked)
+                if went is not None:
+                    tally.file_links[went] = tally.file_links.get(went, 0) + 1
+                else:
+                    went = await self._link_file(asset_id, one.endpoint, one.remote_id, key, tally)
+                    if kept is not None:
+                        await kept.note(asked, went)
                 if context.stopping() == "cancel":
                     raise JobCanceled
 
     async def _link_file(
         self, asset_id: str, endpoint: str, remote_id: str, key: bytes | None, tally: Tally
-    ) -> None:
+    ) -> str:
+        """One file's link, counted; what it came to."""
         if self.doors is None:
-            return
+            return ""
         went = (await self.doors.link_file(asset_id, endpoint, remote_id, key)).value
         tally.file_links[went] = tally.file_links.get(went, 0) + 1
+        return went
 
     async def _link(
         self,
@@ -256,11 +282,13 @@ class DoorsMixin(StashBase):
         remote_id: str,
         key: bytes | None,
         tally: Tally,
-    ) -> None:
+    ) -> str:
+        """One row's link, counted; what it came to."""
         if self.doors is None:
-            return
-        outcome = await self.doors.link(kind, local, endpoint, remote_id, key)
-        tally.links[outcome.value] = tally.links.get(outcome.value, 0) + 1
+            return ""
+        went = (await self.doors.link(kind, local, endpoint, remote_id, key)).value
+        tally.links[went] = tally.links.get(went, 0) + 1
+        return went
 
     async def _searches(self, stashed: Stashed, tally: Tally, user_id: str) -> None:
         """Stash's saved filters over scenes and images, kept as saved searches over files."""

@@ -25,7 +25,7 @@ from sift.kernel.records import (
     Subject,
 )
 from sift.kernel.seams import SettingsSeam
-from sift.slices.auth import csrf_protect, master_key, require_admin
+from sift.slices.auth import csrf_protect, require_admin
 from sift.slices.stash_boxes.jobs import (
     STASH_ENRICH,
     STASH_SCAN,
@@ -202,7 +202,6 @@ async def enrich_entities(
     access: Annotated[Repository, Depends(wiring.access)],
     service: Annotated[StashBoxService, Depends(_service)],
     settings: Annotated[SettingsSeam, Depends(wiring.settings_hub)],
-    key: Annotated[bytes | None, Depends(master_key)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> EnrichStarted:
     """Ask the stash-boxes about a batch of people, sites or tags.
@@ -217,9 +216,8 @@ async def enrich_entities(
     for the same reason. And a list that has drifted since the screen drew it (somebody deleted a
     tag a minute ago) still enriches the rest.
 
-    The key rides on the job because the boxes are asked with it and a job runs long after the
-    request that made it. It is the same key the request already carried; nothing new is unsealed
-    and nothing is written down anywhere it was not already.
+    The job reads the boxes' keys from the sealed store when it runs: no secret is written into
+    the job, which the queue keeps for days.
     """
     # Refused, not started, when the press would ask nobody: the rule every press shares.
     chosen = await box_for(settings, body.box)
@@ -257,7 +255,6 @@ async def enrich_entities(
         # `settings.box_for`.
         {
             "subjects": wanted,
-            "key": key.hex() if key else None,
             "box": chosen,
         },
     )

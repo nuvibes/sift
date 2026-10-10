@@ -33,7 +33,7 @@ COPY_EXTENSION = "jpg"
 
 #: How much of a file's head is walked for its Exif blocks: past it, a file is drawn as ffmpeg
 #: draws it. Two blocks of the largest size the format allows, and the rest of the head.
-_HEAD_BYTES = 256 * 1024
+HEAD_BYTES = 256 * 1024
 
 _EXIF = b"Exif\x00\x00"
 _ORIENTATION = 0x0112
@@ -42,7 +42,12 @@ _SHORT = 3
 
 def needs_a_look(asset: Asset) -> bool:
     """Whether this file's head is worth reading: a JPEG photograph."""
-    return asset.mime == "image/jpeg" and asset.media_type == "image"
+    return looked_at(asset.mime, asset.media_type)
+
+
+def looked_at(mime: str | None, media_type: str) -> bool:
+    """`needs_a_look` in the terms the take-in holds before there is a row."""
+    return mime == "image/jpeg" and media_type == "image"
 
 
 def _segments(head: bytes) -> list[tuple[int, int, int]]:
@@ -103,14 +108,18 @@ def turns(head: bytes) -> tuple[int, int]:
 def drawn_apart(path: Path) -> bool:
     """Whether a browser and ffmpeg draw this file at different turns. Blocking: reads its head."""
     with path.open("rb") as source:
-        head = source.read(_HEAD_BYTES)
+        return drawn_apart_in(source.read(HEAD_BYTES))
+
+
+def drawn_apart_in(head: bytes) -> bool:
+    """`drawn_apart` of a head already read: its first `HEAD_BYTES`."""
     browser, ffmpeg = turns(head)
     return browser != ffmpeg
 
 
 def as_the_browser_reads(data: bytes) -> bytes:
     """The file with every Exif block but the first taken out."""
-    later = _exif_blocks(data[:_HEAD_BYTES])[1:]
+    later = _exif_blocks(data[:HEAD_BYTES])[1:]
     kept = bytearray()
     at = 0
     for start, end in later:
@@ -126,7 +135,11 @@ async def as_the_browser_draws(
     None for every other file (see `kernel.media.resolve_decodable`)."""
     if not needs_a_look(source.asset):
         return None
-    if not await asyncio.to_thread(drawn_apart, source.path):
+    # The take-in keeps the answer on the row; only a file taken in before that is read here.
+    apart = source.asset.turn_apart
+    if apart is None:
+        apart = await asyncio.to_thread(drawn_apart, source.path)
+    if not apart:
         return None
     return await readable_copy(store, source.asset, source.path, settings=settings)
 
