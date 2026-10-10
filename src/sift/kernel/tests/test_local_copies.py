@@ -284,14 +284,13 @@ async def test_past_its_ceiling_even_a_copy_with_work_owed_goes_and_it_is_said(
     assert said and said[0]["owed"] == 1
 
 
-async def test_a_cache_is_walked_at_most_once_a_minute(
+async def test_a_cache_is_walked_when_its_counted_bytes_say_over_budget_and_once_a_minute_with_only_owed_copies(
     content_store: ContentStore,
     job_queue: JobQueue,
     thumbnails: str,
     settings: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(identity_places, "OWED_CEILING_TIMES", 1)
     cache = settings.cache_dir / ContentStore.ARCHIVE_CACHE
     _held(cache, "owed", 400, 1_500_000_000)
     new = _held(cache, "new", 400, 1_700_000_000)
@@ -302,15 +301,23 @@ async def test_a_cache_is_walked_at_most_once_a_minute(
         identity_places, "_cached", lambda directory: walks.append(directory) or listing(directory)
     )
 
+    # Over budget with nothing but owed copies: walked, then not again within the minute.
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, new)
     idle = _held(cache, "idle", 400, 1_600_000_000)
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, idle)
-    assert len(walks) == 1, "the minute after a walk, none"
+    assert len(walks) == 1, "the minute after a walk that left only owed copies, none"
     assert idle.is_file()
 
     monkeypatch.setattr(identity_places, "KEEP_WALK_EVERY_SECONDS", 0.0)
     await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, idle)
-    assert len(walks) == 2
+    assert len(walks) == 2 and not new.exists(), "walked again, the free copy dropped"
+
+    # Under a wider budget: a copy that keeps the counted bytes under it is never walked for.
+    small = _held(cache, "small", 10, 1_800_000_000)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 5_000, small)
+    smaller = _held(cache, "smaller", 10, 1_900_000_000)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 5_000, smaller)
+    assert len(walks) == 2, "counted under the budget, so no walk"
 
 
 async def test_which_copies_are_owed_is_asked_of_the_queue_at_most_twice_a_minute(
@@ -333,7 +340,9 @@ def test_a_copy_handed_to_a_reader_lately_is_not_dropped_under_it(tmp_path: Path
     new = _held(cache, "new", 400, 1_700_000_000)
     identity_places._handed_out(read)
 
-    dropped = identity_places._drop(cache, identity_places._cached(cache), 800, new, ceiling=1_200)
+    dropped = identity_places._drop(cache, identity_places._cached(cache), 800, new, ceiling=1_200)[
+        :2
+    ]
 
     assert dropped == (1, 0)
     assert read.is_file() and not other.exists()

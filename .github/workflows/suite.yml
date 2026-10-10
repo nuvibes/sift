@@ -1,8 +1,8 @@
 name: suite
 
 # The whole Python suite in shards, the authorization matrix, the per-module coverage gates, the
-# browser run, and the tools the installer ships, run for real. Weekly, and whenever it is
-# dispatched by hand.
+# browser run, and the tools the installer ships, run for real. On every push to main, weekly,
+# and whenever it is dispatched by hand.
 #
 # A private copy of this repository has a monthly allowance of Actions minutes that one run takes
 # a large share of, so there every job waits to be dispatched; a public one runs on the schedule.
@@ -11,6 +11,8 @@ name: suite
 # where Sift ships, and the suite's platform branches are the installer's.
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: "17 3 * * 1"
   workflow_dispatch:
