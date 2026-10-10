@@ -48,6 +48,7 @@ Caps Lock
 Cell Groups
 Center Stage
 Choose Neve Arbogast
+Choose Stash
 Client Install
 Client Mode
 Close Sift

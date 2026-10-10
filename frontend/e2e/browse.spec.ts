@@ -154,6 +154,14 @@ test('a still image is never asked for a preview clip', async ({ page }) => {
 
 test('an empty library says so instead of showing nothing at all', async ({ page }) => {
 	await serveLibrary(page, []);
+	// No folders, whatever the specs beside this one add to the shared library.
+	await page.route('**/api/library/roots', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ roots: [] })
+		})
+	);
 	await page.goto('/browse');
 
 	// A library with no folders is offered its first folder, not told it is empty.

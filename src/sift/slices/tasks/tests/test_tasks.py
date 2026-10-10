@@ -16,6 +16,7 @@ import sift.main  # noqa: F401 (every task, and every schema, is declared by imp
 from sift.kernel.access import Role, Viewer
 from sift.kernel.db import Database
 from sift.kernel.jobs import JobContext, JobQueue, JobState, register_handler, registered_handlers
+from sift.kernel.jobs import ledger as ledger_module
 from sift.kernel.jobs.failure_words import in_plain_words
 from sift.kernel.jobs.quiet_hours import AT_NOW, AT_QUIET, WHEN_PRESS, WHEN_QUIET, WHEN_WORK
 from sift.kernel.jobs.schedules import get_schedule, when_key
@@ -80,6 +81,12 @@ class Settings:
             return self.stored[key]
         declared = get_registered(key)
         return None if declared is None else declared.default
+
+
+@pytest.fixture(autouse=True)
+def _a_run_ends_when_its_family_drains(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests settle once; the batch's gap has the ledger's own tests."""
+    monkeypatch.setattr(ledger_module, "RUN_GAP_SECONDS", 0.0)
 
 
 def _clock_at(hour: int) -> float:

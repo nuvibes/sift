@@ -29,6 +29,7 @@ from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore
 from sift.kernel.content.library import LibraryStore
 from sift.kernel.db import Database
+from sift.kernel.jobs import ledger as ledger_module
 from sift.kernel.jobs.families import Family
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.ledger import Actor
@@ -297,7 +298,10 @@ async def test_a_files_record_written_tells_whoever_draws_it(
 # --- runs, tidying, tunnels --------------------------------------------------------------------
 
 
-async def test_a_run_closing_rings_the_jobs_bell(temp_db: Database, told: ChangeBus) -> None:
+async def test_a_run_closing_rings_the_jobs_bell(
+    temp_db: Database, told: ChangeBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ledger_module, "RUN_GAP_SECONDS", 0.0)
     await temp_db.initialize_schema()
     book = Ledger(
         temp_db,

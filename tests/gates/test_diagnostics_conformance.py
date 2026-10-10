@@ -31,8 +31,9 @@ from sift.kernel.config import get_settings
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import JobContext, JobQueue, WorkerPool, registered_handlers
 from sift.kernel.jobs.queue import Job, JobState
-from sift.kernel.log import configure_logging, get_logger
+from sift.kernel.log import apply_log_preferences, configure_logging, get_logger
 from sift.main import create_app
+from sift.wiring import lifespan
 from tests.gates.test_authz_matrix import (
     WEBSOCKET,
     _leaf_routes,
@@ -230,6 +231,9 @@ def booted_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Fast
     async def _no_workers(self: WorkerPool) -> None: ...
 
     monkeypatch.setattr(WorkerPool, "start", _no_workers)
+    # The stored detail is Normal, where a job's own timing line is folded into its summary
+    # (`log._fold`); the keeper would set it back every few seconds, so the seam is read at Detailed.
+    monkeypatch.setattr(lifespan, "apply_log_preferences", lambda **_: None)
     get_settings.cache_clear()
     yield create_app()
     get_settings.cache_clear()
@@ -275,6 +279,7 @@ async def test_every_registered_job_type_emits_a_timing_record(booted_app: FastA
 
         queue = JobQueue(booted_app.state.database)
         pool = WorkerPool(queue, concurrency=1)
+        apply_log_preferences(detailed=True, per_file_bytes=0)
 
         for job_type, handler in handlers.items():
             context = JobContext(
@@ -459,6 +464,8 @@ def test_no_slice_logs_outside_the_kernel() -> None:
 async def test_a_job_run_off_the_seam_produces_no_record(job_queue: JobQueue) -> None:
     """A handler called directly, off the seam, leaves no record; run as the pool runs it, one."""
     configure_logging("INFO", redact_personal=True)
+    # Detailed, through the Logs tab's own door: the job's line stands (`log._fold`).
+    apply_log_preferences(detailed=True, per_file_bytes=0)
 
     async def handler(_: JobContext) -> None:
         return None

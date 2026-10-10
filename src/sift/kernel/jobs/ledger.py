@@ -484,7 +484,7 @@ class Ledger(RunReads):
                 self.throughput(family).busy(mono, mono - ticked)
         for family, run in list(self._open.items()):
             run.settings = dict(settings)
-            if family in busy or self._batch_goes_on(family, busy, mono, now):
+            if family in busy or (not run.stopped and self._batch_goes_on(family, busy, mono, now)):
                 if time.monotonic() - run.last_flushed >= FLUSH_EVERY_SECONDS:
                     await self._write(run, now)
                 continue
