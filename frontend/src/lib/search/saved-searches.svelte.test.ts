@@ -133,6 +133,22 @@ it('takes a row out immediately and tells the server after', async () => {
 	expect(mocks.del).toHaveBeenCalledWith('/search/saved/s-1');
 });
 
+it('does not put a deleted row back from a read that began before the delete', async () => {
+	mocks.get.mockResolvedValue({ items: [BEACH, DOGS] });
+	await savedSearches.ensure();
+	let answerTheOldList: (value: { items: (typeof BEACH)[] }) => void = () => {};
+	mocks.get.mockImplementationOnce(() => new Promise((resolve) => (answerTheOldList = resolve)));
+	mocks.get.mockResolvedValue({ items: [DOGS] });
+	const read = savedSearches.reload();
+
+	await savedSearches.remove('s-1');
+	answerTheOldList({ items: [BEACH, DOGS] });
+	await read;
+
+	expect(savedSearches.items).toEqual([DOGS]);
+	expect(mocks.get).toHaveBeenCalledTimes(3);
+});
+
 /* And the fourth thing done to them, which nothing on this screen does: somebody else moves them.
  *
  * A saved search is this account's own, so it can be written from a second browser or from the

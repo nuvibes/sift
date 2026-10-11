@@ -62,6 +62,8 @@ class SavedSearches {
 	items = $state<SavedSearch[]>([]);
 	loaded = $state(false);
 	busy = $state(false);
+	/* Counted before every change this tab makes, so a read begun before one is not kept. */
+	#writes = 0;
 
 	/**
 	 * The filters kept on ONE wall, newest first: spelled in that wall's vocabulary, so only there.
@@ -82,13 +84,22 @@ class SavedSearches {
 	async reload(): Promise<void> {
 		this.busy = true;
 		try {
-			const answer = await api.get<components['schemas']['SavedSearches']>('/search/saved');
-			this.items = await Promise.all(
-				answer.items.map(async (item) => ({ ...item, query: await asNamedFilters(item.query) }))
-			);
-			SAID.clear();
-			for (const item of answer.items) remember(item.named ?? []);
-			this.loaded = true;
+			for (;;) {
+				const since = this.#writes;
+				const answer = await api.get<components['schemas']['SavedSearches']>('/search/saved');
+				// A change of this tab's landed while the read was out: its answer is from before it.
+				if (since !== this.#writes) continue;
+				const items = await Promise.all(
+					answer.items.map(async (item) => ({ ...item, query: await asNamedFilters(item.query) }))
+				);
+				// An equal answer is not assigned: the rows and an open menu on one stay as they are.
+				if (!this.loaded || JSON.stringify(items) !== JSON.stringify(this.items))
+					this.items = items;
+				SAID.clear();
+				for (const item of answer.items) remember(item.named ?? []);
+				this.loaded = true;
+				return;
+			}
 		} finally {
 			this.busy = false;
 		}
@@ -96,6 +107,7 @@ class SavedSearches {
 
 	/* The server upserts on the name, so the list is reloaded rather than appended to. */
 	async save(name: string, query: string, kind: string = ASSET_WALL): Promise<void> {
+		this.#writes += 1;
 		await api.post('/search/saved', {
 			body: { name, kind, query: await asNamedFilters(asAQuestion(query)) }
 		});
@@ -104,6 +116,7 @@ class SavedSearches {
 
 	/* Optimistic; a failure is put back by the caller's reload. */
 	async rename(id: string, name: string): Promise<void> {
+		this.#writes += 1;
 		const before = this.items;
 		this.items = this.items.map((item) => (item.id === id ? { ...item, name } : item));
 		try {
@@ -125,6 +138,7 @@ class SavedSearches {
 	}
 
 	async remove(id: string): Promise<void> {
+		this.#writes += 1;
 		// Optimistic; a failed delete is reconciled by the next load.
 		this.items = this.items.filter((item) => item.id !== id);
 		await api.del(`/search/saved/${id}`);
