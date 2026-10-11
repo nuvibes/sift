@@ -4,6 +4,7 @@ import { type Page } from '@playwright/test';
 import { expect, test } from './test';
 import { SIZE_STEPS } from '../src/lib/grid/justify';
 import { signInAsAdmin } from './admin';
+import { removePeople, seedPeople } from './seed';
 import { settled } from './settled';
 
 // Settings publishes nothing into the bar, so it is the strictest case: all defaults.
@@ -387,15 +388,14 @@ test('the search field never hangs over the row below with nothing typed in it',
 			)
 			.toBeLessThanOrEqual(0);
 
-		/* The hint stays, which pins the menus' threshold rather than letting the field's own query
-		 * cover for it. Polled: the rail's width animates. */
+		/* One row at every width: the tile size and the menus stay, so where room runs short the end
+		 * group draws tighter and the field keeps its floor. Polled: the rail's width animates. */
 		await expect
 			.poll(async () => Math.round((await field.boundingBox())!.width), {
-				message: `the menus stayed on the bar and squeezed the field at ${width}px`
+				message: `the field went under its floor at ${width}px`
 			})
 			.toBeGreaterThanOrEqual(227);
-		if (width === 1440) await expect(size, 'no tile size with room for it').toBeVisible();
-		if (width === 1024) await expect(size, 'the tile size kept its place at 1024px').toBeHidden();
+		await expect(size, `the tile size left the bar at ${width}px`).toBeVisible();
 	}
 });
 
@@ -483,17 +483,31 @@ test('the bar is one row at every width, its trail ending in an ellipsis', async
 		}
 	}
 
+	/* A person's faces under Organize, whose trail runs past the room the start end has at 1024. */
 	await page.setViewportSize({ width: 1024, height: 800 });
-	await page.goto('/organize/known-people');
-	await settled(page.locator('header.topbar'));
-	const trail = page.locator('header.topbar nav[aria-label="Breadcrumb"]');
-	await expect(trail).toBeVisible();
-	await expect(trail.locator('button.fold')).toHaveCount(0);
-	const style = await trail.locator('ol').evaluate((line) => {
-		const seen = getComputedStyle(line);
-		return `${seen.textOverflow} ${seen.whiteSpace}`;
-	});
-	expect(style).toBe('ellipsis nowrap');
-	await trail.hover();
-	await expect(page.getByRole('tooltip')).toContainText('Organize');
+	const [person] = await seedPeople(page, 'Wren Halloway of the long trail', 1);
+	try {
+		await page.goto(`/organize/known-people/${person}`);
+		await settled(page.locator('header.topbar'));
+		const trail = page.locator('header.topbar nav[aria-label="Breadcrumb"]');
+		await expect(trail).toBeVisible();
+		await expect(trail.locator('button.fold')).toHaveCount(0);
+		const line = await trail.locator('ol').evaluate((list) => {
+			const seen = getComputedStyle(list);
+			return {
+				style: `${seen.textOverflow} ${seen.whiteSpace}`,
+				cut: list.scrollWidth > list.clientWidth
+			};
+		});
+		expect(line.style).toBe('ellipsis nowrap');
+		expect(line.cut, 'the trail had room for itself, so nothing was cut').toBe(true);
+		/* The whole path, every step, in the tooltip of the line that was cut. */
+		const steps = (await trail.locator('li > a, li > .here').allTextContents()).map((one) =>
+			one.trim()
+		);
+		await trail.hover();
+		await expect(page.getByRole('tooltip')).toHaveText(steps.join(' \u203a '));
+	} finally {
+		await removePeople(page, [person]);
+	}
 });

@@ -294,11 +294,17 @@ test('a tile carries a heart and a rating, and neither leaves the tile', async (
 
 	/* And the other side of the threshold: a short window strips the controls. The height is
 	 * picked by measuring, because a justified row's height is not monotonic in the window's. */
-	await page.setViewportSize({ width: 1280, height: 700 });
-	await expect(page.locator('.tile')).toHaveCount(SHAPES.length);
 	const small = page.locator('.tile-frame').first();
+	let height = 0;
+	for (const windowHeight of [700, 640, 580, 520, 460]) {
+		await page.setViewportSize({ width: 1280, height: windowHeight });
+		await expect(page.locator('.tile')).toHaveCount(SHAPES.length);
+		await expect.poll(async () => Math.round((await small.boundingBox())!.height)).not.toBe(height);
+		height = Math.round((await small.boundingBox())!.height);
+		if (height <= 150) break;
+	}
 	await small.hover();
-	expect(Math.round((await small.boundingBox())!.height)).toBeLessThanOrEqual(150);
+	expect(height, 'no window short enough for a tile under the threshold').toBeLessThanOrEqual(150);
 	await expect(small.getByRole('button', { name: 'Add to favorites' })).toHaveCount(0);
 	// Hidden by `display: none`, so a count would be 1 either way.
 	await expect(small.locator('.rating')).toBeHidden();

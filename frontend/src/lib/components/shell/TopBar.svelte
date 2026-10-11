@@ -88,6 +88,7 @@
 
 <header
 	class="topbar"
+	class:compact={screenBar.compact}
 	bind:this={bar}
 	style:--bar-end="{screenBar.barEnd}px"
 	style:--centre-floor="{screenBar.centreFloor}px"
@@ -361,6 +362,15 @@
 	/* DRESSED BY: .steps (`Slider` draws the track, the fill and the thumb; this says how wide). */
 	.size :global(.steps) {
 		inline-size: 96px;
+	}
+
+	/* Short of room (`compact`): a shorter track and a closer Add, so the field keeps its floor. */
+	.topbar.compact .size :global(.steps) {
+		inline-size: calc(var(--control-height) * 4 / 3);
+	}
+
+	.topbar.compact .trailing {
+		gap: var(--space-2);
 	}
 
 	/* The shared button's disabled 0.5, so the controls beside it dim alike. */

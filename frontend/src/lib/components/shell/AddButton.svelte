@@ -19,6 +19,7 @@
 	import { carriesALink } from '$lib/components/common/drag-assign.svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import SwapModeButton from '$lib/swap/SwapModeButton.svelte';
+	import { screenBar } from './screen-bar.svelte';
 
 	// Opens on hover, focus or click (`Popover`); a panel in use is never closed by the pointer
 	// leaving, so the folder menu and the file chooser survive. Adding is admin-only on the server.
@@ -119,6 +120,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="add"
+	class:compact={screenBar.compact}
 	class:taking={takingALink}
 	role="group"
 	data-drop-zone="link"
@@ -142,6 +144,7 @@
 			{#if pasteHere}
 				<SplitButton
 					{...props}
+					aria-label="Add"
 					tone="primary"
 					icon="add"
 					trailingIcon="assignment_add"
@@ -149,7 +152,7 @@
 					ontrailing={pasteIn}>Add</SplitButton
 				>
 			{:else}
-				<Button {...props} tone="primary" icon="add">Add</Button>
+				<Button {...props} aria-label="Add" tone="primary" icon="add">Add</Button>
 			{/if}
 		{/snippet}
 
@@ -241,6 +244,17 @@
 	}
 
 	/* On a phone Add is a square, its word kept for screen readers; the paste half goes. */
+	/* Short of room on the bar: the worded half is its glyph; its name is its `aria-label`. */
+	.add.compact :global(button.btn:has(> .label)) {
+		inline-size: var(--control-height);
+		padding: 0;
+		justify-content: center;
+	}
+
+	.add.compact :global(button.btn > .label) {
+		display: none;
+	}
+
 	@media (max-width: 767px) {
 		.add :global(button.btn) {
 			inline-size: var(--control-height);

@@ -202,6 +202,27 @@ describe('what else is on it', () => {
 	});
 });
 
+describe('the bar short of room', () => {
+	afterEach(() => {
+		removeStyles();
+		screenBar.compact = false;
+	});
+
+	it('draws a shorter track and a closer Add, and keeps them on the bar', () => {
+		screenBar.compact = true;
+		render();
+		const bar = host.querySelector('.topbar') as HTMLElement;
+		expect(bar.classList.contains('compact')).toBe(true);
+		applyStyles(topBarSource, bar);
+		const track = getComputedStyle(bar.querySelector('.size .steps') as HTMLElement);
+		expect(track.inlineSize.replace(/\s+/g, ' ')).toBe('calc(var(--control-height) * 4 / 3)');
+		expect(
+			getComputedStyle(bar.querySelector('.trailing') as HTMLElement).getPropertyValue('gap')
+		).toBe('var(--space-2)');
+		expect(bar.querySelector('.trailing .size')).not.toBeNull();
+	});
+});
+
 describe('the tile size, at every width', () => {
 	it('stays on the bar, and nothing hands it to the row below', () => {
 		render();

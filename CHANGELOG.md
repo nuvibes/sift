@@ -38,7 +38,8 @@ version's section, dated, when that version is published.
   106 ms worst to 16).
 - **The top bar is one row at every width.** The tile size, Add's paste half, Filter and Sort by
   never leave it; the trail ends in an ellipsis when it is short of room, with the whole path as its
-  tooltip.
+  tooltip; on a narrow window the tile size's track shortens and Add shows its plus alone, so the
+  search box keeps its width.
 - **One mark on a face crop**: the question when it waits for an answer, Sift's face in a ring
   when Sift named it, none when you confirmed it.
 - **A file stored in more than one place is modified, compressed, renamed and moved one copy at a

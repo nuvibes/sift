@@ -402,6 +402,7 @@ describe('the room on the top bar', () => {
 		// The store is a module singleton, so a width left set here would be the next test's answer.
 		screenBar.barEnd = 0;
 		screenBar.centreFloor = FIELD_FLOOR;
+		screenBar.compact = false;
 		Reflect.deleteProperty(page, 'route');
 	});
 
@@ -495,6 +496,54 @@ describe('the room on the top bar', () => {
 		fresh.publish(Symbol('kept'), {});
 		expect(fresh.barEnd, 'the centre waited for a measurement').toBe(500);
 		localStorage.removeItem('sift.screen-bar.ends.1');
+	});
+
+	/** Say the bar's content box is this wide, the way the browser would. */
+	function barIs(bar: HTMLElement, inlineSize: number): void {
+		for (const report of reporters)
+			report(
+				[
+					{
+						target: bar,
+						contentBoxSize: [{ inlineSize, blockSize: 56 }],
+						contentRect: { width: inlineSize }
+					}
+				] as unknown as ResizeObserverEntry[],
+				null as unknown as ResizeObserver
+			);
+	}
+
+	/* The start end at its least (a 36px toggle), an end group of 348, the field's floor of 227 and
+	   no menus: one row needs 36 + 2 * 0 gaps + 227 + 348 = 611. */
+	function barNeeding611(): { bar: HTMLElement; parts: HTMLElement[] } {
+		const built = barWithEnds(80, 268);
+		const lead = document.createElement('div');
+		lead.className = 'lead';
+		const toggle = document.createElement('button');
+		toggle.getBoundingClientRect = () => ({ width: 36 }) as DOMRect;
+		lead.append(toggle);
+		built.bar.prepend(lead);
+		return built;
+	}
+
+	it('draws the end group tight where the field would go under its floor, and whole again', () => {
+		const { bar, parts } = barNeeding611();
+		screenBar.watchRoom(bar);
+		barIs(bar, 700);
+		expect(screenBar.compact).toBe(false);
+
+		barIs(bar, 600);
+		expect(screenBar.compact, 'the field was left under its floor').toBe(true);
+		// Drawn tight it measures 100 less; the threshold is still the whole group's.
+		parts[1].getBoundingClientRect = () => ({ width: 168 }) as DOMRect;
+		barIs(bar, 600);
+		expect(screenBar.compact).toBe(true);
+		expect(screenBar.barEnd, 'the centre is capped by the end as drawn').toBe(248);
+		barIs(bar, 605);
+		expect(screenBar.compact, 'it came back before the whole group fitted').toBe(true);
+
+		barIs(bar, 611);
+		expect(screenBar.compact, 'it stayed tight with room for the whole group').toBe(false);
 	});
 
 	it('gives back a teardown that stops watching', () => {

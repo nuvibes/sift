@@ -19,6 +19,7 @@ import { capture } from '$lib/capture/capture.svelte';
 import { api } from '$lib/api/client';
 import { swapMode } from '$lib/swap/mode.svelte';
 import topBarSource from './TopBar.svelte?raw';
+import { screenBar } from './screen-bar.svelte';
 
 const clipboard = vi.hoisted(() => ({ readable: false }));
 vi.mock('$lib/shell/clipboard', () => ({ canReadClipboard: () => clipboard.readable }));
@@ -377,6 +378,28 @@ describe('the paste half', () => {
 		expect(panel()?.querySelector('[aria-label="Paste from clipboard"]')).toBeNull();
 		half?.click();
 		expect(pasted).toHaveBeenCalledWith(null);
+	});
+});
+
+describe('Add on a bar short of room', () => {
+	afterEach(() => {
+		removeStyles();
+		screenBar.compact = false;
+		clipboard.readable = false;
+	});
+
+	it('draws its worded half as its glyph, keeps its name and the paste half', () => {
+		clipboard.readable = true;
+		screenBar.compact = true;
+		render();
+		const add = host.querySelector('.add') as HTMLElement;
+		expect(add.classList.contains('compact')).toBe(true);
+		applyStyles(addSource, add);
+		const worded = trigger();
+		expect(getComputedStyle(worded).inlineSize).toBe('var(--control-height)');
+		expect(getComputedStyle(worded.querySelector('.label') as HTMLElement).display).toBe('none');
+		expect(worded.getAttribute('aria-label'), 'Add lost its name with its word').toBe('Add');
+		expect(host.querySelector('.half.trail button'), 'the paste half left Add').not.toBeNull();
 	});
 });
 

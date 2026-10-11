@@ -7,6 +7,7 @@ import type { Attachment } from 'svelte/attachments';
 import type { Component, Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import { page } from '$app/state';
+import { PHONE_WIDTH } from '$lib/components/common/phone-width.svelte';
 import type { IconName } from '$lib/design/icons';
 import type { Subject } from './facet-labels';
 import type { Verb } from '$lib/components/common/verbs';
@@ -249,6 +250,9 @@ class ScreenBar {
 	/** The centre group's floor (`--centre-floor`): the menus beside the field's floor. */
 	centreFloor = $state(FIELD_FLOOR);
 
+	/** Short of the room for the end group beside that floor: the end group draws tighter. */
+	compact = $state(false);
+
 	/** Watch the bar, its end group and its field: one row at every width. Hands back the teardown. */
 	watchRoom(bar: HTMLElement): () => void {
 		// jsdom has no `ResizeObserver`.
@@ -262,16 +266,33 @@ class ScreenBar {
 				parts.reduce((total, one) => total + one.getBoundingClientRect().width, 0) +
 					gapOf(parts[0]?.parentElement ?? null) * Math.max(0, parts.length - 1)
 			);
-		let drawn = 0;
-		const decide = () => {
-			this.barEnd = Math.max(drawn, widestEnd());
+		const phone = typeof matchMedia === 'function' ? matchMedia(PHONE_WIDTH) : null;
+		/* The start end at its least: the sidebar's toggle and the gap after it. */
+		const startWidth = () => {
+			const toggle = bar.querySelector('.lead button');
+			return toggle ? toggle.getBoundingClientRect().width + gapOf(toggle.closest('.lead')) : 0;
 		};
-		const observer = new ResizeObserver(() => {
+		let width = Number.POSITIVE_INFINITY;
+		let drawn = 0;
+		/* The end group drawn whole, and what drawing it tight saved, so the threshold holds still. */
+		let full = 0;
+		let saved = 0;
+		const decide = () => {
+			const need = startWidth() + 2 * gapOf(bar) + this.centreFloor + full;
+			this.compact = !(phone?.matches ?? false) && width < need;
+			this.barEnd = Math.max(drawn, this.compact ? 0 : widestEnd());
+		};
+		const observer = new ResizeObserver((entries) => {
+			for (const entry of entries)
+				if (entry.target === bar)
+					width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
 			drawn = endWidth();
+			if (this.compact && saved === 0 && full > drawn) saved = full - drawn;
+			full = this.compact ? drawn + saved : drawn;
 			const menus = bar.querySelector(MENUS);
 			const beside = menus ? menus.getBoundingClientRect().width + gapOf(menus.parentElement) : 0;
 			this.centreFloor = Math.ceil(FIELD_FLOOR + beside);
-			if (this.#screen !== null) keepEnd(this.#screen, drawn);
+			if (this.#screen !== null && !this.compact) keepEnd(this.#screen, drawn);
 			decide();
 		});
 		this.#screenChanged = decide;
@@ -279,9 +300,11 @@ class ScreenBar {
 		// A screen's controls change the field and the ends without the bar changing size.
 		if (field !== null) observer.observe(field);
 		for (const one of parts) observer.observe(one);
+		phone?.addEventListener('change', decide);
 		return () => {
 			observer.disconnect();
 			this.#screenChanged = null;
+			phone?.removeEventListener('change', decide);
 		};
 	}
 
