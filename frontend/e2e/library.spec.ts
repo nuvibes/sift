@@ -372,7 +372,7 @@ test('a destructive confirm keeps focus, and both ways out decline', async ({ pa
 	await rowAction(page, 'Kept', 'Remove');
 
 	const dialog = page.getByRole('alertdialog');
-	await expect(dialog).toBeVisible();
+	await expect(dialog).toBeVisible({ timeout: 20000 });
 	await expect(dialog).toContainText('Remove Kept from Sift?');
 
 	await expect

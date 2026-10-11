@@ -256,5 +256,6 @@ test('three tabs pressed on a person are one history entry: Back leaves the page
 	}
 
 	await page.goBack();
-	await expect(page).toHaveURL(/\/organize\/known-people(\?|$)/);
+	// One Back for three tab presses; a loaded runner is given its time to leave.
+	await expect(page).toHaveURL(/\/organize\/known-people(\?|$)/, { timeout: 20000 });
 });

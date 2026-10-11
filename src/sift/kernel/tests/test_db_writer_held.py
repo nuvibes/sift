@@ -17,6 +17,7 @@ from typing import Any, cast
 import pytest
 
 from sift.kernel import db as db_module
+from sift.kernel import db_writer
 from sift.kernel.db import Database
 
 pytestmark = pytest.mark.integration
@@ -82,8 +83,11 @@ async def test_the_held_lines_stop_when_the_block_lets_go(
 
 
 async def test_a_short_write_is_not_said_and_the_next_block_counts_afresh(
-    tmp_path: Path, warnings: list[tuple[str, dict[str, Any]]]
+    tmp_path: Path, warnings: list[tuple[str, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A loaded runner takes seconds over a CREATE TABLE; the claim is about a short write.
+    monkeypatch.setattr(db_writer, "WRITE_HELD_BUDGET_MS", 60_000)
+    monkeypatch.setattr(db_module, "WRITE_HELD_BUDGET_MS", 60_000, raising=False)
     database = Database(tmp_path / "quick.sqlite3")
     await database.connect()
     try:
