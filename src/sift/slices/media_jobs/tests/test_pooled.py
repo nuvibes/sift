@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 from structlog.testing import capture_logs
 
+import sift.kernel.jobs.ledger as ledger_module
+
 # The `ran` event lands in the workbench's table.
 import sift.slices.workbench.schema  # noqa: F401
 from sift.kernel.db import Database
@@ -22,6 +24,7 @@ from sift.kernel.jobs.time_left import MEASURING, Steady
 from sift.slices.media_jobs import pooled
 from sift.slices.media_jobs.activity_wire import FamilyOfWork, KindOfWork, PartOfWork
 from sift.slices.media_jobs.pooled import STALLED, priced_together
+from sift.testing.logs import uncached_log
 
 FAMILIES = {"probe": Family.SCAN, "thumbnail": Family.GENERATE}
 
@@ -29,6 +32,8 @@ FAMILIES = {"probe": Family.SCAN, "thumbnail": Family.GENERATE}
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pooled, "_STEADY", Steady())
+    # The said lines are read through `capture_logs`, which misses a logger an earlier test used.
+    uncached_log(monkeypatch, ledger_module)
 
 
 async def _book(temp_db: Database, **paces: float) -> Ledger:

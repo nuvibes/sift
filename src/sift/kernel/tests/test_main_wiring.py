@@ -1271,6 +1271,9 @@ def _capture_pool_config(
             caught["initial_concurrency"] = kwargs["concurrency"]
             caught["ledger"] = kwargs["ledger"]
 
+        async def read_pause(self) -> None:
+            return None
+
         async def start(self) -> None:
             return None
 

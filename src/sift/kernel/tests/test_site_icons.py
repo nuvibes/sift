@@ -17,6 +17,7 @@ arrives off a row, so it must match its own site and nothing that merely looks l
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from typing import ClassVar
 
@@ -27,19 +28,26 @@ from sift.kernel import site_icons
 pytestmark = pytest.mark.regression
 
 
-@pytest.fixture(autouse=True)
-def _forget_the_cached_pack() -> None:
-    """The readers cache, because the pack cannot change while Sift runs. A test changes it.
-
-    Cleared before every case rather than after, so a case that fails part-way cannot leave a
-    poisoned cache for the next one: the failure mode where a suite's second failure is an
-    artefact of its first, and nobody can tell which is real.
-    """
+def _forget() -> None:
     site_icons.every.cache_clear()
     site_icons._by_host.cache_clear()
     site_icons._by_name.cache_clear()
     site_icons._slugs.cache_clear()
     site_icons._by_slug.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _forget_the_cached_pack() -> Iterator[None]:
+    """The readers cache, because the pack cannot change while Sift runs. A test changes it.
+
+    Cleared before every case, so a case that fails part-way cannot leave a poisoned cache for
+    the next one, and after it, so the last case's invented pack is not what another file's test
+    reads through the real manifest in the same worker (the download art's creator scope read
+    an invented studio and no OnlyFans, in a whole-suite run only).
+    """
+    _forget()
+    yield
+    _forget()
 
 
 def _pack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, icons: list[dict[str, object]]) -> None:

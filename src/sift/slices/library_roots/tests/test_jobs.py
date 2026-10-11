@@ -1856,7 +1856,9 @@ async def _sweep_one_gone_copy(tmp_path: Path, *, marked: bool, copies: int = 1)
 
     async def locations(root_id: str, *, under: str) -> Any:
         for n in range(copies):
-            yield SimpleNamespace(id=f"copy-{n}", rel_path=f"gone-{n}.mp4", inside_an_archive=False)
+            yield SimpleNamespace(
+                id=f"copy-{n}", rel_path=f"holiday-{n}.mp4", inside_an_archive=False
+            )
 
     async def path_of(copy: Any) -> Path:
         return tmp_path / str(copy.rel_path)

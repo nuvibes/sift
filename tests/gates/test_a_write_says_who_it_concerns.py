@@ -102,6 +102,9 @@ SILENT: dict[str, str] = {
     # counts are what a screen reads, and the read that folds them is the one that announces.
     "kernel.content.backlog.totals": "folds the kept counts forward; the rows are not drawn",
     "kernel.content.backlog._ensure": "folds the kept counts forward; the rows are not drawn",
+    # The pause as the library was left, written behind the press that announces it; no screen
+    # draws the table, the Tasks screen reads the pool.
+    "kernel.jobs.holding._changed": "the kept copy of a pause the press announces; no screen draws the table",
     "kernel.content.backlog._build": "folds the kept counts forward; the rows are not drawn",
     # A long pass's kept price, written as its run closes: the run's own close announces, and the
     # jobs page re-reads the price with it.
