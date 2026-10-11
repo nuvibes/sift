@@ -43,7 +43,7 @@ from sift.kernel.jobs.schedules import get_schedule
 from sift.kernel.jobs.switchboard import Readiness, Switch, Switchboard
 from sift.slices.media_jobs.activity_wire import Chore, FamilyOfWork, KindOfWork, PartOfWork
 from sift.slices.media_jobs.jobs import PROBE
-from sift.slices.media_jobs.pooled import priced_together
+from sift.slices.media_jobs.pooled import Priced, priced_together, say
 from sift.slices.media_jobs.presses import Presses
 from sift.slices.media_jobs.router_controls import (
     PAUSED,
@@ -233,6 +233,7 @@ async def _families(
         if by_presses_alone:
             alone.add(family.value)
     answer = pictured_in_the_read(answer, alone)
+    figures: dict[str, Priced] = {}
     if ledger is not None and pool is not None:
         answer = await priced_together(
             answer,
@@ -244,9 +245,13 @@ async def _families(
             alone,
             standing_of,
             counting=bool(unread and unread.uncounted),
+            figures=figures,
         )
     answer = not_before_the_read(answer, alone)
     answer = not_known_yet(answer, uncounted=0 if unread is None else unread.uncounted, pace=pace)
+    if ledger is not None:
+        # What the screen says, after the read's floor: the time the watcher reads is the one scored.
+        await say(answer, ledger, figures)
     return {
         key: one.model_copy(update=_HOLD) if one.reason == PAUSED_FOR_THE_BENCHMARK else one
         for key, one in answer.items()

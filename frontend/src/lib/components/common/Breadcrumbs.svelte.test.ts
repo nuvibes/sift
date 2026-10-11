@@ -13,7 +13,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { goto } from '$app/navigation';
+import { applyStyles, removeStyles } from '$lib/design/testing-styles';
 import Breadcrumbs, { folding } from './Breadcrumbs.svelte';
+import source from './Breadcrumbs.svelte?raw';
 import { noteAddress } from '$lib/shell/navigation.svelte';
 
 const gone = vi.mocked(goto);
@@ -129,7 +131,7 @@ it('steps back instead, where the browser can say the wall is the screen before 
 /*
  * A LONG TRAIL FOLDS ITS MIDDLE: from four steps on, the steps between the first and the last two
  * go behind one press, which lists them as links. Where the trail is told to fit a box (the top
- * bar), it folds further while the box is too short.
+ * bar), it keeps to one line that ends in an ellipsis, with the whole path in its tooltip.
  */
 describe('folding', () => {
 	const DEEP = [
@@ -142,7 +144,7 @@ describe('folding', () => {
 	let deep: HTMLDivElement;
 	let drawn: Record<string, unknown> | null = null;
 
-	function drawDeep(props: { crumbs: typeof DEEP; fit?: boolean; pressAlone?: boolean }) {
+	function drawDeep(props: { crumbs: typeof DEEP; fit?: boolean }) {
 		deep = document.createElement('div');
 		document.body.append(deep);
 		drawn = mount(Breadcrumbs, { target: deep, props });
@@ -150,6 +152,8 @@ describe('folding', () => {
 	}
 
 	afterEach(() => {
+		removeStyles();
+		document.querySelectorAll('[role="tooltip"]').forEach((bubble) => bubble.remove());
 		if (drawn) unmount(drawn);
 		drawn = null;
 		deep?.remove();
@@ -198,82 +202,36 @@ describe('folding', () => {
 		expect(deep.querySelectorAll('li')).toHaveLength(3);
 	});
 
-	/** jsdom lays nothing out: each step drawn is said to take 60px of a box this wide. */
-	function laidOut(box: number) {
-		const wide = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (
-			this: HTMLElement
-		) {
-			return this.querySelectorAll(':scope > li').length * 60;
-		});
-		const room = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(box);
-		return () => {
-			wide.mockRestore();
-			room.mockRestore();
-		};
-	}
-
-	async function settled() {
-		for (let step = 0; step < 8; step++) await tick();
-		flushSync();
-	}
-
-	it('folds everything but where you are when the box holds the press and that step', async () => {
-		const restore = laidOut(130);
-		try {
-			drawDeep({ crumbs: DEEP, fit: true });
-			await settled();
-			const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
-			expect(nav!.querySelectorAll('a')).toHaveLength(0);
-			expect(nav!.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Boats');
-			expect(nav!.querySelector('button.fold')).not.toBeNull();
-		} finally {
-			restore();
-		}
-	});
-
-	it('folds at last to the press alone, whose list is the whole path ending where you are', async () => {
-		const restore = laidOut(100);
-		try {
-			drawDeep({ crumbs: DEEP, fit: true });
-			await settled();
-			const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
-			expect(nav!.querySelectorAll('li')).toHaveLength(1);
-			expect(nav!.querySelector('[aria-current="page"]')).toBeNull();
-			const press = nav!.querySelector<HTMLButtonElement>('button.fold');
-			expect(press, 'no press at the last fold').not.toBeNull();
-
-			press!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
-			flushSync();
-			await tick();
-			const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')];
-			expect(rows.map((row) => row.textContent?.trim())).toEqual([
-				'Your folders',
-				'Holidays',
-				'Coast',
-				'Harbour',
-				'Boats'
-			]);
-			const here = rows.at(-1)!;
-			expect(here.closest('a'), 'where you are is a link').toBeNull();
-			expect(here.getAttribute('aria-disabled')).toBe('true');
-		} finally {
-			restore();
-		}
-	});
-
-	it('folds to the press alone when told, however much room it has', async () => {
-		drawDeep({ crumbs: DEEP.slice(-2), fit: true, pressAlone: true });
-		await settled();
-		const nav = deep.querySelector('nav[aria-label="Breadcrumb"]');
-		expect(nav!.querySelectorAll('li')).toHaveLength(1);
-		expect(nav!.querySelector('button.fold')).not.toBeNull();
-	});
-
-	it('stays at the least fold when it fits, and never folds a trail that is not told to fit', async () => {
+	it('keeps to one line in the top bar, ending in an ellipsis rather than folding further', () => {
 		drawDeep({ crumbs: DEEP, fit: true });
-		for (let step = 0; step < 6; step++) await tick();
-		flushSync();
-		expect(deep.querySelector('nav')?.classList.contains('squeezed')).toBe(false);
-		expect(deep.querySelectorAll('nav a')).toHaveLength(2);
+		const nav = deep.querySelector<HTMLElement>('nav[aria-label="Breadcrumb"]')!;
+		/* The same steps as a trail with all the room it wants: room never folds it. */
+		expect(nav.querySelectorAll('a')).toHaveLength(2);
+		expect(nav.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Boats');
+		applyStyles(source, nav);
+		const line = getComputedStyle(nav.querySelector('ol')!);
+		expect(line.textOverflow).toBe('ellipsis');
+		expect(line.whiteSpace).toBe('nowrap');
+		expect(line.overflow).toBe('hidden');
+		expect(getComputedStyle(nav.querySelector('li')!).display, 'each word cut alone').toBe(
+			'inline'
+		);
+	});
+
+	it('names the whole path in its tooltip', async () => {
+		drawDeep({ crumbs: DEEP, fit: true });
+		const box = deep.querySelector<HTMLElement>('.wrap')!;
+		box.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
+		await vi.waitFor(() =>
+			expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+				'Your folders \u203a Holidays \u203a Coast \u203a Harbour \u203a Boats'
+			)
+		);
+	});
+
+	it('has no tooltip of its own where it may wrap', () => {
+		drawDeep({ crumbs: DEEP });
+		expect(deep.querySelector('.wrap > .target > nav')).toBeNull();
+		expect(deep.querySelector('nav')?.classList.contains('fit')).toBe(false);
 	});
 });

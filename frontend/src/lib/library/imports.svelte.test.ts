@@ -438,3 +438,48 @@ describe('a busy queue', () => {
 		}
 	});
 });
+
+describe("the feed's bells while an import rings them every second", () => {
+	it('read the queue and the Downloads row once in each ten seconds', async () => {
+		vi.useFakeTimers();
+		try {
+			const get = vi
+				.spyOn(api, 'get')
+				.mockImplementation(async (path: string) =>
+					path === '/downloads/glance' ? NOTHING_TO_GLANCE_AT : ({ jobs: [] } as never)
+				);
+			const store = new Imports();
+			for (let second = 0; second < 60; second += 1) {
+				store.heardJobs();
+				store.heardDownloads();
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			const asked = (path: string) => get.mock.calls.filter(([one]) => one === path).length;
+			expect(asked('/jobs')).toBeGreaterThanOrEqual(6);
+			expect(asked('/jobs'), 'the queue was read for every bell').toBeLessThanOrEqual(7);
+			expect(asked('/downloads/glance')).toBeGreaterThanOrEqual(6);
+			expect(asked('/downloads/glance'), 'the row was read for every bell').toBeLessThanOrEqual(7);
+		} finally {
+			vi.restoreAllMocks();
+			vi.useRealTimers();
+		}
+	});
+
+	it('drop the read owed at the end of the window when the session ends', async () => {
+		vi.useFakeTimers();
+		try {
+			const get = vi.spyOn(api, 'get').mockResolvedValue({ jobs: [] } as never);
+			const store = new Imports();
+			store.heardJobs();
+			await vi.advanceTimersByTimeAsync(1000);
+			store.heardJobs();
+			store.stop();
+			get.mockClear();
+			await vi.advanceTimersByTimeAsync(SETTLE_MS * 3);
+			expect(get).not.toHaveBeenCalled();
+		} finally {
+			vi.restoreAllMocks();
+			vi.useRealTimers();
+		}
+	});
+});

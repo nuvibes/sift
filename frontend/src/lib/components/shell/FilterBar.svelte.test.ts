@@ -77,6 +77,7 @@ const FilterBar = (await import('./FilterBar.svelte')).default;
 const { goto } = await import('$app/navigation');
 const { api } = await import('$lib/api/client');
 const { screenBar, FILTERS_PANEL, PHONE_SHEET } = await import('./screen-bar.svelte');
+const { stage } = await import('./stage.svelte');
 const { phoneWidth } = await import('$lib/components/common/phone-width.svelte');
 const { savedSearches } = await import('$lib/search/saved-searches.svelte');
 
@@ -190,19 +191,24 @@ describe('what the row says', () => {
 		expect(host?.querySelector('.bar')?.className).toContain('nothing');
 	});
 
-	/* A narrow window (a desktop window snapped to half the screen) moves Filter and Sort off the
-	   top bar and onto this row. An otherwise empty row must still be drawn then, or the two
-	   controls are nowhere at all. */
-	it('draws the row when the top bar has no room for the menus, with the menus on it', () => {
-		screenBar.roomOnTopBar = false;
+	/* Filter and Sort by stay on the top bar at every width; only a filled window, which draws no top
+	   bar, hands them to this row. */
+	it('draws the row for the menus only while the window is filled', () => {
+		draw();
+		expect(
+			host?.querySelector('.bar [aria-label="Filter"]'),
+			'the menus left the top bar'
+		).toBeNull();
+		if (drawn) unmount(drawn);
+		host?.remove();
+		stage.filling = true;
 		try {
 			draw();
-
 			const bar = host?.querySelector('.bar');
 			expect(bar?.className).not.toContain('nothing');
 			expect(bar?.querySelector('[aria-label="Filter"]')).not.toBeNull();
 		} finally {
-			screenBar.roomOnTopBar = true;
+			stage.filling = false;
 		}
 	});
 

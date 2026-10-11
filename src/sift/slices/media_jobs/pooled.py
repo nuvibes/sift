@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Collection, Iterable, Mapping
+from typing import NamedTuple
 
 from sift.kernel.jobs import time_left
 from sift.kernel.jobs.families import LONG_PASSES, Family
@@ -83,6 +84,17 @@ def _own_work(
     return own, passes, queued
 
 
+class Priced(NamedTuple):
+    """A row's seconds left, whether they are the least it takes, and the figures behind them:
+    the pace in worker seconds a second, the worker seconds left, and what the read's end frees."""
+
+    seconds: float | None
+    at_least: bool
+    pace: float | None = None
+    work: float | None = None
+    freed: float | None = None
+
+
 def _seconds(
     family: Family,
     ledger: Ledger,
@@ -90,33 +102,27 @@ def _seconds(
     read_seconds: float | None,
     priced: Mapping[Family, tuple[float, bool]],
     counting: bool,
-) -> tuple[float | None, bool]:
-    """A row's seconds left and whether they are the least it takes."""
-    seconds, at_least = read_seconds, counting
-    if family is not Family.SCAN:
-        every = sum(worked for worked, _whole in priced.values())
-        worked, whole = priced.get(family, (0.0, True))
-        pace = _pace(ledger, family, worked)
-        seconds = None if pace is None or not worked else worked / pace
-        if read_seconds is not None and job.read_pace and worked:
-            # The read's workers go to the passes when it ends, each its share by its work.
-            freed = job.read_pace * worked / every
-            seconds = time_left.after_the_read(worked, pace or 0.0, read_seconds, freed)
-        at_least = counting or not whole
-    return seconds, at_least
+) -> Priced:
+    """A row's seconds left, and what they were priced from."""
+    if family is Family.SCAN:
+        return Priced(read_seconds, counting, job.read_pace, time_left.work(job.read, job.prices))
+    every = sum(worked for worked, _whole in priced.values())
+    worked, whole = priced.get(family, (0.0, True))
+    pace = _pace(ledger, family, worked)
+    seconds = None if pace is None or not worked else worked / pace
+    freed = None
+    if read_seconds is not None and job.read_pace and worked:
+        # The read's workers go to the passes when it ends, each its share by its work.
+        freed = job.read_pace * worked / every
+        seconds = time_left.after_the_read(worked, pace or 0.0, read_seconds, freed)
+    return Priced(seconds, counting or not whole, pace, worked, freed)
 
 
-async def _said(
-    answer: dict[str, FamilyOfWork],
-    family: Family,
-    row: FamilyOfWork,
-    ledger: Ledger,
-    seconds: float | None,
-    at_least: bool,
-    now: float,
+def _shown(
+    answer: dict[str, FamilyOfWork], family: Family, row: FamilyOfWork, priced: Priced, now: float
 ) -> None:
-    """The row's time, steadied, and the window kept for its run's score; a floor is not kept."""
-    if seconds is None:
+    """The row's time, steadied."""
+    if priced.seconds is None:
         _STEADY.forget(family)
         answer[family.value] = row.model_copy(
             update={
@@ -127,16 +133,42 @@ async def _said(
             }
         )
         return
-    quick, slow = _STEADY.show(family, now, *time_left.band(seconds))
-    if at_least:
-        answer[family.value] = row.model_copy(
-            update={"quick_seconds": int(quick), "slow_seconds": int(quick), "at_least": True}
-        )
-        return
+    quick, slow = _STEADY.show(family, now, *time_left.band(priced.seconds))
     answer[family.value] = row.model_copy(
-        update={"quick_seconds": int(quick), "slow_seconds": int(slow), "at_least": False}
+        update={
+            "quick_seconds": int(quick),
+            "slow_seconds": int(quick if priced.at_least else slow),
+            "at_least": priced.at_least,
+        }
     )
-    await ledger.said(family, int(quick), int(slow), time_left.window_of(quick, slow), row.waiting)
+
+
+async def say(
+    answer: Mapping[str, FamilyOfWork], ledger: Ledger, figures: Mapping[str, Priced]
+) -> None:
+    """Each priced row's time as the screen shows it, after every rule that moves it, in its run's
+    `ledger.said` line with the figures it was priced from; only a window or a stop is scored."""
+    for key, priced in figures.items():
+        row = answer[key]
+        family = Family(key)
+        if row.time_unknown == STALLED:
+            await ledger.said(family, None, None, None, row.waiting, done=row.done)
+            continue
+        quick, slow = row.quick_seconds, row.slow_seconds
+        unknown = quick is None or slow is None
+        await ledger.said(
+            family,
+            quick,
+            slow,
+            None if unknown or row.at_least else time_left.window_of(quick or 0, slow or 0),
+            row.waiting,
+            done=row.done,
+            pace=priced.pace,
+            work=priced.work,
+            freed=priced.freed,
+            at_least=row.at_least and not unknown,
+            measuring=unknown,
+        )
 
 
 async def priced_together(
@@ -149,10 +181,12 @@ async def priced_together(
     alone: Collection[str] = (),
     standing: Mapping[str, int] | None = None,
     counting: bool = False,
+    figures: dict[str, Priced] | None = None,
 ) -> dict[str, FamilyOfWork]:
     """Each row at its own pace measured across its runs, else "Measuring."; `alone` rows keep their
     own, `standing` files wait for their task. While a walk is `counting`, each time is the least
-    the files counted so far take."""
+    the files counted so far take. What each row was priced from goes in `figures`, for `say`."""
+    figures = {} if figures is None else figures
     families = [one for one in LONG_PASSES if one.value in answer]
     rows = {one: answer[one.value] for one in families}
     stopped = {one for one, row in rows.items() if _stopped(row, ledger, one)}
@@ -174,17 +208,18 @@ async def priced_together(
     priced = {family: time_left.priced_part(mine, prices) for family, mine in own.items()}
     now = time.monotonic()
     for family, row in rows.items():
-        seconds, at_least = _seconds(family, ledger, job, read_seconds, priced, counting)
+        said = _seconds(family, ledger, job, read_seconds, priced, counting)
         if family in stopped:
             _STEADY.forget(family)
             answer[family.value] = row.model_copy(
                 update={"quick_seconds": None, "slow_seconds": None, "time_unknown": STALLED}
             )
-            await ledger.said(family, None, None, None, row.waiting)
+            figures[family.value] = said
             continue
         unqueued = min(row.waiting, row.outstanding) <= 0
         if unqueued or family.value in alone or row.time_unknown or row.reason:
             _STEADY.forget(family)
             continue
-        await _said(answer, family, row, ledger, seconds, at_least, now)
+        _shown(answer, family, row, said, now)
+        figures[family.value] = said
     return answer

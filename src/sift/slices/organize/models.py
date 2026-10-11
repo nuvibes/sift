@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 # The rule's own constant, so the bound cannot drift from it.
 from sift.kernel.filenames import MAX_FILENAME_LENGTH
@@ -32,6 +32,14 @@ MAX_BULK_ASSETS = 500
 class MoveManyRequest(Wire):
     asset_ids: list[str] = Field(min_length=1, max_length=MAX_BULK_ASSETS)
     folder_id: str
+    #: Which copy to move, for one file stored in more than one place.
+    location_id: str | None = None
+
+    @model_validator(mode="after")
+    def _a_copy_is_one_files(self) -> MoveManyRequest:
+        if self.location_id is not None and len(self.asset_ids) != 1:
+            raise ValueError("a copy is named for one file at a time")
+        return self
 
 
 #: Bounds what a request may make the server fill a thousand times.
@@ -90,9 +98,23 @@ class OrganizeDone(Wire):
     move_id: str | None = None
 
 
+class OrganizeCopy(Wire):
+    """One place this file is stored, for a screen that asks which copy is meant."""
+
+    location_id: str
+    #: The whole path, as the person's own machine names it.
+    path: str
+    #: Why this copy cannot be renamed or moved; None when it can.
+    reason: str | None = None
+
+
 class OrganizeOptions(Wire):
-    """Whether rename and move belong on screen for this asset, with `reason` when not."""
+    """Whether rename and move belong on screen for this asset, with `reason` when not.
+
+    `copies` lists every place the file is stored, for an admin, so a screen can ask which one.
+    """
 
     can_organize: bool
     reason: str | None = None
     undo_move_id: str | None = None
+    copies: list[OrganizeCopy] = Field(default_factory=list)

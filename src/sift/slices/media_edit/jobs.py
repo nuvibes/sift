@@ -58,6 +58,7 @@ class _Request:
     compatibility: bool
     preset: str | None
     filename: str
+    location_id: str | None = None
 
 
 async def compress(
@@ -79,7 +80,9 @@ async def compress(
     source = await resolve_decodable(context.content, request.asset_id, settings=settings)
     facts = source_facts(source.asset)
 
-    staged = await writer.stage_beside(request.asset_id, filename=request.filename, actor=viewer)
+    staged = await writer.stage_beside(
+        request.asset_id, filename=request.filename, actor=viewer, location_id=request.location_id
+    )
     try:
         await _require_room(staged.working.parent, facts=facts, target=request.target_bytes)
         await _produce(context, source, staged, request=request, facts=facts, settings=settings)
@@ -127,6 +130,7 @@ def _read(context: JobContext) -> _Request:
         compatibility=bool(payload.get("compatibility")),
         preset=payload.get("preset") if isinstance(payload.get("preset"), str) else None,
         filename=context.require_str("filename", "this job needs a name for the file it makes"),
+        location_id=str(payload["location_id"]) if payload.get("location_id") else None,
     )
 
 
@@ -390,6 +394,8 @@ class _Edit:
     #: An intent, never a job name.
     as_loop: bool
     filename: str
+    #: Which copy the new file goes beside; None for a file stored in one place.
+    location_id: str | None = None
 
 
 async def edit(
@@ -414,7 +420,9 @@ async def edit(
     cut_length = (cut.duration_ms or 0) if cut else 0
 
     source = await resolve_decodable(context.content, request.asset_id, settings=settings)
-    staged = await writer.stage_beside(request.asset_id, filename=request.filename, actor=viewer)
+    staged = await writer.stage_beside(
+        request.asset_id, filename=request.filename, actor=viewer, location_id=request.location_id
+    )
     try:
         # An edit's output is never meaningfully bigger than its source.
         await _require_room(staged.working.parent, facts=source_facts(source.asset), target=None)
@@ -489,6 +497,7 @@ def _read_edit(context: JobContext) -> _Edit:
         gif_format=str(payload.get("gif_format") or payload.get("animation_format") or "gif"),
         as_loop=bool(payload.get("as_loop")),
         filename=context.require_str("filename", "this job needs a name for the file it makes"),
+        location_id=str(payload["location_id"]) if payload.get("location_id") else None,
     )
 
 

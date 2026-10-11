@@ -99,16 +99,18 @@ class EditService:
         """What this edit would produce, or why not: refusals raise, a dragged rectangle off the
         edge answers."""
         asset = await self._settled(asset_id, viewer=viewer)
-        filename = await self._filename(asset_id, viewer=viewer)
+        filename = await self._filename(asset_id, request.location_id, viewer=viewer)
 
         if asset.media_type == _IMAGE:
             return await self._unless_taken(
                 await self._still_verdict(asset, request, filename=filename, viewer=viewer),
+                request.location_id,
                 viewer=viewer,
             )
         if asset.media_type == _VIDEO:
             return await self._unless_taken(
                 await self._cut_verdict(asset, request, filename=filename, viewer=viewer),
+                request.location_id,
                 viewer=viewer,
             )
         if asset.media_type == _GIF:
@@ -137,9 +139,13 @@ class EditService:
             raise NotAllowed("Only an admin can edit files.")
         return asset
 
-    async def _filename(self, asset_id: str, *, viewer: Viewer) -> str | None:
+    async def _filename(
+        self, asset_id: str, location_id: str | None, *, viewer: Viewer
+    ) -> str | None:
+        """The source's name: the chosen copy's, since two copies may be named differently."""
         locations = await self._access.locations(viewer, asset_id)
-        return locations[0].filename if locations else None
+        chosen = [one for one in locations if one.id == location_id] or locations
+        return chosen[0].filename if chosen else None
 
     async def orientation_of(self, asset_id: str) -> Orientation:
         """Which way up this photograph really goes, read once and remembered; upright when
@@ -177,7 +183,7 @@ class EditService:
         if refusal is not None:
             return _refused(asset.id, refusal)
 
-        if (written := await self._writability(asset.id, viewer=viewer)) is not None:
+        if (written := await self._writability(asset.id, asked, viewer=viewer)) is not None:
             return _refused(asset.id, written)
 
         source_extension = (filename or "").rsplit(".", 1)[-1].lower()
@@ -227,7 +233,7 @@ class EditService:
         if (too_long := _too_long(step.operation, length, gif_format)) is not None:
             return _refused(asset.id, too_long)
 
-        if (written := await self._writability(asset.id, viewer=viewer)) is not None:
+        if (written := await self._writability(asset.id, request, viewer=viewer)) is not None:
             return _refused(asset.id, written)
 
         extension = (
@@ -248,13 +254,18 @@ class EditService:
             approximate_start=start > 0 and step.operation is Operation.TRIM,
         )
 
-    async def _unless_taken(self, verdict: EditVerdict, *, viewer: Viewer) -> EditVerdict:
+    async def _unless_taken(
+        self, verdict: EditVerdict, location_id: str | None, *, viewer: Viewer
+    ) -> EditVerdict:
         """The same answer, unless the copy would land on a name already there; said before Save,
         not in a log."""
         if not verdict.allowed or not verdict.output_filename:
             return verdict
         taken = await self._writer.name_taken_beside(
-            verdict.asset_id, filename=verdict.output_filename, actor=viewer
+            verdict.asset_id,
+            filename=verdict.output_filename,
+            actor=viewer,
+            location_id=location_id,
         )
         if not taken:
             return verdict
@@ -264,9 +275,13 @@ class EditService:
             "one. Rename it, or move the old copy, and Sift will save this.",
         )
 
-    async def _writability(self, asset_id: str, *, viewer: Viewer) -> str | None:
+    async def _writability(
+        self, asset_id: str, request: EditRequest, *, viewer: Viewer
+    ) -> str | None:
         """Whether a produced file may be written beside this one; the job asks again."""
-        return await self._writer.writable_beside(asset_id, actor=viewer)
+        return await self._writer.writable_beside(
+            asset_id, actor=viewer, location_id=request.location_id
+        )
 
     def _name_for(
         self,
@@ -319,6 +334,7 @@ class EditService:
                 # The intent, never the name of what runs. See `register_handlers`.
                 "as_loop": asked.as_loop,
                 "filename": answer.output_filename,
+                "location_id": asked.location_id,
             },
         )
         log.info(

@@ -118,7 +118,13 @@ class CompressService:
 
         for asset_id in request.asset_ids:
             verdicts.append(
-                await self._verdict(asset_id, target, viewer=viewer, cache=writable_by_root)
+                await self._verdict(
+                    asset_id,
+                    target,
+                    viewer=viewer,
+                    cache=writable_by_root,
+                    location_id=request.location_id,
+                )
             )
 
         eligible = [each for each in verdicts if each.skip_reason is None]
@@ -140,6 +146,7 @@ class CompressService:
         *,
         viewer: Viewer,
         cache: dict[str, str | None],
+        location_id: str | None = None,
     ) -> FileVerdict:
         asset = await self._access.open_asset(viewer, asset_id)
         if asset is None:
@@ -163,6 +170,8 @@ class CompressService:
             )
 
         locations = await self._access.locations(viewer, asset_id)
+        # The copy asked for, for a file stored in more than one place.
+        locations = [one for one in locations if one.id == location_id] or locations
         if not locations:  # pragma: no cover - an openable asset always has a visible location
             # The access layer guarantees a location; a sentence rather than an index error if not.
             return FileVerdict(
@@ -172,9 +181,13 @@ class CompressService:
             )
         filename = locations[0].filename
         root_id = locations[0].root_id
-        if root_id not in cache:
-            cache[root_id] = await self._writer.writable_beside(asset_id, actor=viewer)
-        refusal = cache[root_id]
+        # Per root, or per copy where one is named.
+        key = location_id or root_id
+        if key not in cache:
+            cache[key] = await self._writer.writable_beside(
+                asset_id, actor=viewer, location_id=location_id
+            )
+        refusal = cache[key]
         if refusal is not None:
             return FileVerdict(
                 asset_id=asset_id, filename=filename, reachable=False, skip_reason=refusal
@@ -225,6 +238,7 @@ class CompressService:
                         "compatibility": target.compatibility,
                         "preset": target.preset.value if target.preset else None,
                         "filename": verdict.output_filename,
+                        "location_id": request.location_id,
                     },
                 )
             )

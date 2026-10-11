@@ -48,6 +48,7 @@ from sift.kernel.access.catalog import (
     site_home,
 )
 from sift.kernel.access.constraints import NO_FILTER
+from sift.kernel.access.repository.read_folders import _folders_of
 from sift.kernel.access.repository.wall_collections import COLLECTION_BY_ID
 from sift.kernel.access.repository.wall_photo_sets import PHOTO_SET_BY_ID
 from sift.kernel.access.repository.wall_songs import SONG_BY_ID
@@ -126,6 +127,24 @@ async def test_an_admin_walks_the_tree(access: Repository, actors: Actors, world
 
     children = await access.visible_folders(actors.admin, parent_id=world.top)
     assert [folder.id for folder in children] == [world.mid]
+
+
+async def test_the_folders_on_a_path_are_the_trees_own_answer_for_it(
+    access: Repository, actors: Actors, world: World
+) -> None:
+    """Where one file sits is read from the folders on its path alone, and they are the ones the
+    whole tree would give, a restrict on the way included."""
+    await access.grant(ObjectType.FOLDER, world.top, actors.guest.id, Effect.SHARE)
+    await access.grant(ObjectType.FOLDER, world.leaf, actors.guest.id, Effect.RESTRICT)
+    path = (world.root, "top/mid/leaf/solo.mp4")
+    for viewer in (actors.admin, actors.guest):
+        whole = {folder.id for folder in await access.visible_folders(viewer)}
+        on_path = [folder.id for folder in await access.visible_folders_on(viewer, [path, path])]
+        assert on_path == [one for one in (world.top, world.mid, world.leaf) if one in whole]
+    assert world.leaf not in on_path, "the guest's restrict holds on the path too"
+    assert await access.visible_folders_on(actors.admin, [(world.root_two, "top/mid")]) == []
+    # A library's own top folder is on every path in it.
+    assert _folders_of("r", "a/b.mp4") == [("r", ""), ("r", "a"), ("r", "a/b.mp4")]
 
 
 async def test_each_narrowing_selects_a_different_set(

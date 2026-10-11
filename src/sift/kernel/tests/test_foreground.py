@@ -89,6 +89,34 @@ async def test_a_jobs_reads_and_writes_wait_and_a_requests_do_not(tmp_path: Path
             async with database.write():
                 await database.fetch_all("SELECT 1")
             waited = time.monotonic() - began
-        assert 2 * foreground.YIELD_LONGEST_SECONDS <= waited < 3 * foreground.YIELD_LONGEST_SECONDS
+        # The first wait is whole; the second is what the job's share has earned since.
+        assert foreground.YIELD_LONGEST_SECONDS <= waited < 1.5 * foreground.YIELD_LONGEST_SECONDS
     finally:
         await database.close()
+
+
+@pytest.mark.usefixtures("one_request")
+async def test_a_job_gives_the_screens_a_share_of_its_time_not_a_wait_per_statement() -> None:
+    cost = JobCost()
+    with foreground.a_requests_statement(), costing(cost):
+        began = time.perf_counter()
+        for _ in range(20):
+            await foreground.screens_first(False)
+        took = time.perf_counter() - began
+        # The first wait, the share since, and a tick of the timer a wait may overrun by.
+        bound = foreground.YIELD_LONGEST_SECONDS + foreground.YIELD_SHARE * took
+        bound += foreground.YIELD_SHORTEST_SECONDS
+        assert took < 3 * foreground.YIELD_LONGEST_SECONDS, "twenty statements, not twenty waits"
+        assert cost.summary()["screens_wait_ms"] <= bound * 1000
+
+        # Two parts of one job asking together share one balance: the second finds it spent.
+        second = JobCost()
+        with costing(second):
+
+            async def part() -> float:
+                at = time.perf_counter()
+                await foreground.screens_first(False)
+                return time.perf_counter() - at
+
+            waits = sorted(await asyncio.gather(part(), part()))
+        assert waits[0] < foreground.YIELD_LONGEST_SECONDS / 2 <= waits[1]

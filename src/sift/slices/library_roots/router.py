@@ -258,9 +258,7 @@ async def list_roots(
     roots = await library.roots()
     # A root not yet scanned has no top folder, so no mark.
     tops = {
-        folder.root_id: folder
-        for folder in await access.visible_folders(viewer)
-        if folder.parent_id is None
+        folder.root_id: folder for folder in await access.visible_folders(viewer, top_level=True)
     }
     marks = await access.visible_marks(
         viewer, ObjectType.FOLDER, [folder.id for folder in tops.values()]

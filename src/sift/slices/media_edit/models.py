@@ -22,6 +22,8 @@ class CompressRequest(Wire):
     compatibility: bool = False
     #: Go ahead on files Sift has said cannot meet the target.
     force: bool = False
+    #: Which copy the smaller one is saved next to, for one file stored in more than one place.
+    location_id: str | None = None
 
     @model_validator(mode="after")
     def _asks_for_something(self) -> CompressRequest:
@@ -29,6 +31,8 @@ class CompressRequest(Wire):
             raise ValueError("choose a size target, or ask for it to play anywhere, or both")
         if self.preset is Preset.CUSTOM and self.custom_target_mb is None:
             raise ValueError("a custom target needs a size")
+        if self.location_id is not None and len(self.asset_ids) != 1:
+            raise ValueError("a copy is named for one file at a time")
         return self
 
 
@@ -119,6 +123,8 @@ class EditRequest(Wire):
     steps: list[EditStep] = Field(min_length=1, max_length=MAX_EDIT_STEPS)
     #: The stem only; the extension follows what the copy is encoded as.
     filename: str | None = Field(default=None, max_length=MAX_FILENAME_LENGTH)
+    #: Which copy the new file is saved beside, for a file stored in more than one place.
+    location_id: str | None = None
     #: Also mark the produced file as a Loop. A flag, never a job name, so a caller cannot pick the
     #: handler.
     as_loop: bool = False

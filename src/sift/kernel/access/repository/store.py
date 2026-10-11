@@ -212,6 +212,7 @@ class Repository(
                 "parent_id": None,
                 "root_id": None,
                 "top_level": 0,
+                "places": None,
                 "reveal": 1 if viewer.show_hidden else 0,
             },
         )

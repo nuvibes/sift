@@ -7,6 +7,7 @@ import json
 from collections.abc import Callable, Collection, Sequence
 
 from sift.kernel.db import Row, in_clause
+from sift.kernel.jobs.holding import Pause
 from sift.kernel.jobs.queue_handoffs import HandOffs
 from sift.kernel.jobs.queue_rows import _fetch, _for_the_record
 from sift.kernel.jobs.tuning import (
@@ -196,6 +197,10 @@ _CALL_OFF_THE_HEADS = (
 #: How many heads one statement names: under SQLite's limit on bound values, with room to spare.
 _HEADS_PER_ASK = 400
 
+_HOLDS = "SELECT kind, name FROM job_holds"
+_FORGET_HOLDS = "DELETE FROM job_holds"
+_KEEP_HOLD = "INSERT INTO job_holds (kind, name) VALUES (?, ?)"
+
 
 def _stop_order(rows: Sequence[Row]) -> list[str]:
     """Running work first, since it queues more; then in the order a worker would claim it."""
@@ -205,6 +210,28 @@ def _stop_order(rows: Sequence[Row]) -> list[str]:
 
 class Controls(HandOffs):
     """What a person does to the queue as a whole, and the housekeeping that forgets old rows."""
+
+    async def holds(self) -> Pause:
+        """What was paused when it was last written: the pool's pause at its start."""
+        rows = await self._db.fetch_all(_HOLDS)
+        named = {
+            kind: frozenset(str(row["name"]) for row in rows if row["kind"] == kind)
+            for kind in ("type", "product")
+        }
+        return Pause(
+            everything=any(row["kind"] == "all" for row in rows),
+            types=named["type"],
+            products=named["product"],
+        )
+
+    async def keep_holds(self, pause: Pause) -> None:
+        """Write the pause in place of the one kept, in one write."""
+        rows = [("all", "")] if pause.everything else []
+        rows += [("type", one) for one in sorted(pause.types)]
+        rows += [("product", one) for one in sorted(pause.products)]
+        async with self._writing() as connection:
+            await connection.execute(_FORGET_HOLDS)
+            await connection.executemany(_KEEP_HOLD, rows)
 
     async def _cancel_rows(
         self,

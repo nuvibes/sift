@@ -34,7 +34,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { mini } from '$lib/player/mini.svelte';
 	import { ACTS, keyOf } from '$lib/player/acts';
-	import { rowQuiet, wallChrome } from '$lib/theater/chrome.svelte';
+	import { wallChrome } from '$lib/theater/chrome.svelte';
 	import { vault } from '$lib/shell/vault.svelte';
 	import { toCorner } from '$lib/theater/corner';
 	import {
@@ -162,9 +162,8 @@
 			/* The wall's silence goes on the TOP bar, after the play control that asks the same
 			   question about the same wall and the Hidden control the bar keeps in one place. */
 			topExtra: tools,
-			/* This row goes and comes back WITH the wall's own bar, unless it holds the menus in
-			   a window; see `rowQuiet`. */
-			quiet: rowQuiet(wallChrome.up, stage.filling, screenBar.roomOnTopBar),
+			/* This row goes and comes back WITH the wall's own bar. */
+			quiet: !wallChrome.up,
 			panels: [
 				/* What is KEPT, and what the keys do: the two that are genuinely panels (a row
 				 * of pills, a reference table). */

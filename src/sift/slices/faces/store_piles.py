@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -67,6 +68,10 @@ _REMEMBER_CONFIRMED = (
     # description are one confirmation.
     " GROUP BY t.asset_id, t.person_id, d.embedding"
 )
+
+
+def _tracks_by_pile(rows: Sequence[Row]) -> list[tuple[str, StoredTrack]]:
+    return [(str(row["pile_id"]), _track(row)) for row in rows]
 
 
 class PilesStore(PicturesStore):
@@ -416,8 +421,10 @@ class PilesStore(PicturesStore):
                 "ORDER BY quality DESC, id",
                 chunk,
             )
-            for row in await self._db.fetch_all(query, params):
-                found[str(row["pile_id"])].append(_track(row))
+            rows = await self._db.fetch_all(query, params)
+            # Built on a worker thread: the largest groups hold thousands of faces each.
+            for pile_id, track in await asyncio.to_thread(_tracks_by_pile, rows):
+                found[pile_id].append(track)
         return found
 
     async def open_pile_middles(

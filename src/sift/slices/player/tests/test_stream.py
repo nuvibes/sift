@@ -10,16 +10,19 @@ notice.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
 import subprocess
 import sys
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel.attention import Played
+from sift.kernel.content.mounts import Storage
 from sift.kernel.ids import new_id
 from sift.slices.player import tuning
 from sift.slices.player.tests.conftest import MODERN, Library, db_path, sign_in, write
@@ -27,6 +30,7 @@ from sift.slices.player.tests.conftest import MODERN, Library, db_path, sign_in,
 pytestmark = [pytest.mark.integration]
 
 _ROUTES = importlib.import_module("sift.slices.player.router")
+_SERVICE = importlib.import_module("sift.slices.player.service")
 
 
 #: The process listing, per platform. Both produce `pid parent name`, one process a line.
@@ -418,3 +422,78 @@ def test_without_a_repaired_copy_the_original_is_still_served(
 
     assert response.status_code == 200
     assert response.content == next(original).read_bytes()
+
+
+@pytest.mark.parametrize("headers", [{}, {"range": "bytes=0-"}], ids=["whole", "range"])
+def test_a_stream_gives_way_on_its_storage_while_its_bytes_are_read_and_says_slow_first_bytes(
+    client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch, headers: dict[str, str]
+) -> None:
+    sign_in(client)
+    asset_id = library.id_of("h264")
+    marks: list[str] = []
+    said: list[dict[str, object]] = []
+
+    class Lanes:
+        @staticmethod
+        def looked_at(path: Path) -> None:
+            marks.append("asked")
+
+        @staticmethod
+        @contextlib.asynccontextmanager
+        async def watching(path: Path) -> AsyncIterator[None]:
+            marks.append("open")
+            yield
+            marks.append("closed")
+
+        @staticmethod
+        def storage_for(path: Path) -> Storage:
+            return Storage(key="C:\\", remote=False)
+
+    class Log:
+        @staticmethod
+        def info(event: str, **fields: object) -> None:
+            said.append({"event": event, **fields})
+
+    monkeypatch.setattr(_ROUTES, "lanes", Lanes)
+    monkeypatch.setattr(_ROUTES, "log", Log)
+    monkeypatch.setattr(_SERVICE, "lanes", Lanes)
+    monkeypatch.setattr(_SERVICE, "log", Log)
+    monkeypatch.setattr(_SERVICE, "SLOW_FIRST_BYTES_SECONDS", 0.0)
+
+    assert client.get(f"/api/assets/{asset_id}/stream", headers=headers).status_code in (200, 206)
+
+    assert marks == ["asked", "open", "closed"]
+    (slow,) = [one for one in said if one["event"] == "player.stream_slow"]
+    parts = [float(str(slow[name])) for name in ("found_ms", "size_ms", "read_ms")]
+    assert slow["remote"] is False and min(parts) >= 0
+    assert abs(sum(parts) - float(str(slow["first_bytes_ms"]))) < 1
+
+
+def test_a_stream_with_quick_first_bytes_says_nothing(
+    client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(client)
+    said: list[str] = []
+    monkeypatch.setattr(_ROUTES.log, "info", lambda event, **_: said.append(event))
+    monkeypatch.setattr(_SERVICE, "SLOW_FIRST_BYTES_SECONDS", 60.0)
+
+    response = client.get(f"/api/assets/{library.id_of('h264')}/stream")
+
+    assert response.status_code == 200 and "player.stream_slow" not in said
+
+
+async def test_a_watched_stream_says_its_first_bytes_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The slow-bytes line is judged on the first chunk alone; the rest stream through."""
+    said: list[tuple[float, float, float]] = []
+    monkeypatch.setattr(_SERVICE, "said_if_slow", lambda _path, marks: said.append(marks))
+
+    async def chunks() -> AsyncIterator[bytes]:
+        yield b"a"
+        yield b"b"
+
+    marks = (0.0, 0.0, 0.0)
+    out = [chunk async for chunk in _SERVICE.watched(tmp_path / "f.mp4", chunks(), marks)]
+    assert out == [b"a", b"b"]
+    assert said == [marks]

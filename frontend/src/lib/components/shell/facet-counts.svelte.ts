@@ -12,7 +12,7 @@ import { api } from '$lib/api/client';
 import { readStored, writeStored, clearStored } from '$lib/shell/remembered.svelte';
 import { session } from '$lib/shell/session.svelte';
 import { vault } from '$lib/shell/vault.svelte';
-import { arrivals, libraryChanges } from '$lib/library/changes.svelte';
+import { arrivals, libraryChanges, RE_ASKED_EVERY_MS } from '$lib/library/changes.svelte';
 import {
 	facetRoute,
 	facetsFor,
@@ -118,12 +118,9 @@ interface Held {
 	at: number;
 }
 
-/**
- * How soon a question answered may be asked again for a bell: an import rings every second and
- * each column is a count over the whole library (969 asks in ten minutes on one library, 626 ms
- * each), so the bells within this window ask once, at its end.
- */
-export const RE_ASKED_EVERY_MS = 10_000;
+/* How soon a question answered may be asked again for a bell: every screen's walking pace. Each
+ * column is a count over the whole library, so the bells within the window ask once, at its end. */
+export { RE_ASKED_EVERY_MS };
 
 /** How many questions are kept, oldest out first: a tab's walls and their recent filters. */
 const KEEP_AT_MOST = 24;

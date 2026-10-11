@@ -643,7 +643,9 @@ async def _where_on_disk(
     for location in locations:
         if location.status is not LocationStatus.PRESENT:
             continue
-        where = await wiring.whereabouts(request, viewer, root_id=location.root_id)
+        where = await wiring.whereabouts(
+            request, viewer, places=[(location.root_id, location.rel_path)]
+        )
         return where.of(location.root_id, location.rel_path)
     return None
 

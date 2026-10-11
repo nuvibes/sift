@@ -6,8 +6,9 @@ import { UNREACHABLE } from '$lib/shell/unreachable';
 import type { components } from '$lib/api/schema';
 import type { JobsPage } from '$lib/jobs/family';
 import { OneRead } from '$lib/jobs/one-read';
+import { WalkingPace } from '$lib/library/changes.svelte';
 
-/* LIVE: followed by routes/+layout.svelte (refresh and readDownloads on the jobs, downloads and settings bells) */
+/* LIVE: followed by routes/+layout.svelte (heardJobs and heardDownloads on the jobs, downloads and settings bells) */
 
 /* The work that means "a file is on its way into the library". */
 const ARRIVING = new Set(['import', 'download', 'probe', 'thumbnail', 'preview', 'sprite']);
@@ -182,8 +183,31 @@ export class Imports {
 	/* Which session a read was asked for. `stop` moves it, so a read still out is dropped. */
 	#turn = 0;
 
+	/* The feed's bells re-read the queue and the Downloads row at a walking pace: an import rings
+	   the jobs bell every second, and each read is a request a task waits behind. Made on the
+	   first bell, since the bells' module imports this one. */
+	#queuePace: WalkingPace | null = null;
+	#glancePace: WalkingPace | null = null;
+
+	/** The jobs bell: the queue and the Downloads row, each at a walking pace. */
+	heardJobs(): void {
+		this.#queuePace ??= new WalkingPace(() => this.refresh());
+		this.#queuePace.bell();
+		this.heardDownloads();
+	}
+
+	/** A downloads or settings bell: the Downloads row at a walking pace. */
+	heardDownloads(): void {
+		this.#glancePace ??= new WalkingPace(() => this.readDownloads());
+		this.#glancePace.bell();
+	}
+
 	/** Ask nothing more for the session that is ending: the read due later, and any still out. */
 	stop(): void {
+		this.#queuePace?.stop();
+		this.#glancePace?.stop();
+		this.#queuePace = null;
+		this.#glancePace = null;
 		this.#turn += 1;
 		this.#reads.forget();
 		this.#settleOwed = false;

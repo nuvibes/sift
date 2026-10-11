@@ -1,3 +1,14 @@
+<script lang="ts" module>
+	import { SIZE_STEPS, type SizeStep } from '$lib/grid/justify';
+
+	/** The notch the slider sits on; the middle while the grid sizes itself, since the bar cannot measure it. */
+	export function nearestStep(step: SizeStep | null): number {
+		if (step === null) return Math.floor(SIZE_STEPS.length / 2);
+		const at = SIZE_STEPS.indexOf(step);
+		return at === -1 ? Math.floor(SIZE_STEPS.length / 2) : at;
+	}
+</script>
+
 <script lang="ts">
 	/* NOT ON THE GALLERY: a singleton that owns the window's search state; its parts are drawn there. */
 
@@ -14,7 +25,6 @@
 	import { vault, vaultPrompt } from '$lib/shell/vault.svelte';
 	import { rail } from './rail-state.svelte';
 	import {
-		FIELD_FLOOR,
 		NOT_HERE,
 		PHONE_SHEET,
 		ableTo,
@@ -27,13 +37,11 @@
 	import { stage } from './stage.svelte';
 	import { gridAutoplay, gridSize, previewWords } from '$lib/grid/grid.svelte';
 	import { VISIBLE_POOL_CAP } from '$lib/grid/viewport.svelte';
-	import { SIZE_STEPS } from '$lib/grid/justify';
 	import AddButton from './AddButton.svelte';
 	import Breadcrumbs from '$lib/components/common/Breadcrumbs.svelte';
 	import { pageTrail } from './trail.svelte';
 	import ScreenMenus from './ScreenMenus.svelte';
 	import SearchBox from './SearchBox.svelte';
-	import TileSizePanel, { nearestStep } from './TileSizePanel.svelte';
 
 	/** Whether the screen under this bar has tiles the slider would change. */
 	const sizable = $derived(ableTo(screenBar.tools.resizable));
@@ -53,13 +61,6 @@
 	const previewHint = $derived(
 		screenBar.tools.playLabel === undefined ? gridWords.hint : previewLabel
 	);
-
-	screenBar.sizeHome = {
-		id: 'tile-size',
-		icon: 'grid_view',
-		label: 'Tile size',
-		content: TileSizePanel
-	};
 
 	/* Measured by `screenBar.watchRoom`: the rail and the caption buttons take room `min-width` cannot see. */
 	let bar = $state<HTMLElement | null>(null);
@@ -89,7 +90,7 @@
 	class="topbar"
 	bind:this={bar}
 	style:--bar-end="{screenBar.barEnd}px"
-	style:--field-floor="{FIELD_FLOOR}px"
+	style:--centre-floor="{screenBar.centreFloor}px"
 >
 	<!-- The rail's collapse, on this side of the divide so it stays put at both rail widths. -->
 	<div class="lead">
@@ -110,12 +111,12 @@
 			</Tooltip>
 		</span>
 
-		<!-- The screen's trail, folded to fit and to the press alone before the tile size leaves. On a
-		     phone the frame draws it as the page's first line instead. -->
+		<!-- The screen's trail in what room is left, ending in an ellipsis when short of it. On a phone
+		     the frame draws it as the page's first line instead. -->
 		{#if !phoneWidth.yes}
 			<div class="trail">
 				{#if pageTrail.crumbs.length > 1}
-					<Breadcrumbs crumbs={pageTrail.crumbs} fit pressAlone={!screenBar.sizeOnBar} />
+					<Breadcrumbs crumbs={pageTrail.crumbs} fit />
 				{/if}
 			</div>
 		{:else}
@@ -148,11 +149,11 @@
 		{/if}
 	</div>
 
-	<!-- One centre group, the screen's menus and the search box, whose midpoint is the bar's. The
-	     menus are drawn in one home only: here, or on the screen's own row (`roomOnTopBar`). -->
+	<!-- One centre group, the screen's menus and the search box, whose midpoint is the bar's. While
+	     the window is filled the menus are drawn on the screen's own row instead. -->
 	{#if !phoneWidth.yes}
 		<div class="centre">
-			{#if screenBar.roomOnTopBar && !stage.filling}
+			{#if !stage.filling}
 				<ScreenMenus />
 			{/if}
 			<SearchBox />
@@ -228,7 +229,7 @@
 				label={sizable ? 'Tile size' : whyNot(screenBar.tools.resizable, NOT_HERE.resize)}
 				placement="bottom"
 			>
-				<label class="size" class:off={!sizable} class:gone={!screenBar.sizeOnBar}>
+				<label class="size" class:off={!sizable}>
 					<Icon name="grid_view" size={18} label="Tile size" />
 					<Slider
 						class="steps"
@@ -253,8 +254,8 @@
 <style>
 	/*
 	 * Three columns, the middle one the centre group, capped so each equal end holds the end group
-	 * (`--bar-end`): its midpoint is the bar's. Where the field's floor still binds, the start end
-	 * gives way rather than the controls overlapping.
+	 * (`--bar-end`): its midpoint is the bar's. One row at every width: where the centre's floor
+	 * still binds, the start end gives way, and past that the field.
 	 */
 	.topbar {
 		grid-area: topbar;
@@ -283,8 +284,8 @@
 		min-inline-size: 0;
 	}
 
-	/* No floor: the trail folds into whatever room this end has. Contained, so its words never size
-	   the track and push the centre aside. */
+	/* No floor: the trail takes whatever room this end has. Contained, so its words never size the
+	   track and push the centre aside. */
 	.trail {
 		flex: 1 1 0;
 		min-inline-size: 0;
@@ -293,8 +294,10 @@
 		align-items: center;
 	}
 
-	.trail > :global(.crumbs) {
+	/* The trail's tooltip box, which holds the trail. */
+	.trail > :global(.wrap) {
 		flex: 1;
+		min-inline-size: 0;
 	}
 
 	.centre {
@@ -302,7 +305,7 @@
 		align-items: center;
 		gap: var(--space-2);
 		min-inline-size: 0;
-		max-inline-size: max(var(--field-floor), 100cqi - 2 * (var(--bar-end) + var(--space-3)));
+		max-inline-size: max(var(--centre-floor), 100cqi - 2 * (var(--bar-end) + var(--space-3)));
 	}
 
 	.centre > :global(.menus) {
@@ -363,11 +366,6 @@
 	/* The shared button's disabled 0.5, so the controls beside it dim alike. */
 	.size.off {
 		opacity: 0.5;
-	}
-
-	/* With its tooltip's box, or the row keeps the gap beside it. */
-	.trailing > :global(.wrap:has(.size.gone)) {
-		display: none;
 	}
 
 	@media (max-width: 767px) {

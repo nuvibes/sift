@@ -338,7 +338,7 @@ async def _from_the_folder(access: Repository, viewer: Viewer, found: Row) -> Li
     if found["folder_name"] is None:
         return None
     path, name = str(found["folder_path"] or ""), str(found["folder_name"])
-    seen = await _folders_seen(access, viewer)
+    seen = await _folders_seen(access, viewer, [(str(found["folder_root"]), path)])
     if folder_said(path, seen=seen.get(str(found["folder_root"]), frozenset())) != path:
         return None
     return say.said(" from the folder ", say.folder_named(str(found["folder_id"]), name))

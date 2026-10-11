@@ -19,7 +19,6 @@ import { capture } from '$lib/capture/capture.svelte';
 import { api } from '$lib/api/client';
 import { swapMode } from '$lib/swap/mode.svelte';
 import topBarSource from './TopBar.svelte?raw';
-import { screenBar } from './screen-bar.svelte';
 
 const clipboard = vi.hoisted(() => ({ readable: false }));
 vi.mock('$lib/shell/clipboard', () => ({ canReadClipboard: () => clipboard.readable }));
@@ -364,27 +363,19 @@ describe("the panel's words and its last row", () => {
 	});
 });
 
-describe('the paste half, short of room', () => {
+describe('the paste half', () => {
 	afterEach(() => {
 		clipboard.readable = false;
-		screenBar.pasteOnBar = true;
 	});
 
-	it('folds into Add, and its press waits in the panel', () => {
+	it('stays on Add at every width, and the panel draws no second press', () => {
 		clipboard.readable = true;
 		const pasted = vi.spyOn(capture, 'pasteFromClipboard').mockResolvedValue(undefined);
 		render();
-		expect(host.querySelector('.half.trail'), 'no paste half with room for it').not.toBeNull();
+		const half = host.querySelector<HTMLButtonElement>('.half.trail button');
+		expect(half, 'no paste half beside Add').not.toBeNull();
 		expect(panel()?.querySelector('[aria-label="Paste from clipboard"]')).toBeNull();
-
-		host.remove();
-		for (const stale of document.querySelectorAll('.popover-panel')) stale.remove();
-		screenBar.pasteOnBar = false;
-		render();
-		expect(host.querySelector('.half.trail'), 'the paste half stayed on the bar').toBeNull();
-		const press = panel()?.querySelector<HTMLButtonElement>('[aria-label="Paste from clipboard"]');
-		expect(press, 'the folded paste is out of reach').not.toBeNull();
-		press?.click();
+		half?.click();
 		expect(pasted).toHaveBeenCalledWith(null);
 	});
 });

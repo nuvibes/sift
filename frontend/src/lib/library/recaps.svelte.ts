@@ -2,7 +2,7 @@
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
-import { libraryChanges, mine } from '$lib/library/changes.svelte';
+import { libraryChanges, mine, WalkingPace } from '$lib/library/changes.svelte';
 import { session } from '$lib/shell/session.svelte';
 
 /** A recap as a list names it: its title, the days it covers, and how many cards it has now. */
@@ -81,16 +81,13 @@ class RecapShelf {
 export const recapShelf = new RecapShelf();
 
 /* What this account may see moved (the vault opened or shut, something hidden or shared), and
-   with it which recaps a reader is shown and how many cards each has. */
-libraryChanges.subscribe(() => {
-	if (recapShelf.loaded) void recapShelf.load();
-});
+   with it which recaps a reader is shown and how many cards each has. At a walking pace. */
+const shelfPace = new WalkingPace(() => (recapShelf.loaded ? recapShelf.load() : undefined));
+libraryChanges.subscribe(shelfPace);
 
 /* A recap opened or its announcement dismissed on another of this account's tabs: the shelf is
    this account's own list, so it is asked again and the announcement goes here too. */
-mine.subscribe(() => {
-	if (recapShelf.loaded) void recapShelf.load();
-});
+mine.subscribe(shelfPace);
 
 /** One recap, drawn for the reader's vault state now. Opening it ends its announcement. */
 export async function readRecap(id: string): Promise<Recap> {

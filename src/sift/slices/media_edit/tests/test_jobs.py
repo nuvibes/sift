@@ -94,6 +94,7 @@ async def claimed_job(
     filename: str,
     target_bytes: int | None,
     compatibility: bool,
+    location_id: str | None = None,
 ) -> Job:
     """A real queued job, really claimed.
 
@@ -111,6 +112,7 @@ async def claimed_job(
             "compatibility": compatibility,
             "preset": "small",
             "filename": filename,
+            "location_id": location_id,
         },
     )
     claimed = await queue.claim("test")
@@ -143,6 +145,7 @@ async def run_compress(
     job_queue: JobQueue,
     target_bytes: int | None = 10 * 1024 * 1024,
     compatibility: bool = False,
+    location_id: str | None = None,
 ) -> None:
     job = await claimed_job(
         job_queue,
@@ -151,6 +154,7 @@ async def run_compress(
         filename=filename,
         target_bytes=target_bytes,
         compatibility=compatibility,
+        location_id=location_id,
     )
     await compress(
         a_context(job, content=content_store, queue=job_queue),
@@ -375,6 +379,44 @@ async def test_the_copy_lands_beside_the_original_and_is_indexed(
     assert (managed.path / "clip-10MB.mp4").is_file()
     located = await content_store.location_at(managed.root.id, "clip-10MB.mp4")
     assert located is not None
+
+
+async def test_a_file_stored_in_two_places_is_compressed_next_to_the_copy_asked_for(
+    managed: Library,
+    add_file: Callable[..., Any],
+    admin: Viewer,
+    settings: Settings,
+    access: Repository,
+    organizer: Organizer,
+    compressor: CompressService,
+    duplicates: FakeDuplicates,
+    reindexer: FakeReindexer,
+    temp_db: Database,
+    content_store: ContentStore,
+    job_queue: JobQueue,
+    ffmpeg: Callable[..., FakeFfmpeg],
+) -> None:
+    original = await add_file(managed, "clip.mp4")
+    other = await add_file(managed, "kept/clip.mp4")
+    ffmpeg(CORPUS / "accepted.mp4", sizes=[1000])
+    await run_compress(
+        asset_id=original.asset.id,
+        filename="clip-10MB.mp4",
+        location_id=other.location.id,
+        admin=admin,
+        settings=settings,
+        access=access,
+        organizer=organizer,
+        compressor=compressor,
+        duplicates=duplicates,
+        reindexer=reindexer,
+        temp_db=temp_db,
+        content_store=content_store,
+        job_queue=job_queue,
+    )
+
+    assert (managed.path / "kept" / "clip-10MB.mp4").is_file()
+    assert not (managed.path / "clip-10MB.mp4").exists()
 
 
 async def test_a_file_in_the_vault_can_be_compressed_at_all(

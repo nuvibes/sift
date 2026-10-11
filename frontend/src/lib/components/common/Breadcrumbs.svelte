@@ -6,7 +6,7 @@
 		category: 'composition',
 		role: 'the trail of where this screen sits, each step a real address',
 		basis: 'own',
-		states: ['one step', 'several steps', 'folded', 'in the top bar']
+		states: ['one step', 'several steps', 'folded', 'in the top bar', 'short of room']
 	} satisfies DesignEntry;
 
 	/** One step on the way here. The last one has no `href`: it is where you already are. */
@@ -15,12 +15,9 @@
 		href?: string;
 	}
 
-	/**
-	 * How far a trail is folded: every step shown; the middle behind one press (the first and the
-	 * last two stay); the front (the last two stay); all but where you are; or every step, the
-	 * press alone.
-	 */
-	export type Fold = 'none' | 'middle' | 'front' | 'all' | 'every';
+	/** How far a trail is folded: every step shown, or the middle behind one press (the first and
+	 * the last two stay). */
+	export type Fold = 'none' | 'middle';
 
 	/** A trail of this many steps or more has its middle folded, whatever the room. */
 	export const FOLDS_AT = 4;
@@ -30,15 +27,6 @@
 		crumbs: Crumb[],
 		fold: Fold
 	): { before: Crumb[]; folded: Crumb[]; after: Crumb[] } {
-		if (fold === 'front' && crumbs.length > 2) {
-			return { before: [], folded: crumbs.slice(0, -2), after: crumbs.slice(-2) };
-		}
-		if (fold === 'every' && crumbs.length > 1) {
-			return { before: [], folded: crumbs, after: [] };
-		}
-		if (fold === 'all' && crumbs.length > 1) {
-			return { before: [], folded: crumbs.slice(0, -1), after: crumbs.slice(-1) };
-		}
 		if (fold === 'middle' && crumbs.length >= FOLDS_AT) {
 			return { before: crumbs.slice(0, 1), folded: crumbs.slice(1, -2), after: crumbs.slice(-2) };
 		}
@@ -57,8 +45,8 @@
 	 * are, never a link (`aria-current="page"`); the chevrons are hidden from a screen reader.
 	 *
 	 * From `FOLDS_AT` steps the middle folds behind one press listing them, outermost first. Told
-	 * to `fit` its box, it folds further while the line runs past it, at last to the press alone,
-	 * whose list is the whole path with where you are last and not a link.
+	 * to `fit` its box, it keeps to one line that ends in an ellipsis where the box is short, with
+	 * the whole path as its tooltip.
 	 *
 	 * A plain click on the step above steps back to it. A crumb names a bare address (`/people`),
 	 * and a wall writes which rows it shows into the address it is left at, so following the link
@@ -69,10 +57,8 @@
 	 * remembered address only where the browser cannot say where that screen sits. A modifier, a
 	 * middle-click, or a page opened directly follows the href. The rule is `returnTo`, shared with
 	 * `BackButton`. In effect only the crumb above the last can match, since only that one can be
-	 * where you came from. A folded step follows the same rule from the list behind the press, so a
-	 * trail folded down to where you are still steps back to the wall as Back does.
+	 * where you came from. A folded step follows the same rule from the list behind the press.
 	 */
-	import { tick } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import ContextMenuItem from '$lib/components/common/ContextMenuItem.svelte';
 	import MenuButton from '$lib/components/common/MenuButton.svelte';
@@ -83,70 +69,18 @@
 		/** The trail, outermost first. The last is where you are. */
 		crumbs: Crumb[];
 		/**
-		 * Keep to one line of the box it is given, folding further when the line is short. The top
-		 * bar's trail. Without it the trail wraps, as the first line of a page does on a phone.
+		 * Keep to one line of the box it is given, ending in an ellipsis when the line is short. The
+		 * top bar's trail. Without it the trail wraps, as the first line of a page does on a phone.
 		 */
 		fit?: boolean;
-		/** The press alone, whatever the room. */
-		pressAlone?: boolean;
 	}
 
-	let { crumbs, fit = false, pressAlone = false }: Props = $props();
+	let { crumbs, fit = false }: Props = $props();
 
-	/** The least a trail of this length is folded, before any measuring. */
-	const least = $derived<Fold>(crumbs.length >= FOLDS_AT ? 'middle' : 'none');
+	const parts = $derived(folding(crumbs, crumbs.length >= FOLDS_AT ? 'middle' : 'none'));
 
-	/* What the measuring settled on; `least` until the box has been read. */
-	let measured = $state<Fold | null>(null);
-	const fold = $derived<Fold>(fit ? (pressAlone ? 'every' : (measured ?? least)) : least);
-	const parts = $derived(folding(crumbs, fold));
-
-	let nav = $state<HTMLElement | null>(null);
-
-	/* The next fold, when this one is too wide for the box. */
-	const FURTHER: Record<Fold, Fold | null> = {
-		none: 'middle',
-		middle: 'front',
-		front: 'all',
-		all: 'every',
-		every: null
-	};
-
-	/** Whether what is drawn runs past the box. A step never shrinks, so too long shows as overflow. */
-	function overflows(box: HTMLElement): boolean {
-		const list = box.firstElementChild as HTMLElement | null;
-		return list !== null && list.scrollWidth > box.clientWidth + 0.5;
-	}
-
-	/* From the least fold, further while the line is too short; each step redraws and reads again. */
-	async function settle(): Promise<void> {
-		if (!fit || !nav) return;
-		measured = least;
-		await tick();
-		let next = FURTHER[measured];
-		while (nav && next !== null && overflows(nav)) {
-			measured = next;
-			await tick();
-			next = FURTHER[measured];
-		}
-	}
-
-	/* Read again when the box changes width, and when the trail changes. */
-	$effect(() => {
-		if (!fit || !nav) return;
-		void crumbs;
-		void settle();
-		if (typeof ResizeObserver === 'undefined') return;
-		const box = nav;
-		let width = box.clientWidth;
-		const watch = new ResizeObserver(() => {
-			if (box.clientWidth === width) return;
-			width = box.clientWidth;
-			void settle();
-		});
-		watch.observe(box);
-		return () => watch.disconnect();
-	});
+	/* The whole path, for the tooltip of a trail the ellipsis may have cut. */
+	const whole = $derived(crumbs.map((one) => one.label).join(' \u203a '));
 </script>
 
 {#snippet step(crumb: Crumb, here: boolean)}
@@ -163,8 +97,8 @@
 	<span class="chevron" aria-hidden="true"><Icon name="chevron_right" size={16} /></span>
 {/snippet}
 
-{#if crumbs.length > 1}
-	<nav class="crumbs" class:fit aria-label="Breadcrumb" bind:this={nav}>
+{#snippet trail()}
+	<nav class="crumbs" class:fit aria-label="Breadcrumb">
 		<ol>
 			{#each parts.before as crumb, at (`b-${at}-${crumb.label}`)}
 				<li>
@@ -206,6 +140,16 @@
 			{/if}
 		</ol>
 	</nav>
+{/snippet}
+
+{#if crumbs.length > 1}
+	{#if fit}
+		<Tooltip label={whole} placement="bottom" stretch shrinks staysOnPress>
+			{@render trail()}
+		</Tooltip>
+	{:else}
+		{@render trail()}
+	{/if}
 {/if}
 
 <style>
@@ -229,25 +173,43 @@
 		list-style: none;
 	}
 
-	/* In the top bar: one line, never wrapped, since the bar has one. What does not fit is folded
-	   (see the script), not wrapped and not clipped. */
+	/* In the top bar: one line, never wrapped, since the bar has one. What does not fit ends in an
+	   ellipsis: the steps are inline, so the line, not each word, is what is cut. */
 	.crumbs.fit {
+		flex: 1 1 auto;
 		min-inline-size: 0;
-		overflow: hidden;
 	}
 
 	.crumbs.fit ol {
-		flex-wrap: nowrap;
+		display: block;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font: var(--text-body-sm);
+		color: var(--sift-ink-3);
 		/* The ring of a focused step is drawn outside it; this keeps it inside the box that clips. */
 		padding-block: var(--space-1);
 		margin-inline-start: 0;
+	}
+
+	.crumbs.fit li {
+		display: inline;
+	}
+
+	.crumbs.fit .chevron,
+	.crumbs.fit li :global(.wrap) {
+		vertical-align: middle;
+	}
+
+	.crumbs.fit .chevron {
+		margin-inline: var(--space-1);
 	}
 
 	li {
 		display: flex;
 		align-items: center;
 		gap: var(--space-1);
-		/* A step keeps its whole word: an overflow is what tells the trail to fold further. */
+		/* A step keeps its whole word; in the top bar the line ends in an ellipsis instead. */
 		flex: none;
 		font: var(--text-body-sm);
 		/* The separator, and only the separator: the labels set their own below.

@@ -1155,6 +1155,33 @@ async def test_a_queue_from_before_the_type_indexes_gets_them_at_boot(temp_db: D
     assert [row["id"] for row in await temp_db.fetch_all("SELECT id FROM jobs")] == ["J1"]
 
 
+@pytest.mark.integration
+async def test_a_page_of_one_type_seeks_each_state_and_walks_no_table(job_queue: JobQueue) -> None:
+    """The Tasks page of one kind with no state is a seek of `ix_jobs_by_type` per state, joined
+    newest first; the walk of every row newest first read the whole table for a kind with fewer
+    rows than a page."""
+    from sift.kernel.jobs.queue_pages import _list_page
+
+    common, rare = noop_handler("common"), noop_handler("rare")
+    for _ in range(3):
+        await job_queue.enqueue(common, {})
+    older = await job_queue.enqueue(rare, {"n": 1})
+    newer = await job_queue.enqueue(rare, {"n": 2})
+    await job_queue.cancel(older)
+    page = await job_queue.list(job_type=rare)
+    assert [job.id for job in page.jobs] == [newer, older]
+    assert page.total == 2
+    params = {"job_type": rare, "state": None, "limit": 1, "offset": 1}
+    assert [job.id for job in (await job_queue.list(job_type=rare, limit=1, offset=1)).jobs] == [
+        older
+    ]
+    explained = "EXPLAIN QUERY PLAN " + _list_page(params)  # nosemgrep: sift-no-string-built-sql
+    rows = await job_queue._db.fetch_all(explained, params)  # nosemgrep: sift-no-string-built-sql
+    plan = [str(row["detail"]) for row in rows]
+    assert not any(line.startswith("SCAN jobs") for line in plan), plan
+    assert sum("ix_jobs_by_type" in line for line in plan) == len(JobState), plan
+
+
 # --- what each kind of work has outstanding, for the budget and the Tasks rows -------------------
 
 

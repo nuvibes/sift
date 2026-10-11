@@ -8,6 +8,7 @@ Every path comes from the access layer, denied and missing are one 404, and ever
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast, get_args
@@ -17,7 +18,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import Field
 from starlette.background import BackgroundTask
 
-from sift.kernel import places, wiring
+from sift.kernel import lanes, places, wiring
 from sift.kernel.access import Repository, Viewer
 from sift.kernel.attention import PLAYED
 from sift.kernel.client import Client, client_of
@@ -63,6 +64,7 @@ from sift.slices.player.service import (
     plan_query,
     playlist,
     read_range,
+    watched,
 )
 
 log = get_logger(__name__)
@@ -70,6 +72,8 @@ log = get_logger(__name__)
 router = APIRouter(tags=["player"])
 
 _CACHE_PRIVATE = {"Cache-Control": "private, no-cache"}
+
+#: A stream whose first bytes took longer than this, in seconds, says where the time went.
 
 
 def _player(request: Request) -> PlayerService:
@@ -465,17 +469,22 @@ async def stream(
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> Response:
     """The file itself, over HTTP range requests. No ffmpeg runs."""
+    asked = time.perf_counter()
     asset = await _open(access, viewer, asset_id)
     # A file whose audio sits far from its video is served from its repaired copy.
     repaired = await access.locate_derivative(viewer, asset.id, DerivativeKind.REMUX)
     path = repaired or await access.locate(viewer, asset.id)
     if path is None:
         raise _missing()
+    # From here, so the size asked of a share is not behind an import's reads either.
+    lanes.looked_at(path)
+    located = time.perf_counter()
 
     try:
         stat = await on_serving_thread(path.stat)
     except OSError:
         raise _missing() from None
+    marks = (asked, located, time.perf_counter())
 
     size = stat.st_size
 
@@ -501,7 +510,9 @@ async def stream(
         if whole is None:
             return Response(status_code=status.HTTP_200_OK, headers=headers, media_type=media_type)
         return StreamingResponse(
-            read_range(path, whole, gone=request.is_disconnected, played=played),
+            watched(
+                path, read_range(path, whole, gone=request.is_disconnected, played=played), marks
+            ),
             media_type=media_type,
             headers=headers,
         )
@@ -510,7 +521,7 @@ async def stream(
     headers["Content-Range"] = span.content_range
     headers["Content-Length"] = str(span.length)
     return StreamingResponse(
-        read_range(path, span, gone=request.is_disconnected, played=played),
+        watched(path, read_range(path, span, gone=request.is_disconnected, played=played), marks),
         status_code=status.HTTP_206_PARTIAL_CONTENT,
         media_type=media_type,
         headers=headers,

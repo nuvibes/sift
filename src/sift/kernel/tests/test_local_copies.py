@@ -323,6 +323,93 @@ async def test_a_cache_is_walked_when_its_counted_bytes_say_over_budget_and_once
     assert len(walks) == 2, "counted under the budget, so no walk"
 
 
+async def test_a_cache_that_had_to_drop_owed_copies_files_no_take_in_copy_for_a_minute(
+    content_store: ContentStore,
+    job_queue: JobQueue,
+    thumbnails: str,
+    settings: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A take-in's copy is owed work at the end of every queue: in a cache already dropping copies
+    owed work, it would only be dropped before its passes come, or push out one they reach sooner."""
+    monkeypatch.setattr(identity_places, "OWED_CEILING_TIMES", 1)
+    monkeypatch.setattr(ContentStore, "ARCHIVE_CACHE_BUDGET", 500)
+    cache = settings.cache_dir / ContentStore.ARCHIVE_CACHE
+    owed = _held(cache, "owed", 400, 1_500_000_000)
+    await job_queue.enqueue(thumbnails, {"asset_id": "owed"})
+    await job_queue.enqueue(thumbnails, {"asset_id": "nearer"})
+
+    def scratch(name: str) -> Path:
+        made = tmp_path / name / "001.jpg"
+        made.parent.mkdir()
+        made.write_bytes(b"x" * 400)
+        return made
+
+    first = await content_store.keep_local_copy("nearer", scratch("a"), from_archive=True)
+    assert first is not None and not owed.exists(), "the walk at the ceiling dropped no owed copy"
+
+    later = scratch("b")
+    with capture_logs() as logs:
+        assert await content_store.keep_local_copy("later", later, from_archive=True) is None
+    assert not later.exists() and not (cache / "later").exists()
+    assert first.is_file(), "a copy nearer its passes was pushed out by a later one"
+    assert not [one for one in logs if one["event"] == "content.cache_dropped_owed"]
+    pulled = _held(cache, "pulled", 400, 1_800_000_000)
+    walks: list[Path] = []
+
+    def counted(folder: Path) -> list[tuple[float, int, Path]]:
+        walks.append(folder)
+        return []
+
+    monkeypatch.setattr(identity_places, "_cached", counted)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, pulled)
+    assert not walks and pulled.is_file(), "a pass's pull walked a cache at its ceiling again"
+    beyond = _held(cache, "beyond", 400, 1_900_000_000)
+    await content_store._keep(ContentStore.ARCHIVE_CACHE, 500, beyond)
+    assert len(walks) == 1, "a cache more than a budget past its ceiling was not walked"
+    monkeypatch.undo()
+    monkeypatch.setattr(identity_places, "OWED_CEILING_TIMES", 1)
+    monkeypatch.setattr(ContentStore, "ARCHIVE_CACHE_BUDGET", 500)
+
+    monkeypatch.setattr(identity_places, "FULL_OF_OWED_SECONDS", 0.0)
+    again = await content_store.keep_local_copy("again", scratch("c"), from_archive=True)
+    assert again is not None and again.is_file(), "a minute on, a take-in copy is filed again"
+
+
+async def test_a_walk_that_drops_the_free_copies_and_leaves_owed_ones_over_budget_waits_the_minute(
+    content_store: ContentStore,
+    job_queue: JobQueue,
+    thumbnails: str,
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Judged from what the drop left, not from what was there before it: a folder of free and owed
+    copies is walked once, and the next copies filed wait for the minute instead of a walk each."""
+    cache = settings.cache_dir / ContentStore.ARCHIVE_CACHE
+    idle = _held(cache, "idle", 100, 1_400_000_000)
+    for name in ("owed-1", "owed-2"):
+        _held(cache, name, 400, 1_500_000_000)
+        await job_queue.enqueue(thumbnails, {"asset_id": name})
+    walks: list[Path] = []
+    listing = identity_places._cached
+
+    def counted(directory: Path) -> list[tuple[float, int, Path]]:
+        walks.append(directory)
+        return listing(directory)
+
+    monkeypatch.setattr(identity_places, "_cached", counted)
+
+    await content_store._keep(
+        ContentStore.ARCHIVE_CACHE, 500, _held(cache, "new", 100, 1_600_000_000)
+    )
+    assert len(walks) == 1 and not idle.exists()
+    await content_store._keep(
+        ContentStore.ARCHIVE_CACHE, 500, _held(cache, "next", 100, 1_700_000_000)
+    )
+    assert len(walks) == 1, "the next copy walked a folder with nothing free left to drop"
+
+
 async def test_which_copies_are_owed_is_asked_of_the_queue_at_most_twice_a_minute(
     content_store: ContentStore, job_queue: JobQueue, thumbnails: str
 ) -> None:
@@ -421,7 +508,7 @@ async def test_a_second_copy_of_the_same_bytes_leaves_the_first(
 
     again = await content_store.keep_local_copy("asset", scratch)
 
-    assert again == kept and kept.read_bytes() == b"first"
+    assert kept is not None and again == kept and kept.read_bytes() == b"first"
     assert not scratch.exists()
 
 

@@ -15,8 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from '$app/state';
-import { screenBar } from './screen-bar.svelte';
-import { stage } from './stage.svelte';
+import { FIELD_FLOOR, screenBar } from './screen-bar.svelte';
 
 const FILTERS = 'filters';
 /* Two ids the bar really uses. The order is a menu on the row rather than a panel, but what these
@@ -365,11 +364,9 @@ describe('a draft keeps the panel its box', () => {
 });
 
 /*
- * Whether the named menus fit, which is a question about the bar and not the window.
- *
- * The window's width is not what the bar's three columns share: the rail takes 208px of it when
- * open, and in the desktop window the caption buttons take about 138 more, so the bar measures
- * itself.
+ * What the top bar measures of itself: one row at every width, so nothing leaves it. It measures
+ * the end group, which each side of the centre group keeps, and the screen's menus, which the
+ * centre group's floor adds to the field's.
  *
  * These drive a `ResizeObserver` by hand. The one in `test-setup` reports nothing, deliberately, so
  * a test that needs a size supplies it, and the size supplied is the only thing asserted on.
@@ -403,10 +400,8 @@ describe('the room on the top bar', () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
 		// The store is a module singleton, so a width left set here would be the next test's answer.
-		screenBar.roomOnTopBar = true;
 		screenBar.barEnd = 0;
-		screenBar.sizeOnBar = true;
-		screenBar.pasteOnBar = true;
+		screenBar.centreFloor = FIELD_FLOOR;
 		Reflect.deleteProperty(page, 'route');
 	});
 
@@ -425,347 +420,81 @@ describe('the room on the top bar', () => {
 		return { bar, parts };
 	}
 
-	/** Say the bar's content box is this wide, the way the browser would. */
-	function barIs(inlineSize: number): void {
+	/** Say the bar has been measured again, the way the browser would. */
+	function measured(): void {
 		for (const report of reporters)
-			report(
-				[
-					{ contentBoxSize: [{ inlineSize, blockSize: 56 }], contentRect: { width: inlineSize } }
-				] as unknown as ResizeObserverEntry[],
-				null as unknown as ResizeObserver
-			);
+			report([] as unknown as ResizeObserverEntry[], null as unknown as ResizeObserver);
 	}
 
-	/* Ends of 100 and 204: each side keeps 304, so the sum is 2 * 304 + 88 + 227 = 923. */
-	it('keeps them up here while the bar holds both ends, the menus and the field floor', () => {
-		screenBar.watchRoom(barWithEnds(100, 204).bar);
-		barIs(923);
+	const onto = (id: string) => {
+		Object.assign(page, { route: { id } });
+		screenBar.publish(Symbol(id), {});
+	};
 
+	it('caps the centre group by the end group as drawn', () => {
+		const { bar } = barWithEnds(100, 204);
+		screenBar.watchRoom(bar);
+		measured();
 		expect(screenBar.barEnd).toBe(304);
-		expect(screenBar.roomOnTopBar).toBe(true);
 	});
 
-	it('sends them down when the bar has less, however wide the WINDOW is', () => {
-		/* Nothing here touches `matchMedia`: the rail and the caption buttons come out of this bar
-		   without the window changing size at all. */
-		screenBar.watchRoom(barWithEnds(100, 204).bar);
-		barIs(922);
-
-		expect(screenBar.roomOnTopBar).toBe(false);
-	});
-
-	it('reads the CONTENT box, which is what the padding for the caption buttons comes out of', () => {
-		screenBar.watchRoom(barWithEnds(100, 204).bar);
-		for (const report of reporters)
-			report(
-				[
-					{ contentBoxSize: [{ inlineSize: 900, blockSize: 56 }], contentRect: { width: 1000 } }
-				] as unknown as ResizeObserverEntry[],
-				null as unknown as ResizeObserver
-			);
-
-		expect(screenBar.roomOnTopBar).toBe(false);
-	});
-
-	it('falls back to `contentRect` where an engine fills in nothing else', () => {
-		screenBar.watchRoom(barWithEnds(100, 204).bar);
-		for (const report of reporters)
-			report(
-				[{ contentRect: { width: 900 } } as unknown as ResizeObserverEntry],
-				null as unknown as ResizeObserver
-			);
-
-		expect(screenBar.roomOnTopBar).toBe(false);
-	});
-
-	it('measures the end group again when a screen adds to it, and needs more room', () => {
-		const { bar, parts } = barWithEnds(100, 204);
-		screenBar.watchRoom(bar);
-		barIs(1000);
-		expect(screenBar.roomOnTopBar).toBe(true);
-
-		// Theater's controls about the whole window widen the end by 88.
-		parts[0].getBoundingClientRect = () => ({ width: 188 }) as DOMRect;
-		barIs(1000);
-		expect(screenBar.barEnd).toBe(392);
-		expect(screenBar.roomOnTopBar, 'the menus stayed up beside a wider end').toBe(false);
-	});
-
-	it("keeps them up here at a phone's width, where the bar is the search box and squares", () => {
-		/* The sum behind the threshold is the desktop bar's. On a phone the collapse, the preview
-		   and the tile size are gone and Add is a square, so Filter and Sort fit at the line's end. */
-		vi.stubGlobal('matchMedia', (query: string) => ({
-			matches: query === '(max-width: 767px)',
-			addEventListener: () => {},
-			removeEventListener: () => {}
-		}));
-		screenBar.watchRoom(barWithEnds(100, 204).bar);
-		barIs(358);
-
-		expect(screenBar.roomOnTopBar).toBe(true);
-	});
-
-	/*
-	 * A screen that adds controls to the bar needs more room than the sum says, and the field is
-	 * what tells: Theater at a half-screen width would leave it about 150px and two rows tall with
-	 * its menus up.
-	 */
-	it('sends them down when the FIELD is left less than its floor, and keeps them down', () => {
-		const bar = document.createElement('header');
-		const field = document.createElement('form');
-		field.className = 'search';
-		bar.append(field);
-		let fieldWidth = 150;
-		field.getBoundingClientRect = () => ({ width: fieldWidth }) as DOMRect;
-		screenBar.watchRoom(bar);
-
-		barIs(864);
-		expect(screenBar.roomOnTopBar, 'the menus stayed up over a squeezed field').toBe(false);
-
-		// Down on the screen's own row, the field has its room back; that is not a reason to go up.
-		fieldWidth = 400;
-		barIs(864);
-		expect(screenBar.roomOnTopBar, 'the menus went back up to squeeze it again').toBe(false);
-
-		// A bar wide enough for the field's floor beside them is.
-		barIs(950);
-		expect(screenBar.roomOnTopBar).toBe(true);
-	});
-
-	/** Ends of 100 and a part holding the tile size (122) beside Add (66), 16 apart: 304 in all. */
-	function barWithSize(beside = true): { bar: HTMLElement; size: { standing: boolean } } {
-		const { bar, parts } = barWithEnds(100, 0);
-		const size = { standing: true };
-		const slider = document.createElement('label');
-		slider.className = 'size';
-		slider.getBoundingClientRect = () => ({ width: size.standing ? 122 : 0 }) as DOMRect;
-		parts[1].append(slider);
-		if (beside) parts[1].append(document.createElement('div'));
-		parts[1].style.columnGap = '16px';
-		const room = beside ? 66 : 0;
-		parts[1].getBoundingClientRect = () =>
-			({ width: room + (size.standing ? 122 + (beside ? 16 : 0) : 0) }) as DOMRect;
-		return { bar, size };
-	}
-
-	/* The tile size takes 138 of the 304: the menus need 2 * 166 + 88 + 227 = 647 without it,
-	   and it stays while the bar holds it too, 647 + 2 * 138 = 923. */
-	it('takes the tile size off before the menus would leave, and back at the same width', () => {
-		const { bar, size } = barWithSize();
-		screenBar.watchRoom(bar);
-
-		barIs(923);
-		expect(screenBar.sizeOnBar).toBe(true);
-		barIs(922);
-		expect(screenBar.sizeOnBar, 'the tile size stayed up over the menus').toBe(false);
-		expect(screenBar.roomOnTopBar, 'the menus left before the tile size').toBe(true);
-
-		size.standing = false;
-		barIs(922);
-		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(166);
-		expect(screenBar.sizeOnBar).toBe(false);
-		barIs(923);
-		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
-	});
-
-	it('keeps the menus up once the tile size has gone, down only below their own need', () => {
-		const { bar, size } = barWithSize();
-		screenBar.watchRoom(bar);
-		barIs(900);
-		size.standing = false;
-		barIs(647);
-		expect(screenBar.roomOnTopBar, 'the menus left with room beside a narrower end').toBe(true);
-		barIs(646);
-		expect(screenBar.roomOnTopBar).toBe(false);
-		expect(screenBar.sizeOnBar, 'the tile size came back as the menus left').toBe(false);
-	});
-
-	/* With the paste half gone too the end is 130: the menus need 2 * 130 + 315 = 575, the paste
-	   half stays to 575 + 2 * 36 = 647 and the tile size to 647 + 2 * 138 = 923. */
-	it('folds the paste half into Add after the tile size, and back at the same width', () => {
-		const { bar, size } = barWithSize();
-		const trailing = bar.querySelectorAll<HTMLElement>('.actions > *')[1];
-		const paste = { standing: true };
-		const add = document.createElement('div');
-		add.className = 'add';
-		const half = document.createElement('span');
-		half.className = 'half trail';
-		half.getBoundingClientRect = () => ({ width: paste.standing ? 36 : 0 }) as DOMRect;
-		add.append(half);
-		trailing.append(add);
-		trailing.getBoundingClientRect = () =>
-			({ width: (paste.standing ? 66 : 30) + (size.standing ? 138 : 0) }) as DOMRect;
-		screenBar.watchRoom(bar);
-
-		barIs(922);
-		expect(screenBar.sizeOnBar).toBe(false);
-		expect(screenBar.pasteOnBar, 'the paste half folded before the tile size left').toBe(true);
-		size.standing = false;
-		barIs(647);
-		expect(screenBar.pasteOnBar).toBe(true);
-		barIs(646);
-		expect(screenBar.pasteOnBar, 'the menus were squeezed with the paste half still up').toBe(
-			false
-		);
-		expect(screenBar.roomOnTopBar, 'the menus left before the paste half').toBe(true);
-
-		paste.standing = false;
-		barIs(646);
-		expect(screenBar.barEnd, 'the centre is capped by what is drawn').toBe(130);
-		expect(screenBar.pasteOnBar).toBe(false);
-		barIs(575);
-		expect(screenBar.roomOnTopBar).toBe(true);
-		barIs(574);
-		expect(screenBar.roomOnTopBar, 'the menus stayed up over a squeezed field').toBe(false);
-		barIs(647);
-		expect(screenBar.pasteOnBar, 'the paste half came back late').toBe(true);
-		barIs(922);
-		expect(screenBar.sizeOnBar, "the paste half's leaving moved the tile size's threshold").toBe(
-			false
-		);
-	});
-
-	it('counts the gap with it only where something stands beside it', () => {
-		/* A guest's: no Add, so the tile size frees its own width and no gap. */
-		const { bar, size } = barWithSize(false);
-		screenBar.watchRoom(bar);
-		/* 2 * 100 + 315 = 515 for the menus, and 2 * 122 more for the tile size. */
-		barIs(758);
-		expect(screenBar.sizeOnBar).toBe(false);
-		size.standing = false;
-		barIs(759);
-		expect(screenBar.sizeOnBar, 'the tile size came back late').toBe(true);
-	});
-
-	it("offers the tile size on the screen's own row while it is off the top bar", () => {
-		const home = { id: 'tile-size', icon: 'grid_view' as const, label: 'Tile size', content: {} };
-		screenBar.sizeHome = home as unknown as typeof screenBar.sizeHome;
+	it('hands nothing down to the row below, however short the bar', () => {
 		const owner = Symbol('a wall');
-		screenBar.publish(owner, {});
-		try {
-			expect(screenBar.tools.panels).toBeUndefined();
-			screenBar.sizeOnBar = false;
-			expect(screenBar.tools.panels).toEqual([home]);
-			stage.filling = true;
-			expect(
-				screenBar.tools.panels,
-				'offered in a filled screen, where the top bar is not'
-			).toBeUndefined();
-		} finally {
-			stage.filling = false;
-			screenBar.release(owner);
-			screenBar.sizeHome = null;
-		}
+		screenBar.watchRoom(barWithEnds(100, 204).bar);
+		screenBar.publish(owner, { panels: [] });
+		measured();
+		expect(screenBar.tools.panels, 'a press was added to the row below').toEqual([]);
+		for (const gone of ['roomOnTopBar', 'sizeOnBar', 'pasteOnBar', 'sizeHome'])
+			expect(gone in screenBar, `the bar still decides ${gone}`).toBe(false);
+		screenBar.release(owner);
 	});
 
-	it('starts a new screen from the sum again', () => {
+	it("adds the screen's menus to the field's floor, and only the field's where there are none", () => {
 		const bar = document.createElement('header');
-		const field = document.createElement('form');
-		field.className = 'search';
-		bar.append(field);
-		let fieldWidth = 150;
-		field.getBoundingClientRect = () => ({ width: fieldWidth }) as DOMRect;
+		const centre = document.createElement('div');
+		centre.className = 'centre';
+		const menus = document.createElement('div');
+		menus.className = 'menus';
+		menus.getBoundingClientRect = () => ({ width: 80 }) as DOMRect;
+		centre.append(menus);
+		bar.append(centre);
 		screenBar.watchRoom(bar);
-		screenBar.publish(Symbol('theater'), {});
-		barIs(864);
-		expect(screenBar.roomOnTopBar).toBe(false);
+		measured();
+		expect(screenBar.centreFloor).toBe(FIELD_FLOOR + 80);
 
-		fieldWidth = 400;
-		screenBar.publish(Symbol('browse'), {});
-		expect(screenBar.roomOnTopBar, 'Browse inherited what Theater needed').toBe(true);
+		menus.remove();
+		measured();
+		expect(screenBar.centreFloor).toBe(FIELD_FLOOR);
 	});
 
-	it('lays every screen out for the widest met, decided on the width the bar has now', () => {
+	it('lays every screen out for the widest end met, so moving between screens moves nothing', () => {
 		const { bar, parts } = barWithEnds(100, 204);
 		screenBar.watchRoom(bar);
-		const onto = (id: string) => {
-			Object.assign(page, { route: { id } });
-			screenBar.publish(Symbol(id), {});
-		};
 
 		onto('/theater-wide');
 		parts[1].getBoundingClientRect = () => ({ width: 292 }) as DOMRect;
-		barIs(1000);
-		expect(screenBar.roomOnTopBar).toBe(false);
+		measured();
 		expect(screenBar.barEnd).toBe(392);
 
 		parts[1].getBoundingClientRect = () => ({ width: 204 }) as DOMRect;
 		onto('/browse-narrow');
-		expect(screenBar.roomOnTopBar, 'the menus came up between two screens').toBe(false);
 		expect(screenBar.barEnd, 'the centre widened between two screens').toBe(392);
-		barIs(1000);
+		measured();
 		expect(screenBar.barEnd, 'the narrower screen measured its own end over the widest').toBe(392);
-		expect(screenBar.roomOnTopBar, 'the narrower screen put the menus back up').toBe(false);
-
-		// The window widened while another screen was on.
-		barIs(2000);
-		onto('/theater-wide');
-		expect(screenBar.roomOnTopBar, 'an old width kept the menus down').toBe(true);
 	});
 
-	it('keeps the menus down on every screen once one needed more room at this width', () => {
-		const bar = document.createElement('header');
-		const field = document.createElement('form');
-		field.className = 'search';
-		bar.append(field);
-		let fieldWidth = 150;
-		field.getBoundingClientRect = () => ({ width: fieldWidth }) as DOMRect;
-		screenBar.watchRoom(bar);
-		const onto = (id: string) => {
-			Object.assign(page, { route: { id } });
-			screenBar.publish(Symbol(id), {});
-		};
-
-		onto('/squeezed');
-		barIs(864);
-		expect(screenBar.roomOnTopBar).toBe(false);
-		fieldWidth = 400;
-		onto('/roomy');
-		barIs(864);
-		expect(screenBar.roomOnTopBar, 'the menus came up on a screen that needs less').toBe(false);
-		barIs(2000);
-		expect(screenBar.roomOnTopBar).toBe(true);
-	});
-
-	it('remembers what each screen needed across sittings, in this browser', async () => {
+	it("remembers each screen's end across sittings, in this browser", async () => {
 		localStorage.setItem(
-			'sift.screen-bar.needs.2',
-			JSON.stringify({ '/kept': { room: 0, end: 500 }, '/broken': { room: 'x' } })
+			'sift.screen-bar.ends.1',
+			JSON.stringify({ '/kept': 500, '/broken': 'x' })
 		);
 		vi.resetModules();
 		const fresh = (await import('./screen-bar.svelte')).screenBar;
 		fresh.watchRoom(barWithEnds(100, 204).bar);
-		const onto = (id: string) => {
-			Object.assign(page, { route: { id } });
-			fresh.publish(Symbol(id), {});
-		};
-		onto('/kept');
+		Object.assign(page, { route: { id: '/kept' } });
+		fresh.publish(Symbol('kept'), {});
 		expect(fresh.barEnd, 'the centre waited for a measurement').toBe(500);
-
-		onto('/other');
-		barIs(1200);
-		onto('/kept');
-		expect(fresh.roomOnTopBar, 'the menus stood up beside an end of 500').toBe(false);
-		localStorage.removeItem('sift.screen-bar.needs.2');
-	});
-
-	it('decides the tile size by the widest screen met, so moving between screens moves nothing', () => {
-		const { bar, parts } = barWithEnds(100, 204);
-		screenBar.watchRoom(bar);
-		const onto = (id: string) => {
-			Object.assign(page, { route: { id } });
-			screenBar.publish(Symbol(id), {});
-		};
-
-		onto('/theater');
-		barIs(800);
-		expect(screenBar.sizeOnBar).toBe(false);
-		parts[0].getBoundingClientRect = () => ({ width: 10 }) as DOMRect;
-		onto('/browse');
-		barIs(800);
-		expect(screenBar.sizeOnBar, 'a narrower screen put the tile size back').toBe(false);
-		barIs(2000);
-		expect(screenBar.sizeOnBar).toBe(true);
+		localStorage.removeItem('sift.screen-bar.ends.1');
 	});
 
 	it('gives back a teardown that stops watching', () => {

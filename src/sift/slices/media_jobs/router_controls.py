@@ -181,7 +181,7 @@ async def pause_work(
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> Held:
     """Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running
-    finishes the step in its hand. Held until Resume, or until Sift starts again."""
+    finishes the step in its hand. Held until Resume, across a restart."""
     named = _types_of(which)
     pool.holding.hold(*(named or (None,)))
     return Held(paused=pool.holding.held_all, types=sorted(pool.holding.held))

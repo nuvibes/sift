@@ -40,9 +40,9 @@ const FIRST_ICON_USES = {
 		where: "Beside a turned face's name, under a file's picture."
 	},
 	face: {
-		what: 'Sift recognizes somebody BY this picture of them.',
+		what: 'A face, or a group of faces',
 		where:
-			"At the foot of a face on one person's own wall under Organize > Faces. The wand beside it means Sift chose that name itself; this one means the picture is part of how it knows her."
+			'The empty page of a face group that has been answered under Organize > Faces, and the facial fingerprints chooser when starting a swap.'
 	},
 	help: {
 		what: 'Nobody has answered for this face yet.',
@@ -239,7 +239,7 @@ const FIRST_ICON_USES = {
 	familiar_face_and_zone: {
 		what: 'Enriched by Sift, from a face',
 		where:
-			"The mark on the Enriched by facet's faces row. Sift matched a face on the file, or proposed one and somebody agreed."
+			"The mark on the Enriched by facet's faces row. Sift matched a face on the file, or proposed one and somebody agreed. Also the one mark at the foot of a face Sift named on its own, on one person's wall under Organize > Faces, and History's mark for what Sift learned from a face."
 	},
 	folder_supervised: {
 		what: 'Enriched by Sift, from a folder name',

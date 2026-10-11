@@ -279,6 +279,8 @@ async def build_workers(
         # A press for turbo mode or eco mode takes effect now, not at the next reconfigure.
         woken_by=(attention.ATTENTION.listen,),
     )
+    # The pause as the library was left, held before the screens can ask.
+    await pool.read_pause()
     provide(app, wiring.QUEUE, queue)
     provide(app, wiring.POOL, pool)
     return pool

@@ -10,8 +10,7 @@
 		Field,
 		Popover,
 		Select,
-		TextInput,
-		Tooltip
+		TextInput
 	} from '$lib/components/common';
 	import SplitButton from '$lib/components/common/SplitButton.svelte';
 	import { canReadClipboard } from '$lib/shell/clipboard';
@@ -20,7 +19,6 @@
 	import { carriesALink } from '$lib/components/common/drag-assign.svelte';
 	import { session } from '$lib/shell/session.svelte';
 	import SwapModeButton from '$lib/swap/SwapModeButton.svelte';
-	import { screenBar } from './screen-bar.svelte';
 
 	// Opens on hover, focus or click (`Popover`); a panel in use is never closed by the pointer
 	// leaving, so the folder menu and the file chooser survive. Adding is admin-only on the server.
@@ -89,8 +87,7 @@
 	// Only where the clipboard can be read (the desktop client, or HTTPS); Ctrl-V works anyway.
 	const canPaste = canReadClipboard();
 
-	/* Short of room, the paste half folds into Add and its press moves into the panel. */
-	const pasteHere = $derived(canPaste && session.isAdmin && screenBar.pasteOnBar);
+	const pasteHere = $derived(canPaste && session.isAdmin);
 
 	async function pasteIn() {
 		await capture.pasteFromClipboard(null);
@@ -169,17 +166,6 @@
 								onpaste={pasted}
 								bind:value={url}
 							/>
-							{#if canPaste && !pasteHere}
-								<Tooltip label="Paste from clipboard">
-									<Button
-										tone="secondary"
-										size="small"
-										icon="assignment_add"
-										aria-label="Paste from clipboard"
-										onclick={pasteIn}
-									/>
-								</Tooltip>
-							{/if}
 							<Button type="submit" tone="primary" size="small" icon="add">Add</Button>
 						</div>
 					{/snippet}

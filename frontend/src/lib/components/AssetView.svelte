@@ -55,6 +55,7 @@
 		jobChanges,
 		libraryChanges,
 		rereadOnHistoryChange,
+		WalkingPace,
 		whenChanged
 	} from '$lib/library/changes.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
@@ -399,23 +400,21 @@
 	/* Re-read in place, never the whole `load`, which blanks; only the queue's chatter settles. */
 	let following: ReturnType<typeof setTimeout> | undefined;
 
-	/* The band only where the jobs bell owed it: the library bell reads it on the bell itself. */
-	let bandOwed = false;
 	function followNow() {
 		clearTimeout(following);
 		// Not again for a record asked for after the last bell, which already says what it moved.
 		if (bellsRung() !== askedAt) void rereadRecord();
-		if (bandOwed) void band.load(id);
-		bandOwed = false;
 	}
 	/* The record once a bell has settled: its re-read restarts the sitting's dwell. */
 	function followSoon() {
 		clearTimeout(following);
 		following = setTimeout(followNow, HISTORY_SETTLE_MS);
 	}
-	whenChanged(libraryChanges, () => (void band.load(id), followSoon()));
-	// The thread has its own settle, shared with every other bell it hears.
-	whenChanged(jobChanges, () => (thread.soon(() => id), (bandOwed = true), followSoon()));
+	/* Both bells, one question: the band on the bell, the thread on its own settle (shared with
+	   every other bell it hears), the record once settled. At a walking pace for the feed's bells. */
+	const bells = new WalkingPace(() => (void band.load(id), thread.soon(() => id), followSoon()));
+	whenChanged(libraryChanges, bells);
+	whenChanged(jobChanges, bells);
 	$effect(() => () => {
 		clearTimeout(following);
 		thread.stop();

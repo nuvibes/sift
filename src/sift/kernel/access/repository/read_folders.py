@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from sift.kernel.access.repository.core import RepositoryCore
 from sift.kernel.access.repository.folders import (
@@ -20,6 +20,7 @@ from sift.kernel.access.repository.views import (
     _is_object_id,
 )
 from sift.kernel.access.viewer import Viewer
+from sift.kernel.content import ROOT_REL_PATH
 from sift.kernel.paging import MAX_PAGE_SIZE
 
 #: How many files carry each of several people by a pass's doing (a `source`, which filing by hand
@@ -43,6 +44,14 @@ SELECT p.folder_id AS folder_id, p.person_id AS person_id, COUNT(DISTINCT ap.ass
                   AND va.concealed = 0)
  GROUP BY p.folder_id, p.person_id
 """
+
+
+def _folders_of(root_id: str, rel_path: str) -> list[tuple[str, str]]:
+    """A path's library top and each folder down to it, the path itself included."""
+    parts = [part for part in rel_path.split("/") if part]
+    return [(root_id, ROOT_REL_PATH)] + [
+        (root_id, "/".join(parts[:depth])) for depth in range(1, len(parts) + 1)
+    ]
 
 
 class FolderReads(RepositoryCore):
@@ -154,6 +163,18 @@ class FolderReads(RepositoryCore):
         return await self._folders(
             viewer, root_id=root_id, parent_id=parent_id, top_level=top_level
         )
+
+    async def visible_folders_on(
+        self, viewer: Viewer, places: Iterable[tuple[str, str]]
+    ) -> list[Folder]:
+        """The folders on these paths this viewer may see: each (root id, relative path) stands for
+        its library's top and every folder down to it, so saying where a few files sit reads those
+        folders and not the whole tree."""
+        wanted = list(dict.fromkeys(one for place in places for one in _folders_of(*place)))
+        found: list[Folder] = []
+        for start in range(0, len(wanted), MAX_PAGE_SIZE):
+            found += await self._folders(viewer, places=wanted[start : start + MAX_PAGE_SIZE])
+        return found
 
     async def folder_file_count(self, viewer: Viewer, folder: Folder) -> int | None:
         """How many files sit in a folder and everything under it, present on disk: the number shown

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from sift.kernel.access import sentences as say
 from sift.kernel.access.history_actors import _Who
@@ -305,12 +305,15 @@ async def naming_folders(
 ) -> dict[str, Piece]:
     """The folder each person was named from on this file, where the reader may see it."""
     found: dict[str, Piece] = {}
-    for person_id in dict.fromkeys(person_ids):
-        row = await database.fetch_one(_NAMING_FOLDER, (asset_id, person_id))
-        if row is None:
-            continue
-        if seen is None:
-            seen = await _folders_seen(access, viewer)
+    named = {
+        person_id: row
+        for person_id in dict.fromkeys(person_ids)
+        if (row := await database.fetch_one(_NAMING_FOLDER, (asset_id, person_id))) is not None
+    }
+    if seen is None:
+        places = [(str(row["root_id"]), str(row["path"])) for row in named.values()]
+        seen = await _folders_seen(access, viewer, places) if places else {}
+    for person_id, row in named.items():
         path, name = str(row["path"]), str(row["name"])
         if folder_said(path, seen=seen.get(str(row["root_id"]), frozenset())) != path:
             continue
@@ -318,9 +321,12 @@ async def naming_folders(
     return found
 
 
-async def _folders_seen(access: Repository, viewer: Viewer) -> Mapping[str, frozenset[str]]:
-    """The folders this reader may see now, by library (`kernel.where`)."""
-    folders = await access.visible_folders(viewer)
+async def _folders_seen(
+    access: Repository, viewer: Viewer, places: Iterable[tuple[str, str]]
+) -> Mapping[str, frozenset[str]]:
+    """Of the folders on these (root id, relative path) places, those this reader may see now, by
+    library (`kernel.where`)."""
+    folders = await access.visible_folders_on(viewer, places)
     return whereabouts_from(viewer, folders, root_paths={}, profile=None).seen
 
 

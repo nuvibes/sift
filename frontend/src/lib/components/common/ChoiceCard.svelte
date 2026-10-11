@@ -105,6 +105,9 @@
 		border-radius: var(--radius-md);
 		background: var(--sift-card);
 		text-align: start;
+		/* A path or a long file name wraps rather than widening the group past its box. */
+		min-inline-size: 0;
+		overflow-wrap: anywhere;
 		cursor: pointer;
 		transition:
 			border-color var(--dur-instant) var(--ease),

@@ -30,6 +30,7 @@ from sift.kernel.diagnostics import (
     ThreadPoolWatch,
     WidestReads,
     boot_set_aside,
+    every_stack,
     install_stack_dumper,
     where_is,
 )
@@ -518,6 +519,90 @@ async def test_the_watching_thread_dumps_when_the_loop_stops_answering(
         await watchdog.stop()
 
     assert "loop.stalled" in capfd.readouterr().out
+
+
+def a_request_that_never_yields(seconds: float) -> None:
+    time.sleep(seconds)
+
+
+async def test_a_stall_line_names_the_loop_s_frame_and_every_thread(
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    """A real stall, read an hour later from the library's log alone: the loop's own stack down to
+    the request, and every other thread's, where the fault handler's dump stops at a hundred
+    threads and can leave the loop out."""
+    configure_logging()
+    release = threading.Event()
+
+    def a_worker_waiting() -> None:
+        release.wait(5)
+
+    worker = threading.Thread(target=a_worker_waiting, daemon=True)
+    worker.start()
+    watchdog = LoopWatchdog(stall_seconds=0.3, beat_seconds=0.02, look_seconds=0.01)
+    watchdog.start()
+    try:
+        await asyncio.sleep(0.05)
+        a_request_that_never_yields(0.6)
+        await asyncio.sleep(0.05)
+    finally:
+        await watchdog.stop()
+        release.set()
+        worker.join(5)
+
+    written = capfd.readouterr()
+    stalled = [json.loads(line) for line in written.out.splitlines() if "loop.stalled" in line]
+    assert len(stalled) == 1, written.out
+    line = stalled[0]
+    assert "a_request_that_never_yields" in line["at"], line
+    assert "a_request_that_never_yields" in line["held_at"], line
+    assert line["seconds"] >= 0.3
+    assert any("a_worker_waiting" in one for one in line["threads"]), line
+    assert not any("a_request_that_never_yields" in one for one in line["threads"]), line
+    assert "gc_processor_seconds" in line
+    assert "File " in written.err
+
+
+def test_alike_threads_are_counted_together_and_the_skipped_left_out() -> None:
+    parked = threading.Barrier(4)
+    release = threading.Event()
+
+    def parked_alike() -> None:
+        parked.wait(5)
+        release.wait(5)
+
+    threads = [threading.Thread(target=parked_alike, daemon=True) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    parked.wait(5)
+    try:
+        stacks = every_stack({threading.get_ident()})
+    finally:
+        release.set()
+        for thread in threads:
+            thread.join(5)
+
+    alike = [one for one in stacks if "parked_alike" in one]
+    assert len(alike) == 1 and alike[0].startswith("3 x "), stacks
+    assert not any("test_alike_threads" in one for one in stacks), stacks
+
+
+def test_a_collection_s_processor_time_is_set_beside_its_time() -> None:
+    """A collection that took seconds and used a fraction of them waited, for memory or for the
+    processor; one that used them all was the work. The share is the overlap's."""
+    clock = Clock()
+    processor = Clock()
+    watchdog = LoopWatchdog(clock=clock, thread_clock=processor)
+
+    clock.now, processor.now = 10.0, 1.0
+    watchdog.collected("start", {"generation": 2})
+    clock.now, processor.now = 12.0, 1.5
+    watchdog.collected("stop", {"generation": 2})
+
+    assert watchdog.collection_cost(10.0, 12.0) == (2.0, 2, 0.5)
+    assert watchdog.collection_cost(11.0, 13.0) == (1.0, 2, 0.25)
+    assert watchdog.collection_during(11.0, 13.0) == (1.0, 2)
+    assert watchdog.collection_cost(12.0, 13.0) is None
 
 
 async def test_a_held_loop_says_so_from_its_own_heartbeat(

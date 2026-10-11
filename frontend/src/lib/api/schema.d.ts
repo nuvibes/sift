@@ -697,9 +697,10 @@ export interface paths {
         };
         /**
          * Options
-         * @description Whether this file can be renamed or moved, and what would undo its last move.
+         * @description Whether this file can be renamed or moved, what would undo its last move, and its copies.
          *
-         *     Asked by the asset view before it draws its menu. On a folder that was not handed over
+         *     Asked by the asset view before it draws its menu, and by the dialogs that ask which copy of a
+         *     file stored in more than one place they act on. On a folder that was not handed over
          *     read-write the actions are left off the menu entirely rather than shown and refusing.
          */
         get: operations["options_api_assets__asset_id__organize_get"];
@@ -4415,7 +4416,7 @@ export interface paths {
         /**
          * Pause Work
          * @description Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running
-         *     finishes the step in its hand. Held until Resume, or until Sift starts again.
+         *     finishes the step in its hand. Held until Resume, across a restart.
          */
         post: operations["pause_work_api_jobs_pause_post"];
         delete?: never;
@@ -11847,6 +11848,8 @@ export interface components {
              * @default false
              */
             force: boolean;
+            /** Location Id */
+            location_id?: string | null;
             preset?: components["schemas"]["Preset"] | null;
         };
         /**
@@ -12564,6 +12567,8 @@ export interface components {
             as_loop: boolean;
             /** Filename */
             filename?: string | null;
+            /** Location Id */
+            location_id?: string | null;
             /** Steps */
             steps: components["schemas"]["EditStep"][];
         };
@@ -16062,6 +16067,8 @@ export interface components {
             asset_ids: string[];
             /** Folder Id */
             folder_id: string;
+            /** Location Id */
+            location_id?: string | null;
         };
         /**
          * MoveStorage
@@ -16466,6 +16473,18 @@ export interface components {
             was_bytes: number;
         };
         /**
+         * OrganizeCopy
+         * @description One place this file is stored, for a screen that asks which copy is meant.
+         */
+        OrganizeCopy: {
+            /** Location Id */
+            location_id: string;
+            /** Path */
+            path: string;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
          * OrganizeDone
          * @description What the file is called now, and the `move_id` its undo names.
          */
@@ -16484,10 +16503,14 @@ export interface components {
         /**
          * OrganizeOptions
          * @description Whether rename and move belong on screen for this asset, with `reason` when not.
+         *
+         *     `copies` lists every place the file is stored, for an admin, so a screen can ask which one.
          */
         OrganizeOptions: {
             /** Can Organize */
             can_organize: boolean;
+            /** Copies */
+            copies: components["schemas"]["OrganizeCopy"][];
             /** Reason */
             reason: string | null;
             /** Undo Move Id */

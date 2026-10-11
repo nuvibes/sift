@@ -57,13 +57,6 @@ _FILTERS: tuple[tuple[str, str], ...] = (
 )
 
 
-#: The page's own filters for a page of one type in every state: the type kept off `ix_jobs_by_type`
-#: (`+type`), so the walk newest first stops at the page instead of sorting every row of the type.
-_PAGE_FILTERS: tuple[tuple[str, str], ...] = tuple(
-    (name, "+type = :job_type" if name == "job_type" else condition) for name, condition in _FILTERS
-)
-
-
 def _where(params: Mapping[str, Any], filters: Sequence[tuple[str, str]] = _FILTERS) -> str:
     """The WHERE clause for the filters actually present in `params`, or nothing at all: one
     dictionary decides both the clause and the bindings, so no clause names an unbound name."""
@@ -134,8 +127,23 @@ _LIST_ORDER = "\n ORDER BY id DESC"
 
 def _list_page(params: Mapping[str, Any]) -> str:
     """One page of the queue, newest first."""
-    filters = _FILTERS if params.get("state") is not None else _PAGE_FILTERS
-    return _LIST_HEAD + _where(params, filters) + _LIST_ORDER + _PAGE
+    if params.get("job_type") is not None and params.get("state") is None:
+        return _one_type_page(params)
+    return _LIST_HEAD + _where(params) + _LIST_ORDER + _PAGE
+
+
+def _one_type_page(params: Mapping[str, Any]) -> str:
+    """A page of one type in every state: a seek of `ix_jobs_by_type` per state, each walking back
+    at most the page, joined and cut to it. A walk of every row newest first stopped at the page
+    for a common type and read the whole table for a rare one."""
+    where = _where(params)
+    branches = (
+        f"SELECT * FROM ({_LIST_HEAD}{where}{_AND}state = '{state.value}'{_LIST_ORDER}"  # noqa: S608
+        "\n LIMIT :limit + :offset)"
+        for state in JobState
+    )
+    joined = "\n UNION ALL ".join(branches)
+    return "SELECT * FROM (" + joined + ")" + _LIST_ORDER + _PAGE  # noqa: S608
 
 
 def _list_total(params: Mapping[str, Any]) -> str:

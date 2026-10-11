@@ -342,7 +342,7 @@
 	const media = new WallMedia(grid, fileOf, () => current.letThemIn());
 
 	/* What this account may see has moved: re-read in place, not reset to the top. */
-	whenChanged(libraryChanges, () => void current.catchUp());
+	whenChanged(libraryChanges, current.pace);
 
 	/* Where the page on screen begins: a new question goes back to the start, a change holds it. */
 	let start = $state<PageStart>({ at: 0 });

@@ -6,7 +6,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
-import { libraryChanges, mine } from '$lib/library/changes.svelte';
+import { libraryChanges, mine, WalkingPace } from '$lib/library/changes.svelte';
 import { asNamedFilters } from '$lib/search/query-parts';
 
 type KeptName = components['schemas']['KeptNameOut'];
@@ -141,12 +141,11 @@ export function asAQuestion(query: string): string {
 
 export const savedSearches = new SavedSearches();
 
-/* Saved elsewhere; only once this list has been read at all. */
-mine.subscribe(() => {
-	if (savedSearches.loaded) void savedSearches.reload();
-});
+/* Saved elsewhere; only once this list has been read at all. At a walking pace. */
+const savedPace = new WalkingPace(() =>
+	savedSearches.loaded ? savedSearches.reload() : undefined
+);
+mine.subscribe(savedPace);
 
 /* A kept filter reads today's names, so a rename elsewhere reaches its chips. */
-libraryChanges.subscribe(() => {
-	if (savedSearches.loaded) void savedSearches.reload();
-});
+libraryChanges.subscribe(savedPace);

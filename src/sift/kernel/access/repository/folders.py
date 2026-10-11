@@ -32,6 +32,10 @@ SELECT f.*,
    -- single form above reads it. `json_each` over a bound array, so the statement stays one
    -- constant string and the caller's own list is what bounds it.
    AND (:folder_ids IS NULL OR f.id IN (SELECT value FROM json_each(:folder_ids)))
+   -- Folders by library and path, [root_id, rel_path] pairs: a few files' places, not the tree.
+   AND (:places IS NULL OR f.id IN (SELECT x.id FROM json_each(:places) j
+                                     JOIN folders x ON x.root_id = json_extract(j.value, '$[0]')
+                                                   AND x.rel_path = json_extract(j.value, '$[1]')))
    AND (:parent_id IS NULL OR f.parent_id = :parent_id)
    AND (:root_id   IS NULL OR f.root_id = :root_id)
    AND (:top_level = 0 OR f.parent_id IS NULL)

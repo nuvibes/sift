@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """The screens go first: a job's statement waits a moment while a request's own statement runs.
 
-A request and a job's statements share the database's threads, its writer and the interpreter's
-lock, and a request a person is waiting on should not queue behind work nobody is watching. The
-wait is short and bounded, so a job is slowed while the screens are busy and never stopped; it is
-asked only while a request's statement is running or queued, not for the whole of a request, and
-it is written on the job's record (`screens_wait_ms`).
+The wait is short and bounded (a job is slowed while the screens are busy, never stopped), asked
+only while a request's statement runs or is queued, written on the job's record (`screens_wait_ms`),
+and held to a share of the job's own time (`YIELD_SHARE`) so many statements do not each wait out
+a busy screen.
 """
 
 from __future__ import annotations
@@ -15,11 +14,21 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from weakref import WeakKeyDictionary
 
-from sift.kernel.log import job_cost
+from sift.kernel.log import JobCost, job_cost
 
 #: The longest one statement of a job waits for the requests being answered.
 YIELD_LONGEST_SECONDS = 0.1
+
+#: The most of a job's own time it gives the screens, beyond its first wait.
+YIELD_SHARE = 0.1
+
+#: The shortest wait asked: below a tick of Windows' timer, a wait sleeps the whole tick anyway.
+YIELD_SHORTEST_SECONDS = 0.016
+
+#: Seconds each running job has waited for the screens, or set aside for a wait under way.
+_YIELDED: WeakKeyDictionary[JobCost, float] = WeakKeyDictionary()
 
 #: True in the task answering a request, so its statements count as a screen's.
 _SERVING: ContextVar[bool] = ContextVar("sift_serving", default=False)
@@ -72,15 +81,27 @@ def a_requests_statement() -> Iterator[None]:
 
 async def screens_first(writing: bool) -> None:
     """Inside a job, wait while a request's statement runs, `YIELD_LONGEST_SECONDS` at the
-    longest. Never inside a write block (`writing`), which would hold the writer for the requests."""
+    longest and within the job's `YIELD_SHARE`. Never inside a write block (`writing`), which would
+    hold the writer for the requests."""
     done = _statements_done
     cost = job_cost()
     if _statements == 0 or writing or done is None or cost is None:
         return
     started = time.perf_counter()
-    try:
-        await asyncio.wait_for(done.wait(), YIELD_LONGEST_SECONDS)
-    except TimeoutError:
+    yielded = _YIELDED.get(cost, 0.0)
+    allowed = min(
+        YIELD_LONGEST_SECONDS,
+        YIELD_LONGEST_SECONDS + YIELD_SHARE * (started - cost.began) - yielded,
+    )
+    if allowed < YIELD_SHORTEST_SECONDS:
         return
+    # Set aside before the wait: a job's parts run together, and each would see the same balance.
+    _YIELDED[cost] = yielded + allowed
+    try:
+        await asyncio.wait_for(done.wait(), allowed)
+    except TimeoutError:
+        pass
     finally:
-        cost.yielded(started, time.perf_counter())
+        ended = time.perf_counter()
+        _YIELDED[cost] += (ended - started) - allowed
+        cost.yielded(started, ended)

@@ -21,6 +21,7 @@ vi.mock('$lib/api/client', () => ({
 }));
 
 import { WallCatchUp } from './wall-catch-up.svelte';
+import { arrivals, asTheFeed } from '$lib/library/changes.svelte';
 import { mini } from '$lib/player/mini.svelte';
 
 let stop: (() => void) | null = null;
@@ -131,5 +132,27 @@ describe('several bells in one live message', () => {
 		await new Promise((done) => setTimeout(done, 0));
 		current.catchUp();
 		expect(loadAt).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("the feed's bells while an import rings them every second", () => {
+	it('read the page once in each ten seconds, and a write of this tab immediately', async () => {
+		vi.useFakeTimers();
+		try {
+			const { current, loadAt } = wall();
+			for (let second = 0; second < 60; second += 1) {
+				asTheFeed(() => arrivals.changed());
+				flushSync();
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			expect(loadAt.mock.calls.length).toBeGreaterThanOrEqual(6);
+			expect(loadAt.mock.calls.length, 'the page was read for every bell').toBeLessThanOrEqual(7);
+
+			const before = loadAt.mock.calls.length;
+			current.pace.now();
+			expect(loadAt).toHaveBeenCalledTimes(before + 1);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

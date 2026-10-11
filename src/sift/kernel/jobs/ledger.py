@@ -27,8 +27,9 @@ from sift.kernel.changes import About, telling
 from sift.kernel.db import Database, Row
 from sift.kernel.ids import new_id
 from sift.kernel.jobs import time_left
-from sift.kernel.jobs.failure_words import KINDS, OTHERWISE, in_plain_words, kind_of
+from sift.kernel.jobs.failure_words import in_plain_words, kind_of
 from sift.kernel.jobs.families import FAMILY_LABELS, LONG_PASSES, Family
+from sift.kernel.jobs.ledger_report import report_text as report_text
 from sift.kernel.jobs.ledger_store import (
     _CLOSE_INTERRUPTED,
     _FORGET_PRICES,
@@ -91,7 +92,6 @@ from sift.kernel.jobs.time_left import (
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.vocabulary import Subject
-from sift.kernel.when import stamp as machine_stamp
 
 log = get_logger(__name__)
 
@@ -168,6 +168,8 @@ class Run:
     #: When its last job finished (`time.monotonic`), and when it last said its time left.
     last_done: float | None = None
     said_at: float | None = None
+    #: How often its time left held the finish (`time_left.score`), once it has ended.
+    scored: dict[str, object] | None = None
     last_flushed: float = 0.0
     began: float = field(default_factory=lambda: time.monotonic())
     """When this run started, on the clock that only goes forwards.
@@ -500,6 +502,8 @@ class Ledger(RunReads):
                 jobs_failed=run.jobs_failed,
                 files=run.files_total,
                 stopped=run.stopped,
+                # The score of its `ledger.said` lines, to be checked against them.
+                **(run.scored or {}),
             )
             # A pass over the library just ended, so the planner's counts are furthest from the
             # truth; every pass drains through here, and `OTHER` moves no table's counts.
@@ -544,7 +548,9 @@ class Ledger(RunReads):
             await connection.execute(_UPSERT, self._row(run, now))
             said = [Said(*one) for one in await connection.execute_fetchall(_SAID, (run.id,))]
             if said:
-                await connection.execute(_SCORED, (json.dumps(score(said, now)), run.id))
+                # Against when its work ended, not this close a batch's gap later.
+                run.scored = score(said, run.finished_at or now)
+                await connection.execute(_SCORED, (json.dumps(run.scored), run.id))
                 await connection.execute("DELETE FROM said_times WHERE run_id = ?", (run.id,))
             if run.family in LONG_PASSES:
                 actor = Actor.sift()
@@ -659,16 +665,47 @@ class Ledger(RunReads):
         slow: int | None,
         window: tuple[int, int] | None,
         left: int,
+        *,
+        done: int = 0,
+        pace: float | None = None,
+        work: float | None = None,
+        freed: float | None = None,
+        at_least: bool = False,
+        measuring: bool = False,
     ) -> None:
-        """Keep what a live run's row said, at most once a minute; no window is a stopped row."""
+        """What a live run's row said, at most once a minute: a `ledger.said` line with its figures,
+        and for the run's score its window; no window is a stopped row. A floor and a row still
+        measuring are logged and not scored.
+
+        `pace` is the worker seconds a second the time was priced at, `work` the worker seconds
+        left, `freed` what the read's end hands the pass, `done` the files with the work."""
         run = self._open.get(family)
         now = time.monotonic()
         if run is None or (run.said_at is not None and now - run.said_at < 60):
             return
         run.said_at = now
         low, high = window if window is not None else (None, None)
+        stalled = window is None and not at_least and not measuring
+        log.info(
+            "ledger.said",
+            family=family.value,
+            run_id=run.id,
+            quick=quick,
+            slow=slow,
+            low=low,
+            high=high,
+            left=left,
+            done=done,
+            pace=None if pace is None else round(pace, 3),
+            work=None if work is None else int(work),
+            freed=None if freed is None else round(freed, 3),
+            at_least=at_least,
+            stalled=stalled,
+        )
+        if at_least or measuring:
+            return
         await self._db.execute(
-            _SAY, (run.id, int(time.time()), quick, slow, low, high, left, int(window is None))
+            _SAY, (run.id, int(time.time()), quick, slow, low, high, left, int(stalled))
         )
 
     async def pace(self, family: Family, job_types: Sequence[str]) -> Pace | None:
@@ -892,106 +929,3 @@ class Ledger(RunReads):
 
 #: The end given a stretch still open: later than any job.
 _OPEN_SPAN = 1 << 62
-
-
-# --- the report a person copies ----------------------------------------------------------------
-
-
-def _took(seconds: int | None) -> str:
-    if seconds is None:
-        return "still going"
-    if seconds < 90:
-        return f"{seconds} s"
-    if seconds < 5400:
-        return f"{seconds / 60:.1f} min"
-    return f"{seconds / 3600:.1f} hr"
-
-
-def _size(count: int) -> str:
-    if count >= 1_000_000_000_000:
-        return f"{count / 1_000_000_000_000:.2f} TB"
-    if count >= 1_000_000_000:
-        return f"{count / 1_000_000_000:.1f} GB"
-    if count >= 1_000_000:
-        return f"{count / 1_000_000:.0f} MB"
-    return f"{count} bytes"
-
-
-_FAILED = {one.words for one in KINDS} | {OTHERWISE}
-
-
-def _label(family: str) -> str:
-    """A family retired from the enum still reports, under the name its row has."""
-    try:
-        return FAMILY_LABELS[Family(family)]
-    except ValueError:
-        return family
-
-
-def _time_left_lines(scored: Mapping[str, object]) -> list[str]:
-    """How often a run's time left held its real finish, and how long it waited for other work."""
-    lines = []
-    if scored.get("right") is not None:
-        lines.append(f"Its time left was right in {scored['right']}% of minutes.")
-    if stalled := int(str(scored.get("stalled") or 0)):
-        lines.append(
-            f"It waited for other work for {stalled:,} minute{'s' if stalled > 1 else ''}."
-        )
-    return lines
-
-
-def report_text(run: RunRecord) -> str:
-    """A run as plain text to paste: every line a fact the table holds, in ASCII."""
-    when = machine_stamp(run.started_at, "%Y-%m-%d %H:%M")
-    lines = [
-        f"Sift {run.version}, {_label(run.family)} run, {when}, took {_took(run.seconds)}"
-        + (" (stopped by hand)" if run.stopped else ""),
-        f"Machine: {run.machine or 'unknown'}",
-    ]
-    if run.settings:
-        said = ", ".join(f"{key} {value}" for key, value in sorted(run.settings.items()))
-        lines.append(f"Settings: {said}")
-    # A kind nobody named with no bytes is a job about no file (a walk): nothing to say of it.
-    known = {k: one for k, one in run.files.items() if k != "unknown" or one.get("bytes")}
-    kinds = ", ".join(
-        f"{int(one.get('n', 0)):,} {kind} ({_size(int(one.get('bytes', 0)))})"
-        for kind, one in sorted(known.items())
-    )
-    if kinds or not run.files:
-        lines.append(f"Files: {kinds or 'none recorded'}")
-    lines.append(f"Jobs: {run.jobs_done:,} done, {run.jobs_failed:,} failed")
-    lines += _time_left_lines(run.time_left or {})
-    ended = sorted(run.ended_with.items(), key=lambda one: (-one[1], one[0]))
-    lines += [
-        f"Why {n:,} failed: {words}"
-        if words in _FAILED
-        else f"{'Ended' if n == 1 else f'{n:,} ended'} with: {words}"
-        for words, n in ended
-    ]
-    took = run.seconds
-    if took and took > 0 and run.jobs_done:
-        moved = f", {_size(int(run.bytes_total * 60 / took))}/min" if run.bytes_total else ""
-        lines.append(f"Pace: {run.jobs_done * 60 / took:.1f} jobs/min{moved}")
-    for kind, one in sorted(known.items()):
-        n = int(one.get("n", 0))
-        if n:
-            lines.append(
-                f"Per {kind}: {int(one.get('ms', 0)) / n / 1000:.1f} s of worker time each"
-            )
-    if run.products:
-        lines.append("Built (worker time):")
-        for product, one in sorted(
-            run.products.items(), key=lambda item: -int(item[1].get("ms", 0))
-        ):
-            n = int(one.get("n", 0))
-            ms = int(one.get("ms", 0))
-            each = f", {ms / n / 1000:.1f} s each" if n else ""
-            lines.append(f"  {product}: {n:,} files, {ms / 1000:.0f} s{each}")
-    if run.stages:
-        lines.append("Stages (worker time):")
-        for stage, one in sorted(run.stages.items(), key=lambda item: -int(item[1].get("ms", 0))):
-            n = int(one.get("n", 0))
-            ms = int(one.get("ms", 0))
-            each = f", {ms / n / 1000:.2f} s each" if n else ""
-            lines.append(f"  {stage}: {ms / 1000:.0f} s over {n:,}{each}")
-    return "\n".join(lines)

@@ -801,6 +801,40 @@ async def test_starting_queues_one_job_carrying_everything_it_needs(
     ]
     assert claimed.payload["filename"] == "photo-cropped-300x200.jpg"
     assert claimed.payload["actor_id"] == admin.id
+    assert claimed.payload["location_id"] is None
+
+
+async def test_a_picture_stored_in_two_places_is_saved_beside_the_copy_chosen(
+    editor: EditService,
+    managed: Library,
+    add_file: Callable[..., Any],
+    admin: Viewer,
+    temp_db: Database,
+    job_queue: JobQueue,
+) -> None:
+    """Asked which copy, never guessed: refused without one, and named after the one chosen."""
+    original = await add_file(managed, "photo.jpg", source="accepted.jpg")
+    other = await add_file(managed, "copy/beach.jpg", source="accepted.jpg")
+    await _shape(temp_db, original.asset.id, width=800, height=600)
+    turn = EditStep(operation=Operation.ROTATE, turn=Turn.RIGHT)
+
+    unnamed = await editor.verdict(original.asset.id, EditRequest(steps=[turn]), viewer=admin)
+    assert unnamed.allowed is False
+    assert unnamed.reason and "more than one folder" in unnamed.reason
+
+    chosen = EditRequest(steps=[turn], location_id=other.location.id)
+    answer = await editor.verdict(original.asset.id, chosen, viewer=admin)
+    assert answer.allowed is True
+    assert answer.output_filename and answer.output_filename.startswith("beach")
+
+    (managed.path / "copy" / answer.output_filename).write_bytes(b"there already")
+    taken = await editor.verdict(original.asset.id, chosen, viewer=admin)
+    assert taken.allowed is False, "the name was looked for beside the other copy"
+    (managed.path / "copy" / answer.output_filename).unlink()
+
+    await editor.start(original.asset.id, chosen, viewer=admin)
+    claimed = await job_queue.claim("test")
+    assert claimed is not None and claimed.payload["location_id"] == other.location.id
 
 
 async def test_the_rules_are_asked_again_when_the_button_is_pressed(

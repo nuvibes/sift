@@ -291,21 +291,20 @@
 		void tellShellLogDetail();
 	});
 
-	/* Re-read whenever the connection says the queue moved, never on a timer. */
+	/* Re-read whenever the connection says the queue moved, never on a timer, at a walking pace. */
 	whenChanged(jobChanges, () => {
 		if (!session.adminUnlocked) return;
-		void imports.refresh();
-		void imports.readDownloads();
+		imports.heardJobs();
 		// While the keys are locked, whether they still are: another window may have unlocked them.
 		if (session.secretsLocked) void session.recheck();
 	});
 
 	/* The Downloads row's facts, on a download moving and on a setting (pausing is one). */
 	whenChanged(downloadChanges, () => {
-		if (session.adminUnlocked) void imports.readDownloads();
+		if (session.adminUnlocked) imports.heardDownloads();
 	});
 	whenChanged(settingChanges, () => {
-		if (session.adminUnlocked) void imports.readDownloads();
+		if (session.adminUnlocked) imports.heardDownloads();
 	});
 
 	/* The one connection the whole application holds: no rows, only which kind of thing moved. */

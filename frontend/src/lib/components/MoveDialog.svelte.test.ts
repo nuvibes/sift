@@ -14,6 +14,14 @@ import MoveDialog from './MoveDialog.svelte';
  */
 const picker = vi.hoisted(() => ({ props: null as { value: string } | null }));
 
+const stored = vi.hoisted(() => ({
+	copies: [] as { location_id: string; path: string; reason: string | null }[]
+}));
+vi.mock('$lib/organize/copies', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
+	copiesOf: async () => stored.copies
+}));
+
 vi.mock('$lib/components/common', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	Select: (_anchor: unknown, props: { value: string }) => {
@@ -43,12 +51,12 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
-function render(count = 2) {
+function render(count = 2, assetId?: string) {
 	host = document.createElement('div');
 	document.body.append(host);
 
 	const onconfirm = vi.fn();
-	const props = reactiveProps({ open: true, count, folders: FOLDERS, onconfirm });
+	const props = reactiveProps({ open: true, count, folders: FOLDERS, onconfirm, assetId });
 	mount(MoveDialog, { target: host, props });
 	flushSync();
 
@@ -111,6 +119,39 @@ describe('once a destination has been chosen', () => {
 		confirm.click();
 		flushSync();
 
-		expect(onconfirm).toHaveBeenCalledWith('f2');
+		expect(onconfirm).toHaveBeenCalledWith('f2', null);
+	});
+});
+
+describe('one file stored in more than one place', () => {
+	it('asks which copy, offering only those Sift may move, and hands back the one chosen', async () => {
+		stored.copies = [
+			{ location_id: 'l1', path: '/media/Clips/clip.mp4', reason: null },
+			{ location_id: 'l2', path: '/media/Kept/clip.mp4', reason: null },
+			{ location_id: 'l3', path: '/media/Read only/clip.mp4', reason: 'read-only' }
+		];
+		const { onconfirm, confirm } = render(1, 'asset-1');
+		await vi.waitFor(() => {
+			flushSync();
+			expect(document.querySelectorAll('[role="radio"]')).toHaveLength(2);
+		});
+		(document.querySelectorAll('[role="radio"]')[1] as HTMLElement).click();
+		flushSync();
+		choose('f2');
+		confirm.click();
+
+		expect(onconfirm).toHaveBeenCalledWith('f2', 'l2');
+	});
+
+	it('names no copy for a file stored in one place', async () => {
+		stored.copies = [{ location_id: 'l1', path: '/media/Clips/clip.mp4', reason: null }];
+		const { onconfirm, confirm } = render(1, 'asset-1');
+		await Promise.resolve();
+		flushSync();
+		expect(document.querySelector('[role="radio"]')).toBeNull();
+		choose('f2');
+		confirm.click();
+
+		expect(onconfirm).toHaveBeenCalledWith('f2', null);
 	});
 });

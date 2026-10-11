@@ -1288,6 +1288,16 @@
       ],
       "options": "without rowid"
     },
+    "job_holds": {
+      "columns": {
+        "kind": "text not null check ( kind in ( 'all' , 'type' , 'product' ) )",
+        "name": "text not null"
+      },
+      "constraints": [
+        "primary key ( kind , name )"
+      ],
+      "options": "without rowid"
+    },
     "job_plan": {
       "columns": {
         "job_id": "text not null references jobs ( id ) on delete cascade",
@@ -3343,7 +3353,7 @@
     "identity": 4,
     "importing": 1,
     "insights": 8,
-    "jobs": 21,
+    "jobs": 22,
     "ledger": 8,
     "library": 7,
     "music": 6,

@@ -491,11 +491,14 @@ export class AssetActions<Item extends Actionable> {
 	}
 
 	/** Through the server's file-moving route, where the checks and the undo record live. */
-	async move(ids: string[], folderId: string): Promise<void> {
+	async move(ids: string[], folderId: string, locationId: string | null = null): Promise<void> {
 		if (ids.length === 0 || !folderId) return;
-		// One request per chunk; a refusal is reported once at the end.
+		// One request per chunk; a refusal is reported once at the end. A copy is named for one file.
+		const copy = ids.length === 1 && locationId !== null ? { location_id: locationId } : {};
 		const done = await overChunks(ids, (chunk) =>
-			api.post<BulkWriteDone>('/assets/move', { body: { asset_ids: chunk, folder_id: folderId } })
+			api.post<BulkWriteDone>('/assets/move', {
+				body: { asset_ids: chunk, folder_id: folderId, ...copy }
+			})
 		);
 		this.#selection.clear();
 		if (done.changed > 0) {

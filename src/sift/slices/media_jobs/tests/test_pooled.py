@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 # The `ran` event lands in the workbench's table.
 import sift.slices.workbench.schema  # noqa: F401
@@ -73,6 +74,16 @@ KINDS = {"probe": {"image": 100.0}, "thumbnail": {"image": 100.0}}
 NO_READ = {**WORK, "probe": KindOfWork(done=10, outstanding=0, failed=0, waiting=0)}
 
 
+async def _priced_together(
+    answer: dict[str, FamilyOfWork], *args: Any, **kwargs: Any
+) -> dict[str, FamilyOfWork]:
+    """Priced as the page prices it, and said as the page says it once every rule has run."""
+    figures: dict[str, pooled.Priced] = {}
+    priced = await priced_together(answer, *args, **{**kwargs, "figures": figures})
+    await pooled.say(priced, args[2], figures)
+    return priced
+
+
 async def _said(temp_db: Database) -> list[tuple[object, ...]]:
     rows = await temp_db.fetch_all(
         "SELECT quick, slow, left, stalled FROM said_times ORDER BY slow"
@@ -84,7 +95,7 @@ async def test_the_read_and_each_pass_after_it_go_at_their_own_measured_pace(
     temp_db: Database,
 ) -> None:
     book = await _book(temp_db, scan=2.0, generate=0.5)
-    answer = await priced_together(_answer(), WORK, KINDS, book, 4, False)
+    answer = await _priced_together(_answer(), WORK, KINDS, book, 4, False)
 
     # 200 worker seconds of reading at 2 a second: 100 s. 100 of pictures at a half: 50 done when
     # the read ends, the other 50 at the half and the read's 2: 120 s.
@@ -93,11 +104,65 @@ async def test_the_read_and_each_pass_after_it_go_at_their_own_measured_pace(
     assert await _said(temp_db) == [(62, 160, 100, 0), (75, 192, 100, 0)]
 
 
+async def test_each_row_logs_the_figures_its_time_was_priced_from(temp_db: Database) -> None:
+    book = await _book(temp_db, scan=2.0, generate=0.5)
+    with capture_logs() as logs:
+        await _priced_together(_answer(done=3), WORK, KINDS, book, 4, False)
+    said = {one["family"]: one for one in logs if one["event"] == "ledger.said"}
+    # The read: 200 worker seconds at its 2. The pictures: 100 at their half, and the read's 2
+    # handed over when it ends, all of it theirs.
+    assert (said["scan"]["pace"], said["scan"]["work"], said["scan"]["freed"]) == (2.0, 200, None)
+    generate = said["generate"]
+    assert (generate["pace"], generate["work"], generate["freed"]) == (0.5, 100, 2.0)
+    assert (generate["quick"], generate["slow"], generate["done"]) == (75, 192, 3)
+
+
+async def test_what_is_said_and_scored_is_the_time_on_screen_after_the_reads_floor(
+    temp_db: Database,
+) -> None:
+    from sift.slices.media_jobs.activity_families import not_before_the_read
+
+    book = await _book(temp_db, scan=2.0, generate=20.0)
+    figures: dict[str, pooled.Priced] = {}
+    priced = await priced_together(_answer(), WORK, KINDS, book, 4, False, figures=figures)
+    own = (priced["generate"].quick_seconds, priced["generate"].slow_seconds)
+    shown = not_before_the_read(dict(priced))
+    scan = (shown["scan"].quick_seconds, shown["scan"].slow_seconds)
+    assert own < scan == (shown["generate"].quick_seconds, shown["generate"].slow_seconds)
+    with capture_logs() as logs:
+        await pooled.say(shown, book, figures)
+    said = {
+        one["family"]: (one["quick"], one["slow"]) for one in logs if one["event"] == "ledger.said"
+    }
+    assert said == {"scan": scan, "generate": scan}
+    assert [row[:2] for row in await _said(temp_db)] == [scan, scan]
+
+
+async def test_a_floor_and_a_row_measuring_are_logged_and_not_scored(temp_db: Database) -> None:
+    book = await _book(temp_db)
+    with capture_logs() as logs:
+        await _priced_together(_answer(), WORK, KINDS, book, 4, True)
+    said = [one for one in logs if one["event"] == "ledger.said"]
+    assert {(one["family"], one["quick"], one["at_least"]) for one in said} == {
+        ("scan", None, False),
+        ("generate", None, False),
+    }
+    assert await _said(temp_db) == []
+    floors = await _book(temp_db, scan=2.0, generate=0.5)
+    with capture_logs() as logs:
+        await _priced_together(_answer(), WORK, KINDS, floors, 4, False, counting=True)
+    assert {(one["family"], one["at_least"]) for one in logs if one["event"] == "ledger.said"} == {
+        ("scan", True),
+        ("generate", True),
+    }
+    assert await _said(temp_db) == []
+
+
 async def test_a_pass_with_no_pace_of_its_own_yet_works_with_the_reads_workers_after_it(
     temp_db: Database,
 ) -> None:
     book = await _book(temp_db, scan=2.0)
-    answer = await priced_together(_answer(), WORK, KINDS, book, 4, False)
+    answer = await _priced_together(_answer(), WORK, KINDS, book, 4, False)
     # 100 s of reading, then 100 worker seconds at the read's 2: 150 s.
     assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (93, 240)
 
@@ -109,7 +174,7 @@ async def test_a_kind_nobody_priced_makes_the_pass_a_floor_from_the_rest(
     work = {**WORK, "preview": KindOfWork(done=0, outstanding=1, failed=0, waiting=5)}
     answer = _answer()
     answer["generate"] = answer["generate"].model_copy(update={"types": ["thumbnail", "preview"]})
-    priced = await priced_together(answer, work, KINDS, book, 4, False)
+    priced = await _priced_together(answer, work, KINDS, book, 4, False)
     generate = priced["generate"]
     assert (generate.quick_seconds, generate.slow_seconds, generate.at_least) == (75, 75, True)
     # A floor is no window to score the finish against.
@@ -120,7 +185,7 @@ async def test_while_a_walk_counts_every_time_is_the_least_the_counted_files_tak
     temp_db: Database,
 ) -> None:
     book = await _book(temp_db, scan=2.0, generate=0.5)
-    answer = await priced_together(_answer(), WORK, KINDS, book, 4, False, counting=True)
+    answer = await _priced_together(_answer(), WORK, KINDS, book, 4, False, counting=True)
     floors = {
         key: (row.quick_seconds, row.slow_seconds, row.at_least) for key, row in answer.items()
     }
@@ -130,7 +195,7 @@ async def test_while_a_walk_counts_every_time_is_the_least_the_counted_files_tak
 
 async def test_before_the_read_has_a_pace_every_row_says_measuring(temp_db: Database) -> None:
     book = await _book(temp_db)
-    answer = await priced_together(
+    answer = await _priced_together(
         _answer(quick_seconds=5, slow_seconds=9), WORK, KINDS, book, 4, True
     )
     for key in ("scan", "generate"):
@@ -145,11 +210,11 @@ async def test_a_pass_with_no_read_ahead_goes_at_its_own_measured_pace_less_its_
     book = await _book(temp_db, generate=0.5)
     answer = {"generate": _row("Generate", ["thumbnail"], 100, outstanding=4, running=4)}
     # 100 worker seconds at the half a worker it has been getting: 200 s, not 100 / 4.
-    priced = await priced_together(dict(answer), NO_READ, KINDS, book, 4, True)
+    priced = await _priced_together(dict(answer), NO_READ, KINDS, book, 4, True)
     assert (priced["generate"].quick_seconds, priced["generate"].slow_seconds) == (125, 320)
     # Half of them waiting for their task's own run: not this pass's work.
     pooled._STEADY.forget(Family.GENERATE)
-    halved = await priced_together(
+    halved = await _priced_together(
         dict(answer), NO_READ, KINDS, book, 4, True, standing={"generate": 50}
     )
     assert (halved["generate"].quick_seconds, halved["generate"].slow_seconds) == (62, 160)
@@ -157,7 +222,7 @@ async def test_a_pass_with_no_read_ahead_goes_at_its_own_measured_pace_less_its_
 
 async def test_a_row_the_presses_alone_describe_keeps_its_own(temp_db: Database) -> None:
     book = await _book(temp_db, scan=2.0)
-    answer = await priced_together(
+    answer = await _priced_together(
         _answer(slow_seconds=9), WORK, KINDS, book, 4, False, {"generate"}
     )
     assert answer["generate"].slow_seconds == 9
@@ -182,7 +247,7 @@ async def test_a_sub_task_switched_off_leaves_the_pass_priced_by_what_runs(
         "audio_fingerprint": KindOfWork(done=0, outstanding=0, failed=0, waiting=259),
         **NO_READ,
     }
-    priced = await priced_together(answer, work, KINDS, book, 4, True)
+    priced = await _priced_together(answer, work, KINDS, book, 4, True)
     assert priced["generate"].slow_seconds == 320
 
 
@@ -194,7 +259,7 @@ async def test_a_row_that_has_stopped_says_so(temp_db: Database) -> None:
     answer = _answer()
     answer["scan"] = answer["scan"].model_copy(update={"running": 0})
 
-    answer = await priced_together(answer, WORK, KINDS, book, 4, False)
+    answer = await _priced_together(answer, WORK, KINDS, book, 4, False)
 
     assert (answer["scan"].quick_seconds, answer["scan"].time_unknown) == (None, STALLED)
     # The read stopped: a pass is its own work at its own pace, with no floor from the read.
@@ -203,7 +268,7 @@ async def test_a_row_that_has_stopped_says_so(temp_db: Database) -> None:
     pooled._STEADY.forget(Family.GENERATE)
     stalled = _answer()
     stalled["scan"] = stalled["scan"].model_copy(update={"running": 0})
-    alone = await priced_together(stalled, WORK, KINDS, book, 4, False)
+    alone = await _priced_together(stalled, WORK, KINDS, book, 4, False)
     assert (alone["generate"].time_unknown, alone["generate"].at_least) == (MEASURING, False)
 
 
@@ -221,7 +286,7 @@ async def test_a_row_with_its_own_sentence_or_nothing_left_keeps_its_own(
     book = await _book(temp_db, scan=2.0)
     answer = _answer(quick_seconds=5, slow_seconds=9)
     answer["generate"] = answer["generate"].model_copy(update=unpriced)
-    answer = await priced_together(answer, WORK, KINDS, book, 4, False)
+    answer = await _priced_together(answer, WORK, KINDS, book, 4, False)
     assert (answer["generate"].quick_seconds, answer["generate"].slow_seconds) == (5, 9)
 
 
@@ -229,9 +294,9 @@ async def test_the_shown_range_holds_until_the_figure_has_stayed_off_for_a_minut
     temp_db: Database,
 ) -> None:
     book = await _book(temp_db, scan=2.0)
-    first = await priced_together(_answer(), WORK, KINDS, book, 4, False)
+    first = await _priced_together(_answer(), WORK, KINDS, book, 4, False)
     halved = {**WORK, "probe": KindOfWork(done=10, outstanding=4, failed=0, waiting=50)}
-    again = await priced_together(_answer(), halved, KINDS, book, 4, False)
+    again = await _priced_together(_answer(), halved, KINDS, book, 4, False)
     shown, before = again["scan"].slow_seconds, first["scan"].slow_seconds
     assert shown is not None and before is not None and before - 1 <= shown <= before
 

@@ -37,6 +37,8 @@
 		Select
 	} from '$lib/components/common';
 	import Icon from '$lib/components/Icon.svelte';
+	import CopiesChoice from '$lib/components/CopiesChoice.svelte';
+	import { copiesOf, type FileCopy } from '$lib/organize/copies';
 	import {
 		megabytes,
 		preflight as askServer,
@@ -79,6 +81,29 @@
 		const known = PRESETS.find((one) => one.value === value);
 		if (known) preset = known.value;
 	}
+
+	/* One file stored in more than one place is compressed next to the copy chosen; null until
+	   asked, so no question goes to the server before the copy is known. */
+	let copies = $state<FileCopy[] | null>(null);
+	let nextTo = $state<string | null>(null);
+
+	$effect(() => {
+		if (!open) return;
+		const asked = assetIds.length === 1 ? assetIds[0] : null;
+		copies = asked === null ? [] : null;
+		nextTo = null;
+		if (asked === null) return;
+		void copiesOf(asked)
+			.then((found) => {
+				if (assetIds[0] !== asked) return;
+				copies = found;
+				nextTo = found.length > 1 ? found[0].location_id : null;
+			})
+			.catch(() => {
+				// The server still refuses a file in two places with no copy named, in its own words.
+				if (assetIds[0] === asked) copies = [];
+			});
+	});
 
 	let customMb = $state(25);
 	let compatibility = $state(false);
@@ -124,13 +149,14 @@
 		preset,
 		custom_target_mb: preset === 'custom' ? customMb : null,
 		compatibility,
-		force: false
+		force: false,
+		location_id: nextTo
 	});
 
 	/* Re-asked whenever the question changes, and only while the sheet is open. Every answer here
 	   is the server's, so a stale one is a screen describing a target nobody chose. */
 	$effect(() => {
-		if (!open || assetIds.length === 0) return;
+		if (!open || assetIds.length === 0 || copies === null) return;
 		const asked = { ...request };
 		asking = true;
 		failed = null;
@@ -211,7 +237,9 @@
 <ConfirmDialog
 	bind:open
 	title="Compress {counted(assetIds.length)}?"
-	consequence="Each one is copied smaller, beside the original. Nothing you already have is changed or replaced."
+	consequence={(copies?.length ?? 0) > 1
+		? 'This file is stored in more than one place. The smaller copy is saved in the same folder as the copy you choose. Nothing you already have is changed or replaced.'
+		: 'Each one is copied smaller, beside the original. Nothing you already have is changed or replaced.'}
 	confirmLabel={starting
 		? 'Starting'
 		: willRun === 0
@@ -223,6 +251,8 @@
 >
 	{#snippet extra()}
 		<div class="panel">
+			<CopiesChoice copies={copies ?? []} bind:value={nextTo} label="Which copy to compress" />
+
 			<Field label="Target size">
 				{#snippet control({ id, describedBy })}
 					<Select {id} {describedBy} value={preset} options={PRESETS} onValueChange={choose} />

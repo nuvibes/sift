@@ -246,3 +246,44 @@ describe('undo', () => {
 		expect(post).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('a file stored in more than one place', () => {
+	it('offers Rename, asks which copy, and renames the one chosen', async () => {
+		allowed({
+			copies: [
+				{ location_id: 'l1', path: '/media/Clips/clip.mp4', reason: null },
+				{ location_id: 'l2', path: '/media/Kept/beach.mp4', reason: null },
+				{ location_id: 'l3', path: '/media/Read only/clip.mp4', reason: 'read-only' }
+			]
+		});
+		post.mockResolvedValue({
+			asset_id: 'asset-1',
+			location_id: 'l2',
+			filename: 'sea.mp4',
+			folder_id: null,
+			move_id: 'move-1'
+		});
+		await render();
+
+		button('Rename')?.click();
+		flushSync();
+		const radios = [...document.querySelectorAll<HTMLElement>('[role="radio"]')];
+		expect(radios, 'a copy Sift may not change was offered').toHaveLength(2);
+		const input = () => document.querySelector('input') as HTMLInputElement;
+		expect(input().value).toBe('clip.mp4');
+
+		radios[1].click();
+		flushSync();
+		expect(input().value, "the chosen copy's own name was not offered").toBe('beach.mp4');
+		input().value = 'sea.mp4';
+		input().dispatchEvent(new Event('input'));
+		flushSync();
+		document.querySelector('form')?.requestSubmit();
+		await Promise.resolve();
+		flushSync();
+
+		expect(post).toHaveBeenCalledWith('/assets/asset-1/rename', {
+			body: { name: 'sea.mp4', location_id: 'l2' }
+		});
+	});
+});

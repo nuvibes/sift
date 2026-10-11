@@ -6,9 +6,11 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { api, ApiError } from '$lib/api/client';
-	import { libraryChanges, whenChanged } from '$lib/library/changes.svelte';
+	import { libraryChanges, WalkingPace, whenChanged } from '$lib/library/changes.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { Button, Field, Modal, TextInput } from '$lib/components/common';
+	import CopiesChoice from '$lib/components/CopiesChoice.svelte';
+	import { partsOf } from '$lib/organize/copies';
 	import type { components } from '$lib/api/schema';
 
 	interface Props {
@@ -40,6 +42,24 @@
 	const name = $derived(shownName ?? filename);
 	const allowed = $derived(options?.can_organize === true);
 
+	/* A file stored in more than one place is renamed one copy at a time: the copies that can be. */
+	const renamable = $derived(
+		(options?.copies ?? []).length > 1
+			? (options?.copies ?? []).filter((one) => one.reason === null)
+			: []
+	);
+	let copy = $state<string | null>(null);
+	const copyName = (locationId: string | null) => {
+		const chosen = renamable.find((one) => one.location_id === locationId);
+		return chosen ? partsOf(chosen.path).name : null;
+	};
+
+	/* Choosing another copy offers its own name, unless somebody has typed one already. */
+	function chooseCopy(next: string | null) {
+		if (typed === (copyName(copy) ?? name ?? '')) typed = copyName(next) ?? typed;
+		copy = next;
+	}
+
 	$effect(() => {
 		// A different asset's answer must not show while the new one is fetched.
 		options = null;
@@ -47,8 +67,8 @@
 		renaming = false;
 		if (!held) void ask(id);
 	});
-	/* Asked again on the library bell. */
-	whenChanged(libraryChanges, () => void ask(id));
+	/* Asked again on the library bell, at a walking pace. */
+	whenChanged(libraryChanges, new WalkingPace(() => ask(id)));
 
 	async function ask(assetId: string) {
 		try {
@@ -60,7 +80,8 @@
 	}
 
 	function openRename() {
-		typed = name ?? '';
+		copy = renamable[0]?.location_id ?? null;
+		typed = copyName(copy) ?? name ?? '';
 		error = undefined;
 		renaming = true;
 	}
@@ -74,7 +95,9 @@
 		busy = true;
 		error = undefined;
 		try {
-			const done = await api.post<Organized>(`/assets/${id}/rename`, { body: { name: typed } });
+			const done = await api.post<Organized>(`/assets/${id}/rename`, {
+				body: copy === null ? { name: typed } : { name: typed, location_id: copy }
+			});
 			shownName = done.filename;
 			options = options && { ...options, undo_move_id: done.move_id };
 			renaming = false;
@@ -118,12 +141,18 @@
 	description="Only the name changes. The file stays in the folder it is in."
 >
 	<form
+		class="naming"
 		id="rename-file"
 		onsubmit={(event) => {
 			event.preventDefault();
 			void rename();
 		}}
 	>
+		<CopiesChoice
+			copies={renamable}
+			bind:value={() => copy, chooseCopy}
+			label="Which copy to rename"
+		/>
 		<Field label="Name" {error}>
 			{#snippet control({ id: fieldId, describedBy, invalid })}
 				<!-- svelte-ignore a11y_autofocus: the sheet exists to be typed into -->
@@ -156,3 +185,12 @@
 		</div>
 	{/snippet}
 </Modal>
+
+<style>
+	/* The copy, when there is one to choose, above the name it takes. */
+	.naming {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+</style>

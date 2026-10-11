@@ -44,6 +44,7 @@ from sift.kernel.jobs import (
 )
 from sift.kernel.jobs import schema as jobs_schema
 from sift.kernel.jobs.families import Family
+from sift.kernel.jobs.holding import Pause
 from sift.kernel.jobs.queue import _check_payload, _for_the_record
 from sift.kernel.jobs.queue_enqueue import SETTLE_SLACK_SECONDS
 from sift.kernel.jobs.quiet_hours import AT_NOW
@@ -256,6 +257,22 @@ async def test_version_20_lets_a_stored_stash_box_key_go(job_queue: JobQueue) ->
     }
     assert rows[keyed] == {"asset_id": "A"}
     assert rows[plain] == {"asset_id": "B"}
+
+
+@pytest.mark.integration
+async def test_version_22_keeps_the_pause_and_reads_it_back(job_queue: JobQueue) -> None:
+    """A database from before the pause was kept gets its table; the queue writes a pause in
+    place of the last and reads it back whole."""
+    async with job_queue._db.write() as connection:
+        await connection.execute("DROP TABLE job_holds")
+        await jobs_schema.initialize(connection, on_disk=21)
+    assert await job_queue.holds() == Pause()
+
+    held = Pause(everything=True, types=frozenset({"probe"}), products=frozenset({"music"}))
+    await job_queue.keep_holds(held)
+    assert await job_queue.holds() == held
+    await job_queue.keep_holds(Pause(types=frozenset({"thumbnail"})))
+    assert await job_queue.holds() == Pause(types=frozenset({"thumbnail"}))
 
 
 # --- enqueue ----------------------------------------------------------------------------

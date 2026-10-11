@@ -414,6 +414,19 @@ async def _folders_named(
     return named, named.get((arrived_at[0], say.moved_into(arrived_at[1])))
 
 
+def _places_named(moves: Sequence[Row], first_place: Row | None) -> list[tuple[str, str]]:
+    """The folders the moves and the first place name, for one read of what the viewer may see."""
+    places = [
+        (str(row["root_id"]), str(row[side]))
+        for row in moves
+        for side in ("from_rel_path", "to_rel_path")
+    ]
+    if first_place is not None:
+        first_path = first_place["archive_rel_path"] or first_place["rel_path"]
+        places.append((str(first_place["root_id"]), str(first_path)))
+    return places
+
+
 async def _pane_of(
     database: Database,
     access: Repository,
@@ -429,8 +442,8 @@ async def _pane_of(
 
     moves = list(await database.fetch_all(_MOVES, (asset_id,))) if "file_moves" in here else []
     first_place = await database.fetch_one(_FIRST_PLACE, (asset_id,))
-    # The folders this reader may see, asked once and only where a line names a folder.
-    folders_seen = await _folders_seen(access, viewer) if moves or first_place is not None else {}
+    places = _places_named(moves, first_place)
+    folders_seen = await _folders_seen(access, viewer, places) if places else {}
     arrival_folder = arrived_in(moves, first_place, folders_seen)
     named_folders, arrival_folder_id = await _folders_named(database, moves, first_place)
     produced = (

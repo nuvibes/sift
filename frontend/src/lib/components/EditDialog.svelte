@@ -5,6 +5,8 @@
 	 * Each edit writes a NEW file beside the original.
 	 */
 	import { ConfirmDialog, Empty, Field, Panel, Problem, TextInput } from '$lib/components/common';
+	import CopiesChoice from '$lib/components/CopiesChoice.svelte';
+	import { copiesOf, type FileCopy } from '$lib/organize/copies';
 	import ClipPanel from '$lib/components/edit/ClipPanel.svelte';
 	import PicturePanel from '$lib/components/edit/PicturePanel.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -64,6 +66,11 @@
 	/* Null until somebody types, so a name nobody chose is not sent as theirs. */
 	let typedName = $state<string | null>(null);
 
+	/* Where the file is stored; with more than one place, the copy goes in the chosen one's folder.
+	   Null until asked, so nothing is asked of the server before it is known. */
+	let copies = $state<FileCopy[] | null>(null);
+	let beside = $state<string | null>(null);
+
 	let answer = $state<EditVerdict | null>(null);
 	let asking = $state(false);
 	let starting = $state(false);
@@ -77,6 +84,18 @@
 		if (!open) return;
 		const id = asset.id;
 		settle({ width: asset.width ?? 0, height: asset.height ?? 0 });
+		copies = null;
+		beside = null;
+		void copiesOf(id)
+			.then((found) => {
+				if (id !== asset.id) return;
+				copies = found;
+				beside = found.length > 1 ? found[0].location_id : null;
+			})
+			.catch(() => {
+				// The server still refuses a file in two places with no copy named, in its own words.
+				if (id === asset.id) copies = [];
+			});
 		void askFrame(id)
 			.then((seen) => {
 				if (id !== asset.id || !seen.width || !seen.height) return;
@@ -151,6 +170,7 @@
 	const request = $derived<EditRequest>({
 		steps,
 		filename: typedName?.trim() ? typedName.trim() : null,
+		location_id: beside,
 		// Never from here: saving as a Loop is the player's gesture.
 		as_loop: false
 	});
@@ -160,7 +180,7 @@
 	 * button dies the moment it changes.
 	 */
 	$effect(() => {
-		if (!open || nothingYet) return;
+		if (!open || nothingYet || copies === null) return;
 		const asked = { ...request, steps: [...request.steps] };
 		asking = true;
 		failed = null;
@@ -236,7 +256,9 @@
 <ConfirmDialog
 	bind:open
 	title={isStill ? 'Modify this picture' : 'Trim this video'}
-	consequence="A new file is saved in the same location. Nothing you already have is changed or replaced."
+	consequence={(copies?.length ?? 0) > 1
+		? 'This file is stored in more than one place. The new file is saved in the same folder as the copy you choose. Nothing you already have is changed or replaced.'
+		: 'A new file is saved in the same location. Nothing you already have is changed or replaced.'}
 	confirmLabel={starting ? 'Saving' : 'Save a copy'}
 	confirmDisabled={!ready}
 	destructive={false}
@@ -263,6 +285,13 @@
 					under={nameField}
 				/>
 			{/if}
+
+			<!-- Which copy's folder the new file goes in, for a file stored in more than one place. -->
+			<CopiesChoice
+				copies={copies ?? []}
+				bind:value={beside}
+				label={isStill ? 'Which copy to modify' : 'Which copy to trim'}
+			/>
 
 			<!-- The last answer stays while the next is fetched, at a held height. -->
 			<div class="says">

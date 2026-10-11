@@ -32,6 +32,10 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
+#: How many files the sweep found gone are marked missing in one write: a moved folder of 300 was
+#: 300 writes, each waiting its turn at the writer behind every walk under way.
+MARKED_TOGETHER = 200
+
 
 #: A file as both sides can describe it: its name, and its size where known. `None` for a picture
 #: indexed out of an archive: the walk lists the archive, so the two agree on the name alone.
@@ -197,6 +201,7 @@ async def _sweep(
     filters the rows read to the folder scanned. Do not remove `_still_there` because the scope
     overlaps it. The rows are `_missing`'s answer, which a dry run counts; this marks them."""
     gone = 0
+    found: list[str] = []
     async for location in _missing(
         context,
         root_id=root_id,
@@ -206,10 +211,14 @@ async def _sweep(
         only=only,
         unjudged=unjudged,
     ):
-        # Counted by what the write says it did: two passes over one root may read the same rows,
-        # and the count is of this pass's own marks.
-        if await context.content.mark_missing(location.id):
-            gone += 1
+        found.append(location.id)
+        if len(found) >= MARKED_TOGETHER:
+            gone += await context.content.mark_many_missing(found)
+            found.clear()
+    # Counted by what the writes say they did: two passes over one root may read the same rows,
+    # and the count is of this pass's own marks.
+    if found:
+        gone += await context.content.mark_many_missing(found)
 
     if gone:
         log.info("library.scan_marked_missing", root_id=root_id, files=gone)

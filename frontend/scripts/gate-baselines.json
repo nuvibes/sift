@@ -8,8 +8,8 @@
 	},
 	"client-coverage": {
 		"untouched": 7,
-		"lines": 86.3,
-		"uncovered_lines": 5815
+		"lines": 86.39,
+		"uncovered_lines": 5782
 	},
 	"state-matrix": {
 		"undrawn": 0
@@ -71,15 +71,15 @@
 			"routes/connect/+page.svelte": 2
 		},
 		"insider_phrases": {
-			"lib/components/FacesInThis.svelte": 1,
-			"lib/components/VisibilityDialog.svelte": 1,
 			"lib/components/entity/MergeEntities.svelte": 1,
 			"lib/components/faces/FaceGroups.svelte": 1,
 			"lib/components/faces/PileDetail.svelte": 2,
+			"lib/components/FacesInThis.svelte": 1,
 			"lib/components/record/LinkToStashBox.svelte": 1,
+			"lib/components/VisibilityDialog.svelte": 1,
 			"lib/design/fixtures.svelte.ts": 2,
 			"lib/design/icon-uses-more.ts": 11,
-			"lib/design/icon-uses.ts": 10,
+			"lib/design/icon-uses.ts": 8,
 			"lib/entity/enrich.svelte.ts": 1,
 			"lib/library/FolderExplorer.svelte": 2
 		},

@@ -141,9 +141,15 @@ async def whereabouts(
     library: LibraryStore,
     settings: SettingsSeam,
     root_id: str | None = None,
+    places: Sequence[tuple[str, str]] | None = None,
 ) -> Whereabouts:
-    """What `viewer` may be told about where the files in one library sit, or in every library."""
-    folders = await access.visible_folders(viewer, root_id=root_id)
+    """What `viewer` may be told about where the files in one library sit, or in every library;
+    with `places` (root id, relative path), about those files alone, read from their folders."""
+    folders = (
+        await access.visible_folders(viewer, root_id=root_id)
+        if places is None
+        else await access.visible_folders_on(viewer, places)
+    )
     root_paths: dict[str, str] = {}
     if viewer.is_admin:
         root_paths = {root.id: root.abs_path for root in await library.roots()}

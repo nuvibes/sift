@@ -632,6 +632,37 @@ async def test_a_folder_holds_only_its_own_files_that_are_there(
     assert held == FolderMedia(still_ids=[own.asset.id], moving=0)
 
 
+@pytest.mark.integration
+async def test_many_copies_are_marked_missing_in_one_write_and_one_already_missing_is_not_counted(
+    content_store: ContentStore, library_root: LibraryRoot, settings: Any, temp_db: Database
+) -> None:
+    taken = [
+        await content_store.ingest(
+            checked(place(name, library_root, f"moved/{name}"), settings),
+            root_id=library_root.id,
+            rel_path=f"moved/{name}",
+        )
+        for name in ("accepted.jpg", "accepted.png", "accepted.mp4")
+    ]
+    ids = [one.location.id for one in taken]
+    assert await content_store.mark_missing(ids[0])
+    writes: list[str] = []
+    write = content_store._write_moving_files
+
+    async def counted(sql: str, params: tuple[Any, ...], **kwargs: Any) -> Any:
+        writes.append(sql)
+        return await write(sql, params, **kwargs)
+
+    content_store._write_moving_files = counted  # type: ignore[method-assign]
+
+    assert await content_store.mark_many_missing([*ids, ids[1]]) == 2
+    assert len(writes) == 1
+    rows = await temp_db.fetch_all(
+        "SELECT status FROM asset_locations WHERE root_id = ?", (library_root.id,)
+    )
+    assert [row["status"] for row in rows] == ["missing"] * 3
+
+
 # --- rows a change to the classifier has not reached yet -----------------------------------------
 #
 # A change to what the ingress classifier answers reaches new files and never the ones already in

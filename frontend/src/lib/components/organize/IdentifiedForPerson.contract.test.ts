@@ -40,29 +40,12 @@ describe('an address that names no tab lands on one with something on it', () =>
 });
 
 describe('the marks on a face card', () => {
-	/* Three marks at the foot of the card, which jsdom cannot place. */
-	it('marks a reference with a face, and says whose face it helps Sift find', () => {
-		expect(source).toContain('<FaceMark kind={learned(face)}');
+	/* The glyphs themselves are drawn in `IdentifiedForPerson.marks.test.ts`. */
+	it('says whose face a reference helps Sift find, in words only', () => {
 		expect(source).toContain("Sift uses this one to identify ${first || 'them'}");
-		/* Looks for the label, so a comment about the wording cannot trip it. */
-		expect(source).not.toContain('label="Sift matches against this one"');
-		expect(source).not.toContain(", 'Sift matches against this one'");
-	});
-
-	it('marks what Sift suggested and what is still asking, and nothing else', () => {
-		expect(source).toContain('<FaceMark kind="recognized"');
-		expect(source).toContain('<FaceMark kind="asking"');
-		expect(source).not.toContain('<Icon name="help"');
-		// A confirmed face wears no mark.
-		expect(source).toContain("{#if face.attribution === 'matched' && !face.is_reference}");
-		expect(source).toContain("{:else if face.attribution === 'suggested'}");
-	});
-
-	it("says a reference Sift took from its own name is Sift's, in the mark History gives faces", () => {
-		expect(source).toContain('<FaceMark kind={learned(face)} label={learnsFrom(face)}');
-		expect(source).toContain("(face.attribution === 'matched' ? 'learned' : 'reference')");
 		expect(source).toContain('Sift recognized ${whom} and uses it to identify them');
 		expect(source).toContain('`${first} in this one`');
+		expect(source).toContain('label={face.is_reference ? learnsFrom(face) : undefined}');
 	});
 
 	it('names the settled state Confirmed, with who in the words under the tab', () => {

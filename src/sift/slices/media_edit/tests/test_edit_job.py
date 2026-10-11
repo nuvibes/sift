@@ -200,6 +200,47 @@ async def test_the_original_is_untouched_by_an_edit(
     assert (managed.path / "photo-rotated-right.jpg").is_file()
 
 
+async def test_a_file_stored_in_two_places_is_edited_beside_the_copy_asked_for(
+    managed: Library,
+    add_file: Callable[..., Any],
+    admin: Viewer,
+    settings: Settings,
+    access: Repository,
+    organizer: Organizer,
+    editor: EditService,
+    duplicates: FakeDuplicates,
+    reindexer: FakeReindexer,
+    temp_db: Database,
+    content_store: ContentStore,
+    job_queue: JobQueue,
+    ffmpeg: Callable[..., FakeFfmpeg],
+) -> None:
+    original = await add_file(managed, "photo.jpg", source="accepted.jpg")
+    other = await add_file(managed, "copy/photo.jpg", source="accepted.jpg")
+    assert other.asset.id == original.asset.id
+
+    ffmpeg(CORPUS / "accepted.jpg")
+    await run_edit(
+        asset_id=original.asset.id,
+        steps=[step(operation="rotate", turn="right")],
+        filename="photo-rotated-right.jpg",
+        location_id=other.location.id,
+        admin=admin,
+        settings=settings,
+        access=access,
+        organizer=organizer,
+        editor=editor,
+        duplicates=duplicates,
+        reindexer=reindexer,
+        temp_db=temp_db,
+        content_store=content_store,
+        job_queue=job_queue,
+    )
+
+    assert (managed.path / "copy" / "photo-rotated-right.jpg").is_file()
+    assert not (managed.path / "photo-rotated-right.jpg").exists()
+
+
 async def test_a_name_already_taken_is_refused_and_the_file_there_survives(
     managed: Library,
     add_file: Callable[..., Any],

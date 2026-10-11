@@ -369,14 +369,27 @@ class Organizer:
         row = await self._db.fetch_one(_LATEST_FOR_ASSET, (asset_id,))
         return None if row is None else str(row["id"])
 
-    async def organizability(self, asset_id: str, *, actor: Viewer) -> Organizability:
+    async def copies(self, asset_id: str, *, actor: Viewer) -> list[tuple[Location, str | None]]:
+        """Every place this file is stored, with why that copy cannot be renamed or moved (None
+        when it can), for an admin who can see it; none for anyone else."""
+        if not actor.is_admin or await self._access.open_asset(actor, asset_id) is None:
+            return []
+        answers = []
+        for location in await self._content.locations(asset_id):
+            answer = await self.organizability(asset_id, actor=actor, location_id=location.id)
+            answers.append((location, answer.reason))
+        return answers
+
+    async def organizability(
+        self, asset_id: str, *, actor: Viewer, location_id: str | None = None
+    ) -> Organizability:
         """Whether this user can rename or move this asset's file, asking what the operations ask."""
         if await self._access.open_asset(actor, asset_id) is None:
             raise await self._unreachable(actor, asset_id)
         if not actor.is_admin:
             return Organizability(False, "Only an admin can rename or move files.")
         try:
-            location, _root = await self._target(asset_id, None, actor)
+            location, _root = await self._target(asset_id, location_id, actor)
             await self._check_writable((await self._path_of(location)).parent)
         except OrganizeRefused as refusal:
             return Organizability(False, str(refusal))
@@ -387,19 +400,25 @@ class Organizer:
     # A produced file is a write into a library, so it goes through the same refusals and the same
     # claim-then-move as a rename, in three calls around the encode.
 
-    async def writable_beside(self, asset_id: str, *, actor: Viewer) -> str | None:
+    async def writable_beside(
+        self, asset_id: str, *, actor: Viewer, location_id: str | None = None
+    ) -> str | None:
         """Whether a produced file could be written beside this one; the reason it could not, or None."""
-        answer = await self.organizability(asset_id, actor=actor)
+        answer = await self.organizability(asset_id, actor=actor, location_id=location_id)
         return None if answer.can_organize else (answer.reason or "Sift cannot write here.")
 
-    async def name_taken_beside(self, asset_id: str, *, filename: str, actor: Viewer) -> bool:
+    async def name_taken_beside(
+        self, asset_id: str, *, filename: str, actor: Viewer, location_id: str | None = None
+    ) -> bool:
         """Whether something is already called this beside that file: shown early, settled by `keep`."""
-        destination = await self._beside(asset_id, filename, actor)
+        destination = await self._beside(asset_id, filename, actor, location_id)
         return await asyncio.to_thread(destination.exists)
 
-    async def _beside(self, asset_id: str, filename: str, actor: Viewer) -> Path:
+    async def _beside(
+        self, asset_id: str, filename: str, actor: Viewer, location_id: str | None
+    ) -> Path:
         """Where a produced file called `filename` would land beside `asset_id`."""
-        location, root = await self._target(asset_id, None, actor)
+        location, root = await self._target(asset_id, location_id, actor)
         name = check_filename(filename)
         root_path = Path(root.abs_path)
         folder = subtree_prefix(_parent_rel_path(location.rel_path))
@@ -409,15 +428,17 @@ class Organizer:
             raise OrganizeRefused("That isn't a name Sift can store.") from refusal
         return await self._confined(root_path, root_path / rel_path)
 
-    async def stage_beside(self, asset_id: str, *, filename: str, actor: Viewer) -> Staged:
+    async def stage_beside(
+        self, asset_id: str, *, filename: str, actor: Viewer, location_id: str | None = None
+    ) -> Staged:
         """Settle whether a produced file may be written beside this one, and say where to build it.
 
         The same checks as a rename, in the same order; the free name is checked now as a courtesy.
         """
-        location, root = await self._target(asset_id, None, actor)
+        location, root = await self._target(asset_id, location_id, actor)
         name = check_filename(filename)
         root_path = Path(root.abs_path)
-        destination = await self._beside(asset_id, filename, actor)
+        destination = await self._beside(asset_id, filename, actor, location_id)
         rel_path = str(destination.relative_to(root_path).as_posix())
         await self._check_writable(destination.parent)
 

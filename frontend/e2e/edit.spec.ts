@@ -355,6 +355,55 @@ test('the sheet does not move under the pointer while a rectangle is being dragg
 	expect(Math.abs(during.y - before.y), 'the picture moved vertically mid-drag').toBeLessThan(2);
 });
 
+test('a photograph stored in two places asks which copy, and sends the one chosen', async ({
+	page
+}) => {
+	/* The server refuses a file in two places with no copy named; the dialog names one. */
+	const traffic = await serve(page, 'image', {
+		verdict: (body) =>
+			body.location_id
+				? aVerdict()
+				: aVerdict({
+						allowed: false,
+						reason: 'This file is in more than one folder. Say which copy to rename or move.',
+						output_filename: null
+					})
+	});
+	await page.route('**/api/assets/e1/organize', (route) =>
+		route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				can_organize: false,
+				reason: 'This file is in more than one folder. Say which copy to rename or move.',
+				undo_move_id: null,
+				copies: [
+					{ location_id: 'l1', path: '/media/Photos/holiday.jpg' },
+					{ location_id: 'l2', path: '/media/Kept/holiday copy.jpg' }
+				]
+			})
+		})
+	);
+	await openTheEditor(page);
+	const dialog = page.getByRole('alertdialog');
+	const copies = dialog.getByRole('radiogroup', { name: 'Which copy to modify' });
+	await expect(copies.getByRole('radio')).toHaveCount(2);
+	await expect(copies.getByRole('radio', { name: /holiday\.jpg/ })).toHaveAttribute(
+		'aria-checked',
+		'true'
+	);
+
+	await page.getByRole('button', { name: 'Turn right' }).click();
+	await expect(dialog.getByRole('button', { name: 'Save a copy' })).toBeEnabled();
+	expect(traffic.asked.at(-1)?.location_id).toBe('l1');
+
+	await copies.getByRole('radio', { name: /holiday copy\.jpg/ }).click();
+	await expect.poll(() => traffic.asked.at(-1)?.location_id).toBe('l2');
+	await expect(dialog.getByRole('button', { name: 'Save a copy' })).toBeEnabled();
+	await dialog.getByRole('button', { name: 'Save a copy' }).click();
+	await expect.poll(() => traffic.started.at(-1)?.location_id).toBe('l2');
+});
+
 test('nothing is asked about a photograph nothing has been done to yet', async ({ page }) => {
 	/* Nothing to ask about, and an invented edit would name the copy after it. */
 	const traffic = await serve(page, 'image');

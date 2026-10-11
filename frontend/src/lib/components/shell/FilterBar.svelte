@@ -439,15 +439,14 @@
 	const phoneOrders = $derived(ordersOffered(tools.sorts));
 	const phoneOrder = $derived(tools.sort ?? phoneOrders[0]?.value);
 
-	/* Whether the screen's menus are drawn on this row: while the window is filled, and whenever the
-	   top bar has no room. `nothing` reads it too, or the row would hide with the menus in it. */
-	const menusHere = $derived(stage.filling || !screenBar.roomOnTopBar);
+	/* Whether the screen's menus are drawn on this row: only while the window is filled, when the top
+	   bar is not drawn. `nothing` reads it too, or the row would hide with the menus in it. */
+	const menusHere = $derived(stage.filling);
 
 	/* Whether this row holds anything, which decides whether it draws its ground: what is in it, not
 	   what the screen offers, or Browse would draw an empty slab. An empty row keeps its height, so
 	   every title stays on one line. */
 	const nothing = $derived(!anything && trailing.length === 0 && !tools.extra && !menusHere);
-	const handedDown = $derived(menusHere || trailing.some((one) => one === screenBar.sizeHome));
 
 	/*
 	 * A column's picks, written into the column's named parameter rather than the typed query, so
@@ -760,9 +759,9 @@
 	<!-- The row opens as the drawer does and drops into place on the spring; `inert` while folded. -->
 	<div class="bar-fold" class:folded={nothing} inert={nothing || undefined}>
 		<div class="bar-clip">
-			<div class="bar" class:nothing class:quiet={tools.quiet} class:handed={handedDown}>
-				<!-- The screen's menus, here while the window is filled (the top bar is not drawn) and
-				     where the top bar has no room (`ROOM_ON_THE_TOP_BAR`): one component, in one place. -->
+			<div class="bar" class:nothing class:quiet={tools.quiet} class:handed={menusHere}>
+				<!-- The screen's menus, here while the window is filled (the top bar is not drawn): one
+				     component, in one place. -->
 				{#if menusHere}
 					<ScreenMenus />
 				{/if}
@@ -935,8 +934,8 @@
 			opacity var(--dur-slow) var(--ease);
 	}
 
-	/* Holding what the top bar handed down (the menus, the Tile size press), the row is its place at
-	   this width, not something arriving: an auto row, whole immediately, so the title never slides. */
+	/* Holding the menus of a filled window, the row is their place, not something arriving: an auto
+	   row, whole immediately, so the title never slides. */
 	.bar-clip:has(> .bar.handed) {
 		grid-row: 2;
 	}

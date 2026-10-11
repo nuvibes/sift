@@ -20,7 +20,14 @@ from sift.kernel.config import get_settings
 from sift.kernel.http import CSRF_HEADER_NAME, SESSION_COOKIE_NAME
 from sift.main import create_app
 from sift.testing.auth import establish_session
-from sift.testing.library import hide_for, seed_asset, seed_folder, seed_root, share_folder
+from sift.testing.library import (
+    hide_for,
+    seed_asset,
+    seed_folder,
+    seed_root,
+    share_folder,
+    write_rows,
+)
 
 pytestmark = [pytest.mark.integration]
 
@@ -279,6 +286,10 @@ def test_a_writable_library_says_the_actions_belong_on_screen(
     assert body["can_organize"] is True
     assert body["reason"] is None
     assert body["undo_move_id"] is None
+    # Every place the file is stored, by the whole path, for the editor's question of which copy.
+    [copy] = body["copies"]
+    assert copy["path"] == str(library / "clip.mp4")
+    assert copy["location_id"]
 
 
 def test_a_read_only_library_says_they_do_not_and_why(
@@ -312,6 +323,7 @@ def test_a_guest_is_told_the_actions_are_not_theirs(
 
     assert body["can_organize"] is False
     assert "Only an admin" in body["reason"]
+    assert body["copies"] == [], "a guest was told where the file is stored"
 
 
 def test_a_guest_asking_about_a_file_they_cannot_see_is_told_it_is_not_there(
@@ -489,3 +501,92 @@ def test_a_guest_is_refused_a_batch_rename_at_the_door(
     assert client.post("/api/organize/rename/preview", json=body).status_code == 403
     assert client.post("/api/organize/rename", json=body).status_code == 403
     assert (library / "clip.mp4").exists()
+
+
+# --- a file stored in two places --------------------------------------------------------------
+
+SECOND_COPY = "01HX0000000000000000000107"
+
+
+def seed_a_second_copy(client: TestClient, library: Path, tmp_path: Path) -> None:
+    """The seeded file, and the same asset again in a folder of its own."""
+    seed(client, library, tmp_path)
+    db_path = client.app.state.database.path  # type: ignore[attr-defined]
+    (library / "kept").mkdir()
+    (library / "kept" / "clip.mp4").write_bytes((library / "clip.mp4").read_bytes())
+    seed_folder(db_path, LEFT_FOLDER, root_id=ROOT_ID, parent_id=TOP_FOLDER, rel_path="kept")
+    write_rows(
+        db_path,
+        [
+            (
+                "INSERT INTO asset_locations (id, asset_id, root_id, folder_id, rel_path, filename,"
+                " first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, 'kept/clip.mp4', 'clip.mp4', 0, 0)",
+                (SECOND_COPY, ASSET_ID, ROOT_ID, LEFT_FOLDER),
+            )
+        ],
+    )
+
+
+def test_a_file_in_two_places_offers_rename_and_move_one_copy_at_a_time(
+    client: TestClient, library: Path, tmp_path: Path
+) -> None:
+    seed_a_second_copy(client, library, tmp_path)
+    sign_in(client, "admin")
+
+    body = client.get(f"/api/assets/{ASSET_ID}/organize").json()
+
+    assert body["can_organize"] is True, "the actions were withheld from a file in two places"
+    assert body["reason"] is None
+    assert sorted(copy["path"] for copy in body["copies"]) == sorted(
+        [str(library / "clip.mp4"), str(library / "kept" / "clip.mp4")]
+    )
+    assert all(copy["reason"] is None for copy in body["copies"])
+
+
+def test_moving_one_copy_of_a_file_in_two_places_moves_that_one(
+    client: TestClient, library: Path, tmp_path: Path
+) -> None:
+    seed_a_second_copy(client, library, tmp_path)
+    (library / "sorted").mkdir()
+    seed_folder(
+        client.app.state.database.path,  # type: ignore[attr-defined]
+        RIGHT_FOLDER,
+        root_id=ROOT_ID,
+        parent_id=TOP_FOLDER,
+        rel_path="sorted",
+    )
+    sign_in(client, "admin")
+
+    unnamed = client.post(
+        "/api/assets/move", json={"asset_ids": [ASSET_ID], "folder_id": RIGHT_FOLDER}
+    ).json()
+    assert unnamed["changed"] == 0
+    assert "more than one folder" in unnamed["reason"]
+
+    response = client.post(
+        "/api/assets/move",
+        json={"asset_ids": [ASSET_ID], "folder_id": RIGHT_FOLDER, "location_id": SECOND_COPY},
+    )
+
+    assert response.json()["changed"] == 1, response.text
+    assert (library / "sorted" / "clip.mp4").exists()
+    assert (library / "clip.mp4").exists()
+    assert not (library / "kept" / "clip.mp4").exists()
+
+
+def test_a_copy_is_named_for_one_file_at_a_time(
+    client: TestClient, library: Path, tmp_path: Path
+) -> None:
+    seed(client, library, tmp_path)
+    sign_in(client, "admin")
+
+    response = client.post(
+        "/api/assets/move",
+        json={
+            "asset_ids": [ASSET_ID, "01HX0000000000000000000009"],
+            "folder_id": TOP_FOLDER,
+            "location_id": SECOND_COPY,
+        },
+    )
+
+    assert response.status_code == 422

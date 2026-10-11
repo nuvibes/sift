@@ -7,6 +7,7 @@ import { api, API_PREFIX, ApiError } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
 import {
 	arrivals,
+	asTheFeed,
 	assetState,
 	downloadChanges,
 	jobChanges,
@@ -139,13 +140,15 @@ export class LiveFeed {
 
 	/** Every bell: what was missed is unknown. `remote` has no re-read. */
 	#readAgain(): void {
-		libraryChanges.changed();
-		arrivals.changed();
-		jobChanges.changed();
-		downloadChanges.changed();
-		settingChanges.changed();
-		mine.changed();
-		screenChanges.changed();
+		asTheFeed(() => {
+			libraryChanges.changed();
+			arrivals.changed();
+			jobChanges.changed();
+			downloadChanges.changed();
+			settingChanges.changed();
+			mine.changed();
+			screenChanges.changed();
+		});
 	}
 
 	async #begin(): Promise<void> {
@@ -196,9 +199,11 @@ export class LiveFeed {
 		this.#marker = state.marker;
 
 		/* Read as "if it is there": the shell and the server may be different versions. */
-		for (const about of state.about ?? []) {
-			if (Object.hasOwn(HANDLED, about)) HANDLED[about](state);
-		}
+		asTheFeed(() => {
+			for (const about of state.about ?? []) {
+				if (Object.hasOwn(HANDLED, about)) HANDLED[about](state);
+			}
+		});
 	}
 
 	get marker(): string | null {

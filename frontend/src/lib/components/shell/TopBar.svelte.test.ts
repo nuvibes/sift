@@ -202,38 +202,20 @@ describe('what else is on it', () => {
 	});
 });
 
-/*
- * Where the bar's labels open.
- *
- * The bar is the top of the application, and above it is the window's own title strip, which is
- * drawn over everything. A label asked to open above a control on this bar lands under that strip
- * and is cut off. So every label on the bar opens below it; the screen menus open away from
- * whichever edge their row is on, which is below except while a screen fills the window.
- *
- * Read from the source because the label only exists while it is showing, and where it goes is
- * the one prop that says so for every control together, including the ones added later.
- */
-describe('the tile size giving way to the field', () => {
-	it('is off the bar while the bar says so, and back when it does not', () => {
+describe('the tile size, at every width', () => {
+	it('stays on the bar, and nothing hands it to the row below', () => {
 		render();
-		expect(host.querySelector('.size.gone')).toBeNull();
-		screenBar.sizeOnBar = false;
-		flushSync();
-		expect(host.querySelector('.size.gone')).not.toBeNull();
-		screenBar.sizeOnBar = true;
-		flushSync();
-		expect(host.querySelector('.size.gone')).toBeNull();
-	});
-
-	it("offers it on the screen's own row while it is off the bar", () => {
-		render();
-		screenBar.sizeOnBar = false;
-		expect(screenBar.tools.panels?.map((one) => one.label)).toEqual(['Tile size']);
-		screenBar.sizeOnBar = true;
+		expect(host.querySelector('.trailing .size')).not.toBeNull();
+		expect(topBarSource).not.toMatch(/class:gone|sizeHome/);
 		expect(screenBar.tools.panels ?? []).toEqual([]);
 	});
 });
 
+/*
+ * Where the bar's labels open: below it, since the window's title strip is drawn over everything
+ * above it; the screen menus open away from whichever edge their row is on. Read from the source,
+ * since the label only exists while it is showing.
+ */
 describe('the labels on the bar', () => {
 	/** Every `<Tooltip ...>` opening tag in a file, braces respected. */
 	function tooltipTags(text: string): string[] {
@@ -412,11 +394,11 @@ describe('the centre group and the two ends', () => {
 		render();
 		const bar = host.querySelector('.topbar') as HTMLElement;
 		expect(bar.style.getPropertyValue('--bar-end')).toBe('312px');
-		expect(bar.style.getPropertyValue('--field-floor')).toBe('227px');
+		expect(bar.style.getPropertyValue('--centre-floor')).toBe('227px');
 		applyStyles(topBarSource, bar);
 		const cap = getComputedStyle(bar.querySelector('.centre') as HTMLElement).maxInlineSize;
 		expect(cap.replace(/\s+/g, ' ')).toBe(
-			'max(var(--field-floor), 100cqi - 2 * (var(--bar-end) + var(--space-3)))'
+			'max(var(--centre-floor), 100cqi - 2 * (var(--bar-end) + var(--space-3)))'
 		);
 	});
 
@@ -425,7 +407,7 @@ describe('the centre group and the two ends', () => {
 		const bar = host.querySelector('.topbar') as HTMLElement;
 		applyStyles(topBarSource, bar);
 
-		// The trail has no floor of its own and never sizes its end: it folds into what is left.
+		// The trail has no floor of its own and never sizes its end: it takes what is left.
 		const trail = getComputedStyle(host.querySelector('.trail') as HTMLElement);
 		expect(trail.minInlineSize).toBe('0px');
 		expect(trail.contain).toBe('inline-size');
@@ -508,7 +490,6 @@ describe("the screen's trail, on the search box's line", () => {
 	afterEach(() => {
 		pageTrail.unsay(owner);
 		phoneWidth.yes = false;
-		screenBar.sizeOnBar = true;
 	});
 
 	it('draws the trail the frame said, the current page last and not a link', () => {
@@ -521,15 +502,14 @@ describe("the screen's trail, on the search box's line", () => {
 		expect(trail!.querySelector('[aria-current="page"]')?.textContent?.trim()).toBe('Somebody');
 	});
 
-	it('folds it to the press alone before the tile size leaves', () => {
+	it('draws it to fit, ending in an ellipsis, never folded to a press', () => {
 		pageTrail.say(owner, [{ label: 'People', href: '/people' }, { label: 'Somebody' }]);
 		const bar = render();
-		screenBar.sizeOnBar = false;
-		flushSync();
 
 		const trail = bar.querySelector('.lead nav[aria-label="Breadcrumb"]')!;
-		expect(trail.querySelector('a, [aria-current="page"]')).toBeNull();
-		expect(trail.querySelector('button.fold')).not.toBeNull();
+		expect(trail.classList.contains('fit')).toBe(true);
+		expect(trail.querySelector('a')?.textContent?.trim()).toBe('People');
+		expect(trail.querySelector('button.fold')).toBeNull();
 	});
 
 	it('keeps the room on a screen with no trail, so the bar keeps one shape', () => {

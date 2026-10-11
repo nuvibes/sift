@@ -32,6 +32,12 @@ a lower kind also waits, every `ORDINARY_TURN`th goes to the lower kinds, by the
 `ACHIEVED_MINUTES`, so the screen can set what a share delivers against what it measured. While
 anybody waits, each lane says once a minute how many hold its places, who waits, and the
 minute's waits (`lanes.state`); each wait on its own only at Detailed (`lanes.waited`).
+
+**A share somebody is watching from gives way.** A stream is read straight off its storage, not
+through a place, and its first bytes queue on the link behind every file the lane's readers have
+open; a take-in copy holds its place for a whole file. So while a stream from a storage is open
+(`watching`), and for `VIEWING_LINGERS_SECONDS` after, its readers have half its places, never
+none (`Lane.places`).
 """
 
 from __future__ import annotations
@@ -78,6 +84,11 @@ REPORT_SECONDS = 60.0
 
 #: How many whole minutes of reading the achieved rate is taken over.
 ACHIEVED_MINUTES = 10
+
+#: How long a share stays given way after a stream from it was asked for or closed, in seconds: a
+#: player asks for its next range a moment after the last, and a place handed back between the two
+#: would put that range's first bytes behind a whole file again.
+VIEWING_LINGERS_SECONDS = 10.0
 
 
 @functools.lru_cache(maxsize=4096)
@@ -133,6 +144,48 @@ class Lane:
     _busy_since: float | None = None
     #: The pending once-a-minute report while somebody waits, or None.
     _report: asyncio.TimerHandle | None = None
+    #: The streams from this storage open now, and until when (`time.monotonic`) it gives way.
+    viewers: int = 0
+    viewed_until: float = float("-inf")
+    #: The pending end of the giving way, or None.
+    _unview: asyncio.TimerHandle | None = None
+
+    @property
+    def viewed(self) -> bool:
+        """Whether a stream from this storage is open, or was asked for a moment ago."""
+        return self.viewers > 0 or time.monotonic() < self.viewed_until
+
+    @property
+    def places(self) -> int:
+        """How many may read together now: every place, or half (never none) while it is viewed."""
+        if self.capped and self.viewed:
+            return max(1, self.limit // 2)
+        return self.limit
+
+    def looked_at(self) -> None:
+        """A stream from here was asked for or closed: give way for `VIEWING_LINGERS_SECONDS`."""
+        if not self.capped:
+            return
+        if not self.viewed:
+            log.info("lanes.giving_way", storage=self.storage.key, places=max(1, self.limit // 2))
+        self.viewed_until = time.monotonic() + VIEWING_LINGERS_SECONDS
+        if self._unview is None:
+            self._unview = asyncio.get_running_loop().call_later(
+                VIEWING_LINGERS_SECONDS, self._view_lapsed
+            )
+
+    def _view_lapsed(self) -> None:
+        """The giving way ends, or is looked at again when a stream is open or was asked for since:
+        the stream's close or the later ask set it going again."""
+        self._unview = None
+        if self.viewers:
+            return
+        left = self.viewed_until - time.monotonic()
+        if left > 0:
+            self._unview = asyncio.get_running_loop().call_later(left, self._view_lapsed)
+            return
+        log.info("lanes.given_way", storage=self.storage.key, places=self.limit)
+        self.hand_on()
 
     @property
     def capped(self) -> bool:
@@ -143,11 +196,11 @@ class Lane:
         of its kind or above is waiting for it."""
         if not self.capped:
             return True
-        return self.active < self.limit and not any(self._waiters[rank:])
+        return self.active < self.places and not any(self._waiters[rank:])
 
     def hand_on(self) -> None:
         """Give every free place to the next waiter (`_next`), passing over one given up."""
-        while not self.capped or self.active < self.limit:
+        while not self.capped or self.active < self.places:
             waiter = self._next()
             if waiter is None:
                 return
@@ -270,6 +323,7 @@ class Lane:
             "lanes.state",
             storage=self.storage.key,
             limit=self.limit,
+            places=self.places,
             active=self.active,
             waiting=self.waiting,
             asked=len(self._waiters[ASKED]),
@@ -440,6 +494,18 @@ class StorageLanes:
         """`nbytes` were read from `path`'s storage, for what it is achieving."""
         self.lane_for(path).note_read(nbytes)
 
+    @asynccontextmanager
+    async def watching(self, path: Path) -> AsyncIterator[None]:
+        """Around a stream somebody is watching from `path`: its storage's readers give way."""
+        lane = self.lane_for(path)
+        lane.looked_at()
+        lane.viewers += 1
+        try:
+            yield
+        finally:
+            lane.looked_at()
+            lane.viewers -= 1
+
     def readings(self) -> dict[str, dict[str, object]]:
         """Every lane's figures, for /health and the Performance screen."""
         return {key: lane.as_dict() for key, lane in self._lanes.items()}
@@ -516,6 +582,26 @@ def note_read(path: Path, nbytes: int) -> None:
     lanes = _LANES
     if lanes is not None:
         lanes.note_read(path, nbytes)
+
+
+def looked_at(path: Path) -> None:
+    """A stream from `path` was asked for: its storage gives way (`watching`) from now, before the
+    stream opens. Nothing where no lanes are installed."""
+    lanes = _LANES
+    if lanes is not None:
+        lanes.lane_for(path).looked_at()
+
+
+@asynccontextmanager
+async def watching(path: Path) -> AsyncIterator[None]:
+    """Around a stream somebody is watching from `path`, its bytes read straight off the storage:
+    the storage's readers have half its places until it closes and a moment after."""
+    lanes = _LANES
+    if lanes is None:
+        yield
+        return
+    async with lanes.watching(path):
+        yield
 
 
 def holding(path: Path) -> bool:

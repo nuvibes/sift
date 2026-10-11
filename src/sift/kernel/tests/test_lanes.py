@@ -855,3 +855,72 @@ async def test_a_long_read_is_counted_in_the_minutes_it_took(
 
     assert sorted(lane._minutes) == [100.0, 101.0, 102.0]
     assert [round(one[1]) for _, one in sorted(lane._minutes.items())] == [30, 60, 60]
+
+
+async def test_a_share_somebody_watches_from_gives_its_readers_one_place_of_two_until_it_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stream is read straight off the share; while it is open, and a moment after, the import's
+    readers there have half the places, so its first bytes are not behind two whole files."""
+    said_by = _Said()
+    monkeypatch.setattr(lanes_module, "log", said_by)
+    monkeypatch.setattr(lanes_module, "VIEWING_LINGERS_SECONDS", 0.05)
+    lanes = StorageLanes(network_reads_at_once=2)
+    lanes_module.install(lanes)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+    inside: list[int] = []
+
+    async with lanes_module.watching(Path("/nas/a/clip")):
+        assert lane.places == 1 and lane.viewers == 1
+        await asyncio.gather(*(_read(lanes, Path("/nas/a") / str(i), inside) for i in range(4)))
+        assert max(inside) == 1, "an import read two files together beside an open stream"
+        await asyncio.sleep(0.08)
+        assert lane.places == 1, "the giving way ended while the stream was still open"
+
+    assert lane.viewers == 0 and lane.places == 1, "a closed stream handed the place back at once"
+    await lane.take(lanes_module.ORDINARY)
+    waiter = asyncio.create_task(lane.take(lanes_module.ORDINARY))
+    await asyncio.sleep(0.12)
+    assert waiter.done() and lane.active == 2, "the second place was not handed on when it lapsed"
+    assert lane.places == 2
+    lane.give_back()
+    lane.give_back()
+    events = [one["event"] for one in said_by.lines]
+    assert events.count("lanes.giving_way") == 1 and events.count("lanes.given_way") == 1
+
+
+async def test_a_stream_asked_for_gives_way_before_it_opens_and_a_later_ask_keeps_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(lanes_module, "VIEWING_LINGERS_SECONDS", 0.05)
+    lanes = StorageLanes(network_reads_at_once=4)
+    lanes_module.install(lanes)
+    lane = lanes.lane_for(Path("/nas/a/x"))
+
+    lanes_module.looked_at(Path("/nas/a/clip"))
+    assert lane.places == 2, "half of four places while a stream is asked for"
+    await lane.take(lanes_module.ORDINARY)
+    await lane.take(lanes_module.ORDINARY)
+    waiter = asyncio.create_task(lane.take(lanes_module.ORDINARY))
+    await asyncio.sleep(0.03)
+    lanes_module.looked_at(Path("/nas/a/clip"))
+    await asyncio.sleep(0.04)
+    assert lane.places == 2 and not waiter.done(), "a later ask did not keep the share given way"
+    await asyncio.sleep(0.05)
+    assert lane.places == 4
+    assert waiter.done(), "the place was not handed on when the later ask lapsed"
+    for _ in range(3):
+        lane.give_back()
+
+
+async def test_a_one_place_share_a_disk_and_no_lanes_still_read_beside_a_stream() -> None:
+    async with lanes_module.watching(Path("/nas/a/clip")):
+        lanes_module.looked_at(Path("/nas/a/clip"))
+    lanes = StorageLanes(network_reads_at_once=1)
+    lanes_module.install(lanes)
+    async with lanes_module.watching(Path("/nas/a/clip")):
+        assert lanes.lane_for(Path("/nas/a/x")).places == 1
+        async with lanes_module.reading(Path("/nas/a/y")):
+            pass
+    async with lanes_module.watching(Path("/disk/a/clip")):
+        assert lanes.lane_for(Path("/disk/a/x")).places == 0, "a disk took a cap from a stream"

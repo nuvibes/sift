@@ -30,6 +30,13 @@ const answers = vi.hoisted(() => ({
 	start: vi.fn()
 }));
 
+/* Where the file is stored: one place unless a test says otherwise. */
+const stored = vi.hoisted(() => ({ copies: [] as { location_id: string; path: string }[] }));
+vi.mock('$lib/organize/copies', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
+	copiesOf: async () => stored.copies
+}));
+
 vi.mock('$lib/edit/edit.svelte', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	frame: answers.frame,
@@ -147,7 +154,11 @@ function saveButton(): HTMLButtonElement | undefined {
 }
 
 /** The last thing the server was asked about. */
-function asked(): { steps: Record<string, unknown>[]; filename: string | null } {
+function asked(): {
+	steps: Record<string, unknown>[];
+	filename: string | null;
+	location_id?: string | null;
+} {
 	return answers.preflight.mock.calls.at(-1)?.[1];
 }
 
@@ -242,6 +253,25 @@ describe('the editor panel', () => {
 		await render(A_VIDEO);
 		expect(answers.preflight).toHaveBeenCalled();
 		expect(answers.start).not.toHaveBeenCalled();
+	});
+
+	it('asks which copy of a file stored in more than one place, and sends the one chosen', async () => {
+		stored.copies = [
+			{ location_id: 'l1', path: '/media/Photos/photo.jpg' },
+			{ location_id: 'l2', path: '/media/Kept/photo.jpg' }
+		];
+		try {
+			await render(A_PHOTOGRAPH);
+			press('Turn right');
+			await settle();
+			expect(asked().location_id).toBe('l1');
+
+			(document.querySelectorAll('[role="radio"]')[1] as HTMLElement).click();
+			await settle();
+			expect(asked().location_id).toBe('l2');
+		} finally {
+			stored.copies = [];
+		}
 	});
 
 	it('asks again when a button is pressed', async () => {

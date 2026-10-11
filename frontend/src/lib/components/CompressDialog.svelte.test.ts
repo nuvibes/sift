@@ -30,6 +30,12 @@ const answers = vi.hoisted(() => ({
 	waitForSample: vi.fn()
 }));
 
+const stored = vi.hoisted(() => ({ copies: [] as { location_id: string; path: string }[] }));
+vi.mock('$lib/organize/copies', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
+	copiesOf: async () => stored.copies
+}));
+
 vi.mock('$lib/library/compress.svelte', async (importOriginal) => ({
 	...(await importOriginal<Record<string, unknown>>()),
 	preflight: answers.preflight,
@@ -86,6 +92,7 @@ function reply(over: Partial<Record<string, unknown>> = {}) {
 let host: HTMLElement;
 
 beforeEach(() => {
+	stored.copies = [];
 	picker.props = null;
 	answers.preflight.mockReset().mockResolvedValue(reply());
 	answers.start.mockReset().mockResolvedValue({ job_ids: ['j1'], started: 1, skipped: 0 });
@@ -368,5 +375,33 @@ describe('the tick rows', () => {
 		expect(getComputedStyle(tick).display).toBe('flex');
 		expect(getComputedStyle(axis).display).not.toBe('flex');
 		expect(getComputedStyle(axis).textAlign).toBe('center');
+	});
+});
+
+describe('a file stored in more than one place', () => {
+	it('asks which copy, and compresses next to the one chosen', async () => {
+		stored.copies = [
+			{ location_id: 'l1', path: '/media/Clips/clip.mp4' },
+			{ location_id: 'l2', path: '/media/Kept/clip.mp4' }
+		];
+		await render();
+		await vi.waitFor(() => {
+			flushSync();
+			expect(document.querySelectorAll('[role="radio"]')).toHaveLength(2);
+		});
+		expect(answers.preflight.mock.calls.at(-1)?.[0].location_id).toBe('l1');
+		expect(document.body.textContent).toContain('The smaller copy is saved in the same folder');
+
+		(document.querySelectorAll('[role="radio"]')[1] as HTMLElement).click();
+		await vi.waitFor(() => expect(answers.preflight.mock.calls.at(-1)?.[0].location_id).toBe('l2'));
+		await vi.waitFor(() => expect(button()?.disabled).toBe(false));
+		button()?.click();
+		await vi.waitFor(() => expect(answers.start.mock.calls.at(-1)?.[0].location_id).toBe('l2'));
+	});
+
+	it('names no copy for a file stored in one place, or for a selection', async () => {
+		await render();
+		expect(answers.preflight.mock.calls.at(-1)?.[0].location_id).toBeNull();
+		expect(document.querySelector('[role="radio"]')).toBeNull();
 	});
 });

@@ -11,8 +11,6 @@ import type { IconName } from '$lib/design/icons';
 import type { Subject } from './facet-labels';
 import type { Verb } from '$lib/components/common/verbs';
 import type { NarrowedToUsername } from '$lib/grid/grid.svelte';
-import { PHONE_WIDTH } from '$lib/components/common/phone-width.svelte';
-import { stage } from './stage.svelte';
 
 export interface SortChoice {
 	value: string;
@@ -192,58 +190,43 @@ interface ScreenTools {
 
 const NOTHING: ScreenTools = {};
 
-/* Filter and Sort with their two gaps, read off the bar rather than the window. */
-const MENUS_ROOM = 88;
-
 /** The search field's floor: at 228px it holds one row, at 226 it wraps. */
 export const FIELD_FLOOR = 227;
 
 const SEARCH_FIELD = 'form.search';
 
+const MENUS = '.centre > .menus';
+
 /** The end group's parts, whose widths are what each side of the centre group keeps. */
 const BAR_END = '.actions > *';
 
-const TILE_SIZE = '.size';
+// By route, kept in this browser: the bar lays out for the widest end met, so nothing moves.
+const ENDS_KEY = 'sift.screen-bar.ends.1';
+const ends = new Map<string, number>(readEnds());
 
-const PASTE_HALF = '.add .half.trail';
-
-/* Under the phone's width (`PHONE_WIDTH`) the bar is a row of squares and none of this applies. */
-
-interface Need {
-	room: number;
-	end: number;
-}
-
-// By route, kept in this browser: the bar lays out for the widest screen met, so nothing moves.
-const NEEDS_KEY = 'sift.screen-bar.needs.2';
-const needs = new Map<string, Need>(readNeeds());
-
-function readNeeds(): [string, Need][] {
+function readEnds(): [string, number][] {
 	try {
-		const kept: unknown = JSON.parse(localStorage.getItem(NEEDS_KEY) ?? '{}');
+		const kept: unknown = JSON.parse(localStorage.getItem(ENDS_KEY) ?? '{}');
 		if (kept === null || typeof kept !== 'object') return [];
-		return Object.entries(kept as Record<string, Need>).filter(([, one]) =>
-			[one?.room, one?.end].every(Number.isFinite)
+		return Object.entries(kept as Record<string, unknown>).filter(
+			(one): one is [string, number] => typeof one[1] === 'number' && Number.isFinite(one[1])
 		);
 	} catch {
 		return [];
 	}
 }
 
-/** The most any screen met has needed: what every screen's bar is laid out for. */
-function widest(): Need {
-	let most: Need = { room: 0, end: 0 };
-	for (const one of needs.values())
-		most = { room: Math.max(most.room, one.room), end: Math.max(most.end, one.end) };
+function widestEnd(): number {
+	let most = 0;
+	for (const one of ends.values()) most = Math.max(most, one);
 	return most;
 }
 
-function keepNeed(screen: string, need: Need): void {
-	const was = needs.get(screen);
-	if (was && was.room === need.room && was.end === need.end) return;
-	needs.set(screen, need);
+function keepEnd(screen: string, end: number): void {
+	if (ends.get(screen) === end) return;
+	ends.set(screen, end);
 	try {
-		localStorage.setItem(NEEDS_KEY, JSON.stringify(Object.fromEntries(needs)));
+		localStorage.setItem(ENDS_KEY, JSON.stringify(Object.fromEntries(ends)));
 	} catch {
 		// Kept for this sitting only.
 	}
@@ -260,101 +243,45 @@ class ScreenBar {
 	/** The kept filter this screen is, by id, worked out once by the bar (`appliedKept`). */
 	keptInForce = $state<string | null>(null);
 
-	/** Whether the named menus fit on the top bar; one home draws them, never a hidden copy. */
-	roomOnTopBar = $state(true);
-
 	/** The end group's width (`--bar-end`), the least each side of the centre group keeps. */
 	barEnd = $state(0);
 
-	/** Whether the tile size is on the bar: it leaves before the centre group would slide. */
-	sizeOnBar = $state(true);
+	/** The centre group's floor (`--centre-floor`): the menus beside the field's floor. */
+	centreFloor = $state(FIELD_FLOOR);
 
-	/** Whether Add's paste half is on the bar: it folds into Add after the tile size has gone. */
-	pasteOnBar = $state(true);
-
-	/** The tile size's panel on the screen's own row while it is off the top bar. */
-	sizeHome = $state.raw<BarPanel | null>(null);
-
-	/** Watch the top bar's content box, its end group and its field. Hands back the teardown. */
+	/** Watch the bar, its end group and its field: one row at every width. Hands back the teardown. */
 	watchRoom(bar: HTMLElement): () => void {
 		// jsdom has no `ResizeObserver`.
 		if (typeof ResizeObserver === 'undefined') return () => {};
-		const phone = typeof matchMedia === 'function' ? matchMedia(PHONE_WIDTH) : null;
 		const field = bar.querySelector<HTMLElement>(SEARCH_FIELD);
-		const ends = [...bar.querySelectorAll<HTMLElement>(BAR_END)];
+		const parts = [...bar.querySelectorAll<HTMLElement>(BAR_END)];
 		const gapOf = (box: Element | null) =>
 			box === null ? 0 : Number.parseFloat(getComputedStyle(box).columnGap) || 0;
 		const endWidth = () =>
 			Math.ceil(
-				ends.reduce((total, one) => total + one.getBoundingClientRect().width, 0) +
-					gapOf(ends[0]?.parentElement ?? null) * Math.max(0, ends.length - 1)
+				parts.reduce((total, one) => total + one.getBoundingClientRect().width, 0) +
+					gapOf(parts[0]?.parentElement ?? null) * Math.max(0, parts.length - 1)
 			);
-		const size = bar.querySelector<HTMLElement>(TILE_SIZE);
-		const pasteWidth = () => bar.querySelector(PASTE_HALF)?.getBoundingClientRect().width ?? 0;
-		let sizeRoom = 0;
-		let pasteRoom = 0;
-		/* The end group with all that may leave counted in, so a leaving moves no threshold. */
-		let end = 0;
 		let drawn = 0;
-		const menusBeside = (group: number) =>
-			2 * (group + gapOf(bar)) + MENUS_ROOM + FIELD_FLOOR + raised;
-		let width = Number.POSITIVE_INFINITY;
-		/* What a screen's menus need beyond the sum; never lowered in a visit, or they bounce. */
-		let raised = 0;
-		/* The same need as a whole width, kept for the screens met after this one. */
-		let room = 0;
 		const decide = () => {
-			const onPhone = phone?.matches ?? false;
-			const most = widest();
-			const full = Math.max(end, most.end);
-			// The menus leave last, after the tile size and the paste half.
-			const need = Math.max(menusBeside(full - sizeRoom - pasteRoom), room, most.room);
-			this.roomOnTopBar = onPhone || width >= need;
-			this.sizeOnBar = onPhone || width >= need + 2 * (sizeRoom + pasteRoom);
-			this.pasteOnBar = onPhone || width >= need + 2 * pasteRoom;
-			const gone = (this.sizeOnBar ? 0 : sizeRoom) + (this.pasteOnBar ? 0 : pasteRoom);
-			this.barEnd = Math.max(drawn, full - gone);
+			this.barEnd = Math.max(drawn, widestEnd());
 		};
-		const observer = new ResizeObserver((entries) => {
-			for (const entry of entries) {
-				if (entry.target === field || ends.includes(entry.target as HTMLElement)) continue;
-				width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
-			}
+		const observer = new ResizeObserver(() => {
 			drawn = endWidth();
-			const standing = size?.getBoundingClientRect().width ?? 0;
-			const holder = ends.find((one) => size !== null && one.contains(size));
-			if (standing > 0 && holder !== undefined)
-				sizeRoom = standing + (holder.childElementCount > 1 ? gapOf(holder) : 0);
-			const pasting = pasteWidth();
-			if (pasting > 0) pasteRoom = pasting;
-			end = drawn + (standing > 0 ? 0 : sizeRoom) + (pasting > 0 ? 0 : pasteRoom);
-			if (field !== null && this.roomOnTopBar && !(phone?.matches ?? false)) {
-				const has = field.getBoundingClientRect().width;
-				if (has > 0 && has < FIELD_FLOOR && Number.isFinite(width)) {
-					const asDrawn = menusBeside(this.barEnd) - raised;
-					raised = Math.max(raised, Math.ceil(width + FIELD_FLOOR - has) - asDrawn);
-				}
-			}
-			room = Math.max(room, menusBeside(end - sizeRoom - pasteRoom));
-			if (this.#screen !== null) keepNeed(this.#screen, { room, end });
+			const menus = bar.querySelector(MENUS);
+			const beside = menus ? menus.getBoundingClientRect().width + gapOf(menus.parentElement) : 0;
+			this.centreFloor = Math.ceil(FIELD_FLOOR + beside);
+			if (this.#screen !== null) keepEnd(this.#screen, drawn);
 			decide();
 		});
-		/* A new screen starts from its own last need, or from the sum: never from another's. */
-		this.#screenChanged = () => {
-			const known = this.#screen === null ? undefined : needs.get(this.#screen);
-			({ room, end } = known ?? { room: 0, end });
-			raised = 0;
-			decide();
-		};
+		this.#screenChanged = decide;
 		observer.observe(bar);
 		// A screen's controls change the field and the ends without the bar changing size.
 		if (field !== null) observer.observe(field);
-		for (const one of ends) observer.observe(one);
-		phone?.addEventListener('change', decide);
+		for (const one of parts) observer.observe(one);
 		return () => {
 			observer.disconnect();
 			this.#screenChanged = null;
-			phone?.removeEventListener('change', decide);
 		};
 	}
 
@@ -364,14 +291,8 @@ class ScreenBar {
 	#screen: string | null = null;
 
 	get tools(): ScreenTools {
-		return this.#offered;
+		return this.#tools;
 	}
-
-	#offered = $derived(
-		this.sizeOnBar || this.sizeHome === null || stage.filling
-			? this.#tools
-			: { ...this.#tools, panels: [...(this.#tools.panels ?? []), this.sizeHome] }
-	);
 
 	/** Say what this screen can do. Called by the screen, with a token of its own. */
 	publish(owner: symbol, tools: ScreenTools): void {

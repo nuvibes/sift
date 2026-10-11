@@ -31,6 +31,7 @@ from sift.slices.auth import csrf_protect, current_viewer, require_admin
 from sift.slices.organize.batch import PREVIEW_ROWS, WORDS, BatchRenamer
 from sift.slices.organize.models import (
     MoveManyRequest,
+    OrganizeCopy,
     OrganizeDone,
     OrganizeOptions,
     RenameBatchDone,
@@ -43,6 +44,7 @@ from sift.slices.organize.service import (
     ORGANIZER,
     NotAllowed,
     NotFound,
+    Organizability,
     Organized,
     Organizer,
     OrganizeRefused,
@@ -92,22 +94,36 @@ def _done(result: Organized) -> OrganizeDone:
 @router.get("/assets/{asset_id}/organize")
 async def options(
     asset_id: str,
+    request: Request,
     organizer: Annotated[Organizer, Depends(_organizer)],
     viewer: Annotated[Viewer, Depends(current_viewer)],
 ) -> OrganizeOptions:
-    """Whether this file can be renamed or moved, and what would undo its last move.
+    """Whether this file can be renamed or moved, what would undo its last move, and its copies.
 
-    Asked by the asset view before it draws its menu. On a folder that was not handed over
+    Asked by the asset view before it draws its menu, and by the dialogs that ask which copy of a
+    file stored in more than one place they act on. On a folder that was not handed over
     read-write the actions are left off the menu entirely rather than shown and refusing.
     """
     try:
         answer = await organizer.organizability(asset_id, actor=viewer)
     except OrganizeRefused as refused:
         raise _refusal(refused) from refused
+    copies: list[OrganizeCopy] = []
+    if located := await organizer.copies(asset_id, actor=viewer):
+        said = await wiring.whereabouts(request, viewer)
+        copies = [
+            OrganizeCopy(location_id=one.id, path=said.of(one.root_id, one.rel_path), reason=why)
+            for one, why in located
+        ]
+    if len(located) > 1:
+        # A file in several places is organized one copy at a time: on offer when any copy is.
+        free = any(why is None for _one, why in located)
+        answer = Organizability(free, None if free else located[0][1])
     return OrganizeOptions(
         can_organize=answer.can_organize,
         reason=answer.reason,
         undo_move_id=await organizer.last_move(asset_id) if answer.can_organize else None,
+        copies=copies,
     )
 
 
@@ -168,7 +184,9 @@ async def move_many(
     locked = False
     for asset_id in dict.fromkeys(body.asset_ids):
         try:
-            organized = await organizer.move(asset_id, folder_id=body.folder_id, actor=viewer)
+            organized = await organizer.move(
+                asset_id, folder_id=body.folder_id, actor=viewer, location_id=body.location_id
+            )
             moved.append(organized.asset_id)
         except OrganizeRefused as refused:
             skipped += 1

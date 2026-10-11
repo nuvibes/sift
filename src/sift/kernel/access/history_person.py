@@ -501,7 +501,7 @@ async def _the_one_folder(
     path, name = str(answered[0]["path"]), str(answered[0]["name"])
     if access is None:
         return None
-    seen = await _folders_seen(access, viewer)
+    seen = await _folders_seen(access, viewer, [(str(answered[0]["root_id"]), path)])
     if folder_said(path, seen=seen.get(str(answered[0]["root_id"]), frozenset())) != path:
         return None
     return folder_id, path or name

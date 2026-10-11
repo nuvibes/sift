@@ -13,9 +13,10 @@ import signal
 import sys
 import threading
 import time
-from collections import deque
-from collections.abc import Callable, Iterator
+from collections import Counter, deque
+from collections.abc import Callable, Collection, Iterator
 from contextlib import AbstractAsyncContextManager
+from types import FrameType
 
 from sift.kernel.db import DatabaseError
 from sift.kernel.log import get_logger
@@ -43,6 +44,12 @@ HELD_FRAMES = 6
 #: Recent collections kept to set beside a hold in the same beat.
 COLLECTIONS_KEPT = 16
 
+#: How many frames of the loop's stack a stall line carries: the request under the tip.
+STALL_FRAMES = 24
+
+#: How many frames of each other thread's stack a stall line carries.
+THREAD_FRAMES = 8
+
 
 def _short(filename: str) -> str:
     """A source file as the log names it, never a folder of the machine it runs on."""
@@ -55,7 +62,22 @@ def _short(filename: str) -> str:
 
 def where_is(thread_id: int, *, frames: int = HELD_FRAMES) -> str | None:
     """What a thread runs this moment, innermost first, or None when idle; asyncio's own skipped."""
-    frame = sys._current_frames().get(thread_id)
+    return _walk(sys._current_frames().get(thread_id), frames)
+
+
+def every_stack(skip: Collection[int] = (), *, frames: int = THREAD_FRAMES) -> list[str]:
+    """Every other thread's stack, alike ones counted together, the most common first.
+
+    Every thread: the fault handler's dump stops at a hundred, which can leave the loop out."""
+    alike = Counter(
+        _walk(frame, frames) or "idle"
+        for ident, frame in sys._current_frames().items()
+        if ident not in skip
+    )
+    return [f"{count} x {stack}" for stack, count in alike.most_common()]
+
+
+def _walk(frame: FrameType | None, frames: int) -> str | None:
     names: list[str] = []
     while frame is not None and len(names) < frames:
         code = frame.f_code
@@ -79,6 +101,7 @@ class LoopWatchdog:
         look_seconds: float = LOOK_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         where: Callable[[int], str | None] = where_is,
+        thread_clock: Callable[[], float] = time.thread_time,
     ) -> None:
         self._stall = stall_seconds
         self._beat = beat_seconds
@@ -97,8 +120,11 @@ class LoopWatchdog:
         self._where = where
         self._loop_thread: int | None = None
         self._held_where: str | None = None
-        self._collections: deque[tuple[float, float, int]] = deque(maxlen=COLLECTIONS_KEPT)
+        # Began, ended, generation, and the collecting thread's processor time: work or waiting.
+        self._collections: deque[tuple[float, float, int, float]] = deque(maxlen=COLLECTIONS_KEPT)
         self._collecting: float | None = None
+        self._thread_clock = thread_clock
+        self._collecting_cpu = 0.0
 
     def beat(self) -> None:
         """The loop saying it is still running; called only from the loop."""
@@ -134,24 +160,53 @@ class LoopWatchdog:
         now = self._clock()
         if phase == "start":
             self._collecting = now
+            # The callback runs on the collecting thread, so this is the collection's own.
+            self._collecting_cpu = self._thread_clock()
         elif phase == "stop" and self._collecting is not None:
-            self._collections.append((self._collecting, now, info.get("generation", 0)))
+            spent = self._thread_clock() - self._collecting_cpu
+            self._collections.append((self._collecting, now, info.get("generation", 0), spent))
             self._collecting = None
 
     def collection_during(self, since: float, until: float) -> tuple[float, int] | None:
         """Collection time within `since` to `until`, with the oldest generation, or None."""
+        cost = self.collection_cost(since, until)
+        return None if cost is None else (cost[0], cost[1])
+
+    def collection_cost(self, since: float, until: float) -> tuple[float, int, float] | None:
+        """`collection_during` with the processor time spent in that share of each collection.
+
+        Far less processor than time is a collection that waited, on memory or for the processor."""
         seconds = 0.0
+        processor = 0.0
         generation = -1
-        for began, ended, gen in list(self._collections):
+        for began, ended, gen, spent in list(self._collections):
             overlap = min(ended, until) - max(began, since)
             if overlap > 0:
                 seconds += overlap
+                processor += spent * overlap / max(ended - began, overlap)
                 generation = max(generation, gen)
-        return (seconds, generation) if generation >= 0 else None
+        return (seconds, generation, processor) if generation >= 0 else None
 
     def dump(self) -> None:
-        """Every thread's stack to standard error, with a log line that works without the loop."""
-        log.error("loop.stalled", seconds=round(self.overdue(), 1))
+        """Every thread's stack in the library's log, the loop's first, and to standard error.
+
+        The log is written from this thread, so it needs no loop; it keeps the stacks as long as
+        the log keeps anything, while standard error is one rolling file among the process's
+        output, and the fault handler's dump there stops at a hundred threads."""
+        now = self._clock()
+        collection = self.collection_cost(self._last, now)
+        loop_thread = self._loop_thread
+        log.error(
+            "loop.stalled",
+            seconds=round(now - self._last, 1),
+            at=None if loop_thread is None else where_is(loop_thread, frames=STALL_FRAMES),
+            # Where the loop was when first found late, before the hold ended.
+            held_at=self._held_where,
+            gc_seconds=round(collection[0], 3) if collection else None,
+            gc_generation=collection[1] if collection else None,
+            gc_processor_seconds=round(collection[2], 3) if collection else None,
+            threads=every_stack({threading.get_ident(), loop_thread or 0}),
+        )
         faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
 
     @property
@@ -196,7 +251,7 @@ class LoopWatchdog:
             self.beat()
             where = self.held_where()
             if self.record_lag(lag):
-                collection = self.collection_during(started + self._beat, woke)
+                collection = self.collection_cost(started + self._beat, woke)
                 log.warning(
                     "loop.held",
                     seconds=round(lag, 3),
@@ -205,6 +260,7 @@ class LoopWatchdog:
                     at=where,
                     gc_seconds=round(collection[0], 3) if collection else None,
                     gc_generation=collection[1] if collection else None,
+                    gc_processor_seconds=round(collection[2], 3) if collection else None,
                 )
 
     def _watch(self) -> None:

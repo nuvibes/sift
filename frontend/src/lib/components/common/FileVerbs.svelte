@@ -514,7 +514,9 @@
 		/* And with swaps, for the admin's Don't swap row, on its own key. */
 		if (session.isAdmin)
 			void keptFromSwaps('asset', id)
-				.then((state) => (enrichment[id] = { ...enrichment[id], keptOut: state.kept_out_here }))
+				.then((state) => {
+					enrichment[id] = { ...enrichment[id], keptOut: state.kept_out_here };
+				})
 				.catch(() => {
 					// Unknown reads as not kept out: the row offers Don't swap, which is the safe word.
 				});
@@ -696,7 +698,8 @@
 	bind:open={moveOpen}
 	count={acting.length}
 	folders={movable.folders}
-	onconfirm={(folderId: string) => void actions.move(acting, folderId)}
+	assetId={acting.length === 1 ? acting[0] : undefined}
+	onconfirm={(folderId, locationId) => void actions.move(acting, folderId, locationId)}
 />
 
 <BatchRename bind:open={renameOpen} assetIds={renaming} />

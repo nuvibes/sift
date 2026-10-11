@@ -251,7 +251,8 @@ async def _unshown_of(
             continue
         statement, values = in_clause(_FOLDER_PLACES, sorted(ids))
         places = {str(row["id"]): row for row in await database.fetch_all(statement, values)}
-        seen = {} if access is None else await _folders_seen(access, viewer)
+        named = [(str(row["root_id"]), str(row["rel_path"])) for row in places.values()]
+        seen = {} if access is None else await _folders_seen(access, viewer, named)
         for one in ids:
             row = places.get(one)
             path = "" if row is None else str(row["rel_path"])

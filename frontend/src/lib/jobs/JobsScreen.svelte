@@ -22,7 +22,7 @@
 	import Tabs from '$lib/components/common/Tabs.svelte';
 	import ContextMenuGroup from '$lib/components/common/ContextMenuGroup.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import { jobChanges, whenChanged } from '$lib/library/changes.svelte';
+	import { jobChanges, WalkingPace, whenChanged } from '$lib/library/changes.svelte';
 	import { toasts } from '$lib/shell/toasts.svelte';
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
 	import {
@@ -124,8 +124,9 @@
 	let confirming = $state<Job | null>(null);
 	let confirmOpen = $state(false);
 
-	/* Read when its tab opens, and again when the connection says the queue moved while it shows. */
-	whenChanged(jobChanges, () => void (tab === 'tasks' && queue.refresh()));
+	/* Read when its tab opens, and again when the connection says the queue moved while it shows,
+	   at a walking pace. */
+	whenChanged(jobChanges, new WalkingPace(() => (tab === 'tasks' ? queue.refresh() : undefined)));
 
 	/* A slow beat while anything is outstanding: the counts are the library's and the estimate
 	   the ledger's, and neither moves the queue, so the socket alone would leave them stale. */

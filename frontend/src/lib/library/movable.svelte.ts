@@ -1,7 +1,7 @@
 /* Where files can be moved to. Moving is offered only where it could succeed. */
 
 import { api, ApiError } from '$lib/api/client';
-import { libraryChanges } from '$lib/library/changes.svelte';
+import { libraryChanges, WalkingPace } from '$lib/library/changes.svelte';
 import type { components } from '$lib/api/schema';
 import type { FoldersRead } from '$lib/library/destinations.svelte';
 
@@ -77,10 +77,12 @@ class Movable {
 
 export const movable = new Movable();
 
-/* A folder added, removed or handed over is said on the library bell. */
-libraryChanges.subscribe(() => {
-	if (!movable.loaded) return;
-	// Not `forget`: the list on screen stays until the new one lands, rather than flashing empty.
-	movable.loaded = false;
-	void movable.ensure();
-});
+/* A folder added, removed or handed over is said on the library bell, heard at a walking pace. */
+libraryChanges.subscribe(
+	new WalkingPace(() => {
+		if (!movable.loaded) return;
+		// Not `forget`: the list on screen stays until the new one lands, rather than flashing empty.
+		movable.loaded = false;
+		return movable.ensure();
+	})
+);

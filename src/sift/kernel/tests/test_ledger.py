@@ -15,6 +15,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 # The `ran` event lands in the workbench's table, which the workbench slice registers.
 import sift.slices.workbench.schema  # noqa: F401
@@ -1289,6 +1290,44 @@ async def test_a_live_run_keeps_what_it_said_once_a_minute(
     assert (None, None, None, None, 30, 1) in await _said(temp_db)
 
 
+async def test_each_minute_said_is_a_log_line_with_its_figures_and_only_a_window_is_scored(
+    ledger: Ledger, temp_db: Database
+) -> None:
+    ledger.started("probe")
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None
+    with capture_logs() as logs:
+        await ledger.said(Family.SCAN, 60, 100, (0, 300), 40, done=7, pace=1.23456, work=99.9)
+        run.said_at = None
+        await ledger.said(Family.SCAN, 50, 50, None, 39, done=8, at_least=True)
+        run.said_at = None
+        await ledger.said(Family.SCAN, None, None, None, 38, done=9, measuring=True)
+    lines = [one for one in logs if one["event"] == "ledger.said"]
+    assert [(one["quick"], one["slow"], one["left"], one["done"]) for one in lines] == [
+        (60, 100, 40, 7),
+        (50, 50, 39, 8),
+        (None, None, 38, 9),
+    ]
+    first = lines[0]
+    assert (first["family"], first["run_id"], first["low"], first["high"]) == (
+        "scan",
+        run.id,
+        0,
+        300,
+    )
+    assert (first["pace"], first["work"], first["freed"], first["stalled"]) == (
+        1.235,
+        99,
+        None,
+        False,
+    )
+    assert [one["at_least"] for one in lines] == [False, True, False]
+    # A floor and a row still measuring are no window to score the finish against.
+    assert await _said(temp_db) == [(60, 100, 0, 300, 40, 0)]
+    # Nothing in it is a field the log's redaction blanks.
+    assert all("[redacted]" not in json.dumps(one, default=str) for one in lines)
+
+
 async def test_a_run_is_scored_when_it_ends_and_its_report_says_how_right_it_was(
     ledger: Ledger, temp_db: Database
 ) -> None:
@@ -1305,10 +1344,13 @@ async def test_a_run_is_scored_when_it_ends_and_its_report_says_how_right_it_was
             "INSERT INTO said_times VALUES (?, ?, NULL, NULL, ?, ?, 1, ?)",
             (run.id, at, low, high, stalled),
         )
-    await ledger.settle({}, settings={})
+    with capture_logs() as logs:
+        await ledger.settle({}, settings={})
 
     (record,) = await ledger.recent()
     assert record.time_left == {"minutes": 2, "right": 50, "thirds": [100, 0, None], "stalled": 1}
+    (ended,) = [one for one in logs if one["event"] == "ledger.run_finished"]
+    assert (ended["right"], ended["thirds"], ended["minutes"]) == (50, [100, 0, None], 2)
     assert await _said(temp_db) == []
     said = report_text(record)
     assert "Its time left was right in 50% of minutes." in said
@@ -1317,6 +1359,23 @@ async def test_a_run_is_scored_when_it_ends_and_its_report_says_how_right_it_was
     assert "It waited for other work for 3 minutes." in longer
     unscored = report_text(dataclasses.replace(record, time_left=None))
     assert "time left" not in unscored and "other work" not in unscored
+
+
+async def test_a_run_is_scored_against_when_its_work_ended_not_when_its_batch_closed(
+    ledger: Ledger, temp_db: Database
+) -> None:
+    ledger.started("probe")
+    run = ledger.open_run(Family.SCAN)
+    assert run is not None
+    now = int(time.time())
+    # Said 600 s before the close, its window 300 to 420 s: the work ended 200 s before the close.
+    await temp_db.execute(
+        "INSERT INTO said_times VALUES (?, ?, NULL, NULL, 300, 420, 1, 0)", (run.id, now - 600)
+    )
+    ledger._idle_since[Family.SCAN] = (time.monotonic() - 200, now - 200)
+    await ledger.settle({}, settings={})
+    (record,) = await ledger.recent()
+    assert record.time_left is not None and record.time_left["right"] == 100
 
 
 async def test_the_next_start_forgets_what_interrupted_runs_said(temp_db: Database) -> None:

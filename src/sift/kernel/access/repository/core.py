@@ -246,6 +246,7 @@ class RepositoryCore:
         parent_id: str | None = None,
         root_id: str | None = None,
         top_level: bool = False,
+        places: Sequence[tuple[str, str]] | None = None,
     ) -> list[Folder]:
         rows = await self._db.fetch_all(
             _VISIBLE_FOLDERS,
@@ -257,6 +258,7 @@ class RepositoryCore:
                 "parent_id": parent_id,
                 "root_id": root_id,
                 "top_level": 1 if top_level else 0,
+                "places": None if places is None else json.dumps([list(one) for one in places]),
                 "reveal": self._reveal_existence(viewer),
             },
         )

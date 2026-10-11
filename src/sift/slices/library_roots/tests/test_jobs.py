@@ -1844,29 +1844,45 @@ async def test_a_machine_started_library_scan_leaves_its_parts_at_the_ordinary_p
     assert [one.priority for one in page.jobs] == [DEFAULT_PRIORITY]
 
 
-async def _sweep_one_gone_copy(tmp_path: Path, *, marked: bool) -> None:
-    """Sweep a root holding one copy that is not on the disk, with `mark_missing` answering `marked`.
+async def _sweep_one_gone_copy(tmp_path: Path, *, marked: bool, copies: int = 1) -> list[int]:
+    """Sweep a root holding copies that are not on the disk, with `mark_many_missing` answering
+    every one or none as `marked`; the size of each write.
 
     Fakes rather than a scan, because what is under test is the arithmetic after the write: two
     real passes racing over one root cannot be ordered on demand, and the one fact that matters
-    (the write found the row already missing) is exactly what `mark_missing` returns.
+    (the write found the row already missing) is exactly what `mark_many_missing` returns.
     """
-    location = SimpleNamespace(id="a-copy", rel_path="gone.mp4", inside_an_archive=False)
+    writes: list[int] = []
 
     async def locations(root_id: str, *, under: str) -> Any:
-        yield location
+        for n in range(copies):
+            yield SimpleNamespace(id=f"copy-{n}", rel_path=f"gone-{n}.mp4", inside_an_archive=False)
 
     async def path_of(copy: Any) -> Path:
         return tmp_path / str(copy.rel_path)
 
-    async def mark_missing(location_id: str) -> bool:
-        return marked
+    async def mark_many_missing(location_ids: list[str]) -> int:
+        writes.append(len(location_ids))
+        return len(location_ids) if marked else 0
 
     context = SimpleNamespace(
         library=SimpleNamespace(iter_locations_in_root=locations),
-        content=SimpleNamespace(path_of=path_of, mark_missing=mark_missing),
+        content=SimpleNamespace(path_of=path_of, mark_many_missing=mark_many_missing),
     )
     await sweeping._sweep(context, root_id="a-root", root_abs=tmp_path, under="", seen=set())  # type: ignore[arg-type]
+    return writes
+
+
+async def test_a_moved_folder_s_old_copies_are_marked_missing_a_page_to_a_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One write a file put each of a moved folder's 300 behind every walk's writes."""
+    uncached_log(monkeypatch, sweeping)
+    with capture_logs() as logs:
+        writes = await _sweep_one_gone_copy(tmp_path, marked=True, copies=450)
+
+    assert writes == [200, 200, 50]
+    assert [entry["files"] for entry in _marked_missing_events(logs)] == [450]
 
 
 def _marked_missing_events(

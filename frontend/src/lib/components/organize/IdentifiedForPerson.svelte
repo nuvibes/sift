@@ -547,9 +547,6 @@
 		return 'Recognized by Sift';
 	}
 
-	/* One mark for a face Sift named and took as a reference, in the glyph History gives faces. */
-	const learned = (face: Sighting) => (face.attribution === 'matched' ? 'learned' : 'reference');
-
 	function learnsFrom(face: Sighting): string {
 		const first = (personName ?? '').trim().split(' ')[0];
 		if (face.attribution !== 'matched') return `Sift uses this one to identify ${first || 'them'}`;
@@ -661,19 +658,16 @@
 							<span class="foot">
 								<span class="marks">
 									<!--
-									Marked only where it is a reference: agreeing to a group offers
-									every face and rules can decline
-									one, so a reference count alone would read as broken.
+									One glyph at most: none on a face you confirmed, the question on one
+									waiting for you, and Sift's own on one Sift named, whose tooltip says
+									when Sift also identifies others by it.
 									-->
-									{#if face.is_reference}
-										<FaceMark kind={learned(face)} label={learnsFrom(face)} decorative />
-									{/if}
-									<!--
-									Nothing on a face you confirmed: the absence of a mark says
-									there is nothing to do.
-									-->
-									{#if face.attribution === 'matched' && !face.is_reference}
-										<FaceMark kind="recognized" decorative />
+									{#if face.attribution === 'matched'}
+										<FaceMark
+											kind="recognized"
+											label={face.is_reference ? learnsFrom(face) : undefined}
+											decorative
+										/>
 									{:else if face.attribution === 'suggested'}
 										<FaceMark kind="asking" decorative />
 									{/if}

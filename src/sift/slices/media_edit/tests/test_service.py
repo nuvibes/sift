@@ -364,6 +364,43 @@ async def test_a_file_that_already_fits_is_not_re_encoded(
     assert started.started == 0
 
 
+async def test_a_file_stored_in_two_places_is_compressed_next_to_the_copy_chosen(
+    compressor: CompressService,
+    managed: Library,
+    add_file: Callable[..., Any],
+    admin: Viewer,
+    job_queue: JobQueue,
+    targets: dict[str, Any],
+) -> None:
+    """Refused without a copy named, as a rename is; named after and queued for the one chosen."""
+    ingested = await add_file(managed, "clip.mp4")
+    other = await add_file(managed, "kept/holiday.mp4")
+    await _pretend_it_is_a_long_video(compressor, ingested.asset.id)
+    targets[KEY_FOR_PRESET[Preset.SMALL]] = 50
+
+    unnamed = await compressor.preflight(
+        CompressRequest(asset_ids=[ingested.asset.id], preset=Preset.SMALL), viewer=admin
+    )
+    assert unnamed.files[0].skip_reason and "more than one folder" in unnamed.files[0].skip_reason
+
+    chosen = CompressRequest(
+        asset_ids=[ingested.asset.id], preset=Preset.SMALL, location_id=other.location.id
+    )
+    answer = await compressor.preflight(chosen, viewer=admin)
+    assert answer.files[0].skip_reason is None
+    assert answer.files[0].filename == "holiday.mp4"
+
+    started = await compressor.start(chosen.model_copy(update={"force": True}), viewer=admin)
+    assert started.started == 1
+    claimed = await job_queue.claim("test")
+    assert claimed is not None and claimed.payload["location_id"] == other.location.id
+
+
+def test_a_copy_is_named_for_one_file_at_a_time() -> None:
+    with pytest.raises(ValueError, match="one file at a time"):
+        CompressRequest(asset_ids=["a", "b"], preset=Preset.SMALL, location_id="c")
+
+
 # --- provenance ---------------------------------------------------------------------------------
 
 

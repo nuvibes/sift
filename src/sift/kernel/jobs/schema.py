@@ -14,7 +14,7 @@ from sift.kernel.db import Connection, register_schema_initializer
 from sift.kernel.migrations import column_exists
 
 COMPONENT = "jobs"
-VERSION = 21
+VERSION = 22
 
 # The state list is repeated in `JobState`, since a CHECK takes no placeholder; a test holds the two
 # in step. `paused` is a state, not a flag, so nothing that asks of the state can claim it.
@@ -284,6 +284,17 @@ CREATE TABLE IF NOT EXISTS job_plan_marks (
 """
 
 
+#: Jobs version 22: what somebody paused, kept so a restart starts paused as it stopped: one `all`
+#: row for the whole queue, one `type` or `product` row for each held one. Read at the pool's start.
+_CREATE_HOLDS = """
+CREATE TABLE IF NOT EXISTS job_holds (
+  kind TEXT NOT NULL CHECK (kind IN ('all', 'type', 'product')),
+  name TEXT NOT NULL,
+  PRIMARY KEY (kind, name)
+) WITHOUT ROWID
+"""
+
+
 #: Jobs version 21: the live rows by the file they concern, so a cache's "is work still owed on
 #: this file" and any other lookup by asset among live rows is a seek (`_WORK_OWED`).
 _LIVE_ASSET_INDEX = (
@@ -332,6 +343,10 @@ async def _to_version_21(connection: Connection) -> None:
     await connection.execute(_LIVE_ASSET_INDEX)
 
 
+async def _to_version_22(connection: Connection) -> None:
+    await connection.execute(_CREATE_HOLDS)
+
+
 #: (version, the step to it, whether a fresh table needs it too): a fresh install runs the CREATE
 #: and then every step marked so, a database behind runs every step past its version.
 _STEPS: tuple[tuple[int, Callable[[Connection], Awaitable[None]], bool], ...] = (
@@ -344,6 +359,7 @@ _STEPS: tuple[tuple[int, Callable[[Connection], Awaitable[None]], bool], ...] = 
     (19, _to_version_19, True),
     (20, _to_version_20, False),
     (21, _to_version_21, True),
+    (22, _to_version_22, True),
 )
 
 

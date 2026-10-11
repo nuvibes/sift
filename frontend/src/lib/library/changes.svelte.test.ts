@@ -18,8 +18,13 @@ vi.mock('$lib/api/client', () => ({
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
 
 const {
+	asTheFeed,
+	jobChanges,
 	libraryChanges,
 	recorded,
+	RE_ASKED_EVERY_MS,
+	WalkingPace,
+	whenChanged,
 	rereadOnHistoryChange,
 	reloadOnLibraryChange,
 	HeldNewcomers,
@@ -72,6 +77,105 @@ describe('the shared library-change signal', () => {
 
 		expect(del).toHaveBeenCalledWith('/library/roots/r1');
 		expect(libraryChanges.generation).toBe(before + 1);
+	});
+});
+
+describe('a re-read at a walking pace', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	/** Follow a bell the way a screen does, in setup, which `$effect.root` stands in for. */
+	function following(signal: typeof libraryChanges, pace: InstanceType<typeof WalkingPace>) {
+		const stop = $effect.root(() => whenChanged(signal, pace));
+		flushSync();
+		return stop;
+	}
+
+	it('reads on the first bell, and once at the end of the window for the bells inside it', () => {
+		const read = vi.fn();
+		const pace = new WalkingPace(read);
+
+		pace.bell();
+		expect(read, 'the first bell after a quiet window waited').toHaveBeenCalledTimes(1);
+		for (let second = 1; second < 10; second += 1) {
+			vi.advanceTimersByTime(1000);
+			pace.bell();
+		}
+		expect(read, 'a bell inside the window read again').toHaveBeenCalledTimes(1);
+		vi.advanceTimersByTime(1000);
+		expect(read, 'the bells inside the window were never read').toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps an import ringing every second to a read in each ten seconds', () => {
+		const read = vi.fn();
+		const pace = new WalkingPace(read);
+		for (let second = 0; second < 60; second += 1) {
+			pace.bell();
+			vi.advanceTimersByTime(1000);
+		}
+		// The minute's first second and the end of each window in it, the minute's end included.
+		expect(read).toHaveBeenCalledTimes(60_000 / RE_ASKED_EVERY_MS + 1);
+	});
+
+	it('starts the window when the answer lands, and owes a bell rung while a read is out', async () => {
+		let answer: () => void = () => undefined;
+		const read = vi.fn(() => new Promise<void>((done) => (answer = done)));
+		const pace = new WalkingPace(read);
+
+		pace.bell();
+		vi.advanceTimersByTime(30_000);
+		pace.bell();
+		expect(read, 'a second read went out beside the first').toHaveBeenCalledTimes(1);
+		answer();
+		await vi.advanceTimersByTimeAsync(RE_ASKED_EVERY_MS - 1);
+		expect(read, 'the window ran from the ask, not the answer').toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(read, 'the bell rung while the read was out was dropped').toHaveBeenCalledTimes(2);
+	});
+
+	it("reads this tab's own write immediately, and the feed's at the pace", () => {
+		const read = vi.fn();
+		const stop = following(libraryChanges, new WalkingPace(read));
+
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+		expect(read, "the feed's second bell did not wait").toHaveBeenCalledTimes(1);
+
+		libraryChanges.changed();
+		flushSync();
+		expect(read, 'a write of this tab waited behind the pace').toHaveBeenCalledTimes(2);
+		stop();
+	});
+
+	it('reads nothing after its screen has gone, not even a bell owed by a read still out', async () => {
+		let answer: () => void = () => undefined;
+		const read = vi.fn(() => new Promise<void>((done) => (answer = done)));
+		const stop = following(jobChanges, new WalkingPace(read));
+		asTheFeed(() => jobChanges.changed());
+		flushSync();
+		asTheFeed(() => jobChanges.changed());
+		flushSync();
+		stop();
+		answer();
+		await vi.advanceTimersByTimeAsync(RE_ASKED_EVERY_MS * 2);
+		expect(read).toHaveBeenCalledTimes(1);
+	});
+
+	it('paces a store that lives as long as the tab the same way', () => {
+		const read = vi.fn();
+		jobChanges.subscribe(new WalkingPace(read));
+		asTheFeed(() => jobChanges.changed());
+		asTheFeed(() => jobChanges.changed());
+		expect(read).toHaveBeenCalledTimes(1);
+		jobChanges.changed();
+		expect(read, 'a write of this tab waited behind the pace').toHaveBeenCalledTimes(2);
 	});
 });
 

@@ -2,7 +2,7 @@
 
 import type { components } from '$lib/api/schema';
 import { api, ApiError } from '$lib/api/client';
-import { jobChanges, settingChanges } from '$lib/library/changes.svelte';
+import { jobChanges, settingChanges, WalkingPace } from '$lib/library/changes.svelte';
 import { saveSettings } from '$lib/settings-ui/settings';
 import { COPY } from '$lib/settings-ui/ScheduledTasks.search';
 import { toasts } from '$lib/shell/toasts.svelte';
@@ -174,12 +174,9 @@ export const taskList = new TaskList();
 
 /* The queue moved, or a setting did. Only once something has asked: a store nobody has opened has
    nothing to bring up to date, and asking would be a request on behalf of a screen nobody opened. */
-jobChanges.subscribe(() => {
-	if (taskList.asked) void taskList.load();
-});
-settingChanges.subscribe(() => {
-	if (taskList.asked) void taskList.load();
-});
+const tasksPace = new WalkingPace(() => (taskList.asked ? taskList.load() : undefined));
+jobChanges.subscribe(tasksPace);
+settingChanges.subscribe(tasksPace);
 
 /** When a run held for quiet hours starts, as the row beside the press writes that time: the
  * range's own start ("6 AM") where the run waits for the range to open, the moment itself for

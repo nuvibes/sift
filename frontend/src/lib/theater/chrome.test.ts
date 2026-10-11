@@ -1,22 +1,8 @@
-/* The screen's row fades with the wall's chrome, except while it holds the menus in a window. */
+/* The screen's row holds a filled window's menus whole, so the title under it never slides. */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
-
-import { rowQuiet } from './chrome.svelte';
-
-it('stays drawn while it holds the menus in a window, wherever the pointer is', () => {
-	expect(rowQuiet(false, false, false), 'the menus could not be seen or pressed').toBe(false);
-	expect(rowQuiet(true, false, false)).toBe(false);
-});
-
-it('fades with the chrome in full screen, and in a window whose top bar has the menus', () => {
-	expect(rowQuiet(false, true, false)).toBe(true);
-	expect(rowQuiet(false, true, true)).toBe(true);
-	expect(rowQuiet(false, false, true)).toBe(true);
-	expect(rowQuiet(true, true, false)).toBe(false);
-});
 
 it('holds the menus whole immediately, so the title under it never slides', () => {
 	const source = readFileSync(

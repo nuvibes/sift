@@ -183,6 +183,10 @@ async def test_where_files_sit_is_read_from_the_apps_own_three_parts(app: FastAP
             asked.append(root_id)
             return [SimpleNamespace(root_id="r1", rel_path="", name="Library", concealed=False)]
 
+        async def visible_folders_on(self, viewer: Viewer, places: Any) -> list[Any]:
+            asked.append(f"on {places}")
+            return []
+
     class Libraries:
         async def roots(self) -> list[Any]:
             return [SimpleNamespace(id="r1", abs_path="/srv/Library")]
@@ -208,3 +212,6 @@ async def test_where_files_sit_is_read_from_the_apps_own_three_parts(app: FastAP
     )
     assert said.tops == {"r1": "/srv/Library"}
     assert asked == ["r1", "r1"]
+    # One file's place is read from its own folders, not the library's.
+    await wiring.whereabouts(request, admin, places=[("r1", "a/b.mp4")])
+    assert asked[-1] == "on [('r1', 'a/b.mp4')]"

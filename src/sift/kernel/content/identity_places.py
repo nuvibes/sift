@@ -37,6 +37,14 @@ UPDATE asset_locations
 RETURNING *
 """
 
+# `_MARK_MISSING` for a page of locations: one write, however many a sweep found gone.
+_MARK_MANY_MISSING = """
+UPDATE asset_locations
+   SET status = 'missing'
+ WHERE id IN (?*) AND status = 'present'
+RETURNING *
+"""
+
 # The same bytes back at a missing path (a drive plugged in again): only status and time change.
 _MARK_PRESENT = """
 UPDATE asset_locations
@@ -82,9 +90,15 @@ OWED_ANSWER_SECONDS = 30.0
 OWED_CEILING_TIMES = 8
 OWED_CEILING_FREE_SHARE = 4
 
-#: A cache folder that holds nothing but copies owed work is walked at most this often: at one
-#: library's ceiling every new picture walked 10,000 copies again, 7.8 s a walk, five times a minute.
+#: A cache folder a walk left with nothing it may drop is walked at most this often, while what is
+#: filed since stays under a budget more: at one library's ceiling every new picture walked 10,000
+#: copies again, 7.8 s a walk, five times a minute.
 KEEP_WALK_EVERY_SECONDS = 60.0
+
+#: How long a cache whose last walk had to drop copies owed work files no new copy from a take-in,
+#: in seconds. A take-in's copy is owed work at the end of every pass's queue: with the passes far
+#: behind, it would be dropped before they reach it, or push out a copy they reach sooner.
+FULL_OF_OWED_SECONDS = 60.0
 
 #: Each local copy handed out, and when (`time.monotonic`): for the whole process, as every store
 #: of it reads the same cache.
@@ -282,6 +296,23 @@ class Places(StoreCore):
         )
         return True
 
+    async def mark_many_missing(self, location_ids: Sequence[str]) -> int:
+        """`mark_missing` for many, one write a page rather than one a file: how many it marked."""
+        wanted = list(dict.fromkeys(location_ids))
+        marked = 0
+        for start in range(0, len(wanted), MAX_PAGE_SIZE):
+            sql, params = in_clause(_MARK_MANY_MISSING, wanted[start : start + MAX_PAGE_SIZE])
+            for row in await self._write_moving_files(sql, tuple(params)):
+                location = location_from_row(row)
+                log.info(
+                    "content.location_missing",
+                    location_id=location.id,
+                    asset_id=location.asset_id,
+                    root_id=location.root_id,
+                )
+                marked += 1
+        return marked
+
     async def stranded_asset_ids(self, stranded_before: int) -> list[str]:
         """Assets with no location left, stranded at or before `stranded_before` (or at an unknown
         moment): a fresh strand is left alone while adding its folder back can still restore it."""
@@ -380,15 +411,20 @@ class Places(StoreCore):
 
     async def keep_local_copy(
         self, asset_id: str, scratch: Path, *, from_archive: bool = False
-    ) -> Path:
+    ) -> Path | None:
         """File a copy just read from a share under its asset, for the passes after the take-in to
         read instead of the share; the scratch file is gone either way. A picture out of an archive
-        goes where `_materialised` looks for it, so it is not pulled out again."""
+        goes where `_materialised` looks for it, so it is not pulled out again. None where the cache
+        is full of copies owed work (`FULL_OF_OWED_SECONDS`): the passes read the share."""
         folder, budget = (
             (self.ARCHIVE_CACHE, self.ARCHIVE_CACHE_BUDGET)
             if from_archive
             else (self.LOCAL_COPIES, self.LOCAL_COPIES_BUDGET)
         )
+        if self._at_its_ceiling(str(folder)):
+            await asyncio.to_thread(scratch.unlink, True)
+            self._not_kept = {**self._not_kept, str(folder): self._not_kept.get(str(folder), 0) + 1}
+            return None
         destination = self._settings.cache_dir / folder / asset_id / scratch.name
         await asyncio.to_thread(_place_copy, scratch, destination)
         _handed_out(destination)
@@ -414,23 +450,39 @@ class Places(StoreCore):
         self._owed_answer = (time.monotonic(), wanted, owed)
         return owed
 
-    #: Each cache folder as its last walk left it: when (`time.monotonic`), its bytes, and whether
-    #: nothing but owed copies were left to drop. The bytes grow with each copy filed since.
-    _cache_walks: Mapping[str, tuple[float, int, bool]] = MappingProxyType({})
+    #: Each cache folder as its last walk left it: when (`time.monotonic`), its bytes counted since
+    #: (each copy filed adds its own), the bytes the walk left, and whether it left nothing free.
+    _cache_walks: Mapping[str, tuple[float, int, int, bool]] = MappingProxyType({})
+
+    #: Each cache folder whose last walk dropped copies owed work, and when (`time.monotonic`); and
+    #: how many take-in copies were not kept since that walk.
+    _full_of_owed: Mapping[str, float] = MappingProxyType({})
+    _not_kept: Mapping[str, int] = MappingProxyType({})
+
+    def _at_its_ceiling(self, name: str) -> bool:
+        """Whether this cache folder's walk had to drop copies owed work, `FULL_OF_OWED_SECONDS` ago
+        or less."""
+        return time.monotonic() - self._full_of_owed.get(name, float("-inf")) < FULL_OF_OWED_SECONDS
 
     async def _keep(self, folder: Path | str, budget: int, keep: Path) -> None:
         """Hold a cache folder to its budget: never the copy just made, one handed out lately, or,
         up to a ceiling, one whose asset still has work owed (`_drop`). Walked only when the bytes
-        counted since the last walk say it is over budget, and a folder left with nothing but owed
-        copies at most once a minute."""
+        counted since the last walk say it is over budget; a folder whose walk left nothing it may
+        drop, at most once a minute while what is filed since stays under a budget more."""
         name = str(folder)
-        walked_at, counted, only_owed = self._cache_walks.get(name, (float("-inf"), None, False))
-        if only_owed and time.monotonic() - walked_at < KEEP_WALK_EVERY_SECONDS:
-            return
+        walked_at, counted, left_then, stuck = self._cache_walks.get(
+            name, (float("-inf"), None, 0, False)
+        )
         if counted is not None:
             counted += await asyncio.to_thread(_size_of, keep)
-            if counted <= budget:
-                self._cache_walks = {**self._cache_walks, name: (walked_at, counted, False)}
+            allowed = budget
+            if stuck and time.monotonic() - walked_at < KEEP_WALK_EVERY_SECONDS:
+                allowed = left_then + budget
+            if counted <= allowed:
+                self._cache_walks = {
+                    **self._cache_walks,
+                    name: (walked_at, counted, left_then, stuck),
+                }
                 return
         directory = self._settings.cache_dir / folder
         # Timed: at one library's ceiling this walk was most of a probe's unrecorded time.
@@ -438,27 +490,35 @@ class Places(StoreCore):
             held = await asyncio.to_thread(_cached, directory)
             total = sum(size for _, size, _ in held)
             if total <= budget:
-                self._cache_walks = {**self._cache_walks, name: (time.monotonic(), total, False)}
+                self._cache_walks = {
+                    **self._cache_walks,
+                    name: (time.monotonic(), total, total, False),
+                }
                 return
             # Named in the thread: thousands of paths, and the loop is everybody's.
             owed = await self._work_owed(await asyncio.to_thread(_assets_of, directory, held))
             ceiling = await asyncio.to_thread(_owed_ceiling, directory, budget)
-            dropped, owed_dropped, freed, only_owed = await asyncio.to_thread(
+            dropped, owed_dropped, freed, nothing_free = await asyncio.to_thread(
                 _drop, directory, held, budget, keep, owed=owed, ceiling=ceiling
             )
             left = total - freed
-            self._cache_walks = {
-                **self._cache_walks,
-                name: (time.monotonic(), left, left > budget and dropped == 0 and only_owed),
-            }
+            # Nothing free was left to drop: the next copies wait for the minute, not a walk each.
+            stuck = nothing_free and (left > budget or owed_dropped > 0)
+            self._cache_walks = {**self._cache_walks, name: (time.monotonic(), left, left, stuck)}
+        full = {**self._full_of_owed}
+        full.pop(name, None)
         if owed_dropped:
+            full[name] = time.monotonic()
             log.warning(
                 "content.cache_dropped_owed",
                 cache=str(folder),
                 dropped=dropped,
                 owed=owed_dropped,
                 ceiling_bytes=ceiling,
+                not_kept=self._not_kept.get(name, 0),
             )
+            self._not_kept = {key: n for key, n in self._not_kept.items() if key != name}
+        self._full_of_owed = full
 
 
 #: The prefixes of a take-in's own scratch folders under `incoming` (`tempfile.mkdtemp`'s).
@@ -589,19 +649,19 @@ def _drop(
     """Drop the least recently ACCESSED copies until the folder fits its budget; blocking and
     best-effort. Never `keep`, which a caller is about to open. A copy handed out lately, or whose
     asset still has work owed, goes only while the folder is over `ceiling`, oldest first. How
-    many went, how many of those were spared until then, the bytes freed, and whether what could
-    not go was nothing but copies owed work."""
+    many went, how many of those were spared until then, the bytes freed, and whether the folder
+    was still over budget once every free copy had gone."""
     total = sum(size for _, size, _ in held)
     lately = _lately_handed_out()
     others = [one for one in sorted(held) if one[2] != keep]
     spared = {one[2] for one in others if one[2] in lately or _asset_of(directory, one[2]) in owed}
     free = [one for one in others if one[2] not in spared]
     still = [one for one in others if one[2] in spared]
-    only_owed = (
-        not free and bool(still) and all(_asset_of(directory, one[2]) in owed for one in still)
-    )
     dropped = owed_dropped = freed = 0
+    nothing_free = False
     for limit, pool in ((budget, free), (budget if ceiling is None else ceiling, still)):
+        # Judged from what the free copies left: over budget with none of them left to drop.
+        nothing_free = nothing_free or (pool is still and total > budget)
         for _, size, path in pool:
             if total <= limit:
                 break
@@ -616,7 +676,7 @@ def _drop(
             # Its directory holds only this picture, so it goes too.
             with suppress(OSError):
                 path.parent.rmdir()  # nosemgrep: sift-no-file-removal-outside-delete-trash
-    return dropped, owed_dropped, freed, only_owed
+    return dropped, owed_dropped, freed, nothing_free
 
 
 def _size_of(path: Path) -> int:

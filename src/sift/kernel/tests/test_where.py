@@ -174,6 +174,12 @@ class _Access:
         self.asked.append(root_id)
         return self._folders
 
+    async def visible_folders_on(
+        self, viewer: Viewer, places: list[tuple[str, str]]
+    ) -> list[Folder]:
+        self.asked.append(f"places {places}")
+        return self._folders
+
 
 class _Library:
     """One library, at `LIBRARY`."""
@@ -219,4 +225,19 @@ async def test_a_guest_is_told_the_library_by_its_name_and_no_path_is_read_for_t
     )
 
     assert library.read is False
+    assert said_to.of(ROOT, "2024/Beach/clip.mp4") == _path("Library", "2024", "Beach", "clip.mp4")
+
+
+async def test_one_files_place_is_said_from_the_folders_on_its_path() -> None:
+    access = _Access(EVERY_FOLDER)
+
+    said_to = await where.whereabouts(
+        GUEST,
+        access=cast(Any, access),
+        library=cast(Any, _Library()),
+        settings=cast(Any, _Settings(True)),
+        places=[(ROOT, "2024/Beach/clip.mp4")],
+    )
+
+    assert access.asked == [f"places {[(ROOT, '2024/Beach/clip.mp4')]}"], "not the whole tree"
     assert said_to.of(ROOT, "2024/Beach/clip.mp4") == _path("Library", "2024", "Beach", "clip.mp4")

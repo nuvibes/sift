@@ -9,12 +9,12 @@
 		category: 'primitive',
 		role: "a small accent glyph saying where a face's name came from, beside the name or on the face's card",
 		basis: 'composes:Tooltip',
-		states: ['asking', 'recognized', 'reference', 'learned', 'small', 'announced', 'decorative']
+		states: ['asking', 'recognized', 'recognized, a reference', 'small', 'announced', 'decorative']
 	} satisfies DesignEntry;
 
-	/** Which mark: `asking` (the one that is work), `recognized`, `reference` (the caller's words)
-	 * or `learned`. A confirmed face has none. */
-	export type FaceMarkKind = 'asking' | 'recognized' | 'reference' | 'learned';
+	/** Which mark: `asking` (the one that is work) or `recognized` (Sift named it). A confirmed face
+	 * has none. */
+	export type FaceMarkKind = 'asking' | 'recognized';
 </script>
 
 <script lang="ts">
@@ -31,36 +31,28 @@
 		decorative?: boolean;
 	}
 
-	/** A state mark: its words are the ones every faces screen uses for that state. */
-	interface State extends Shared {
-		kind: 'asking' | 'recognized';
-		label?: undefined;
+	/** The words every faces screen uses for the state, or, for a face Sift also identifies others
+	 * by, the caller's sentence saying so: one glyph either way. */
+	interface Props extends Shared {
+		kind: FaceMarkKind;
+		label?: string;
 	}
-
-	/** The reference mark, in the caller's words: whose face it helps find. */
-	interface Reference extends Shared {
-		kind: 'reference' | 'learned';
-		label: string;
-	}
-
-	type Props = State | Reference;
 
 	let { kind, label, size = 'medium', decorative = false }: Props = $props();
 
+	/* Sift's own naming wears the glyph History gives what Sift learned from a face. */
 	const GLYPH: Record<FaceMarkKind, IconName> = {
 		asking: 'help',
-		recognized: 'auto_fix_high',
-		reference: 'face',
-		learned: facetValueIcon('enriched', 'faces') ?? 'familiar_face_and_zone'
+		recognized: facetValueIcon('enriched', 'faces') ?? 'familiar_face_and_zone'
 	};
 
 	/* The same words every faces screen uses for these states. */
-	const WORDS: Record<State['kind'], string> = {
+	const WORDS: Record<FaceMarkKind, string> = {
 		asking: 'Needs your input',
 		recognized: 'Recognized by Sift'
 	};
 
-	const said = $derived(kind === 'reference' || kind === 'learned' ? (label ?? '') : WORDS[kind]);
+	const said = $derived(label ?? WORDS[kind]);
 </script>
 
 <Tooltip label={said} placement="top">

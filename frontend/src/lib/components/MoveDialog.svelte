@@ -5,6 +5,8 @@
 	 * time, with the count and a sentence saying it moves the file on your disk.
 	 */
 	import { ConfirmDialog, Field, Select } from '$lib/components/common';
+	import CopiesChoice from '$lib/components/CopiesChoice.svelte';
+	import { copiesOf, type FileCopy } from '$lib/organize/copies';
 	import { disambiguate } from '$lib/library/folder-names';
 	import type { components } from '$lib/api/schema';
 
@@ -17,10 +19,33 @@
 		/** Named in every sentence. */
 		count: number;
 		folders: readonly MoveTarget[];
-		onconfirm: (folderId: string) => void;
+		/** The one file being moved, whose copies are offered when it is stored in more than one place. */
+		assetId?: string;
+		/** The folder, and the copy chosen (null when there was nothing to choose). */
+		onconfirm: (folderId: string, locationId: string | null) => void;
 	}
 
-	let { open = $bindable(false), count, folders, onconfirm }: Props = $props();
+	let { open = $bindable(false), count, folders, assetId, onconfirm }: Props = $props();
+
+	/* Only the copies that can be moved are offered; the server refuses the rest anyway. */
+	let copies = $state<FileCopy[]>([]);
+	let copy = $state<string | null>(null);
+
+	$effect(() => {
+		copies = [];
+		copy = null;
+		if (!open || assetId === undefined) return;
+		const asked = assetId;
+		void copiesOf(asked)
+			.then((found) => {
+				if (asked !== assetId) return;
+				copies = found.filter((one) => one.reason === null);
+				copy = copies.length > 1 ? copies[0].location_id : null;
+			})
+			.catch(() => {
+				// Moved without a copy named: the server's sentence says why it was not.
+			});
+	});
 
 	/* Nothing chosen on open: a destination filled in for somebody is not one they picked. */
 	let chosen = $state('');
@@ -50,10 +75,11 @@
 	confirmLabel="Move"
 	destructive={false}
 	confirmDisabled={chosen === ''}
-	onconfirm={() => onconfirm(chosen)}
+	onconfirm={() => onconfirm(chosen, copy)}
 >
 	{#snippet extra()}
 		<div class="where">
+			<CopiesChoice {copies} bind:value={copy} label="Which copy to move" />
 			<Field label="Move to">
 				{#snippet control({ id, describedBy })}
 					<Select {id} bind:value={chosen} {describedBy} {options} placeholder="Choose a folder" />
@@ -64,7 +90,11 @@
 </ConfirmDialog>
 
 <style>
+	/* The copy, when there is one to choose, above where it goes. */
 	.where {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
 		margin-block-end: var(--space-5);
 	}
 </style>

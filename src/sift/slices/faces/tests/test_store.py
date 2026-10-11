@@ -9,6 +9,7 @@ into the way around the first one.
 
 from __future__ import annotations
 
+import threading
 from dataclasses import replace
 from pathlib import Path
 
@@ -32,7 +33,7 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ingress import Origin, verify_ingress
 from sift.kernel.ledger import Actor
-from sift.slices.faces import recognize, store_grouping, tracking
+from sift.slices.faces import recognize, store_grouping, store_piles, store_records, tracking
 from sift.slices.faces.models import (
     Appearance,
     Attribution,
@@ -824,6 +825,31 @@ async def test_the_whole_list_of_piles_can_be_read_without_a_page(
     assert len(await store.piles(None)) == 1
     assert len(await store.piles(None, limit=10, offset=0)) == 1
     assert len(await store.piles(PileStatus.OPEN, limit=10, offset=0)) == 1
+
+
+async def test_the_faces_of_many_piles_are_built_off_the_loop_s_thread(
+    store: Store, clip: Ingested, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The largest groups hold thousands of faces, and Faces to confirm reads every one of a
+    page's groups: built on the loop, every other request waits behind them."""
+    await record(store, clip.asset.id, count=3)
+    tracks = await store.tracks_of(clip.asset.id)
+    made = await store.replace_piles(
+        [(tuple(0.0 for _ in range(8)), [track.id for track in tracks])]
+    )
+    built_on: set[int] = set()
+    real = store_records._track
+
+    def watched(row: object) -> object:
+        built_on.add(threading.get_ident())
+        return real(row)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(store_piles, "_track", watched)
+
+    held = await store.tracks_in_piles(made)
+
+    assert len(held[made[0]]) == 3
+    assert built_on and threading.get_ident() not in built_on
 
 
 async def test_a_pile_can_be_read_by_its_own_identity(store: Store, clip: Ingested) -> None:

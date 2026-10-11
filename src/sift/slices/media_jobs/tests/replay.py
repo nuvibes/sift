@@ -18,7 +18,7 @@ from sift.kernel.db import Database
 from sift.kernel.jobs import ledger as ledger_module
 from sift.kernel.jobs import register_handler, time_left
 from sift.kernel.jobs.families import Family
-from sift.kernel.jobs.holding import Holding
+from sift.kernel.jobs.holding import Holding, Pause
 from sift.kernel.jobs.ledger import Ledger
 from sift.kernel.jobs.queue_rows import FilesToRead
 from sift.kernel.jobs.switchboard import Switchboard
@@ -42,6 +42,15 @@ FAMILIES = {
 WALKS = ("scan", "scan_count")
 STEP = 10.0
 TICK = 3.0
+
+
+async def _kept(_pause: Pause) -> None:
+    return None
+
+
+def _unkept_holding() -> Holding:
+    """A pause nobody keeps: the fake pool reads none back."""
+    return Holding(lambda: None, keep=_kept)
 
 
 @dataclass(slots=True)
@@ -99,7 +108,7 @@ class Clock:
 class _Pool:
     concurrency: int
     limits: dict[str, int] = field(default_factory=dict)
-    holding: Holding = field(default_factory=Holding)
+    holding: Holding = field(default_factory=_unkept_holding)
 
 
 @dataclass(frozen=True, slots=True)

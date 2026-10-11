@@ -3643,6 +3643,17 @@
             "title": "Force",
             "type": "boolean"
           },
+          "location_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
+          },
           "preset": {
             "anyOf": [
               {
@@ -5493,6 +5504,17 @@
               }
             ],
             "title": "Filename"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
           },
           "steps": {
             "items": {
@@ -13443,6 +13465,17 @@
           "folder_id": {
             "title": "Folder Id",
             "type": "string"
+          },
+          "location_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location Id"
           }
         },
         "required": [
@@ -14203,6 +14236,37 @@
         "title": "OptimizeResult",
         "type": "object"
       },
+      "OrganizeCopy": {
+        "description": "One place this file is stored, for a screen that asks which copy is meant.",
+        "properties": {
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "location_id",
+          "path",
+          "reason"
+        ],
+        "title": "OrganizeCopy",
+        "type": "object"
+      },
       "OrganizeDone": {
         "description": "What the file is called now, and the `move_id` its undo names.",
         "properties": {
@@ -14252,11 +14316,18 @@
         "type": "object"
       },
       "OrganizeOptions": {
-        "description": "Whether rename and move belong on screen for this asset, with `reason` when not.",
+        "description": "Whether rename and move belong on screen for this asset, with `reason` when not.\n\n`copies` lists every place the file is stored, for an admin, so a screen can ask which one.",
         "properties": {
           "can_organize": {
             "title": "Can Organize",
             "type": "boolean"
+          },
+          "copies": {
+            "items": {
+              "$ref": "#/components/schemas/OrganizeCopy"
+            },
+            "title": "Copies",
+            "type": "array"
           },
           "reason": {
             "anyOf": [
@@ -14284,7 +14355,8 @@
         "required": [
           "can_organize",
           "reason",
-          "undo_move_id"
+          "undo_move_id",
+          "copies"
         ],
         "title": "OrganizeOptions",
         "type": "object"
@@ -29820,7 +29892,7 @@
     },
     "/api/assets/{asset_id}/organize": {
       "get": {
-        "description": "Whether this file can be renamed or moved, and what would undo its last move.\n\nAsked by the asset view before it draws its menu. On a folder that was not handed over\nread-write the actions are left off the menu entirely rather than shown and refusing.",
+        "description": "Whether this file can be renamed or moved, what would undo its last move, and its copies.\n\nAsked by the asset view before it draws its menu, and by the dialogs that ask which copy of a\nfile stored in more than one place they act on. On a folder that was not handed over\nread-write the actions are left off the menu entirely rather than shown and refusing.",
         "operationId": "options_api_assets__asset_id__organize_get",
         "parameters": [
           {
@@ -38437,7 +38509,7 @@
     },
     "/api/jobs/pause": {
       "post": {
-        "description": "Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running\nfinishes the step in its hand. Held until Resume, or until Sift starts again.",
+        "description": "Pause a pass, a sub-task or the whole queue: nothing new of it starts, and what is running\nfinishes the step in its hand. Held until Resume, across a restart.",
         "operationId": "pause_work_api_jobs_pause_post",
         "requestBody": {
           "content": {

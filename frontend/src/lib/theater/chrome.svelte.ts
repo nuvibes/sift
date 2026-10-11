@@ -13,8 +13,3 @@ class WallChrome {
 }
 
 export const wallChrome = new WallChrome();
-
-/** Whether the screen's row fades with the wall's chrome: never while it holds the menus in a window. */
-export function rowQuiet(up: boolean, filling: boolean, menusOnTopBar: boolean): boolean {
-	return !up && (filling || menusOnTopBar);
-}

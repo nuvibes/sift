@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AssetView from './AssetView.svelte';
 import { api } from '$lib/api/client';
-import { jobChanges, libraryChanges } from '$lib/library/changes.svelte';
+import { asTheFeed, jobChanges, libraryChanges } from '$lib/library/changes.svelte';
 
 const served = vi.hoisted(() => ({ detail: {} as Record<string, unknown>, gone: false }));
 
@@ -88,6 +88,12 @@ afterEach(() => {
 	instance = null;
 	host.remove();
 });
+
+/** How many times the people under the file were asked for: one of the band's lists. */
+function bandReads(): number {
+	return vi.mocked(api.get).mock.calls.filter(([path]) => String(path) === '/assets/a-1/people')
+		.length;
+}
 
 /** How many times the record itself was asked for. */
 function recordReads(): number {
@@ -172,9 +178,6 @@ describe('a bell while the file is open', () => {
 	it('re-reads the people and filings under the file on the library bell itself', async () => {
 		served.detail = detail();
 		await show(() => {});
-		const bandReads = () =>
-			vi.mocked(api.get).mock.calls.filter(([path]) => String(path) === '/assets/a-1/people')
-				.length;
 		const before = bandReads();
 
 		libraryChanges.changed();
@@ -185,12 +188,9 @@ describe('a bell while the file is open', () => {
 		);
 	});
 
-	it('reads the band once for a library bell, and after the settle only for a jobs bell', async () => {
+	it('reads the band once for either bell, on the bell itself', async () => {
 		served.detail = detail();
 		await show(() => {});
-		const bandReads = () =>
-			vi.mocked(api.get).mock.calls.filter(([path]) => String(path) === '/assets/a-1/people')
-				.length;
 		let before = bandReads();
 		let records = recordReads();
 
@@ -203,9 +203,9 @@ describe('a bell while the file is open', () => {
 		records = recordReads();
 		jobChanges.changed();
 		flushSync();
-		expect(bandReads()).toBe(before);
+		expect(bandReads(), 'a job that moved the file reads its band').toBe(before + 1);
 		await vi.waitFor(() => expect(recordReads()).toBe(records + 1));
-		expect(bandReads(), 'a job that moved the file reads its band once settled').toBe(before + 1);
+		expect(bandReads()).toBe(before + 1);
 	});
 
 	it('says the file is gone when it was deleted somewhere else', async () => {
@@ -219,5 +219,41 @@ describe('a bell while the file is open', () => {
 			flushSync();
 			if (!host.textContent?.includes('Not found.')) throw new Error('still drawn as here');
 		});
+	});
+});
+
+describe("the feed's bells while an import rings them every second", () => {
+	it('read the band and the record once in each ten seconds, the last bell included', async () => {
+		served.detail = detail();
+		await show(() => {});
+		vi.useFakeTimers();
+		try {
+			const band = bandReads();
+			const records = recordReads();
+			for (let second = 0; second < 60; second += 1) {
+				asTheFeed(() => {
+					jobChanges.changed();
+					libraryChanges.changed();
+				});
+				flushSync();
+				await vi.advanceTimersByTimeAsync(1000);
+			}
+			await vi.advanceTimersByTimeAsync(10_000);
+			// Once in each ten seconds of the minute, and at its end.
+			expect(bandReads() - band).toBeGreaterThanOrEqual(6);
+			expect(bandReads() - band, 'the band was read for every bell').toBeLessThanOrEqual(7);
+			expect(recordReads() - records, 'the record was read for every bell').toBeLessThanOrEqual(7);
+
+			served.detail = detail({ filename: 'renamed-by-a-task.jpg' });
+			asTheFeed(() => jobChanges.changed());
+			flushSync();
+			await vi.advanceTimersByTimeAsync(10_000);
+			flushSync();
+			expect(host.textContent, 'a change was not on screen within the pace').toContain(
+				'renamed-by-a-task.jpg'
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

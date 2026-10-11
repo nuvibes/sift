@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from sift.kernel.access import Viewer
+from sift.kernel.access import Effect, ObjectType, Repository, Viewer
 from sift.kernel.ingress import ALLOWED_EXTENSIONS
 from sift.slices.organize.service import (
     WORKING_SUFFIX,
@@ -295,3 +295,76 @@ async def test_producing_beside_an_unstorable_path_is_refused(
         await organizer.stage_beside(added.asset.id, filename="escape-10MB.mp4", actor=admin)
 
     assert not (managed.path.parent / "escape-10MB.mp4").exists()
+
+
+# --- a file stored in two places ------------------------------------------------------------
+
+
+async def test_a_produced_file_goes_beside_the_copy_named(
+    organizer: Organizer, managed: Library, add_file: Callable[..., Any], admin: Viewer
+) -> None:
+    """The same bytes in two folders: the new file lands beside the one asked for, never a guess."""
+    ingested = await add_file(managed, "clip.mp4")
+    other = await add_file(managed, "copy/clip.mp4")
+    assert other.asset.id == ingested.asset.id
+
+    with pytest.raises(OrganizeRefused, match="more than one folder"):
+        await organizer.stage_beside(ingested.asset.id, filename="clip-10MB.mp4", actor=admin)
+    assert "more than one folder" in (
+        await organizer.writable_beside(ingested.asset.id, actor=admin) or ""
+    )
+
+    staged = await organizer.stage_beside(
+        ingested.asset.id,
+        filename="clip-10MB.mp4",
+        actor=admin,
+        location_id=other.location.id,
+    )
+    assert staged.rel_path == "copy/clip-10MB.mp4"
+    assert staged.location_id == other.location.id
+    assert (
+        await organizer.writable_beside(
+            ingested.asset.id, actor=admin, location_id=other.location.id
+        )
+        is None
+    )
+
+
+async def test_a_name_is_taken_beside_the_copy_named_and_not_beside_the_other(
+    organizer: Organizer, managed: Library, add_file: Callable[..., Any], admin: Viewer
+) -> None:
+    ingested = await add_file(managed, "clip.mp4")
+    other = await add_file(managed, "copy/clip.mp4")
+    (managed.path / "copy" / "clip-10MB.mp4").write_bytes(b"there already")
+
+    taken = organizer.name_taken_beside
+    assert await taken(
+        ingested.asset.id, filename="clip-10MB.mp4", actor=admin, location_id=other.location.id
+    )
+    assert not await taken(
+        ingested.asset.id,
+        filename="clip-10MB.mp4",
+        actor=admin,
+        location_id=ingested.location.id,
+    )
+
+
+async def test_every_copy_is_listed_for_an_admin_and_none_for_a_guest(
+    organizer: Organizer,
+    managed: Library,
+    add_file: Callable[..., Any],
+    admin: Viewer,
+    guest: Viewer,
+    access: Repository,
+) -> None:
+    ingested = await add_file(managed, "clip.mp4")
+    await add_file(managed, "copy/clip.mp4")
+    # A guest who can see the file is still not told where it is stored.
+    await access.grant(ObjectType.ROOT, managed.root.id, guest.id, Effect.SHARE)
+
+    copies = await organizer.copies(ingested.asset.id, actor=admin)
+    assert sorted(one.rel_path for one, _why in copies) == ["clip.mp4", "copy/clip.mp4"]
+    assert [why for _one, why in copies] == [None, None], "a copy that can move was refused"
+
+    assert await organizer.copies(ingested.asset.id, actor=guest) == []
+    assert await organizer.copies("01HX0000000000000000000999", actor=admin) == []

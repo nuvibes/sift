@@ -5,7 +5,7 @@ A part's name and type are declared once; only this module touches `app.state`; 
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -318,13 +318,19 @@ def subject_covers(request: Request) -> SubjectCovers:
 
 
 async def whereabouts(
-    request: Request, viewer: Viewer, *, root_id: str | None = None
+    request: Request,
+    viewer: Viewer,
+    *,
+    root_id: str | None = None,
+    places: Sequence[tuple[str, str]] | None = None,
 ) -> where.Whereabouts:
-    """Where files sit, as `viewer` may be told it (`kernel.where`), in one library or in all."""
+    """Where files sit, as `viewer` may be told it (`kernel.where`), in one library, in all, or
+    for the (root id, relative path) `places` alone."""
     return await where.whereabouts(
         viewer,
         access=access(request),
         library=library(request),
         settings=settings_hub(request),
         root_id=root_id,
+        places=places,
     )

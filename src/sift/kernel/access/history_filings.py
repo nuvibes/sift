@@ -82,9 +82,8 @@ def _actor_of_row(row: Row, boxes: Mapping[str, str]) -> tuple[Actor, str | None
 async def _named_events(pane: _Pane) -> list[Event]:
     """A line per person named on the file."""
     database, access, viewer, asset_id = pane.database, pane.access, pane.viewer, pane.asset_id
-    present, folders_seen, lent, by_receipt = (
+    present, lent, by_receipt = (
         pane.present,
-        pane.folders_seen,
         pane.lent,
         pane.by_receipt,
     )
@@ -99,7 +98,6 @@ async def _named_events(pane: _Pane) -> list[Event]:
             viewer,
             asset_id,
             [str(row["person_id"]) for row in named_rows if row["source"] == "folder"],
-            folders_seen or None,
         )
         if "folder_people" in present and any(row["source"] == "folder" for row in named_rows)
         else {}

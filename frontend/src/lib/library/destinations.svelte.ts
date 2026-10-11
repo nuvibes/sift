@@ -5,7 +5,12 @@
 import { api, ApiError } from '$lib/api/client';
 import { toasts } from '$lib/shell/toasts.svelte';
 import { thing } from '$lib/components/common/toast-pieces';
-import { libraryChanges, settingChanges, whenChanged } from '$lib/library/changes.svelte';
+import {
+	libraryChanges,
+	settingChanges,
+	WalkingPace,
+	whenChanged
+} from '$lib/library/changes.svelte';
 import type { components } from '$lib/api/schema';
 import { disambiguate, recentFirst } from '$lib/library/folder-names';
 import { recentFolders, RECENT_FOLDERS_KEPT } from '$lib/shell/interface-state.svelte';
@@ -108,11 +113,11 @@ export class Destinations {
 	/** Read them again when they move: a folder added or handed over is said on the library bell,
 	 * a default folder chosen in another window on the settings bell. */
 	follow(): void {
-		const again = () => {
+		const again = new WalkingPace(() => {
 			if (!this.#loaded) return;
 			this.#loaded = false;
-			void this.load();
-		};
+			return this.load();
+		});
 		whenChanged(libraryChanges, again);
 		whenChanged(settingChanges, again);
 	}

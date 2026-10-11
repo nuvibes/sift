@@ -19,7 +19,7 @@ import structlog
 from sift.kernel.content import ContentStore, LibraryStore
 from sift.kernel.ids import new_id
 from sift.kernel.jobs.families import Family
-from sift.kernel.jobs.holding import Holding
+from sift.kernel.jobs.holding import Holding, Pause
 from sift.kernel.jobs.ledger import CURRENT_FAMILY, Ledger
 from sift.kernel.jobs.queue import (
     STOP_TO_CANCEL,
@@ -441,7 +441,24 @@ class WorkerPool:
         #: The switch that makes a running job's heartbeat beat now, so a stop lands in one beat.
         self._wake: dict[str, asyncio.Event] = {}
         self._unlisten: Callable[[], None] | None = None
-        self.holding = Holding(self._waking.wake_all)
+        #: What somebody paused, written through to the queue and read back at the start.
+        self.holding = Holding(self._waking.wake_all, keep=self._keep_holds)
+
+    async def _keep_holds(self, pause: Pause) -> None:
+        await self._queue.keep_holds(pause)
+
+    async def read_pause(self) -> None:
+        """Hold what was paused when the library last stopped. A press since this process began
+        is written first, so what is read back includes it. Read again by `start`."""
+        await self.holding.kept()
+        self.holding.restore(await self._queue.holds())
+        if self.holding.held_all or self.holding.held or self.holding.products:
+            log.info(
+                "jobs.pool.paused_as_left",
+                everything=self.holding.held_all,
+                types=sorted(self.holding.held),
+                products=sorted(self.holding.products),
+            )
 
     @property
     def concurrency(self) -> int:
@@ -463,6 +480,8 @@ class WorkerPool:
             raise RuntimeError("the worker pool is already running")
 
         self._stop.clear()
+        # Before the first worker: a library left paused starts paused.
+        await self.read_pause()
         await self._sweep_stale_workspaces()
         self._unlisten = self._queue.listen_for_stops(self._stop_asked)
         self._waking.listen(
@@ -508,6 +527,8 @@ class WorkerPool:
         A job cut off by the shutdown gets its attempt back: the interruption was our own.
         """
         self._stop.set()
+        # A pause pressed a moment before the stop is kept for the next start.
+        await self.holding.kept()
         # Before the wait: a stop cut short by its grace or a watchdog still charges nothing.
         await self._queue.mark_stopping()
         tasks = [worker.task for worker in (*self._workers, *self._retiring)]
@@ -647,6 +668,8 @@ class WorkerPool:
                 return
 
     async def _run(self, job: Job, worker_id: str) -> None:
+        # What the claim was handed, for the job's record: the logged caps are only the start's.
+        pace = _Pace(workers=self._concurrency, cap=self.holding.caps(self._limits).get(job.type))
         # Asked again: a switch turned off must stop rows already queued. Cancelled, not failed.
         refused = await self._queue.switchboard.refusal(job.type, pressed=job.timing is not None)
         if refused is not None:
@@ -694,7 +717,7 @@ class WorkerPool:
         if runner.cancelled():
             # The job was cancelled or taken back: write nothing.
             log.info("job.lost", job_id=job.id, job_type=job.type, worker_id=worker_id)
-            _summarize(job, cost, "lost", worker_id)
+            _summarize(job, cost, "lost", worker_id, pace=pace)
             await self._sweep_workspace(context)
             return
 
@@ -709,7 +732,7 @@ class WorkerPool:
                 pressed=pressed_job(job.type, job.payload, context.pressed_by, job.started_at),
                 noted=context.noted,
             )
-        _summarize(job, cost, outcome, worker_id, runner.exception())
+        _summarize(job, cost, outcome, worker_id, runner.exception(), pace=pace)
         await self._sweep_workspace(context)
 
     async def _pressed_by(self, job: Job) -> str | None:
@@ -906,12 +929,27 @@ def _queued_s(job: Job) -> int | None:
     return max(0, job.started_at - ready)
 
 
+@dataclass(frozen=True, slots=True)
+class _Pace:
+    """The workers running and the job's type's cap in force when it was claimed (None: none)."""
+
+    workers: int
+    cap: int | None
+
+
 def _summarize(
-    job: Job, cost: JobCost, outcome: str, worker_id: str, error: BaseException | None = None
+    job: Job,
+    cost: JobCost,
+    outcome: str,
+    worker_id: str,
+    error: BaseException | None = None,
+    *,
+    pace: _Pace,
 ) -> None:
     """The job's one line: what became of it and where its time went. At Normal it stands for its
     claim and its settle too (`SAID_BY_THE_SUMMARY`), so it carries their fields: the worker, the
-    claim's moment, the attempt; the line's own time is the settle's. A job that raised names the
+    claim's moment, the attempt, the workers running and its kind's cap; the line's own time is the
+    settle's. A job that raised names the
     error's class and the frame that raised it, which `job.failed` and `job.retrying` do not."""
     asset_id = job.payload.get("asset_id")
     raised = {} if error is None else {"error": type(error).__name__, "where": _where(error)}
@@ -925,6 +963,8 @@ def _summarize(
         outcome=outcome,
         claimed_at=job.started_at,
         queued_s=_queued_s(job),
+        workers=pace.workers,
+        cap=pace.cap,
         **raised,
         **cost.summary(),
     )

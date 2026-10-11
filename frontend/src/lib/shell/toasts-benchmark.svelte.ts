@@ -7,7 +7,7 @@
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
-import { jobChanges, libraryChanges } from '$lib/library/changes.svelte';
+import { jobChanges, libraryChanges, WalkingPace } from '$lib/library/changes.svelte';
 import { COPY, MEASURE_ROW } from '$lib/settings-ui/Performance.search';
 import { openSettings } from '$lib/settings-ui/settings-view';
 import { toasts } from '$lib/shell/toasts.svelte';
@@ -92,8 +92,9 @@ export class BenchmarkToasts {
 	follow(isAdmin: boolean): void {
 		if (!isAdmin || this.#started) return;
 		this.#started = true;
-		jobChanges.subscribe(() => void this.look());
-		libraryChanges.subscribe(() => void this.look());
+		const pace = new WalkingPace(() => this.look());
+		jobChanges.subscribe(pace);
+		libraryChanges.subscribe(pace);
 		void this.look();
 	}
 

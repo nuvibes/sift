@@ -5,35 +5,138 @@ import { durationToken, easingToken, measure, motion } from '$lib/shell/motion.s
 
 /* The bells the whole application rings when something it is drawing has moved. */
 
+/* Whether the rings now are the live feed's rather than a write this tab just made. */
+let feedRinging = false;
+
+/** Ring as the live feed does, so a paced re-read walks (`WalkingPace`). */
+export function asTheFeed(ring: () => void): void {
+	feedRinging = true;
+	try {
+		ring();
+	} finally {
+		feedRinging = false;
+	}
+}
+
+/**
+ * How soon a screen's re-read may be asked again for the feed's bells: an import rings every
+ * second, and a screen re-reading on each keeps a request in flight most of the time, which
+ * the tasks wait behind. The bells within this window of a read ask once, at its end.
+ */
+export const RE_ASKED_EVERY_MS = 10_000;
+
+/**
+ * One re-read at a walking pace. The first bell after a quiet window reads immediately; the bells
+ * within `RE_ASKED_EVERY_MS` of the last answer read once, at the window's end, so a change is on
+ * screen within the window however fast the bells come. `now` is a write of this tab's own.
+ */
+export class WalkingPace {
+	#read: () => unknown;
+	#every: number;
+	#last = Number.NEGATIVE_INFINITY;
+	#out = 0;
+	#owed = false;
+	#timer: ReturnType<typeof setTimeout> | null = null;
+	#stopped = false;
+
+	constructor(read: () => unknown, every = RE_ASKED_EVERY_MS) {
+		this.#read = read;
+		this.#every = every;
+	}
+
+	/** A bell from the feed: read now, or once at the end of the window. */
+	bell(): void {
+		if (this.#timer !== null || this.#stopped) return;
+		if (this.#out > 0) {
+			this.#owed = true;
+			return;
+		}
+		const wait = this.#last + this.#every - Date.now();
+		if (wait <= 0) return this.now();
+		this.#timer = setTimeout(() => {
+			this.#timer = null;
+			this.bell();
+		}, wait);
+	}
+
+	/** Read immediately, covering any bell owed, and start the window from its answer. */
+	now(): void {
+		this.#clear();
+		this.#owed = false;
+		this.#last = Date.now();
+		const asked = this.#read();
+		if (!(asked instanceof Promise)) return;
+		this.#out += 1;
+		void asked
+			.catch(() => undefined)
+			.finally(() => {
+				this.#out -= 1;
+				this.#last = Date.now();
+				if (this.#owed && this.#out === 0) {
+					this.#owed = false;
+					this.bell();
+				}
+			});
+	}
+
+	/** Read nothing more for a bell: the screen has gone. */
+	stop(): void {
+		this.#stopped = true;
+		this.#clear();
+	}
+
+	#clear(): void {
+		if (this.#timer !== null) clearTimeout(this.#timer);
+		this.#timer = null;
+	}
+}
+
+/** A follower of a bell: a re-read made on every ring, or one at a walking pace. */
+type Follower = (() => void) | WalkingPace;
+
+function follow(follower: Follower, own: boolean): void {
+	if (typeof follower === 'function') follower();
+	else if (own) follower.now();
+	else follower.bell();
+}
+
 /** One thing that can change, and a number that moves when it does: a count, never the value, so
  * a bell is never a second copy of the state a screen holds. */
 class Signal {
 	generation = $state(0);
 
+	/** Rises only for a ring of this tab's own write: a paced re-read lets those through. */
+	own = 0;
+
 	/* Stores that live as long as the tab (saved searches, the rating scale, the record registry)
 	 * have no setup context for an effect, so they get a plain list. Nobody unsubscribes. */
-	#lasting = new Set<() => void>();
+	#lasting = new Set<Follower>();
 
 	changed(): void {
 		this.generation += 1;
-		for (const listen of this.#lasting) listen();
+		if (!feedRinging) this.own += 1;
+		for (const listen of this.#lasting) follow(listen, !feedRinging);
 	}
 
 	/** Be told for as long as this tab is open. For a store that is not a screen. */
-	subscribe(listen: () => void): void {
+	subscribe(listen: Follower): void {
 		this.#lasting.add(listen);
 	}
 }
 
-/** Re-read when this signal moves. Call it during component setup. */
-export function whenChanged(signal: Signal, reload: () => void): void {
+/** Re-read when this signal moves, on every ring or at a pace. Call it during component setup. */
+export function whenChanged(signal: Signal, reload: Follower): void {
 	let seen = untrack(() => signal.generation);
+	let own = signal.own;
 	$effect(() => {
 		const now = signal.generation;
 		if (now === seen) return;
 		seen = now;
-		untrack(reload);
+		const mine = signal.own !== own;
+		own = signal.own;
+		untrack(() => follow(reload, mine));
 	});
+	if (reload instanceof WalkingPace) $effect(() => () => reload.stop());
 }
 
 /** What this account may see has changed, with no new file involved: something shared, hidden,
@@ -63,25 +166,26 @@ export const screenChanges = new Signal();
 /** Which files share a song moved: the music task paired a file. Only the Same music strip hears it. */
 export const sameMusicChanges = new Signal();
 
-/** Re-read this screen's list whenever what it may see changes. */
+/** Re-read this screen's list whenever what it may see changes, at a walking pace. */
 export function reloadOnLibraryChange(reload: () => void): void {
-	whenChanged(libraryChanges, reload);
+	const pace = new WalkingPace(reload);
+	whenChanged(libraryChanges, pace);
 	/* And when this account's own opinions move, which these walls draw; folded in so no call
 	 * site forgets. */
-	whenChanged(mine, reload);
-	reloadOnFilesSettled(reload);
+	whenChanged(mine, pace);
+	reloadOnFilesSettled(pace);
 }
 
 /** Re-read once the files on their way in have all landed, so a list's counts follow a scan or a
  * download: one read when the work ends, never one per file, which is what `arrivals` would
  * cost. */
-export function reloadOnFilesSettled(reload: () => void): void {
+export function reloadOnFilesSettled(reload: Follower): void {
 	let seen = untrack(() => imports.settled);
 	$effect(() => {
 		const now = imports.settled;
 		if (now === seen) return;
 		seen = now;
-		if (untrack(() => imports.busy) === 0) untrack(reload);
+		if (untrack(() => imports.busy) === 0) untrack(() => follow(reload, false));
 	});
 }
 
@@ -138,7 +242,7 @@ export function rereadOnHistoryChange(reread: () => void, settle = HISTORY_SETTL
 		}, settle);
 	};
 	whenChanged(recorded, soon);
-	whenChanged(libraryChanges, soon);
+	whenChanged(libraryChanges, new WalkingPace(soon));
 	// A thread taken off the screen must not ask for itself after it has gone.
 	$effect(() => () => {
 		if (pending !== null) clearTimeout(pending);

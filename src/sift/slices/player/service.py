@@ -10,11 +10,13 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+from sift.kernel import lanes
 from sift.kernel.config import Settings
 from sift.kernel.content import Asset
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue, JobState
@@ -477,3 +479,36 @@ class PlayerService:
 
 #: Playback.
 SERVICE: Part[PlayerService] = Part("player")
+
+
+#: A stream whose first bytes take this long says where the time went.
+SLOW_FIRST_BYTES_SECONDS = 0.4
+
+
+async def watched(
+    path: Path, chunks: AsyncIterator[bytes], marks: tuple[float, float, float]
+) -> AsyncIterator[bytes]:
+    """A stream's bytes, its storage's readers giving way while it is open (`lanes.watching`)."""
+    async with lanes.watching(path):
+        first = True
+        async for chunk in chunks:
+            if first:
+                first = False
+                said_if_slow(path, marks)
+            yield chunk
+
+
+def said_if_slow(path: Path, marks: tuple[float, float, float]) -> None:
+    """Where slow first bytes went: finding the file, asking its size, the first read."""
+    asked, located, sized = marks
+    now = time.perf_counter()
+    if now - asked < SLOW_FIRST_BYTES_SECONDS:
+        return
+    log.info(
+        "player.stream_slow",
+        first_bytes_ms=round((now - asked) * 1000, 1),
+        found_ms=round((located - asked) * 1000, 1),
+        size_ms=round((sized - located) * 1000, 1),
+        read_ms=round((now - sized) * 1000, 1),
+        remote=lanes.storage_for(path).remote,
+    )

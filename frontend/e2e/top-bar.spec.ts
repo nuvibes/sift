@@ -110,16 +110,17 @@ async function offCentre(page: Page): Promise<number> {
 	});
 }
 
-/** Where the field's floor binds, how far the start end gives way. */
+/** Where the centre group's floor binds, how far the start end gives way. */
 async function floorShortfall(page: Page): Promise<number> {
-	return page.evaluate((floor) => {
+	return page.evaluate(() => {
 		const bar = document.querySelector('header.topbar') as HTMLElement;
 		const style = getComputedStyle(bar);
 		const inner =
 			bar.clientWidth - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
 		const end = parseFloat(style.getPropertyValue('--bar-end'));
+		const floor = parseFloat(style.getPropertyValue('--centre-floor'));
 		return Math.max(0, (floor + 2 * (end + parseFloat(style.columnGap)) - inner) / 2);
-	}, 227);
+	});
 }
 
 test('the centre group stands on the middle of the bar at every width, the rail open or not', async ({
@@ -464,26 +465,35 @@ test('every row of the search list lies inside the bar, its words whole', async 
 	expect(outside, 'rows past the bar or with their words cut').toEqual([]);
 });
 
-/* The tile size leaves the bar before Filter and Sort by do, on a wall and an entity page. */
-test('the tile size leaves the bar before Filter and Sort by do', async ({ page }) => {
-	await page.setViewportSize({ width: 1024, height: 800 });
-	for (const screen of ['/browse', '/people'] as const) {
-		await page.goto(screen);
-		await settled(page.locator('header.topbar'));
-		const menus = page.locator('header.topbar .centre .menus');
-		await expect(menus, `${screen}: the menus left the bar at 1024`).toBeVisible();
-		await expect(page.locator('.bar-fold .menus')).toHaveCount(0);
-		const [bar, centre] = await Promise.all([
-			page.locator('header.topbar').boundingBox(),
-			page.locator('header.topbar .centre').boundingBox()
-		]);
-		if (!bar || !centre) throw new Error(`${screen}: the bar or its centre has no box`);
-		expect(Math.abs(bar.x + bar.width / 2 - (centre.x + centre.width / 2))).toBeLessThan(
-			0.5 + SLACK
-		);
+/* One row at every width: the tile size, the paste half and the menus stay on the bar, nothing
+   unfolds a row below it, and a trail short of room ends in an ellipsis with the whole path named. */
+test('the bar is one row at every width, its trail ending in an ellipsis', async ({ page }) => {
+	for (const width of [1024, 1400, 1770, 2286]) {
+		await page.setViewportSize({ width, height: 800 });
+		for (const screen of ['/browse', '/people'] as const) {
+			await page.goto(screen);
+			await settled(page.locator('header.topbar'));
+			const bar = page.locator('header.topbar');
+			await expect(bar.locator('.centre .menus'), `${screen} at ${width}`).toBeVisible();
+			await expect(bar.locator('.size input[type="range"]'), `${screen} at ${width}`).toBeVisible();
+			await expect(page.locator('.bar-fold:not(.folded)'), `a row opened at ${width}`).toHaveCount(
+				0
+			);
+			expect((await bar.boundingBox())?.height, `${screen} at ${width}`).toBe(56);
+		}
 	}
-	await page.setViewportSize({ width: 1440, height: 800 });
-	await page.goto('/browse');
+
+	await page.setViewportSize({ width: 1024, height: 800 });
+	await page.goto('/organize/known-people');
 	await settled(page.locator('header.topbar'));
-	await expect(page.locator('header.topbar .size:not(.gone)')).toBeVisible();
+	const trail = page.locator('header.topbar nav[aria-label="Breadcrumb"]');
+	await expect(trail).toBeVisible();
+	await expect(trail.locator('button.fold')).toHaveCount(0);
+	const style = await trail.locator('ol').evaluate((line) => {
+		const seen = getComputedStyle(line);
+		return `${seen.textOverflow} ${seen.whiteSpace}`;
+	});
+	expect(style).toBe('ellipsis nowrap');
+	await trail.hover();
+	await expect(page.getByRole('tooltip')).toContainText('Organize');
 });

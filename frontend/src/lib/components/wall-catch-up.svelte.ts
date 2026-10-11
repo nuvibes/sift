@@ -12,7 +12,7 @@ import { untrack } from 'svelte';
 import { page } from '$app/state';
 import { capture } from '$lib/capture/capture.svelte';
 import type { Grid, PageStart, RowSource } from '$lib/grid/grid.svelte';
-import { arrivals, whenChanged } from '$lib/library/changes.svelte';
+import { arrivals, WalkingPace, whenChanged } from '$lib/library/changes.svelte';
 import { imports } from '$lib/library/imports.svelte';
 import { mini } from '$lib/player/mini.svelte';
 import type { WallMedia } from './wall-media.svelte';
@@ -50,6 +50,12 @@ export class WallCatchUp {
 	/* The read asked in this flush: one live message rings several bells together, and a read asked
 	   after them all covers each. A later ask while it is out is owed, never joined. */
 	private askedThisTurn: Promise<unknown> | undefined;
+	/** The re-read the feed's bells ask for, at a walking pace; this tab's own write reads now. */
+	readonly pace = new WalkingPace(() => {
+		const asked = this.catchUp();
+		this.wall.media().rearm();
+		return asked;
+	});
 
 	constructor(wall: WallParts) {
 		this.wall = wall;
@@ -79,14 +85,13 @@ export class WallCatchUp {
 			untrack(() => {
 				if (now === this.settledWas) return;
 				this.settledWas = now;
-				void this.catchUp();
-				wall.media().rearm();
+				this.pace.bell();
 			});
 		});
-		/* While a scan runs, on every push, so a tile appears within a second of Sift reading it. */
+		/* While a scan runs, on every push, so a tile appears within the pace of Sift reading it. */
 		$effect(() => {
 			void imports.pulse;
-			if (imports.busy > 0) void untrack(() => this.catchUp());
+			if (imports.busy > 0) untrack(() => this.pace.bell());
 		});
 		/* A placeholder hands over to the real tile the moment the row exists: re-read first and
 		   cleared after, so the tile is on screen before the placeholder leaves. */
@@ -100,10 +105,7 @@ export class WallCatchUp {
 			});
 		});
 		/* Files entered the library, left it, moved or gained a picture; the queue changes no tile. */
-		whenChanged(arrivals, () => {
-			void this.catchUp();
-			wall.media().rearm();
-		});
+		whenChanged(arrivals, this.pace);
 	}
 
 	/** Make a re-read that is owed, if one is and it can be made now. */
