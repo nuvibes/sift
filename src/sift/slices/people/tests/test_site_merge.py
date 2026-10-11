@@ -620,6 +620,16 @@ def test_a_set_that_cannot_be_finished_leaves_every_site_where_it_was(
     username = _username(client, first, "someone")
 
     monkeypatch.setattr(site_merge, "_REMOVE", "SELECT id FROM sites WHERE id = ? AND 1 = 0")
+    # The fold is reached, and the guard is what refuses: any other error would say nothing about
+    # the rollback while reading as a refusal.
+    real = site_merge._one_into
+    folded: list[str] = []
+
+    async def counted(connection, *, losing, keeping, name):  # type: ignore[no-untyped-def]
+        folded.append(losing)
+        return await real(connection, losing=losing, keeping=keeping, name=name)
+
+    monkeypatch.setattr(site_merge, "_one_into", counted)
 
     async def attempt(database: Database) -> object:
         try:
@@ -630,11 +640,12 @@ def test_a_set_that_cannot_be_finished_leaves_every_site_where_it_was(
                 keeping=keeping,
                 actor=Actor.sift("stash"),
             )
-        except RuntimeError:
+        except site_merge._PartialMerge:
             return "refused"
         return "committed"
 
     assert _direct(client, attempt) == "refused"
+    assert folded == [first], "the guard refused the first fold, inside the transaction"
 
     still = read(db_path(client), "SELECT site_id FROM usernames WHERE id = ?", (username,))
     assert still and still[0]["site_id"] == first, "half a merge was committed"

@@ -14,7 +14,8 @@ import { signInAsAdmin } from './admin';
  * Every entity made here is made here and removed here, named so it sorts first on its wall.
  */
 
-const SEEN_WITHIN_MS = 5_000;
+/* The walking pace: bells inside ten seconds of an answer are read once at the end of the ten. */
+const SEEN_WITHIN_MS = 15_000;
 
 async function csrf(page: Page): Promise<string> {
 	const me = await page.request.get('/api/auth/me');
