@@ -206,6 +206,7 @@ from sift.slices.swap.models import (
     ManifestGroup,
     RefusedFile,
 )
+from sift.slices.swap.probe import Probes
 from sift.slices.swap.receiving import (
     _Receiving,
 )
@@ -321,6 +322,7 @@ class SwapSessions:
         self.jobs = jobs
         self.hoster = hoster
         self.egress = egress
+        self.probes = Probes(hoster, egress, clock)
         self.read_route = read_route
         self.staging = staging
         self.prepare = prepare

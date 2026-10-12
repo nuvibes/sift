@@ -554,6 +554,52 @@ class SwapTunnel(Wire):
     rate_bps: int | None = None
 
 
+class ProbeHost(Wire):
+    """Host a sink behind a tunnel for `seconds`."""
+
+    seconds: int = Field(default=20, ge=1, le=120)
+
+
+class ProbeHosted(Wire):
+    """Where the other device sends: its address, port and the probe's secret, hex."""
+
+    address: str
+    port: int
+    secret: str
+    seconds: int
+
+
+class ProbeReading(Wire):
+    """What a hosted sink has counted so far."""
+
+    received: int
+    connections: int
+    refused: int
+    seconds: float | None = None
+    rate_bps: int | None = None
+    done: bool
+
+
+class ProbeSend(Wire):
+    """Push bytes to a hosted sink through this device's tunnel."""
+
+    address: str = Field(min_length=1, max_length=255)
+    port: int = Field(ge=1, le=65535)
+    secret: str = Field(min_length=64, max_length=64)
+    seconds: int = Field(default=20, ge=1, le=120)
+    streams: int = Field(default=1, ge=1, le=16)
+
+
+class ProbeSent(Wire):
+    """What a send pushed, and the rate it made in bits a second."""
+
+    sent: int
+    seconds: float
+    streams: int
+    failed: int
+    rate_bps: int
+
+
 class KeepFromSwaps(Wire):
     """Put "Do not swap" on a thing, or take it off."""
 

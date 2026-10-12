@@ -38,7 +38,7 @@ from sift.kernel.seams import RecognitionSeam
 from sift.kernel.tunnels import TUNNELS, TunnelStore
 from sift.kernel.wiring import RECOGNITION, part_of
 from sift.slices.auth import csrf_protect, master_key, require_admin
-from sift.slices.swap import device, receipt, refusal
+from sift.slices.swap import device, receipt, refusal, router_probe
 from sift.slices.swap.handshake import PASTED_FIELD
 from sift.slices.swap.models import (
     CodeAnswer,
@@ -82,6 +82,7 @@ from sift.slices.swap.store import SessionRow
 from sift.slices.swap.token import SENTENCE, TokenRefused, parse
 
 router = APIRouter(tags=["swap"])
+router.include_router(router_probe.router)
 
 # ================================================================================================
 # THE SESSION'S ROUTES

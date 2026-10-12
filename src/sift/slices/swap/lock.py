@@ -124,6 +124,19 @@ async def _through_proxy(
     return reader, writer
 
 
+async def open_through(
+    proxy: str | None, address: str, port: int, seconds: float
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """A plain connection to `address:port`, through the proxy when there is one. Raises
+    `LockFailed`."""
+    if proxy is not None:
+        return await _through_proxy(proxy, address, port, seconds)
+    try:
+        return await asyncio.wait_for(asyncio.open_connection(address, port), seconds)
+    except (TimeoutError, OSError) as error:
+        raise LockFailed("the host could not be reached") from error
+
+
 async def dial(
     address: str,
     port: int,
