@@ -939,3 +939,39 @@ test('a refused folder is asked for on the token, and a name beginning with a mi
 	expect(asked.some((q) => q.includes('in:"-Raw Cuts"'))).toBe(false);
 	await expect(page.locator('.value.struck', { hasText: 'Raw Cuts' })).toHaveCount(1);
 });
+
+test('a file the window refuses is asked for again as a conversion, and the cell says why', async ({
+	page
+}) => {
+	/* The stream answers 404, so the element errors; the cell asks once more with `fallback`. */
+	const SAID =
+		"Your browser said it could play this file and then couldn't, so it is being converted as you watch.";
+	const fallbacks: string[] = [];
+	await page.route('**/api/assets/t1/playback?fallback=true', (route) => {
+		fallbacks.push(route.request().url());
+		return route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				route: 'transcode',
+				reason: SAID,
+				url: '/api/assets/t1/hls/index.m3u8?route=transcode',
+				scale_height: null,
+				projected_realtime: 8,
+				streamable: true,
+				duration_ms: 6000,
+				resume_ms: null
+			})
+		});
+	});
+	await page.route('**/api/assets/t1/hls/**', (route) => route.fulfill({ status: 404 }));
+	await page.goto('/theater');
+	await expect(cells(page)).toHaveCount(2);
+	await page.getByRole('button', { name: 'Play everything', exact: true }).first().click();
+
+	await expect.poll(() => fallbacks.length).toBeGreaterThan(0);
+	await expect(
+		cells(page).first().getByRole('button', { name: 'Why this file is being converted' })
+	).toBeAttached();
+	await expect(cells(page).first().locator('.notice .words')).toHaveText(SAID);
+});

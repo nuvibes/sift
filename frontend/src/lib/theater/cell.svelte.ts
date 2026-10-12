@@ -5,6 +5,7 @@ import { api, ApiError } from '$lib/api/client';
 import { Loop } from '$lib/player/loop.svelte';
 import { loudness } from '$lib/player/loudness.svelte';
 import { planFor, type PlaybackPlan, type Quality } from '$lib/player/playback';
+import { capabilities, played, refused } from '$lib/player/capabilities';
 import type { FileFacts } from '$lib/player/facts';
 import { isLoopMode, type LoopMode } from '$lib/player/loop-modes';
 
@@ -185,6 +186,11 @@ export class Cell {
 
 	/** Failures in a row: a wall is unattended, so a few are stepped over before it stops. */
 	#failures = 0;
+
+	/** The file already asked for again as a conversion, so a second refusal is a failure. */
+	#fellBack: string | null = null;
+	/** The file the element last started, which proves its codec once the facts say which. */
+	#startedOn: string | null = null;
 
 	/** The order this cell draws in; a fresh cell is Random with its own seed. */
 	sort = $state<string | null>(RANDOM);
@@ -626,15 +632,56 @@ export class Cell {
 		await this.advance();
 	}
 
+	/**
+	 * The element refused the file as planned. A direct or copied video is asked for once more as a
+	 * conversion; anything else, or a refusal of the conversion, is `failed`.
+	 */
+	async refused(): Promise<void> {
+		const file = this.playing;
+		const plan = this.plan;
+		const direct = plan?.route === 'direct' || plan?.route === 'remux';
+		if (file === null || !direct || file.media_type !== 'video' || this.#fellBack === file.id) {
+			await this.failed();
+			return;
+		}
+		const era = this.#era;
+		this.#fellBack = file.id;
+		refused(this.facts?.vcodec);
+		let converted: PlaybackPlan | null;
+		try {
+			converted = await planFor(file.id, capabilities(), { fallback: true });
+		} catch {
+			converted = null;
+		}
+		if (era !== this.#era || this.playing?.id !== file.id) return;
+		if (converted === null || converted.route !== 'transcode') {
+			await this.failed();
+			return;
+		}
+		if (this.position > 0) this.resumeAt = this.position;
+		this.plan = converted;
+		this.state = converted.streamable ? 'ready' : 'waiting';
+	}
+
 	/** Something is playing: the only honest end to a run of failures. */
 	started(): void {
 		this.#failures = 0;
+		this.#startedOn = this.playing?.id ?? null;
+		this.#prove();
 		/* Found on the element starting, so the opening draw has no nine cells asking together. */
 		void this.#lookAhead();
 	}
 
+	/** A codec this window played itself is believed from then on (`played`). */
+	#prove(): void {
+		const route = this.plan?.route;
+		if (this.#startedOn === null || this.#startedOn !== this.playing?.id) return;
+		if (route === 'direct' || route === 'remux') played(this.facts?.vcodec, this.facts?.bit_depth);
+	}
+
 	#show(file: Playable, plan: PlaybackPlan): void {
 		this.problem = null;
+		this.#fellBack = null;
 		if (!this.loop.owns(file.id)) this.loop.clear();
 		this.playing = file;
 		this.plan = plan;
@@ -667,6 +714,7 @@ export class Cell {
 				fps: detail.fps,
 				bit_depth: detail.bit_depth
 			};
+			this.#prove();
 		} catch {
 			// No preview above the scrubber and no facts in the panel. Everything else still works.
 		}

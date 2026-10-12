@@ -27,13 +27,18 @@ export type PlaybackPlan = components['schemas']['PlaybackPlan'];
 /** A plan queued behind six streaming connections would wait forever without a timeout. */
 const PLAN_TIMEOUT_MS = 15_000;
 
-/** `reported` defaults to what the browser says; see `capabilitiesWithout`. */
+/**
+ * `reported` defaults to what the browser says; see `capabilitiesWithout`. `fallback`: the element
+ * refused the file as planned, and the server converts it.
+ */
 export function planFor(
 	id: string,
-	reported: Capabilities = capabilities()
+	reported: Capabilities = capabilities(),
+	{ fallback = false }: { fallback?: boolean } = {}
 ): Promise<PlaybackPlan> {
 	return api.post<PlaybackPlan>(`/assets/${id}/playback`, {
 		body: reported,
+		...(fallback ? { query: { fallback: true } } : {}),
 		signal: AbortSignal.timeout(PLAN_TIMEOUT_MS)
 	});
 }

@@ -4,8 +4,19 @@ import type { components } from '$lib/api/schema';
  * and HEVC play widely, and differ per device. The most valuable answer is AV1.
  */
 
-/** `Required`: this always reports all three lists, where the server accepts a list left out. */
-export type Capabilities = Required<components['schemas']['Capabilities']>;
+/** `Required`: this always reports every list, where the server accepts a list left out. */
+export type Capabilities = Required<components['schemas']['Capabilities']> & {
+	/** Codecs the browser only said "maybe" to: planned as no, said in the plan's log line. */
+	video_codecs_maybe: string[];
+};
+
+/* A "maybe" is believed for these once this window has played one: they need the device's
+   decoder, which a codec string cannot tell apart from a guess. */
+const PROVEN_BY_PLAYING = new Set(['hevc', 'av1']);
+const PLAYED_KEY = 'sift.played-codecs';
+
+/** Computed once, and again only when this window proves or disproves a codec (`played`). */
+let cached: Capabilities | null = null;
 
 /*
  * The browser's codec strings, translated here into the server's names; several per codec, as
@@ -83,29 +94,93 @@ function supports(type: string, probe: HTMLVideoElement): boolean {
 	}
 }
 
-function detect(probes: Array<[string, string[]]>, probe: HTMLVideoElement): string[] {
-	const found: string[] = [];
-	for (const [name, types] of probes) {
-		if (types.some((type) => supports(type, probe)) && !found.includes(name)) {
-			found.push(name);
-		}
+function guesses(type: string, probe: HTMLVideoElement): boolean {
+	try {
+		return probe.canPlayType(type) === 'maybe';
+	} catch {
+		return false;
 	}
-	return found;
 }
 
-/** Computed once: it cannot change while the page is open. */
-let cached: Capabilities | null = null;
+function detect(probes: Array<[string, string[]]>, probe: HTMLVideoElement): string[] {
+	return answers(probes, probe).yes;
+}
+
+function answers(
+	probes: Array<[string, string[]]>,
+	probe: HTMLVideoElement
+): { yes: string[]; maybe: string[] } {
+	const yes: string[] = [];
+	const maybe: string[] = [];
+	for (const [name, types] of probes) {
+		if (types.some((type) => supports(type, probe))) yes.push(name);
+		else if (types.some((type) => guesses(type, probe))) maybe.push(name);
+	}
+	return { yes, maybe };
+}
+
+function playedHere(): Set<string> {
+	try {
+		const kept: unknown = JSON.parse(localStorage.getItem(PLAYED_KEY) ?? '[]');
+		return new Set(Array.isArray(kept) ? kept.filter((one) => typeof one === 'string') : []);
+	} catch {
+		return new Set();
+	}
+}
+
+function keepPlayed(played: Set<string>): void {
+	try {
+		localStorage.setItem(PLAYED_KEY, JSON.stringify([...played]));
+	} catch {
+		// Not remembered: the next window asks with the browser's own answer.
+	}
+	cached = null;
+}
+
+/** This window played a file of this codec itself, so its "maybe" is a yes from now on. */
+export function played(codec: string | null | undefined, depth: number | null | undefined): void {
+	const name = codec?.toLowerCase() ?? '';
+	if (!PROVEN_BY_PLAYING.has(name)) return;
+	const known = playedHere();
+	const tenBit = depth !== null && depth !== undefined && depth > 8;
+	if (known.has(name) && (!tenBit || known.has(`${name}:10`))) return;
+	known.add(name);
+	if (tenBit) known.add(`${name}:10`);
+	keepPlayed(known);
+}
+
+/** The element refused a file of this codec, so a remembered yes for it was wrong. */
+export function refused(codec: string | null | undefined): void {
+	const name = codec?.toLowerCase() ?? '';
+	const known = playedHere();
+	if (!known.has(name) && !known.has(`${name}:10`)) return;
+	known.delete(name);
+	known.delete(`${name}:10`);
+	keepPlayed(known);
+}
+
+/** Yes, plus each "maybe" this window has proved by playing one. */
+function believed(found: { yes: string[]; maybe: string[] }, played: Set<string>, suffix: string) {
+	const proved = found.maybe.filter(
+		(name) => PROVEN_BY_PLAYING.has(name) && played.has(`${name}${suffix}`)
+	);
+	return [...found.yes, ...proved];
+}
 
 export function capabilities(): Capabilities {
 	if (cached) return cached;
 
 	const probe = document.createElement('video');
+	const known = playedHere();
+	const video = answers(VIDEO_PROBES, probe);
+	const videoCodecs = believed(video, known, '');
 
 	cached = {
-		video_codecs: detect(VIDEO_PROBES, probe),
-		video_codecs_10bit: detect(TEN_BIT_PROBES, probe),
+		video_codecs: videoCodecs,
+		video_codecs_10bit: believed(answers(TEN_BIT_PROBES, probe), known, ':10'),
 		audio_codecs: detect(AUDIO_PROBES, probe),
-		containers: detect(CONTAINER_PROBES, probe)
+		containers: detect(CONTAINER_PROBES, probe),
+		video_codecs_maybe: video.maybe.filter((name) => !videoCodecs.includes(name))
 	};
 	return cached;
 }
@@ -128,8 +203,12 @@ export function forget(): void {
 	cached = null;
 }
 
-/** Safari does, and on an iPhone it is the only way. */
+/**
+ * Only where hls.js cannot run: an iPhone, which has no Media Source Extensions. A Chromium that
+ * says "maybe" to a playlist refused conversions hls.js plays.
+ */
 export function playsHlsNatively(): boolean {
+	if (typeof globalThis.MediaSource?.isTypeSupported === 'function') return false;
 	const probe = document.createElement('video');
 	try {
 		return probe.canPlayType('application/vnd.apple.mpegurl') !== '';

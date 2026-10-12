@@ -59,6 +59,11 @@ What's new lists what each release of Sift changes for you, newest first. To see
 - **A change you press is never undone by a slower read.** A delete, rename or heart shows
   immediately and stays; a list read that began before it is not drawn over it, and the feed's echo of your own
   write reads immediately.
+- **A Theater cell that cannot play a file converts it instead of giving up.** When the window
+  says it can play a file and then cannot, the cell asks for the converted stream, plays it from
+  where it was and says why; before, a run of such files left the cell sitting on its picture.
+  Conversions play through Sift's own stream player on every desktop, and a window's "maybe" for
+  H.265 or AV1 counts as no until it has played that codec once. Every plan is now in the log.
 - Other minor UI improvements.
 
 ## 0.2.4 - 2026-10-10

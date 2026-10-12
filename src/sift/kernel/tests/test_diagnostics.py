@@ -576,7 +576,12 @@ def test_alike_threads_are_counted_together_and_the_skipped_left_out() -> None:
         thread.start()
     parked.wait(5)
     try:
-        stacks = every_stack({threading.get_ident()})
+        # Past the barrier each thread still has to reach its wait: read until all three are there.
+        for _ in range(200):
+            stacks = every_stack({threading.get_ident()})
+            if any(one.startswith("3 x ") and "parked_alike" in one for one in stacks):
+                break
+            time.sleep(0.01)
     finally:
         release.set()
         for thread in threads:

@@ -81,6 +81,7 @@ const MARKS: Record<string, IconName> = {
 	song_named: 'music_note_2',
 	swap_started: 'swap_horiz',
 	swap_ended: 'swap_horiz',
+	swap_undone: 'undo',
 	/* The library put back to a backup: the Backup and restore section's own glyph. */
 	restored: 'settings_backup_restore',
 	/* A library created from a database file: the glyph its Import button wears. */

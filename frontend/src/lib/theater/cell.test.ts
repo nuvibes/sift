@@ -790,6 +790,142 @@ describe('a file this browser cannot play', () => {
 	});
 });
 
+describe('a file the element refuses', () => {
+	/** The plan route answering a fallback with a conversion, and anything else as `plans` say. */
+	function converting() {
+		vi.spyOn(api, 'post').mockImplementation(async (path: string, options?: unknown) => {
+			const id = path.split('/')[2];
+			asked.push(id);
+			const fallback = (options as { query?: { fallback?: boolean } } | undefined)?.query?.fallback;
+			return fallback ? plan('transcode') : (plans[id] ?? plan());
+		});
+	}
+
+	it('asks for it again as a conversion and keeps it, rather than moving on', async () => {
+		served.page = page(['a', 'b']);
+		converting();
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+
+		await cell.refused();
+
+		expect(cell.playing?.id, 'the cell moved on from a file it could convert').toBe('a');
+		expect(cell.plan?.route).toBe('transcode');
+		expect(cell.state).toBe('ready');
+		expect(vi.mocked(api.post).mock.calls.at(-1)?.[1]).toMatchObject({
+			query: { fallback: true }
+		});
+	});
+
+	it('carries the playhead into the conversion', async () => {
+		served.page = page(['a', 'b']);
+		converting();
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+		cell.position = 4.5;
+
+		await cell.refused();
+
+		expect(cell.resumeAt).toBe(4.5);
+	});
+
+	it('treats a refusal of the conversion as the failure it always was', async () => {
+		served.page = page(['a', 'b']);
+		converting();
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+
+		await cell.refused();
+		await cell.refused();
+
+		expect(cell.playing?.id).toBe('b');
+	});
+
+	it('moves on when the conversion cannot be asked for', async () => {
+		served.page = page(['a', 'b']);
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+		vi.spyOn(api, 'post').mockImplementation(async (path: string, options?: unknown) => {
+			if ((options as { query?: object } | undefined)?.query) throw new Error('timed out');
+			return plans[path.split('/')[2]] ?? plan();
+		});
+
+		await cell.refused();
+
+		expect(cell.playing?.id).toBe('b');
+	});
+
+	it('never converts a picture: its refusal is a failure', async () => {
+		served.page = { items: [{ ...file('a'), media_type: 'gif' }, file('b')], total: 2 };
+		converting();
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+
+		await cell.refused();
+
+		expect(cell.playing?.id).toBe('b');
+		expect(asked.filter((id) => id === 'a')).toHaveLength(1);
+	});
+});
+
+describe('a codec this window has played', () => {
+	beforeEach(() => localStorage.clear());
+
+	function detail(vcodec: string, bit_depth: number) {
+		vi.spyOn(api, 'get').mockImplementation(async (path: string) =>
+			path === '/assets' ? (served.page ?? page([])) : { sprite: null, vcodec, bit_depth }
+		);
+	}
+
+	it('is remembered once a direct file of it starts', async () => {
+		served.page = page(['a']);
+		detail('hevc', 10);
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+		await vi.waitFor(() => expect(cell.facts?.vcodec).toBe('hevc'));
+
+		cell.started();
+
+		expect(JSON.parse(localStorage.getItem('sift.played-codecs') ?? '[]')).toEqual([
+			'hevc',
+			'hevc:10'
+		]);
+	});
+
+	it('is not remembered from a conversion, which the browser did not decode', async () => {
+		served.page = page(['a']);
+		plans.a = plan('transcode');
+		detail('hevc', 8);
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+		cell.started();
+		await vi.waitFor(() => expect(cell.facts?.vcodec).toBe('hevc'));
+
+		expect(localStorage.getItem('sift.played-codecs')).toBeNull();
+	});
+
+	it('is forgotten when a file of it is refused', async () => {
+		served.page = page(['a', 'b']);
+		detail('hevc', 8);
+		const cell = new Cell();
+		cell.orderBy(null);
+		await cell.restart();
+		await vi.waitFor(() => expect(cell.facts?.vcodec).toBe('hevc'));
+		cell.started();
+
+		await cell.refused();
+
+		expect(JSON.parse(localStorage.getItem('sift.played-codecs') ?? '[]')).toEqual([]);
+	});
+});
+
 describe('a cell whose files are out of reach', () => {
 	it('says so when every file it stepped over could not be reached', async () => {
 		served.page = page(['x', 'y']);

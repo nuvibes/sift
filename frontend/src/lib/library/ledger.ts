@@ -130,6 +130,7 @@ export const VERBS: Record<string, { label: string }> = {
 	song_named: { label: 'Named a song' },
 	swap_started: { label: 'Started or joined a swap' },
 	swap_ended: { label: 'Swap ended' },
+	swap_undone: { label: 'Swap undone' },
 	restored: { label: 'Restored from a backup' },
 	adopted: { label: 'Created from a database file' },
 	sharing_turned_on: { label: 'Network sharing turned on' },

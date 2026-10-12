@@ -11,7 +11,7 @@ import asyncio
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast, get_args
+from typing import Annotated, Literal, cast, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -28,10 +28,8 @@ from sift.kernel.db import Database
 from sift.kernel.http import is_local_request
 from sift.kernel.jobs import WAITED_ON_PRIORITY, JobQueue, registered_families
 from sift.kernel.jobs.families import Family
-from sift.kernel.log import get_logger
 from sift.kernel.media_sources import CopiesAway, MissingAsset, NoReadableCopy, resolve
 from sift.kernel.mp4 import NEEDS_REPAIR_BYTES
-from sift.kernel.numbers import as_int
 from sift.kernel.reach import refuse_one
 from sift.kernel.serving import keeps, serve_file
 from sift.kernel.threads import on_serving_thread
@@ -40,7 +38,7 @@ from sift.kernel.wire import Wire
 from sift.kernel.wiring import HARDWARE, QUEUE, SETTINGS, SETTINGS_HUB, part_of
 from sift.slices import media_jobs
 from sift.slices.auth import csrf_protect, current_viewer
-from sift.slices.player import policy, tuning
+from sift.slices.player import policy, router_hls, tuning
 from sift.slices.player.about import about_of
 from sift.slices.player.plays import (
     MOST_SEEKS,
@@ -54,35 +52,21 @@ from sift.slices.player.plays import (
     sitting_is_here,
 )
 from sift.slices.player.qualities import Quality, _qualities
+from sift.slices.player.router_common import _CACHE_PRIVATE, _missing, _open, _player, log
 from sift.slices.player.service import (
-    SERVICE,
     PlayerService,
-    SegmentUnavailable,
     byte_range,
     capped,
-    master_playlist,
     plan_query,
-    playlist,
     read_range,
     watched,
 )
 
-log = get_logger(__name__)
-
 router = APIRouter(tags=["player"])
+router.include_router(router_hls.router)
 
-_CACHE_PRIVATE = {"Cache-Control": "private, no-cache"}
 
 #: A stream whose first bytes took longer than this, in seconds, says where the time went.
-
-
-def _player(request: Request) -> PlayerService:
-    return part_of(request, SERVICE)
-
-
-def _missing() -> HTTPException:
-    """The one answer for "no such asset" and "not yours"."""
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found.")
 
 
 def _why_the_copy(asset: Asset) -> policy.Copy:
@@ -93,14 +77,6 @@ def _why_the_copy(asset: Asset) -> policy.Copy:
     return policy.Copy.REPACKAGED
 
 
-async def _open(access: Repository, viewer: Viewer, asset_id: str) -> Asset:
-    """The asset, if this viewer may actually watch it. 404 otherwise, either way."""
-    asset = await access.open_asset(viewer, asset_id)
-    if asset is None:
-        raise _missing()
-    return asset
-
-
 class Capabilities(Wire):
     """What the browser reported it can decode and read: only the client knows."""
 
@@ -109,6 +85,8 @@ class Capabilities(Wire):
     video_codecs_10bit: list[str] = Field(default_factory=list, max_length=32)
     audio_codecs: list[str] = Field(default_factory=list, max_length=32)
     containers: list[str] = Field(default_factory=list, max_length=32)
+    #: Codecs the browser only said "maybe" to, planned as no; said in the plan's log line.
+    video_codecs_maybe: list[str] = Field(default_factory=list, max_length=32)
 
 
 class PlaybackPlan(Wire):
@@ -148,6 +126,20 @@ def _plan_url(base: str, plan: policy.Plan) -> str:
     return f"{base}/hls/index.m3u8{plan_query(plan)}"
 
 
+async def _where_it_is(
+    access: Repository, viewer: Viewer, content: ContentStore, queue: JobQueue, asset_id: str
+) -> tuple[Asset, Path | None, Literal["gone", "away"] | None, bool]:
+    """The file as it will be sent (`policy.as_served`), or the 404 `stream` would give; a file
+    recorded where it no longer is fails like one the browser cannot decode, so it is said."""
+    asset = await _open(access, viewer, asset_id)
+    repaired = await access.locate_derivative(viewer, asset.id, DerivativeKind.REMUX)
+    if repaired is None and await access.locate(viewer, asset.id) is None:
+        raise _missing()
+    unreadable = None if repaired is not None else await _unreadable(content, asset.id)
+    scan_queued = unreadable is not None and await _scan_queued(content, queue, asset.id)
+    return asset, repaired, unreadable, scan_queued
+
+
 @router.post("/assets/{asset_id}/playback", dependencies=[Depends(csrf_protect)])
 async def plan_playback(
     asset_id: str,
@@ -159,18 +151,15 @@ async def plan_playback(
     player: Annotated[PlayerService, Depends(_player)],
     content: Annotated[ContentStore, Depends(wiring.content)],
     queue: Annotated[JobQueue, Depends(wiring.queue)],
+    fallback: bool = False,
 ) -> PlaybackPlan:
-    """Decide how this browser should play this file: a POST, as the answer is the client's own."""
-    asset = await _open(access, viewer, asset_id)
-    # Decided from the file that will actually be sent (`policy.as_served`).
-    repaired = await access.locate_derivative(viewer, asset.id, DerivativeKind.REMUX)
-    # Every copy unreachable: the 404 `stream` would give, given first.
-    if repaired is None and await access.locate(viewer, asset.id) is None:
-        raise _missing()
-    # A file recorded where it no longer is fails like one the browser cannot decode, so it is said.
-    unreadable = None if repaired is not None else await _unreadable(content, asset.id)
-    scan_queued = unreadable is not None and await _scan_queued(content, queue, asset.id)
+    """Decide how this browser should play this file: a POST, as the answer is the client's own.
 
+    `fallback`: the element refused the file as planned, so it is converted.
+    """
+    asset, repaired, unreadable, scan_queued = await _where_it_is(
+        access, viewer, content, queue, asset_id
+    )
     client = _client_of(capabilities)
     settings = part_of(request, SETTINGS)
     hardware = part_of(request, HARDWARE)
@@ -191,10 +180,12 @@ async def plan_playback(
         encoder_rate=player.encoder_rate,
         copy=copy,
         stored_container=asset.container,
+        fallback=fallback,
     )
     del settings  # the plan needs none of it; kept explicit so the dependency is not re-added
 
     plan = await _unread(request, content, asset, plan)
+    _say_planned(asset, capabilities, client, plan, fallback=fallback)
 
     base = f"/api/assets/{asset_id}"
     url = _plan_url(base, plan)
@@ -253,6 +244,41 @@ async def _scan_queued(content: ContentStore, queue: JobQueue, asset_id: str) ->
         if any(payload.get("root_id") in roots for payload in await queue.live_payloads(kind)):
             return True
     return False
+
+
+def _answer(capabilities: Capabilities, vcodec: str, *, ten_bit: bool) -> str:
+    """What the report said about this codec: yes, maybe or no."""
+    said = capabilities.video_codecs_10bit if ten_bit else capabilities.video_codecs
+    if vcodec in (one.lower() for one in said):
+        return "yes"
+    if vcodec in (one.lower() for one in capabilities.video_codecs_maybe):
+        return "maybe"
+    return "no"
+
+
+def _say_planned(
+    asset: Asset,
+    capabilities: Capabilities,
+    client: policy.ClientCapabilities,
+    plan: policy.Plan,
+    *,
+    fallback: bool,
+) -> None:
+    """One line per plan, so which route a window took can be read after the fact."""
+    vcodec = (asset.vcodec or "").lower()
+    ten_bit = asset.bit_depth is not None and asset.bit_depth > 8
+    log.info(
+        "player.planned",
+        asset_id=asset.id,
+        route=plan.route.value,
+        reason=policy.reason_code(asset, client, plan, fallback=fallback),
+        vcodec=vcodec or None,
+        container=(asset.container or "").lower() or None,
+        bit_depth=asset.bit_depth,
+        can_play=_answer(capabilities, vcodec, ten_bit=ten_bit) if vcodec else None,
+        realtime=None if plan.projected_realtime is None else round(plan.projected_realtime, 1),
+        fallback=fallback,
+    )
 
 
 def _client_of(capabilities: Capabilities) -> policy.ClientCapabilities:
@@ -563,148 +589,6 @@ async def rendition(
         media_type="image/jpeg",
         headers=keeps(request, version=served.version, concealed=served.concealed),
     )
-
-
-@router.get("/assets/{asset_id}/hls/master.m3u8")
-async def hls_master(
-    asset_id: str,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-) -> Response:
-    """The ladder for the player to choose between.
-
-    Declared before `hls/{segment}`, which would otherwise match "master.m3u8".
-    """
-    asset = await _open(access, viewer, asset_id)
-    body = master_playlist(asset, base_url=f"/api/assets/{asset_id}/hls")
-    return Response(
-        content=body,
-        media_type="application/vnd.apple.mpegurl",
-        headers=_CACHE_PRIVATE,
-    )
-
-
-@router.head("/assets/{asset_id}/hls/master.m3u8", include_in_schema=False)
-async def hls_master_head(
-    asset_id: str,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-) -> Response:
-    return await hls_master(asset_id, access, viewer)
-
-
-@router.get("/assets/{asset_id}/hls/index.m3u8")
-async def hls_playlist(
-    asset_id: str,
-    request: Request,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-) -> Response:
-    """The list of segments, made as they are asked for; the plan rides on every URL."""
-    asset = await _open(access, viewer, asset_id)
-    plan = _plan_from_query(request, asset)
-    body = playlist(asset, base_url=f"/api/assets/{asset_id}/hls", query=plan_query(plan))
-    return Response(
-        content=body,
-        media_type="application/vnd.apple.mpegurl",
-        headers=_CACHE_PRIVATE,
-    )
-
-
-@router.head("/assets/{asset_id}/hls/index.m3u8", include_in_schema=False)
-async def hls_playlist_head(
-    asset_id: str,
-    request: Request,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-) -> Response:
-    return await hls_playlist(asset_id, request, access, viewer)
-
-
-@router.get("/assets/{asset_id}/hls/{segment}")
-async def hls_segment(
-    asset_id: str,
-    segment: str,
-    request: Request,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-    player: Annotated[PlayerService, Depends(_player)],
-) -> Response:
-    """One segment, transcoded on demand if it is not already cached; scoped as `stream` is."""
-    asset = await _open(access, viewer, asset_id)
-    plan = _plan_from_query(request, asset)
-    index = _segment_index(segment, asset)
-
-    try:
-        produced = await player.segment(asset, index=index, plan=plan)
-    except SegmentUnavailable as error:
-        log.warning("player.segment_unavailable", asset_id=asset_id, index=index, error=str(error))
-        # 503, not 404: a failed build must not look like a refusal.
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="That part of the video could not be prepared. Try again.",
-        ) from None
-
-    size = (await asyncio.to_thread(produced.path.stat)).st_size
-    span = byte_range(None, size) or _whole(size)
-
-    async def body() -> Any:
-        try:
-            async for chunk in read_range(produced.path, span, played=PLAYED.now):
-                yield chunk
-        finally:
-            if produced.ephemeral:
-                await asyncio.to_thread(produced.path.unlink, missing_ok=True)
-
-    return StreamingResponse(
-        body(),
-        media_type=tuning.SEGMENT_MIME,
-        headers={"Content-Length": str(size), **_CACHE_PRIVATE},
-    )
-
-
-def _whole(size: int) -> Any:
-    span = byte_range(f"bytes=0-{max(0, size - 1)}", max(1, size))
-    assert span is not None  # noqa: S101 - a constructed range is always parseable
-    return span
-
-
-def _segment_index(segment: str, asset: Asset) -> int:
-    """Which segment `0.m4s` or `init.mp4` names; 404 for anything else, before the filesystem."""
-    if segment == tuning.INIT_SEGMENT_NAME:
-        return -1
-    if not segment.endswith(tuning.SEGMENT_SUFFIX):
-        raise _missing()
-    raw = segment[: -len(tuning.SEGMENT_SUFFIX)]
-    index = as_int(raw)
-    # Only the init segment is under zero.
-    if index is None or index < 0 or index >= policy.segment_count(asset.duration_ms):
-        raise _missing()
-    return index
-
-
-def _plan_from_query(request: Request, asset: Asset) -> policy.Plan:
-    """The plan this segment is asked under, validated: a height must be one of the ladder's."""
-    height: int | None = None
-    candidate = as_int(request.query_params.get("height"))
-    if candidate is not None:
-        offered = {rung.height for rung in policy.rungs(asset.width, asset.height)}
-        if candidate in offered:
-            height = candidate
-
-    return policy.Plan(route=policy.Route.TRANSCODE, reason="", scale_height=height)
-
-
-@router.head("/assets/{asset_id}/hls/{segment}", include_in_schema=False)
-async def hls_segment_head(
-    asset_id: str,
-    segment: str,
-    request: Request,
-    access: Annotated[Repository, Depends(wiring.access)],
-    viewer: Annotated[Viewer, Depends(current_viewer)],
-    player: Annotated[PlayerService, Depends(_player)],
-) -> Response:
-    return await hls_segment(asset_id, segment, request, access, viewer, player)
 
 
 #: The longest one sitting may claim to have been, and so one slice of it: a day.

@@ -223,7 +223,7 @@ async def test_a_name_is_none_for_a_file_the_reader_cannot_open(library: Library
 async def test_the_manifest_before_start_names_each_collection_and_photo_set_picked(
     library: Library,  # noqa: F811
 ) -> None:
-    """Before Start: the offer's groups, a group per Collection and Photo Set picked (an offer does
+    """Before a swap starts: the offer's groups, a group per Collection and Photo Set picked (an offer does
     not carry them), the picks a mark keeps out, and what the other side would learn."""
     from sift.slices.swap.weight import _picked
 

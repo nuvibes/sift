@@ -127,10 +127,20 @@ test.describe('the swap as the Manifest', () => {
 			],
 			learns: { people: 1, aliases: 0, sites: 1, usernames: 6, faces: 14 }
 		});
+		// A person of this run's own to pick: the seed holds none.
+		const me = await (await page.request.get('/api/auth/me')).json();
+		const name = `e2e-swap-${Date.now()}`;
+		const made = await page.request.post('/api/people', {
+			data: { name, vault: false },
+			headers: { 'x-csrf-token': me.csrf_token as string }
+		});
+		expect(made.ok(), await made.text()).toBeTruthy();
 		await page.goto('/swap?door=start');
 		await page.getByRole('button', { name: 'Choose people' }).click();
 		const sheet = page.getByRole('dialog');
-		await sheet.getByRole('option').first().click();
+		await sheet.getByRole('searchbox').fill(name);
+		// The picker's choices are pressable rows in its list.
+		await sheet.getByRole('list').getByRole('button', { name }).click();
 		await sheet.getByRole('button', { name: /^Add 1$/ }).click();
 		const list = page.getByRole('list', { name: 'What you are offering' });
 		await expect(list).toContainText('Ava Example');
@@ -168,7 +178,7 @@ test.describe('the swap as the Manifest', () => {
 		const list = page.getByRole('list', { name: 'What they offered' });
 		await expect(list).toContainText('203 \u2192 612');
 		await expect(page.getByText(/32 the very same files and 171 that look the same/)).toBeVisible();
-		await page.getByRole('checkbox', { name: 'Take Bryn Calloway' }).click();
+		await page.getByRole('checkbox', { name: /^Take Bryn/ }).click();
 		await page.getByRole('checkbox', { name: 'Take Northlight Media' }).click();
 		await page.getByRole('button', { name: 'Take 409 files' }).click();
 		await expect

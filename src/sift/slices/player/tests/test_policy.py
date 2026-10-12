@@ -72,6 +72,56 @@ def test_a_browser_that_can_play_the_file_gets_it_untouched() -> None:
     assert plan.scale_height is None
 
 
+def test_a_file_the_element_refused_is_converted_and_the_sentence_says_why() -> None:
+    """The browser said yes and the element said no: a fallback is a conversion, whatever the
+    report says, and its sentence is the element's refusal rather than a codec it plays."""
+    plan = policy.decide(
+        asset(), capabilities("h264", "aac", "mp4"), max_height=1080, cpu_count=4, fallback=True
+    )
+    assert plan.route is policy.Route.TRANSCODE
+    assert plan.reason.startswith(policy.FALLBACK_REFUSAL)
+    assert plan.reason.endswith("so it is being converted as you watch.")
+
+
+def test_a_fallback_leaves_a_picture_and_an_unread_file_alone() -> None:
+    client = capabilities("h264", "aac", "mp4")
+    still = policy.decide(
+        asset(media_type="image"), client, max_height=1080, cpu_count=4, fallback=True
+    )
+    unread = policy.decide(
+        replace(asset(), probed_at=None), client, max_height=1080, cpu_count=4, fallback=True
+    )
+    assert still.route is policy.Route.DIRECT
+    assert unread.route is policy.Route.DIRECT
+
+
+@pytest.mark.parametrize(
+    ("subject", "video", "fallback", "code"),
+    [
+        (asset(), "h264", False, "plays"),
+        (asset(), "h264", True, "fallback"),
+        (asset(vcodec="hevc"), "h264", False, "video_codec"),
+        (replace(asset(vcodec="hevc"), bit_depth=10), "h264 hevc", False, "ten_bit"),
+        (asset(acodec="opus"), "h264", False, "audio_codec"),
+        (asset(container="mkv"), "h264", False, "container"),
+        (asset(media_type="image"), "h264", False, "not_video"),
+        (replace(asset(), probed_at=None), "h264", False, "unread"),
+    ],
+)
+def test_every_plan_has_a_reason_code_for_its_log_line(
+    subject: Asset, video: str, fallback: bool, code: str
+) -> None:
+    client = capabilities(video, "aac", "mp4")
+    plan = policy.decide(subject, client, max_height=1080, cpu_count=4, fallback=fallback)
+    assert policy.reason_code(subject, client, plan, fallback=fallback) == code
+
+
+def test_a_copy_has_its_own_reason_code() -> None:
+    client = capabilities("h264", "aac", "mp4")
+    plan = policy.decide(asset(), client, max_height=1080, cpu_count=4, copy=policy.Copy.REPAIRED)
+    assert policy.reason_code(asset(), client, plan, fallback=False) == "copy"
+
+
 def test_a_container_problem_alone_currently_transcodes_rather_than_repackaging() -> None:
     """Tier 2 is held closed: a stream copy cannot be cut where the playlist says, since input
     seeking lands on the preceding keyframe. Re-enabling it must be deliberate."""

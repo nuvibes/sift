@@ -783,6 +783,8 @@ export interface paths {
         /**
          * Plan Playback
          * @description Decide how this browser should play this file: a POST, as the answer is the client's own.
+         *
+         *     `fallback`: the element refused the file as planned, so it is converted.
          */
         post: operations["plan_playback_api_assets__asset_id__playback_post"];
         delete?: never;
@@ -11445,6 +11447,8 @@ export interface components {
             video_codecs?: string[];
             /** Video Codecs 10Bit */
             video_codecs_10bit?: string[];
+            /** Video Codecs Maybe */
+            video_codecs_maybe?: string[];
         };
         /**
          * CaptureAccepted
@@ -24140,7 +24144,9 @@ export interface operations {
     };
     plan_playback_api_assets__asset_id__playback_post: {
         parameters: {
-            query?: never;
+            query?: {
+                fallback?: boolean;
+            };
             header?: never;
             path: {
                 asset_id: string;

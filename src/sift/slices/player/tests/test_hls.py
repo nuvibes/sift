@@ -45,6 +45,7 @@ from sift.slices.player.tests.conftest import (
 pytestmark = [pytest.mark.integration]
 
 _ROUTES = importlib.import_module("sift.slices.player.router")
+_HLS = importlib.import_module("sift.slices.player.router_hls")
 
 #: From measurement, and not from a guess. The worst *streamable* file measured (HEVC
 #: 10-bit 1080p at 60 fps on two cores) took 1.68 s, and 2.5 s adds about 50% headroom to cover
@@ -506,7 +507,7 @@ def test_a_segment_read_is_heard_as_playing(
     client: TestClient, library: Library, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     played = Played(clock=lambda: 50.0)
-    monkeypatch.setattr(_ROUTES, "PLAYED", played)
+    monkeypatch.setattr(_HLS, "PLAYED", played)
     sign_in(client)
     assert played.seconds_since() is None
 
@@ -899,7 +900,7 @@ def test_a_segment_is_served_only_at_a_height_the_ladder_offers() -> None:
 
     from sift.slices.player import policy
 
-    plan_from_query = importlib.import_module("sift.slices.player.router")._plan_from_query
+    plan_from_query = importlib.import_module("sift.slices.player.router_hls")._plan_from_query
     asset = SimpleNamespace(width=1920, height=1080)
     offered = policy.rungs(1920, 1080)[0].height
 

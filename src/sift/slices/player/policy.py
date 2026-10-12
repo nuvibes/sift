@@ -367,11 +367,13 @@ def decide(
     encoder_rate: float | None = None,
     copy: Copy | None = None,
     stored_container: str | None = None,
+    fallback: bool = False,
 ) -> Plan:
     """Pick the cheapest path that will actually play, for this file and this browser.
 
     `max_height` caps transcoded video only. `requested_height` is a size picked from the quality
-    menu and overrules everything, the free path included.
+    menu and overrules everything, the free path included. `fallback`: the element refused the
+    direct or copied file, so a read video is converted whatever the report said.
     """
     if requested_height is not None:
         return _requested_plan(
@@ -389,6 +391,16 @@ def decide(
     # A video nobody has read has nothing to compare; it is not a conversion.
     if asset.probed_at is None:
         return _unread_plan(asset, client)
+
+    if fallback:
+        return _transcode_plan(
+            asset,
+            vcodec=vcodec,
+            max_height=max_height,
+            cpu_count=cpu_count,
+            encoder_rate=encoder_rate,
+            refused=(FALLBACK_REFUSAL, ""),
+        )
 
     video_ok = client.plays(vcodec, asset.bit_depth)
     # A silent clip's NULL `acodec` is no audio problem.
@@ -419,6 +431,32 @@ def decide(
             ten_bit=bool(vcodec) and vcodec in client.video_codecs and not video_ok,
         ),
     )
+
+
+#: The start of the sentence for a conversion asked after the element refused the file; the
+#: client's `directFailure` says the same.
+FALLBACK_REFUSAL = "Your browser said it could play this file and then couldn't"
+
+
+def reason_code(asset: Asset, client: ClientCapabilities, plan: Plan, *, fallback: bool) -> str:
+    """A short code for why the plan is what it is, for the log; the same tests as `decide`."""
+    if asset.media_type != "video":
+        return "not_video"
+    if asset.probed_at is None:
+        return "unread"
+    if plan.route is Route.DIRECT:
+        return "plays"
+    if plan.route is Route.REMUX:
+        return "copy"
+    if fallback:
+        return "fallback"
+    vcodec = (asset.vcodec or "").lower()
+    acodec = (asset.acodec or "").lower()
+    if not client.plays(vcodec, asset.bit_depth):
+        return "ten_bit" if vcodec and vcodec in client.video_codecs else "video_codec"
+    if acodec and acodec not in client.audio_codecs:
+        return "audio_codec"
+    return "container"
 
 
 def _refusal(

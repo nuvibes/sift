@@ -90,7 +90,8 @@
 	const position = $derived(cell.position);
 	const duration = $derived(cell.duration);
 	let attachment: Attachment | null = null;
-	/** Which file the element is currently pointed at, so a change is noticed once. */
+	/** Which file and address the element is pointed at, so a change (a conversion asked after a
+	    refusal is the same file) is noticed once. */
 	let attached: string | null = null;
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	/** How long a GIF is held, which is the only end an `<img>` can be given. */
@@ -170,7 +171,8 @@
 	$effect(() => {
 		const element = video;
 		const plan = cell.plan;
-		const id = cell.playing?.id ?? null;
+		const file = cell.playing?.id ?? null;
+		const id = file === null || plan === null ? file : `${file} ${plan.url}`;
 
 		/* No element (a still replaced it) still has to let go, or the clip before it keeps its
 		   stream. */
@@ -415,9 +417,14 @@
 	}
 
 	/* This file cannot be played here: one handler for the element's `error`, the picture's and a
-	   fatal stream failure, as one fact about the cell (`Cell.failed`). */
+	   fatal stream failure, as one fact about the cell (`Cell.refused`). Once per plan, as the
+	   element's own `error` and the attachment's both say it. */
+	let refusedPlan: PlaybackPlan | null = null;
 	function brokeDown() {
-		void cell.failed();
+		const plan = cell.plan;
+		if (plan !== null && plan === refusedPlan) return;
+		refusedPlan = plan;
+		void cell.refused();
 	}
 
 	/* A cell times what it shows and reports it on moving off, with no position, so a shuffled file

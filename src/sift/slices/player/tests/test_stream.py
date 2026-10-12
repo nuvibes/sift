@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import logging
 import os
 import subprocess
 import sys
@@ -106,6 +107,40 @@ def test_a_playable_file_is_direct_played(client: TestClient, library: Library) 
     assert plan["route"] == "direct"
     assert plan["url"].endswith("/stream")
     assert plan["streamable"] is True
+
+
+def test_a_fallback_plan_converts_and_every_plan_is_one_line(
+    client: TestClient, library: Library, caplog: pytest.LogCaptureFixture
+) -> None:
+    sign_in(client)
+    asset_id = library.id_of("h264")
+    unsure = {**MODERN, "video_codecs": ["hevc"], "video_codecs_maybe": ["h264"]}
+    blind = {**MODERN, "video_codecs": []}
+    asked = f"/api/assets/{asset_id}/playback"
+
+    with caplog.at_level(logging.INFO, logger="sift.slices.player.router"):
+        plans = [
+            client.post(asked, json=MODERN).json(),
+            client.post(f"{asked}?fallback=true", json=MODERN).json(),
+            client.post(asked, json=unsure).json(),
+            client.post(asked, json=blind).json(),
+        ]
+
+    assert [plan["route"] for plan in plans] == ["direct", "transcode", "transcode", "transcode"]
+    assert "/hls/index.m3u8?route=transcode" in plans[1]["url"]
+    said = [record.msg for record in caplog.records if isinstance(record.msg, dict)]
+    lines = [line for line in said if line.get("event") == "player.planned"]
+    assert [(ln["reason"], ln["can_play"], ln["fallback"]) for ln in lines] == [
+        ("plays", "yes", False),
+        ("fallback", "yes", True),
+        ("video_codec", "maybe", False),
+        ("video_codec", "no", False),
+    ]
+    assert (lines[0]["asset_id"], lines[0]["vcodec"], lines[0]["container"]) == (
+        asset_id,
+        "h264",
+        "mp4",
+    )
 
 
 @pytest.mark.parametrize("headers", [{}, {"range": "bytes=0-"}], ids=["whole", "range"])

@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.gates import PLANTED_PREFIX
+
 pytestmark = [pytest.mark.gate, pytest.mark.unit]
 
 CLIENT = Path(__file__).resolve().parents[2] / "frontend" / "src"
@@ -49,7 +51,12 @@ _COPY = _copy_finder()
 
 
 def _client_files() -> list[Path]:
-    found = [*CLIENT.rglob("*.svelte"), *CLIENT.rglob("*.ts")]
+    # A fixture another gate plants while this one walks is not a screen.
+    found = [
+        one
+        for one in (*CLIENT.rglob("*.svelte"), *CLIENT.rglob("*.ts"))
+        if not one.name.startswith(PLANTED_PREFIX)
+    ]
     return sorted(
         path
         for path in found

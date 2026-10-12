@@ -127,6 +127,38 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+describe('a file the element refuses', () => {
+	it('is told to the cell once, though the element and the attachment both say it', () => {
+		const { cell } = show('video');
+		const refused = vi.spyOn(cell, 'refused').mockResolvedValue(undefined);
+		const element = host.querySelector('video') as HTMLVideoElement;
+
+		element.dispatchEvent(new Event('error'));
+		element.dispatchEvent(new Event('error'));
+
+		expect(refused).toHaveBeenCalledTimes(1);
+	});
+
+	it('attaches the conversion asked for the same file, and its refusal is heard again', () => {
+		const { cell } = show('video');
+		const refused = vi.spyOn(cell, 'refused').mockResolvedValue(undefined);
+		const element = host.querySelector('video') as HTMLVideoElement;
+		element.dispatchEvent(new Event('error'));
+		attached.mockClear();
+
+		cell.plan = {
+			...PLAN,
+			route: 'transcode',
+			url: '/api/assets/a/hls/index.m3u8?route=transcode'
+		};
+		flushSync();
+		element.dispatchEvent(new Event('error'));
+
+		expect(attached, 'the same file at a new address was not attached').toHaveBeenCalledTimes(1);
+		expect(refused).toHaveBeenCalledTimes(2);
+	});
+});
+
 describe('letting go of the stream', () => {
 	it('lets go when the cell moves to a photograph', () => {
 		/* The leak. A still has no video element, so an effect that returned early when there was

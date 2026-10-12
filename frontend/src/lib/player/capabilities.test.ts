@@ -8,7 +8,14 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { capabilities, capabilitiesWithout, forget, playsHlsNatively } from './capabilities';
+import {
+	capabilities,
+	capabilitiesWithout,
+	forget,
+	played,
+	playsHlsNatively,
+	refused
+} from './capabilities';
 
 /** Stand in for the browser's media stack with one that answers however a test wants. */
 function pretendBrowser(options: {
@@ -217,6 +224,16 @@ describe('native HLS', () => {
 		expect(playsHlsNatively()).toBe(true);
 	});
 
+	it('is left to hls.js wherever Media Source Extensions exist, whatever the element says', () => {
+		// A Chromium answers "maybe" to a playlist and then refuses conversions hls.js plays.
+		pretendBrowser({
+			isTypeSupported: () => true,
+			canPlayType: (type) => (type.includes('mpegurl') ? 'maybe' : '')
+		});
+
+		expect(playsHlsNatively()).toBe(false);
+	});
+
 	it('is not claimed where the browser says nothing', () => {
 		pretendBrowser({ isTypeSupported: null, canPlayType: () => '' });
 
@@ -232,5 +249,60 @@ describe('native HLS', () => {
 		});
 
 		expect(playsHlsNatively()).toBe(false);
+	});
+});
+
+describe('a codec the browser only guesses at', () => {
+	/* HEVC and AV1 decode only where the device has the decoder, and "maybe" is what a browser
+	 * says without asking it. */
+	const guessing = (type: string) =>
+		type.includes('hvc1') || type.includes('av01') || type.includes('avc1') ? 'maybe' : '';
+
+	afterEach(() => localStorage.clear());
+
+	it('is reported as maybe and planned as no', () => {
+		pretendBrowser({ canPlayType: guessing });
+
+		const found = capabilities();
+
+		expect(found.video_codecs).toEqual([]);
+		expect(found.video_codecs_maybe).toEqual(['h264', 'hevc', 'av1']);
+	});
+
+	it('is a yes for HEVC once this window has played one, at the depth it played', () => {
+		pretendBrowser({ canPlayType: guessing });
+		played('hevc', 8);
+
+		const found = capabilities();
+
+		expect(found.video_codecs).toEqual(['hevc']);
+		expect(found.video_codecs_10bit).toEqual([]);
+		expect(found.video_codecs_maybe).toEqual(['h264', 'av1']);
+	});
+
+	it('leaves H.264 as the browser says, whatever has played', () => {
+		pretendBrowser({ canPlayType: guessing });
+		played('h264', 8);
+
+		expect(capabilities().video_codecs).toEqual([]);
+		expect(localStorage.getItem('sift.played-codecs')).toBeNull();
+	});
+
+	it('goes back to maybe when a file of it is refused', () => {
+		pretendBrowser({ canPlayType: guessing });
+		played('av1', 10);
+		expect(capabilities().video_codecs_10bit).toEqual(['av1']);
+
+		refused('AV1');
+
+		expect(capabilities().video_codecs).toEqual([]);
+		expect(capabilities().video_codecs_10bit).toEqual([]);
+	});
+
+	it('survives storage that cannot be read', () => {
+		pretendBrowser({ canPlayType: guessing });
+		localStorage.setItem('sift.played-codecs', '{not json');
+
+		expect(capabilities().video_codecs).toEqual([]);
 	});
 });

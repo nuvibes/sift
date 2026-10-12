@@ -93,3 +93,6 @@ desktop/native/drag/bin/
 # An optional design gallery, not part of this tree, and where a signed build moves it aside.
 /frontend/src/routes/design/
 /frontend/.design-aside/
+
+# The choosers spec's scratch Stash file
+frontend/e2e/.chooser-stash/

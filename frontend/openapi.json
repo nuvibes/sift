@@ -2495,6 +2495,14 @@
             "maxItems": 32,
             "title": "Video Codecs 10Bit",
             "type": "array"
+          },
+          "video_codecs_maybe": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Video Codecs Maybe",
+            "type": "array"
           }
         },
         "title": "Capabilities",
@@ -31137,7 +31145,7 @@
     },
     "/api/assets/{asset_id}/playback": {
       "post": {
-        "description": "Decide how this browser should play this file: a POST, as the answer is the client's own.",
+        "description": "Decide how this browser should play this file: a POST, as the answer is the client's own.\n\n`fallback`: the element refused the file as planned, so it is converted.",
         "operationId": "plan_playback_api_assets__asset_id__playback_post",
         "parameters": [
           {
@@ -31147,6 +31155,16 @@
             "schema": {
               "title": "Asset Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fallback",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Fallback",
+              "type": "boolean"
             }
           }
         ],
