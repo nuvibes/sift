@@ -34,7 +34,7 @@ from sift.kernel.access import Viewer
 from sift.kernel.jobs import JobContext
 from sift.kernel.log import get_logger
 from sift.kernel.tunnels import TunnelError
-from sift.slices.swap import transfer
+from sift.slices.swap import receipt, transfer
 from sift.slices.swap.device import (
     Device,
 )
@@ -459,6 +459,11 @@ class _Live(_Figures):
         self.resumed = asyncio.Event()
         self._ping: asyncio.Task[Any] | None = None
         self._waiting_out = False
+        #: When the first file moved, how often a tunnel cut the session off, and, on a guest
+        #: cut off, when it dials again on its own: for the screen and the receipt.
+        self.moving_since: int | None = None
+        self.cut_offs = 0
+        self.retry_at: int | None = None
 
     # --- plumbing ------------------------------------------------------------------------------
 
@@ -528,6 +533,7 @@ class _Live(_Figures):
         """The windows' loop, once, from the first direction whose files move."""
         if not self._measuring:
             self._measuring = True
+            self.moving_since = self.owner.now()
             self.spawn(self.measure(), "measure")
 
     async def both_ways(self, sending: Awaitable[bool], receiving: Awaitable[bool]) -> bool:
@@ -550,6 +556,7 @@ class _Live(_Figures):
         if self.ended.is_set() or self.cut_at is not None:
             return
         self.cut_at = self.owner.now()
+        self.cut_offs += 1
         self.armed = False
         self.resumed.clear()
         control, self.control = self.control, None
@@ -596,6 +603,7 @@ class _Live(_Figures):
         while its row still says cut off."""
         await self.owner.store.rejoined(self.id)
         self.cut_at = None
+        self.retry_at = None
         self.control = control
         self.conns.discard(control)
         self.watchdog.heard()
@@ -674,6 +682,7 @@ class _Live(_Figures):
         await self.owner.store.end(
             self.id, state=_STATE_OF[reason], reason=reason, now=self.owner.now()
         )
+        await self.keep_receipt()
         self.owner.forget(self)
         self.device = None
         self.finished.set()
@@ -701,6 +710,16 @@ class _Live(_Figures):
             back_bytes=other.moved_bytes,
             reason=reason,
         )
+
+    async def keep_receipt(self) -> None:
+        """The receipt, written as the session ends. A failure costs the receipt's groups, never
+        the end: the row alone still reads as one."""
+        try:
+            await receipt.keep(
+                self.owner.store.database, self.id, receipt.body_of(self), self.owner.now()
+            )
+        except Exception as error:
+            log.warning("swap.receipt_not_kept", swap=self.short_id, error=type(error).__name__)
 
     async def teardown(self) -> None:
         for conn in list(self.conns):

@@ -7,25 +7,50 @@
 	 * the same six characters are two ends of one connection, and nobody is in the middle of it.
 	 * Nothing about either library is shown until the person here says they match.
 	 */
+	import type { Snippet } from 'svelte';
 	import { Button, Panel } from '$lib/components/common';
+	import { deviceWords } from './manifest';
 
 	interface Props {
 		code: string;
 		/** The other device's id, when the hello has named it. */
 		device?: string | null;
+		/** Its name, where this Sift knows one. */
+		name?: string | null;
+		/** What is known of it besides: whether this device has swapped with it before. */
+		known?: string | null;
 		busy?: boolean;
 		onanswer: (match: boolean) => void;
+		/** Under the code: in an exchange, the host's own picks. */
+		children?: Snippet;
 	}
 
-	let { code, device = null, busy = false, onanswer }: Props = $props();
+	let {
+		code,
+		device = null,
+		name = null,
+		known = null,
+		busy = false,
+		onanswer,
+		children
+	}: Props = $props();
+	const who = $derived(deviceWords(name, device));
 </script>
 
 <Panel label="The code">
 	<p class="lede">Compare this code with them before you go on.</p>
 	<p class="code" aria-label="The code, {code.split('').join(' ')}">{code}</p>
-	{#if device}
-		<p class="device">Their device id is {device}.</p>
+	{#if who}
+		<p class="device">Their device: {who}</p>
 	{/if}
+	{#if known}
+		<p class="device">{known}</p>
+	{/if}
+	<p class="how">
+		Read it to them on the chat the token went through. If theirs differs, another device has the
+		token: press They don't match.
+	</p>
+	{@render children?.()}
 	<div class="answers">
 		<Button tone="quiet" disabled={busy} onclick={() => onanswer(false)}>They don't match</Button>
 		<Button tone="primary" disabled={busy} onclick={() => onanswer(true)}>They match</Button>
@@ -34,7 +59,8 @@
 
 <style>
 	.lede,
-	.device {
+	.device,
+	.how {
 		margin: 0;
 	}
 

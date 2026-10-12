@@ -30,9 +30,9 @@
 		startSwap,
 		type Chosen,
 		type SwapStarted,
-		type SwapTunnel,
-		type SwapWeight
+		type SwapTunnel
 	} from './swap';
+	import type { Weight } from './wire';
 
 	interface Props {
 		/** What the swap is built from. Start says what is missing when this is empty. */
@@ -45,7 +45,7 @@
 	let { chosen, onstarted, both = false }: Props = $props();
 	/* What the server weighs the picks at, and whether that leaves anything to start. The reason is
 	   the figure's own line just above Start (`sendingWords`), so it is said once. */
-	let weight = $state<SwapWeight | null>(null);
+	let weight = $state<Weight | null>(null);
 	const blocked = $derived(chosen.length > 0 ? startBlocked(weight, chosen, both) : null);
 	/* What this form starts, in its words: under Exchange, every sentence says exchange. */
 	const noun = $derived(both ? 'exchange' : 'swap');
@@ -65,6 +65,7 @@
 	let shareBoxes = $state(true);
 	let tunnels = $state<SwapTunnel[] | null>(null);
 	let tunnelId = $state('');
+	const chosenTunnel = $derived(tunnels?.find((one) => one.id === tunnelId) ?? null);
 	let problem = $state<string | null>(null);
 	let busy = $state(false);
 
@@ -148,7 +149,7 @@
 		/>
 	</div>
 
-	<SendingWeight {chosen} {both} bind:weight />
+	<SendingWeight {chosen} {both} bind:weight tunnel={chosenTunnel} />
 
 	<Problem message={problem} />
 

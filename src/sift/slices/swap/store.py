@@ -41,7 +41,7 @@ _REPLACE_DEVICE = (
 _SESSION = (
     "SELECT id, role, state, tunnel_id, peer_device, token_expires, chosen, offered_files,"
     " wanted_files, sent_files, sent_bytes, rate_bps, dest_folder_id, started_at, ended_at,"
-    " end_reason, cut_off_at, two_way, back_offered, back_wanted, back_files, back_bytes"
+    " end_reason, cut_off_at, two_way, back_offered, back_wanted, back_files, back_bytes, folder_id"
     " FROM swap_sessions WHERE id = ?"
 )
 _INSERT_SESSION = (
@@ -85,6 +85,14 @@ _REJOINED = (
 _END = (
     "UPDATE swap_sessions SET state = ?, end_reason = ?, ended_at = ?"
     " WHERE id = ? AND state IN ('waiting', 'connected', 'offered', 'transferring')"
+)
+_SWAPPED_BEFORE = (
+    "SELECT COUNT(*) AS n FROM swap_sessions WHERE peer_device = ? AND id <> ?"
+    " AND (state = 'done' OR sent_files > 0 OR back_files > 0)"
+)
+_LAST_RATE = (
+    "SELECT rate_bps FROM swap_sessions WHERE tunnel_id = ? AND ended_at IS NOT NULL"
+    " AND rate_bps IS NOT NULL ORDER BY ended_at DESC, id DESC LIMIT 1"
 )
 _UNFINISHED = (
     "SELECT id FROM swap_sessions"
@@ -168,6 +176,8 @@ class SessionRow:
     back_wanted: int = 0
     back_files: int = 0
     back_bytes: int = 0
+    #: The folder the swap made for what it landed (`Swap-<short id>`), once a file landed.
+    folder_id: str | None = None
 
     @property
     def short_id(self) -> str:
@@ -225,6 +235,7 @@ def _session(row: Row) -> SessionRow:
         back_wanted=int(row["back_wanted"]),
         back_files=int(row["back_files"]),
         back_bytes=int(row["back_bytes"]),
+        folder_id=row["folder_id"],
     )
 
 
@@ -425,6 +436,16 @@ class SessionStore:
                 payload=json.dumps(ended),
             )
             return True
+
+    async def swapped_before(self, peer_device: str, session_id: str) -> int:
+        """Earlier swaps with this device that finished or moved a file."""
+        row = await self._db.fetch_one(_SWAPPED_BEFORE, (peer_device, session_id))
+        return int(row["n"]) if row is not None else 0
+
+    async def last_rate(self, tunnel_id: str) -> int | None:
+        """The rate the last ended swap through this tunnel measured, or None."""
+        row = await self._db.fetch_one(_LAST_RATE, (tunnel_id,))
+        return None if row is None else int(row["rate_bps"])
 
     async def unfinished(self) -> list[str]:
         """Every session still in a live state, oldest first."""

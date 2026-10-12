@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What a swap records: this install's device, each session, and each file's received chunks.
+"""What a swap records: this install's device, each session, each file's received chunks, and the
+receipt each side keeps when a swap ends.
 
 The token's secret is never stored, and no row holds a peer's address. A session counts both
 ways: the sending columns are host to guest, the `back_` columns guest to host.
@@ -14,7 +15,7 @@ from sift.kernel.migrations import column_exists
 log = get_logger(__name__)
 
 COMPONENT = "swap"
-VERSION = 5
+VERSION = 6
 
 # `CHECK (id = 1)`: one install, one device id.
 _CREATE_DEVICE = """
@@ -93,6 +94,24 @@ UPDATE swap_sessions
 # The sender's version of the file, for a sender that checks the whole at the end (`pieces`).
 _ADD_VERSION = "ALTER TABLE swap_manifests ADD COLUMN version TEXT"
 
+# The receipt of each side of a swap, written when it ends: what landed or was sent per group, and
+# its Undo once pressed. The session's own row keeps the counts; this keeps the rest.
+_CREATE_RECEIPTS = """
+CREATE TABLE IF NOT EXISTS swap_receipts (
+  session_id  TEXT PRIMARY KEY REFERENCES swap_sessions(id) ON DELETE CASCADE,
+  body        TEXT NOT NULL DEFAULT '{}',
+  written_at  INTEGER NOT NULL,
+  undone_at   INTEGER,
+  undo        TEXT
+) WITHOUT ROWID
+"""
+
+# Earlier swaps with a device, and the last rate through a tunnel, are read by these.
+_INDEXES_6 = (
+    "CREATE INDEX IF NOT EXISTS ix_swap_sessions_peer ON swap_sessions(peer_device)",
+    "CREATE INDEX IF NOT EXISTS ix_swap_sessions_tunnel ON swap_sessions(tunnel_id, ended_at)",
+)
+
 _INDEXES = (
     # The boot step ends every session a restart interrupted, by state.
     "CREATE INDEX IF NOT EXISTS ix_swap_sessions_state ON swap_sessions(state)",
@@ -116,6 +135,10 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await _add_folder_id(connection, on_disk)
     if on_disk < 5 and not await column_exists(connection, "swap_manifests", "version"):
         await connection.execute(_ADD_VERSION)
+    if on_disk < 6:
+        await connection.execute(_CREATE_RECEIPTS)
+        for statement in _INDEXES_6:
+            await connection.execute(statement)
 
 
 async def _add_two_way(connection: Connection) -> None:

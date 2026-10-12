@@ -60,6 +60,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from sift.kernel.access import Viewer
 from sift.kernel.ids import new_id
@@ -192,9 +193,27 @@ from sift.slices.swap.live import (
 from sift.slices.swap.live import (
     Watchdog as Watchdog,
 )
-from sift.slices.swap.models import Chosen, OfferScreen
+from sift.slices.swap.manifest import (
+    files_of_group,
+    held_as,
+    keys_skipped,
+)
+from sift.slices.swap.models import (
+    MAX_REFUSED_NAMED,
+    Chosen,
+    CrossingNow,
+    ManifestFile,
+    ManifestGroup,
+    RefusedFile,
+)
 from sift.slices.swap.receiving import (
     _Receiving,
+)
+from sift.slices.swap.session_extras import (
+    LiveExtras,
+    LiveFacts,
+    receiving_extras,
+    sending_extras,
 )
 from sift.slices.swap.store import SessionRow, SessionStore
 from sift.slices.swap.token import Token, TokenRefused, mint, parse, server_or_none
@@ -258,40 +277,6 @@ MANIFEST_KEPT_SECONDS = 7 * 24 * 60 * 60
 class Started:
     session_id: str
     token: Token
-
-
-@dataclass(frozen=True, slots=True)
-class LiveFacts:
-    """What only memory knows about a running session: for the screen, never for a row."""
-
-    code: str | None
-    token: str | None
-    wanted_bytes: int
-    moved_bytes: int
-    #: The session's pace (`_Live.pace_bps`), the rate its estimate reads.
-    rate_bps: int | None
-    #: The offer screen of what the other side offered, once its offer has arrived and been read:
-    #: the guest's, and the host's too in a swap that sends and receives.
-    screen: OfferScreen | None
-    unwanted: int
-    #: Whether files go both ways, and whether this side has answered the other's offer.
-    two_way: bool = False
-    answered: bool = False
-    #: The direction from the guest to the host, in a swap that sends and receives: what was
-    #: wanted, what has moved, its pace, and whether its files are moving yet.
-    back_wanted_bytes: int = 0
-    back_moved_bytes: int = 0
-    back_rate_bps: int | None = None
-    back_moving: bool = False
-    #: Whether the files from the host to the guest are moving yet.
-    moving: bool = False
-    #: The files RECEIVED so far, each counted when its last piece is in and the whole file's digest
-    #: matches (`_Receiving.verified`): on the guest, from the host; with `back_`, on the host of a
-    #: swap that sends and receives, from the guest. Landing (the strip, the gate, the import, the
-    #: filing) comes after, one file at a time, and the row counts a file only once it is filed, so
-    #: the receiver's screen says both and the two meet at the end.
-    received_files: int = 0
-    back_received_files: int = 0
 
 
 class SwapSessions:
@@ -359,12 +344,17 @@ class SwapSessions:
         self.sleep = sleep
         self._live: dict[str, _Live] = {}
         self._by_job: dict[str, str] = {}
+        #: What the session view reads once per session: earlier swaps with the device, the tunnel.
+        self.said: dict[str, tuple[int | None, str | None]] = {}
+        #: The swaps whose Undo is running, so a second press waits for the first.
+        self.undoing: set[str] = set()
 
     def now(self) -> int:
         return int(self._now())
 
     def forget(self, live: _Live) -> None:
         self._live.pop(live.id, None)
+        self.said.pop(live.id, None)
         if live.job_id is not None:
             self._by_job.pop(live.job_id, None)
 
@@ -573,6 +563,7 @@ class SwapSessions:
             role="guest",
             started_at=self.now(),
             started_by=viewer_id,
+            tunnel_id=route,
             peer_device=token.host_device,
             token_expires=token.expires,
             dest_folder_id=dest_folder_id,
@@ -707,6 +698,96 @@ class SwapSessions:
 
     async def row(self, session_id: str) -> SessionRow | None:
         return await self.store.get(session_id)
+
+    def extras(self, session_id: str) -> LiveExtras | None:
+        """The manifest and the live facts the swap screens draw, read from memory alone: what
+        this side receives, or on a side that only sends, what it offered."""
+        live = self._live.get(session_id)
+        if live is None:
+            return None
+        receiving, sending = live.receiving_half(), live.sending_half()
+        rows: list[ManifestGroup] | None = None
+        now: CrossingNow | None = None
+        if receiving is not None and receiving.offer is not None and receiving.groups is not None:
+            rows, now = receiving_extras(receiving, receiving.offer, receiving.groups)
+        elif sending is not None and sending.offer is not None and sending.groups is not None:
+            rows, now = sending_extras(sending, sending.offer, sending.groups)
+        if (
+            now is None
+            and sending is not None
+            and sending.offer is not None
+            and sending.groups is not None
+        ):
+            now = sending_extras(sending, sending.offer, sending.groups)[1]
+        refused: tuple[RefusedFile, ...] = ()
+        kept_files = kept_bytes = 0
+        if receiving is not None and receiving.offer is not None:
+            files = receiving.offer.files
+            refused = tuple(
+                RefusedFile(title=files[index].title, reason=why)
+                for index, why in list(receiving.refusals.items())[:MAX_REFUSED_NAMED]
+            )
+            kept_files = len(receiving.done_files)
+            kept_bytes = sum(files[index].size for index in receiving.done_files)
+        if isinstance(live, GuestSession):
+            streams = sum(1 for task in live.streaming() if not task.done())
+            expires = None
+        else:
+            host = cast(HostSession, live)
+            streams = len(host.stream_tasks) + len(host.streams_in)
+            expires = host.token.expires if host.token is not None else None
+        return LiveExtras(
+            manifest=rows,
+            now=now,
+            streams=streams if live.moving else None,
+            moving_since=live.moving_since,
+            token_expires=expires,
+            refused=refused,
+            refused_count=0 if receiving is None else len(receiving.refusals),
+            kept_files=kept_files,
+            kept_bytes=kept_bytes,
+            retry_at=live.retry_at if live.cut_at is not None else None,
+        )
+
+    def group_files(
+        self, session_id: str, key: str, *, offset: int, limit: int
+    ) -> tuple[list[ManifestFile], int]:
+        """A page of one group's files, of what this side receives or offered. `SwapRefused` while
+        there is no offer; `KeyError` for a group it does not have."""
+        live = self._live.get(session_id)
+        if live is None:
+            raise SwapRefused("There's no offer to read yet.")
+        receiving, sending = live.receiving_half(), live.sending_half()
+        if receiving is not None and receiving.offer is not None and receiving.groups is not None:
+            screen = receiving.screen
+            held = held_as({} if screen is None else {one.key: one.reason for one in screen.held})
+            return files_of_group(
+                receiving.offer, receiving.groups, key, held=held, offset=offset, limit=limit
+            )
+        if sending is not None and sending.offer is not None and sending.groups is not None:
+            return files_of_group(
+                sending.offer, sending.groups, key, held=None, offset=offset, limit=limit
+            )
+        raise SwapRefused("There's no offer to read yet.")
+
+    def with_groups(self, session_id: str, taken: Taken, skipped_groups: Sequence[str]) -> Taken:
+        """An answer with whole groups skipped, said as the answer already says it: a person by
+        their place, any other group as its files unticked. `ValueError` for a group the offer
+        does not have."""
+        if not skipped_groups:
+            return taken
+        live = self._live.get(session_id)
+        receiving = None if live is None else live.receiving_half()
+        if receiving is None or receiving.offer is None or receiving.groups is None:
+            raise SwapRefused("There's no offer to answer yet.")
+        people, unticked = keys_skipped(receiving.offer, receiving.groups, skipped_groups)
+        return Taken(skipped=taken.skipped | people, unticked=taken.unticked | unticked)
+
+    def try_now(self, session_id: str) -> None:
+        """Try now: the guest, cut off, dials again immediately."""
+        live = self._live.get(session_id)
+        if not isinstance(live, GuestSession) or not live.try_now():
+            raise SwapRefused("This swap isn't waiting to be joined again.")
 
     def time_left(self) -> OwnEstimate:
         """What Activity's row for swaps says of them: waiting while no session is moving files,

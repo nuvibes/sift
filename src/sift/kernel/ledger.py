@@ -65,6 +65,7 @@ VERBS: Final = frozenset(
         # A swap's payload never holds an address, a token or the code.
         "swap_started",
         "swap_ended",
+        "swap_undone",
         # Retired sends; kept so the older lines still read.
         "wall_sent",
         "restored",

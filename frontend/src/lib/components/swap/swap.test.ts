@@ -64,6 +64,19 @@ function session(over: Partial<SwapSession> = {}): SwapSession {
 		rejoin_until: null,
 		// Received is the receiving side's own count while the session runs; none here.
 		received_files: null,
+		kept_bytes: 0,
+		kept_files: 0,
+		manifest: null,
+		moving_since: null,
+		now: null,
+		peer_name: null,
+		refused: [],
+		refused_count: 0,
+		retry_at: null,
+		streams: null,
+		swapped_before: null,
+		token_expires: null,
+		tunnel_name: null,
 		...over
 	};
 }
@@ -202,7 +215,7 @@ describe('a swap cut off by a tunnel', () => {
 			'The connection to them was lost. They can rejoin with the same token until Oct 1, 2026, 3:04 AM.'
 		);
 		expect(cutOffWords({ role: 'guest', rejoin_until: 1790000000 }, at)).toBe(
-			'The connection to them was lost. Sift keeps trying to reach them until Oct 1, 2026, 3:04 AM. Join again with the same token to try now.'
+			'The connection to them was lost. Sift keeps trying to reach them until Oct 1, 2026, 3:04 AM.'
 		);
 	});
 });

@@ -113,6 +113,13 @@ class GuestSession(_Receiving, _Live):
     def expires(self) -> int:
         return self.token.expires
 
+    def try_now(self) -> bool:
+        """Try now: dial again immediately, while cut off. False when it is not cut off."""
+        if self.cut_at is None or self.ended.is_set():
+            return False
+        self.nudged.set()
+        return True
+
     def join_again(self, token: Token) -> None:
         """A Join with this session's own token: where the host is now (a token remade after
         its port moved names the new one), and a dial immediately if the session is cut off."""
@@ -142,6 +149,7 @@ class GuestSession(_Receiving, _Live):
                 lock.LockFailed,
             ):
                 pass
+            self.retry_at = self.owner.now() + int(self.owner.retry_seconds)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.nudged.wait(), self.owner.retry_seconds)
 

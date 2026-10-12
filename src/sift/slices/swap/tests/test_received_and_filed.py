@@ -94,6 +94,11 @@ class _Sessions:
     def facts(self, session_id: str) -> LiveFacts | None:
         return self._facts
 
+    def extras(self, session_id: str) -> None:
+        return None
+
+    said: dict[str, tuple[int | None, str | None]] = {}  # noqa: RUF012
+
 
 _FACTS = LiveFacts(None, None, 0, 0, None, None, 0, received_files=2, back_received_files=5)
 

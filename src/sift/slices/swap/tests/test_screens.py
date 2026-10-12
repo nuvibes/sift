@@ -120,9 +120,15 @@ async def test_the_tunnels_say_whether_each_can_host(world: Any) -> None:
     client, _ = world
     answer = (await client.get("/api/swap/tunnels")).json()
     assert answer == [
-        {"id": "t1", "name": "Tunnel one", "can_host": True, "endpoint": "198.51.100.7"},
-        {"id": "t2", "name": "Tunnel two", "can_host": False, "endpoint": None},
-        {"id": "t3", "name": "Tunnel three", "can_host": None, "endpoint": None},
+        {
+            "id": "t1",
+            "name": "Tunnel one",
+            "can_host": True,
+            "endpoint": "198.51.100.7",
+            "rate_bps": None,
+        },
+        {"id": "t2", "name": "Tunnel two", "can_host": False, "endpoint": None, "rate_bps": None},
+        {"id": "t3", "name": "Tunnel three", "can_host": None, "endpoint": None, "rate_bps": None},
     ]
 
 

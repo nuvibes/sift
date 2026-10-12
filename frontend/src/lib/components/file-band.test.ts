@@ -26,6 +26,7 @@ vi.mock('$lib/library/filings', () => ({
 	removeFiling: vi.fn()
 }));
 vi.mock('$lib/shell/toasts.svelte', () => ({ toasts: { show: vi.fn() } }));
+vi.mock('$lib/entity/tags.svelte', () => ({ tags: { assign: vi.fn(async () => ({})) } }));
 
 const { FileBand, PANEL_WAIT_MS } = await import('./file-band.svelte');
 
@@ -124,5 +125,22 @@ describe('the panel under a file that is stepped to', () => {
 		band.step(after);
 		expect(asked).toContain('/assets/f4/people');
 		expect(after).toHaveBeenCalledOnce();
+	});
+});
+
+describe('a removal on the band while a read is out', () => {
+	it('does not put the row back from the read that began before it', async () => {
+		gates.clear();
+		const band = new FileBand(() => 'f1');
+		band.tags = [{ id: 't1', name: 'Dusk' }];
+		const reading = band.load('f1');
+		await Promise.resolve();
+
+		await band.untag('t1');
+		expect(band.tags).toEqual([]);
+		for (const open of gates.values()) open();
+		await reading;
+
+		expect(band.tags, 'the answer from before the removal put the tag back').toEqual([]);
 	});
 });

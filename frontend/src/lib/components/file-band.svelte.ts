@@ -14,6 +14,7 @@ import { songs } from '$lib/entity/songs.svelte';
 import { tags as tagStore } from '$lib/entity/tags.svelte';
 import { collections } from '$lib/library/collections.svelte';
 import { filingsOf, removeFiling, type Filing } from '$lib/library/filings';
+import { OwnChanges } from '$lib/library/changes.svelte';
 import { photoSets } from '$lib/library/photo-sets.svelte';
 import { people as peopleStore } from '$lib/people/people.svelte';
 import { toasts } from '$lib/shell/toasts.svelte';
@@ -82,6 +83,8 @@ export class FileBand {
 	bandFor = $state<string | null>(null);
 	/** Which file the view is about now, which an answer must still be about. */
 	private current: () => string;
+	/* A removal on the band, so a read begun before it does not put the row back. */
+	#changes = new OwnChanges();
 
 	constructor(current: () => string) {
 		this.current = current;
@@ -147,7 +150,8 @@ export class FileBand {
 	/** Read the lists for this file all together, each drawn as it lands. */
 	async load(wanted: string): Promise<void> {
 		/* A re-read that found nothing new writes nothing, so no chip is drawn twice. */
-		const here = () => wanted === this.current();
+		const mark = this.#changes.mark();
+		const here = () => wanted === this.current() && this.#changes.since(mark);
 		await Promise.all([
 			api
 				.get<PersonRef[]>(`/assets/${wanted}/people`)
@@ -181,51 +185,59 @@ export class FileBand {
 
 	/** Take this file out of a collection, a photo set or a song, as the entity's page does. */
 	async leave(one: Membership): Promise<void> {
-		const previous = this.partOf;
-		const id = this.current();
-		this.partOf = this.partOf.filter((each) => !(each.kind === one.kind && each.id === one.id));
-		try {
-			if (one.kind === 'collection') await collections.removeItems(one.id, [id]);
-			else if (one.kind === 'song') await songs.remove(one.id, [id]);
-			else await photoSets.remove(one.id, [id]);
-		} catch {
-			this.partOf = previous;
-			toasts.show("Couldn't remove that", { tone: 'error' });
-		}
+		await this.#changes.change(async () => {
+			const previous = this.partOf;
+			const id = this.current();
+			this.partOf = this.partOf.filter((each) => !(each.kind === one.kind && each.id === one.id));
+			try {
+				if (one.kind === 'collection') await collections.removeItems(one.id, [id]);
+				else if (one.kind === 'song') await songs.remove(one.id, [id]);
+				else await photoSets.remove(one.id, [id]);
+			} catch {
+				this.partOf = previous;
+				toasts.show("Couldn't remove that", { tone: 'error' });
+			}
+		});
 	}
 
 	async untag(tagId: string): Promise<void> {
-		const previous = this.tags;
-		this.tags = this.tags.filter((one) => one.id !== tagId);
-		try {
-			await tagStore.assign([this.current()], [tagId], false);
-		} catch {
-			this.tags = previous;
-			toasts.show("That tag couldn't be removed", { tone: 'error' });
-		}
+		await this.#changes.change(async () => {
+			const previous = this.tags;
+			this.tags = this.tags.filter((one) => one.id !== tagId);
+			try {
+				await tagStore.assign([this.current()], [tagId], false);
+			} catch {
+				this.tags = previous;
+				toasts.show("That tag couldn't be removed", { tone: 'error' });
+			}
+		});
 	}
 
 	/* No confirm: nothing is deleted or moved, and the way back is one drop onto the Site's card. */
 	async unfile(usernameId: string): Promise<void> {
-		const previous = this.filings;
-		this.filings = this.filings.filter((filing) => filing.username_id !== usernameId);
-		try {
-			await removeFiling(this.current(), usernameId);
-		} catch {
-			this.filings = previous;
-			toasts.show("That couldn't be taken off", { tone: 'error' });
-		}
+		await this.#changes.change(async () => {
+			const previous = this.filings;
+			this.filings = this.filings.filter((filing) => filing.username_id !== usernameId);
+			try {
+				await removeFiling(this.current(), usernameId);
+			} catch {
+				this.filings = previous;
+				toasts.show("That couldn't be taken off", { tone: 'error' });
+			}
+		});
 	}
 
 	/* Take somebody off this file; admin only, as assigning is. */
 	async detach(personId: string): Promise<void> {
-		const previous = this.people;
-		this.people = this.people.filter((person) => person.id !== personId);
-		try {
-			await peopleStore.assign([this.current()], [personId], false);
-		} catch {
-			this.people = previous;
-			toasts.show("That person couldn't be taken off", { tone: 'error' });
-		}
+		await this.#changes.change(async () => {
+			const previous = this.people;
+			this.people = this.people.filter((person) => person.id !== personId);
+			try {
+				await peopleStore.assign([this.current()], [personId], false);
+			} catch {
+				this.people = previous;
+				toasts.show("That person couldn't be taken off", { tone: 'error' });
+			}
+		});
 	}
 }

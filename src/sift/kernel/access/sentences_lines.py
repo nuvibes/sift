@@ -62,6 +62,7 @@ from sift.kernel.access.sentences_swaps import (
     _took_back_line,
     swap_ended,
     swap_started,
+    swap_undone,
 )
 from sift.kernel.access.sentences_who import pressed_act, today_words
 from sift.kernel.text import non_empty_str
@@ -153,6 +154,8 @@ def _swapped_or_added(
         return Said(swap_started(by, payload))
     if verb == "swap_ended":
         return Said(swap_ended(payload))
+    if verb == "swap_undone":
+        return Said(swap_undone(by, payload))
     if verb == "added" and (moved := songs_moved(by, payload, count)) is not None:
         return Said(moved)
     if verb == "added" and (departed := departures_kept(by, payload)) is not None:

@@ -138,6 +138,19 @@ function session(over: Partial<SwapSession> = {}): SwapSession {
 		rejoin_until: null,
 		// Received is the receiving side's own count while the session runs; none here.
 		received_files: null,
+		kept_bytes: 0,
+		kept_files: 0,
+		manifest: null,
+		moving_since: null,
+		now: null,
+		peer_name: null,
+		refused: [],
+		refused_count: 0,
+		retry_at: null,
+		streams: null,
+		swapped_before: null,
+		token_expires: null,
+		tunnel_name: null,
 		...over
 	};
 }

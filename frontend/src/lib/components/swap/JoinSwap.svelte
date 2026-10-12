@@ -40,7 +40,16 @@
 	} from '$lib/components/common';
 	import { Destinations } from '$lib/library/destinations.svelte';
 	import SwapTunnelChooser from './SwapTunnelChooser.svelte';
-	import { joinSwap, landingWords, tokenFrom, type SwapTunnel } from './swap';
+	import { deviceWords, goodForWords, joined, swappedBeforeWords } from './manifest';
+	import {
+		joinSwap,
+		landingWords,
+		readToken,
+		rememberHost,
+		tokenFrom,
+		type SwapTunnel
+	} from './swap';
+	import type { TokenRead } from './wire';
 
 	interface Props {
 		onjoined: (sessionId: string) => void;
@@ -71,6 +80,35 @@
 	const saidUnder = (part: Part | null) => (problem?.part === part ? problem.words : undefined);
 	let busy = $state(false);
 
+	/* Who the token is from and how long it is good for, read without dialling once the pasting
+	   settles; a token that does not read says nothing here, and Join says why. */
+	const READ_AFTER_MS = 400;
+	let from = $state<TokenRead | null>(null);
+	let reads = 0;
+	$effect(() => {
+		const pasted = tokenFrom(token);
+		const mine = ++reads;
+		from = null;
+		if (!pasted) return;
+		const timer = setTimeout(() => {
+			readToken(pasted).then(
+				(answer) => {
+					if (mine === reads) from = answer;
+				},
+				() => undefined
+			);
+		}, READ_AFTER_MS);
+		return () => clearTimeout(timer);
+	});
+	const fromWords = $derived(
+		from
+			? joined(
+					`From ${deviceWords(from.device_name, from.device_id)}`,
+					goodForWords(from.expires, Date.now() / 1000)
+				)
+			: null
+	);
+
 	const destinations = new Destinations();
 	destinations.follow();
 	onMount(() => void destinations.load());
@@ -94,7 +132,9 @@
 		busy = true;
 		problem = undefined;
 		try {
-			onjoined((await joinSwap(token, folderId, tunnelId)).session_id);
+			const joinedId = (await joinSwap(token, folderId, tunnelId)).session_id;
+			if (from) rememberHost(joinedId, deviceWords(from.device_name, from.device_id));
+			onjoined(joinedId);
 		} catch (error) {
 			problem =
 				error instanceof ApiError
@@ -131,6 +171,12 @@
 				/>
 			{/snippet}
 		</Field>
+		{#if fromWords}
+			<p class="lands">{fromWords}</p>
+			{#if swappedBeforeWords(from?.swapped_before)}
+				<p class="lands">{swappedBeforeWords(from?.swapped_before)}</p>
+			{/if}
+		{/if}
 		<label class="named" for="swap-folder">Put received files in</label>
 		<Select
 			id="swap-folder"

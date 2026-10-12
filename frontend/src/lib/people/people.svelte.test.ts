@@ -433,3 +433,20 @@ describe('the narrowing a wall was loaded with', () => {
 		expect(mocked.get.mock.calls[0][1]?.query).toMatchObject({ offset: '120', limit: '60' });
 	});
 });
+
+describe('a page asked before a change of this tab', () => {
+	it('does not take the heart back from the page asked before it', async () => {
+		const store = new People();
+		store.items = [person()];
+		let answer: (value: unknown) => void = () => undefined;
+		mocked.get.mockImplementationOnce(() => new Promise((done) => (answer = done)) as never);
+		const reading = store.load();
+		mocked.put.mockResolvedValueOnce({ favorite: true } as never);
+
+		await store.setFavorite('p1', true);
+		answer(page([person()]));
+		await reading;
+
+		expect(store.items[0]?.favorite, 'the page from before the heart was drawn').toBe(true);
+	});
+});

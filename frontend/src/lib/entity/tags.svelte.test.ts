@@ -381,3 +381,23 @@ describe('a picker draws a branch under its parent', () => {
 		).not.toHaveProperty('within');
 	});
 });
+
+describe('a page asked before a change of this tab', () => {
+	it('does not put the old name back over a rename that answered first', async () => {
+		const store = new Tags();
+		store.items = [tag()];
+		let answer: (value: unknown) => void = () => undefined;
+		mocked.get.mockImplementationOnce(() => new Promise((done) => (answer = done)) as never);
+		const reading = store.load();
+		mocked.put.mockResolvedValueOnce(tag({ name: 'shore' }) as never);
+
+		await store.rename('t1', 'shore');
+		answer(page([tag()]));
+		await reading;
+
+		expect(
+			store.items.map((one) => one.name),
+			'the page from before the rename was drawn'
+		).toEqual(['shore']);
+	});
+});

@@ -201,6 +201,21 @@ ROWS: dict[tuple[str, str], Case] = {
         body={"skipped": [], "unticked": []},
         answers_anyway=404,
     ),
+    ("GET", "/api/swap/sessions/{session_id}/groups/{key}/files"): Case(
+        Policy.ADMIN, params={"session_id": "no-such-swap", "key": "loose"}, answers_anyway=404
+    ),
+    ("POST", "/api/swap/token/read"): Case(
+        Policy.ADMIN, body={"token": "not-a-token"}, answers_anyway=409
+    ),
+    ("POST", "/api/swap/sessions/{session_id}/retry"): Case(
+        Policy.ADMIN, params={"session_id": "no-such-swap"}, answers_anyway=404
+    ),
+    ("GET", "/api/swap/receipts/{session_id}"): Case(
+        Policy.ADMIN, params={"session_id": "no-such-swap"}, answers_anyway=404
+    ),
+    ("POST", "/api/swap/receipts/{session_id}/undo"): Case(
+        Policy.ADMIN, params={"session_id": "no-such-swap"}, destructive=True, answers_anyway=404
+    ),
     ("POST", "/api/swap/weigh"): Case(Policy.ADMIN, body={"chosen": []}),
     ("GET", "/api/swap/tunnels"): Case(Policy.ADMIN),
     ("GET", "/api/swap/people/{person_id}/held-faces"): Case(

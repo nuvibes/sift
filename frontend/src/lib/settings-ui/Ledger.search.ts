@@ -46,6 +46,9 @@ export const COPY = {
 	copyReport: 'Copy report',
 	copied: 'Copied',
 	cannotReport: "Couldn't load that report. Try again.",
+	/* A swap's line opens the receipt the swap left, under it. */
+	showReceipt: 'Receipt',
+	hideReceipt: 'Hide receipt',
 	blocked: 'Your browser blocked copying. Select the report and copy it by hand.',
 	/* The two lists that folded into this one, as the narrowings they became. */
 	saved: {

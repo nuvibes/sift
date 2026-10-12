@@ -13,7 +13,8 @@ from sift.kernel.db import Database
 from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.kernel.seams import SavedFilterSeam
 from sift.slices.swap import offer, refusal
-from sift.slices.swap.models import Chosen
+from sift.slices.swap.manifest import Progress, grouping, manifest_of
+from sift.slices.swap.models import Chosen, GroupKind, Learns, ManifestGroup, Offer
 
 Mark = Literal["local", "swap"]
 
@@ -42,6 +43,9 @@ class Weight:
     bytes: int = 0
     left_out: tuple[LeftOutBy, ...] = ()
     left_out_other: int = 0
+    #: The manifest of what Start would offer, and what the other side would learn from it.
+    groups: tuple[ManifestGroup, ...] = ()
+    learns: Learns | None = None
 
 
 async def _own_mark(database: Database, kind: str, local_id: str) -> Mark | None:
@@ -114,14 +118,99 @@ async def left_out(
     return tuple(named), len(others)
 
 
+#: A left-out pick's row, by the kind of thing it is; a file or a folder is among the loose files.
+_LEFT_OUT_KIND: dict[str, GroupKind] = {"person": "person", "site": "site"}
+
+#: The picks drawn as a group of their own, since an offer does not carry them.
+_PICKED_GROUPS: dict[str, GroupKind] = {"collection": "collection", "photo_set": "photo_set"}
+
+
+def learns_of(offered: Offer) -> Learns:
+    """What the other side learns from an offer, counted: the names it carries and the faces."""
+    return Learns(
+        people=len(offered.people),
+        aliases=sum(len(one.aliases) for one in offered.people),
+        sites=len(offered.sites),
+        usernames=len({(one.site, one.username) for one in offered.files if one.username}),
+        faces=sum(len(one.faces.faces) for one in offered.people if one.faces is not None),
+    )
+
+
+async def _picked(
+    access: Repository, viewer: Viewer, chosen: Sequence[Chosen], offered: Offer
+) -> list[ManifestGroup]:
+    """A group per Collection and Photo Set picked: the offered files each one reaches."""
+    reader = await offer.swap_reader(access, viewer)
+    if reader is None:
+        return []
+    sizes = {one.key: one.size for one in offered.files}
+    out: list[ManifestGroup] = []
+    for one in dict.fromkeys(chosen):
+        kind = _PICKED_GROUPS.get(one.kind)
+        if kind is None:
+            continue
+        reached = AssetFilter(where=Where(offer.LEAF_OF_KIND[one.kind], (one.id,)))
+        keys = [key for key in await _ids(access, reader, reached) if key in sizes]
+        out.append(
+            ManifestGroup(
+                key=f"{one.kind}:{one.id}",
+                kind=kind,
+                name=await _name_of(access, reader, one),
+                files=len(keys),
+                bytes=sum(sizes[key] for key in keys),
+            )
+        )
+    return out
+
+
+async def _name_of(access: Repository, reader: Viewer, one: Chosen) -> str | None:
+    if one.kind == "collection":
+        collection = await access.visible_collection(reader, one.id)
+        return None if collection is None else collection.name
+    photo_set = await access.visible_photo_set(reader, one.id)
+    return None if photo_set is None else photo_set.name
+
+
+def _left_out_rows(named: Sequence[LeftOutBy]) -> list[ManifestGroup]:
+    return [
+        ManifestGroup(
+            key=f"left_out:{one.kind}:{one.id}",
+            kind=_LEFT_OUT_KIND.get(one.kind, "loose"),
+            name=one.name,
+            files=one.files,
+            state="left_out",
+            left_out=one.mark,
+        )
+        for one in named
+    ]
+
+
 async def weigh(
     access: Repository,
     database: Database,
     search: SavedFilterSeam,
     viewer: Viewer,
     chosen: Sequence[Chosen],
+    *,
+    faces: offer.FaceDescriptions | None = None,
 ) -> Weight:
-    """What the picks would offer (`offer.weigh`), and what they leave out and why."""
-    files, size = await offer.weigh(access, search, viewer, chosen)
+    """What the picks would offer, read as the offer itself is (`offer.files_of`, `people_of`,
+    `build`), its manifest and what the other side would learn; and what they leave out and why.
+    `faces` counts the faces each person would carry; without it the count is none."""
+    selection = await offer.files_of(access, database, search, viewer, chosen)
+    people = await offer.people_of(database, selection, faces=faces)
+    offered = offer.build(selection, people)
     named, other = await left_out(access, database, search, viewer, chosen)
-    return Weight(files=files, bytes=size, left_out=named, left_out_other=other)
+    groups = [
+        *manifest_of(offered, grouping(offered), Progress(), held=None),
+        *await _picked(access, viewer, chosen, offered),
+        *_left_out_rows(named),
+    ]
+    return Weight(
+        files=len(offered.files),
+        bytes=sum(one.size for one in offered.files),
+        left_out=named,
+        left_out_other=other,
+        groups=tuple(groups),
+        learns=learns_of(offered),
+    )

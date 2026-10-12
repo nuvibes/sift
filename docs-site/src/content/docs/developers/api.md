@@ -611,12 +611,17 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `PUT /api/swap/keep-out/{subject}/{local_id}`: Keep From Swaps
 - `GET /api/swap/people/{person_id}/held-faces`: Held Faces
 - `POST /api/swap/people/{person_id}/held-faces`: Add Held Faces
+- `GET /api/swap/receipts/{session_id}`: Swap Receipt
+- `POST /api/swap/receipts/{session_id}/undo`: Undo Swap
 - `GET /api/swap/sessions/{session_id}`: Swap Session
 - `POST /api/swap/sessions/{session_id}/code`: Answer Code
 - `POST /api/swap/sessions/{session_id}/end`: End Swap
+- `GET /api/swap/sessions/{session_id}/groups/{key}/files`: Group Files
+- `POST /api/swap/sessions/{session_id}/retry`: Retry Swap
 - `POST /api/swap/sessions/{session_id}/take`: Take Offer
 - `POST /api/swap/sessions/{session_id}/weigh`: Weigh Answer
 - `POST /api/swap/start`: Start Swap
+- `POST /api/swap/token/read`: Read Token
 - `GET /api/swap/tunnels`: Swap Tunnels
 - `POST /api/swap/weigh`: Weigh Picks
 

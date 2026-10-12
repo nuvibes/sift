@@ -1,5 +1,6 @@
 import { tick, untrack } from 'svelte';
 import type { components } from '$lib/api/schema';
+import { wroteJustNow } from '$lib/api/writes';
 import { imports } from '$lib/library/imports.svelte';
 import { durationToken, easingToken, measure, motion } from '$lib/shell/motion.svelte';
 
@@ -16,6 +17,14 @@ export function asTheFeed(ring: () => void): void {
 	} finally {
 		feedRinging = false;
 	}
+}
+
+/* How long after this tab's write is answered a bell from the feed is still its echo. */
+const ECHO_MS = 1000;
+
+/** Whether a ring is this tab's own: its own write, or the feed's echo of one. */
+function ownRing(): boolean {
+	return !feedRinging || wroteJustNow(ECHO_MS);
 }
 
 /**
@@ -91,6 +100,33 @@ export class WalkingPace {
 	}
 }
 
+/**
+ * This store's own changes, counted when each begins and when it lands, so the answer to a read
+ * begun before one is not drawn over it: the read asked on the change's echo follows it.
+ */
+export class OwnChanges {
+	#count = 0;
+
+	/** Run a change of this tab's: drawn by `write` immediately, then written. */
+	async change<T>(write: () => Promise<T>): Promise<T> {
+		this.#count += 1;
+		try {
+			return await write();
+		} finally {
+			this.#count += 1;
+		}
+	}
+
+	/** Taken before a read; `since` after it says whether its answer may be kept. */
+	mark(): number {
+		return this.#count;
+	}
+
+	since(mark: number): boolean {
+		return mark === this.#count;
+	}
+}
+
 /** A follower of a bell: a re-read made on every ring, or one at a walking pace. */
 type Follower = (() => void) | WalkingPace;
 
@@ -105,7 +141,8 @@ function follow(follower: Follower, own: boolean): void {
 class Signal {
 	generation = $state(0);
 
-	/** Rises only for a ring of this tab's own write: a paced re-read lets those through. */
+	/** Rises only for a ring of this tab's own write, or the feed's echo of one: a paced re-read
+	 * lets those through. */
 	own = 0;
 
 	/* Stores that live as long as the tab (saved searches, the rating scale, the record registry)
@@ -114,8 +151,9 @@ class Signal {
 
 	changed(): void {
 		this.generation += 1;
-		if (!feedRinging) this.own += 1;
-		for (const listen of this.#lasting) follow(listen, !feedRinging);
+		const own = ownRing();
+		if (own) this.own += 1;
+		for (const listen of this.#lasting) follow(listen, own);
 	}
 
 	/** Be told for as long as this tab is open. For a store that is not a screen. */

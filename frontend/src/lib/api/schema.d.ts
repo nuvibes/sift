@@ -9260,6 +9260,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/swap/receipts/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Swap Receipt
+         * @description A swap that has ended, signed: what landed or was sent per group and how it was filed, where,
+         *     how long, how fast, and whether it was undone. What History opens for a swap.
+         */
+        get: operations["swap_receipt_api_swap_receipts__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/receipts/{session_id}/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Swap
+         * @description Undo this swap: every file it landed goes from the library, and from the disk since they
+         *     sit in the folder the swap made; then the People, Sites and Usernames it made that nothing
+         *     else holds. Once: a second Undo finds it undone.
+         */
+        post: operations["undo_swap_api_swap_receipts__session_id__undo_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/swap/sessions/{session_id}": {
         parameters: {
             query?: never;
@@ -9269,7 +9312,8 @@ export interface paths {
         };
         /**
          * Swap Session
-         * @description One session: its state, the code once there is one, the counts and the measured rate.
+         * @description One session: its state, the code once there is one, the counts and the measured rate, and
+         *     while it runs, its manifest and the file crossing now.
          */
         get: operations["swap_session_api_swap_sessions__session_id__get"];
         put?: never;
@@ -9315,6 +9359,47 @@ export interface paths {
          * @description End the swap. The other side is told; what has arrived stays.
          */
         post: operations["end_swap_api_swap_sessions__session_id__end_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/sessions/{session_id}/groups/{key}/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Group Files
+         * @description A page of one group's files, in the offer's order: what a group row folds open to past
+         *     the first few the session view carries.
+         */
+        get: operations["group_files_api_swap_sessions__session_id__groups__key__files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/sessions/{session_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Swap
+         * @description Try now: the guest of a swap a tunnel cut off dials again immediately.
+         */
+        post: operations["retry_swap_api_swap_sessions__session_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9378,6 +9463,27 @@ export interface paths {
          *     that sends and receives names the folder of this library its received files go in.
          */
         post: operations["start_swap_api_swap_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/token/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Token
+         * @description Who a pasted token is from and until when it is good, before Join: nothing is dialled, and
+         *     the address inside it is never said.
+         */
+        post: operations["read_token_api_swap_token_read_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12066,6 +12172,18 @@ export interface components {
             usernames: string[];
         };
         /**
+         * CrossingNow
+         * @description The file crossing now: the one opened last of those still on their way.
+         */
+        CrossingNow: {
+            /** Group */
+            group: string;
+            /** Size */
+            size: number;
+            /** Title */
+            title: string;
+        };
+        /**
          * DayValue
          * @description One calendar day's figure, for a heat-map: `day` is an ISO day on this device's calendar.
          */
@@ -13953,6 +14071,22 @@ export interface components {
             total: number;
         };
         /**
+         * GroupFiles
+         * @description A page of one group's files.
+         */
+        GroupFiles: {
+            /**
+             * Files
+             * @default []
+             */
+            files: components["schemas"]["ManifestFile"][];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /**
          * GroupList
          * @description A page of groups, with the counts that tell an empty page's causes apart.
          */
@@ -14917,6 +15051,38 @@ export interface components {
             title: string;
         };
         /**
+         * Learns
+         * @description What the other side will learn from the offer, counted: the people named and their other
+         *     names, the Sites and Usernames the files are filed under, and the faces sent.
+         */
+        Learns: {
+            /**
+             * Aliases
+             * @default 0
+             */
+            aliases: number;
+            /**
+             * Faces
+             * @default 0
+             */
+            faces: number;
+            /**
+             * People
+             * @default 0
+             */
+            people: number;
+            /**
+             * Sites
+             * @default 0
+             */
+            sites: number;
+            /**
+             * Usernames
+             * @default 0
+             */
+            usernames: number;
+        };
+        /**
          * LedgerActorView
          * @description Who took an act, as the kind of doer and its name, read live so a rename shows.
          */
@@ -15684,6 +15850,128 @@ export interface components {
         MakeWrite: {
             /** Name */
             name?: string | null;
+        };
+        /**
+         * ManifestFile
+         * @description One offered file as a group row folds open to it.
+         */
+        ManifestFile: {
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Height */
+            height: number | null;
+            /** Held */
+            held: ("same" | "look") | null;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "video" | "image" | "gif";
+            /** Size */
+            size: number;
+            /** Title */
+            title: string;
+            /** Width */
+            width: number | null;
+        };
+        /**
+         * ManifestGroup
+         * @description One row of the manifest: a group of the offer with its totals, and where it stands.
+         *
+         *     `files` and `bytes` are what the group offers; `have` is how many of them this library holds
+         *     (null on the side that offered: the answer never says what the other side holds), `to_take`
+         *     how many will be or were taken. `done` counts the files landed or sent so far.
+         */
+        ManifestGroup: {
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /**
+             * Crossing
+             * @default 0
+             */
+            crossing: number;
+            /**
+             * Done
+             * @default 0
+             */
+            done: number;
+            /**
+             * Faces
+             * @default 0
+             */
+            faces: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            /** Have */
+            have: number | null;
+            /**
+             * Held Look
+             * @default 0
+             */
+            held_look: number;
+            /**
+             * Held Same
+             * @default 0
+             */
+            held_same: number;
+            /** Index */
+            index: number | null;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "person" | "site" | "collection" | "photo_set" | "songs" | "loose";
+            /** Left Out */
+            left_out: ("local" | "swap") | null;
+            /** Local Id */
+            local_id: string | null;
+            /** Match Name */
+            match_name: string | null;
+            /** Matched By */
+            matched_by: ("box" | "name" | "alias") | null;
+            /**
+             * More
+             * @default 0
+             */
+            more: number;
+            /** Name */
+            name: string | null;
+            /**
+             * Sample
+             * @default []
+             */
+            sample: components["schemas"]["ManifestFile"][];
+            /**
+             * State
+             * @default offered
+             * @enum {string}
+             */
+            state: "offered" | "taking" | "held" | "skipped" | "waiting" | "crossing" | "landed" | "sent" | "left_out";
+            /**
+             * To Take
+             * @default 0
+             */
+            to_take: number;
+            /**
+             * Usernames
+             * @default 0
+             */
+            usernames: number;
         };
         /** MatchList */
         MatchList: {
@@ -17653,6 +17941,14 @@ export interface components {
             path: string;
         };
         /**
+         * ReadToken
+         * @description A pasted token, read before Join: nothing is dialled.
+         */
+        ReadToken: {
+            /** Token */
+            token: string;
+        };
+        /**
          * ReadingsRemoved
          * @description How many marks were thrown away.
          */
@@ -17780,6 +18076,111 @@ export interface components {
             announced: components["schemas"]["RecapHead"] | null;
             /** Recaps */
             recaps: components["schemas"]["RecapHead"][];
+        };
+        /**
+         * ReceiptFolder
+         * @description Where the files landed: the folder the swap made, by id and as the library names it.
+         */
+        ReceiptFolder: {
+            /** Id */
+            id: string;
+            /**
+             * Own
+             * @default true
+             */
+            own: boolean;
+            /** Path */
+            path: string;
+        };
+        /**
+         * ReceiptGroup
+         * @description One group of a receipt: what landed or was sent under it, and how it was filed here.
+         */
+        ReceiptGroup: {
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /**
+             * Faces
+             * @default 0
+             */
+            faces: number;
+            /** Filed */
+            filed: ("created" | "added") | null;
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            /** Id */
+            id: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "person" | "site" | "collection" | "photo_set" | "songs" | "loose";
+            /** Name */
+            name: string | null;
+            /**
+             * Usernames
+             * @default 0
+             */
+            usernames: number;
+            /**
+             * Way
+             * @enum {string}
+             */
+            way: "landed" | "sent";
+        };
+        /**
+         * ReceiptSkipped
+         * @description A group that was offered and not taken.
+         */
+        ReceiptSkipped: {
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            /** Id */
+            id: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "person" | "site" | "collection" | "photo_set" | "songs" | "loose";
+            /** Name */
+            name: string | null;
+        };
+        /**
+         * ReceiptUndo
+         * @description What the Undo took back.
+         */
+        ReceiptUndo: {
+            /** At */
+            at: number;
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            /**
+             * From Disk
+             * @default false
+             */
+            from_disk: boolean;
+            /**
+             * People
+             * @default 0
+             */
+            people: number;
+            /**
+             * Sites
+             * @default 0
+             */
+            sites: number;
         };
         /**
          * RecentOut
@@ -18057,6 +18458,20 @@ export interface components {
             mark: "local" | "swap";
             /** Name */
             name: string;
+        };
+        /**
+         * RefusedFile
+         * @description A file that came and was not let in: its bytes were not what was offered, it could not be
+         *     stripped, or the landing failed.
+         */
+        RefusedFile: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "bytes" | "strip" | "landing";
+            /** Title */
+            title: string;
         };
         /**
          * RefusedLink
@@ -20661,6 +21076,92 @@ export interface components {
             session_id: string;
         };
         /**
+         * SwapReceipt
+         * @description A swap, signed: what landed or was sent per group, where, how long, how fast, and its Undo.
+         */
+        SwapReceipt: {
+            /**
+             * Back Bytes
+             * @default 0
+             */
+            back_bytes: number;
+            /**
+             * Back Files
+             * @default 0
+             */
+            back_files: number;
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /**
+             * Can Undo
+             * @default false
+             */
+            can_undo: boolean;
+            /**
+             * Cut Offs
+             * @default 0
+             */
+            cut_offs: number;
+            /** Device */
+            device: string | null;
+            /** Device Name */
+            device_name: string | null;
+            /** Ended At */
+            ended_at: number | null;
+            /**
+             * Files
+             * @default 0
+             */
+            files: number;
+            folder: components["schemas"]["ReceiptFolder"] | null;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["ReceiptGroup"][];
+            /**
+             * Held
+             * @default 0
+             */
+            held: number;
+            /** Rate */
+            rate: number | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Refused
+             * @default 0
+             */
+            refused: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "host" | "guest";
+            /** Seconds */
+            seconds: number | null;
+            /** Session Id */
+            session_id: string;
+            /**
+             * Skipped
+             * @default []
+             */
+            skipped: components["schemas"]["ReceiptSkipped"][];
+            /** Started At */
+            started_at: number;
+            /** Tunnel */
+            tunnel: string | null;
+            /**
+             * Two Way
+             * @default false
+             */
+            two_way: boolean;
+            undo: components["schemas"]["ReceiptUndo"] | null;
+        };
+        /**
          * SwapRefusal
          * @description Where one thing stands with swaps: its own switch, whether it is out at all, and why.
          */
@@ -20707,6 +21208,21 @@ export interface components {
             ended_at: number | null;
             /** Id */
             id: string;
+            /**
+             * Kept Bytes
+             * @default 0
+             */
+            kept_bytes: number;
+            /**
+             * Kept Files
+             * @default 0
+             */
+            kept_files: number;
+            /** Manifest */
+            manifest: components["schemas"]["ManifestGroup"][] | null;
+            /** Moving Since */
+            moving_since: number | null;
+            now: components["schemas"]["CrossingNow"] | null;
             offer: components["schemas"]["OfferScreen"] | null;
             /**
              * Offered Files
@@ -20715,13 +21231,27 @@ export interface components {
             offered_files: number;
             /** Peer Device */
             peer_device: string | null;
+            /** Peer Name */
+            peer_name: string | null;
             /** Rate Bps */
             rate_bps: number | null;
             /** Received Files */
             received_files: number | null;
             receiving: components["schemas"]["SwapDirection"] | null;
+            /**
+             * Refused
+             * @default []
+             */
+            refused: components["schemas"]["RefusedFile"][];
+            /**
+             * Refused Count
+             * @default 0
+             */
+            refused_count: number;
             /** Rejoin Until */
             rejoin_until: number | null;
+            /** Retry At */
+            retry_at: number | null;
             /**
              * Role
              * @enum {string}
@@ -20749,8 +21279,16 @@ export interface components {
              * @enum {string}
              */
             state: "waiting" | "connected" | "offered" | "transferring" | "cut_off" | "done" | "ended" | "failed";
+            /** Streams */
+            streams: number | null;
+            /** Swapped Before */
+            swapped_before: number | null;
             /** Token */
             token: string | null;
+            /** Token Expires */
+            token_expires: number | null;
+            /** Tunnel Name */
+            tunnel_name: string | null;
             /**
              * Two Way
              * @default false
@@ -20796,6 +21334,8 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Rate Bps */
+            rate_bps: number | null;
         };
         /**
          * SwapWeight
@@ -20812,6 +21352,12 @@ export interface components {
              * @default 0
              */
             files: number;
+            /**
+             * Groups
+             * @default []
+             */
+            groups: components["schemas"]["ManifestGroup"][];
+            learns: components["schemas"]["Learns"] | null;
             /**
              * Left Out
              * @default []
@@ -21044,6 +21590,11 @@ export interface components {
              * @default []
              */
             skipped: number[];
+            /**
+             * Skipped Groups
+             * @default []
+             */
+            skipped_groups: string[];
             /**
              * Unticked
              * @default []
@@ -21348,6 +21899,20 @@ export interface components {
          * @enum {string}
          */
         ToCheckShow: "waiting" | "small" | "ignored";
+        /**
+         * TokenRead
+         * @description Who a token is from and until when it is good.
+         */
+        TokenRead: {
+            /** Device Id */
+            device_id: string;
+            /** Device Name */
+            device_name: string | null;
+            /** Expires */
+            expires: number;
+            /** Swapped Before */
+            swapped_before: number | null;
+        };
         /**
          * TunnelItem
          * @description One tunnel as the settings screen sees it; no public key, which names the account.
@@ -37322,6 +37887,68 @@ export interface operations {
             };
         };
     };
+    swap_receipt_api_swap_receipts__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_swap_api_swap_receipts__session_id__undo_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     swap_session_api_swap_sessions__session_id__get: {
         parameters: {
             query?: never;
@@ -37389,6 +38016,72 @@ export interface operations {
         };
     };
     end_swap_api_swap_sessions__session_id__end_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    group_files_api_swap_sessions__session_id__groups__key__files_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                session_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupFiles"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_swap_api_swap_sessions__session_id__retry_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -37509,6 +38202,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SwapStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_token_api_swap_token_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReadToken"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenRead"];
                 };
             };
             /** @description Validation Error */

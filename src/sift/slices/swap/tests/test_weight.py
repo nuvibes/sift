@@ -17,7 +17,7 @@ import pytest
 from sift.kernel.access import Role, Viewer
 from sift.kernel.access.catalog import refused_for_swaps_among, refusers_of_file
 from sift.slices.swap import refusal
-from sift.slices.swap.models import Chosen, WeighSwap
+from sift.slices.swap.models import Chosen, Offer, WeighSwap
 from sift.slices.swap.router import kept_from_swaps, weigh_picks
 from sift.slices.swap.tests.test_offer import Library, _NoFilters, library  # noqa: F401
 from sift.slices.swap.weight import LeftOutBy, Weight, left_out, weigh
@@ -218,3 +218,30 @@ async def test_a_name_is_none_for_a_file_the_reader_cannot_open(library: Library
         await refusal.name_for(library.access, library.admin, "asset", "01NOTHING0000000000000000")
         is None
     )
+
+
+async def test_the_manifest_before_start_names_each_collection_and_photo_set_picked(
+    library: Library,  # noqa: F811
+) -> None:
+    """Before Start: the offer's groups, a group per Collection and Photo Set picked (an offer does
+    not carry them), the picks a mark keeps out, and what the other side would learn."""
+    from sift.slices.swap.weight import _picked
+
+    ids = library.ids
+    picks = [
+        Chosen(kind="person", id=ids["person"]),
+        Chosen(kind="collection", id=ids["collection"]),
+        Chosen(kind="photo_set", id=ids["photo_set"]),
+        Chosen(kind="tag", id=ids["kept_tag"]),
+    ]
+    weight = await weigh(library.access, library.db, _NoFilters(), library.admin, picks)
+    groups = {one.key: one for one in weight.groups}
+    assert groups[f"collection:{ids['collection']}"].name == "kept"
+    assert groups[f"photo_set:{ids['photo_set']}"].kind == "photo_set"
+    assert any(one.state == "left_out" and one.left_out == "local" for one in weight.groups)
+    assert weight.learns is not None and weight.learns.people == 1
+    # The offer's own groups count each file once, the picked groups beside them.
+    offered = [one for one in weight.groups if one.kind in ("person", "site", "songs", "loose")]
+    assert sum(one.files for one in offered if one.state != "left_out") == weight.files
+    nobody = Viewer(id="nobody", role=Role.ADMIN)
+    assert await _picked(library.access, nobody, picks, Offer()) == []

@@ -162,6 +162,7 @@ _EVENT_KINDS: Mapping[str, str] = {
     "song_named": "song_named",
     "swap_started": "swap_started",
     "swap_ended": "swap_ended",
+    "swap_undone": "swap_undone",
     "restored": "restored",
     "adopted": "adopted",
     "sharing_turned_on": "sharing_turned_on",

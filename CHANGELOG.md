@@ -44,6 +44,19 @@ version's section, dated, when that version is published.
   when Sift named it, none when you confirmed it.
 - **A file stored in more than one place is modified, compressed, renamed and moved one copy at a
   time**: each asks which copy, offers only the copies Sift may change, and preselects the first.
+- **Every swap step is one list.** What moves is grouped as Sift files it (People, Sites,
+  Collections, Photo Sets, Songs, other files), each group with its files, size and a state that is
+  the only thing changing from step to step; a guest ticks per group and per file and reads what it
+  will have after ("203 to 612"); Start says the time at the tunnel's last measured rate and, once,
+  what the other side will learn; the transfer names the file crossing now; a cut-off counts down to
+  the rejoin and offers Try again now.
+- **A swap ends with a receipt**, kept and opened from its History line: what landed or was sent per
+  group and how it was filed, what was not taken and why, where, the rate and the tunnel. Its Undo
+  takes back only the files the swap landed (from disk too, in the swap's own folder) and the People,
+  Sites and Usernames it made that nothing else holds.
+- **A change you press is never undone by a slower read.** A delete, rename or heart shows
+  immediately and stays; a list read that began before it is not drawn over it, and the feed's echo of your own
+  write reads immediately.
 - Other minor UI improvements.
 
 ## 0.2.4 - 2026-10-10

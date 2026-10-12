@@ -173,3 +173,25 @@ def _took_back_from(payload: Mapping[str, object], first: Line) -> Line:
     """What a take-back's feed line is about: the one file it names, or how many it took back."""
     many = payload.get("files")
     return counted_line(many, "files") if isinstance(many, int) and many > 1 else first
+
+
+def swap_undone(by: str | None, payload: Mapping[str, object]) -> Line:
+    """A swap taken back on this device: the files it landed removed, with what it had made."""
+    count = int(str(payload.get("files") or 0))
+    made = [
+        f"{n} {word}{'' if n == 1 else 's'}"
+        for word, n in (
+            ("person", int(str(payload.get("people") or 0))),
+            ("Site", int(str(payload.get("sites") or 0))),
+        )
+        if n
+    ]
+    tail = f", and the {' and '.join(made)} it made" if made else ""
+    return capitalized(
+        said(
+            by or "This device",
+            " undid the swap",
+            _from_device(payload),
+            f": {files(count)} removed{tail}",
+        )
+    )

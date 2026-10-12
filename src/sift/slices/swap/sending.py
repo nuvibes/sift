@@ -60,6 +60,7 @@ from sift.slices.swap.live import (
     _remove,
     _wanted_indexes,
 )
+from sift.slices.swap.manifest import Grouping, grouping
 from sift.slices.swap.models import Chosen, Diff
 from sift.slices.swap.transfer import CHUNK_SIZE, MAX_RETRIES, CannotStrip, Prepared
 
@@ -120,6 +121,10 @@ class _Sending(_Figures):
         #: receiver's `have` names it; one it had from an earlier session was not moved by this one.
         self.put: dict[int, dict[int, int]] = {}
         self.counted: dict[int, set[int]] = {}
+        #: The offer's groups, read once it is made (`manifest.py`).
+        self.groups: Grouping | None = None
+        #: Whether the other side's answer has come and been read.
+        self.answered = False
 
     def _sending_started(self) -> None:
         """What a side does once the answer has come and the files can move: nothing on the host,
@@ -136,6 +141,7 @@ class _Sending(_Figures):
             self.viewer, self.chosen, self.share_boxes, self.peer_model
         )
         self.offer = offer
+        self.groups = grouping(offer)
         await live.owner.store.set_offered(live.id, len(offer.files), back=self.back)
         await live.advance("offered")
         # Through a cut if there is one: joined again, the offer goes on the new connection.
@@ -152,6 +158,7 @@ class _Sending(_Figures):
             await live.end(LOST)
             return False
         self.wanted_bytes = sum(offer.files[n].size for n in self.wanted)
+        self.answered = True
         self.queue = deque(self.wanted)
         await live.owner.store.set_wanted(live.id, len(self.wanted), back=self.back)
         await live.advance("transferring")

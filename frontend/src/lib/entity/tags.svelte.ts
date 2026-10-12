@@ -177,6 +177,8 @@ export class Tags {
 		let updated: Tag;
 		try {
 			updated = await api.put<Tag>(`/tags/${id}`, { body: { name } });
+			// A page asked before this answer holds the old name.
+			this.#settled();
 		} catch (error) {
 			if (existing) named(existing.name);
 			throw error;
@@ -203,6 +205,7 @@ export class Tags {
 		}
 	): Promise<Tag> {
 		const updated = await api.put<Tag>(`/tags/${id}`, { body: record });
+		this.#settled();
 		// The server does not recount on an edit, so the count this list already holds is kept
 		// rather than taking the zero the write replies with.
 		const existing = this.items.find((tag) => tag.id === id);
@@ -226,6 +229,7 @@ export class Tags {
 		const state = await api.put<components['schemas']['TagStateView']>(`/tags/${id}/favorite`, {
 			body: { favorite }
 		});
+		this.#settled();
 		this.#settle(id, state);
 	}
 
@@ -233,6 +237,7 @@ export class Tags {
 		const state = await api.put<components['schemas']['TagStateView']>(`/tags/${id}/rating`, {
 			body: { rating }
 		});
+		this.#settled();
 		this.#settle(id, state);
 	}
 

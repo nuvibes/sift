@@ -14,6 +14,11 @@ each with whether it can host one; and the face descriptions a swap brought for 
 here, which wait on that person's page until they are added. Every one is admin-only: a swap decides what of the library leaves this device, and a
 guest session holds no master key to seal a device key with anyway. Every write is CSRF-checked.
 
+## The manifest's and the receipt's routes (at the very foot)
+
+A page of one group's files, a token read before Join (who it is from, until when; nothing is
+dialled), Try now for a guest a tunnel cut off, the receipt of a swap that has ended, and its Undo.
+
 A refusal a person can act on (a tunnel that cannot host, a token that has run out, no tunnel on
 the guest's side, keys locked since a restart) answers 409 with the sentence to show, as it is.
 """
@@ -22,7 +27,7 @@ from __future__ import annotations
 
 from typing import Annotated, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from sift.kernel import wiring
 from sift.kernel.access import Repository, Viewer
@@ -33,25 +38,32 @@ from sift.kernel.seams import RecognitionSeam
 from sift.kernel.tunnels import TUNNELS, TunnelStore
 from sift.kernel.wiring import RECOGNITION, part_of
 from sift.slices.auth import csrf_protect, master_key, require_admin
-from sift.slices.swap import device, refusal
+from sift.slices.swap import device, receipt, refusal
+from sift.slices.swap.handshake import PASTED_FIELD
 from sift.slices.swap.models import (
     CodeAnswer,
+    GroupFiles,
     HeldFaces,
     JoinSwap,
     KeepFromSwaps,
     LeftOut,
+    ReadToken,
+    ReceiptFolder,
+    ReceiptUndo,
     RefusedBy,
     SessionState,
     StartSwap,
     SwapDevice,
     SwapDirection,
     SwapJoined,
+    SwapReceipt,
     SwapRefusal,
     SwapSession,
     SwapStarted,
     SwapTunnel,
     SwapWeight,
     TakeOffer,
+    TokenRead,
     WeighSwap,
     chosen_list,
 )
@@ -67,7 +79,7 @@ from sift.slices.swap.session import (
     Taken,
 )
 from sift.slices.swap.store import SessionRow
-from sift.slices.swap.token import SENTENCE
+from sift.slices.swap.token import SENTENCE, TokenRefused, parse
 
 router = APIRouter(tags=["swap"])
 
@@ -125,11 +137,41 @@ def _directions(
     return (first, back) if row.role == "host" else (back, first)
 
 
-async def _session_view(sessions: SwapSessions, session_id: str) -> SwapSession:
+async def _tunnel_name(request: Request | None, tunnel_id: str | None) -> str | None:
+    """A tunnel's name as Sites and Tunnels says it, or None for one that is gone."""
+    if tunnel_id is None or request is None:
+        return None
+    return next(
+        (view.name for view in await _tunnels(request).list() if view.id == tunnel_id), None
+    )
+
+
+async def _said_of_peer(
+    request: Request | None, sessions: SwapSessions, row: SessionRow
+) -> tuple[int | None, str | None]:
+    """Earlier swaps with this device and the tunnel's name, read once a session and kept: they do
+    not change while it runs, and the screen reads the session every second."""
+    known = sessions.said.get(row.id)
+    if known is not None:
+        return known
+    before = None
+    if row.peer_device is not None:
+        before = await sessions.store.swapped_before(row.peer_device, row.id)
+    said = (before, await _tunnel_name(request, row.tunnel_id))
+    if row.peer_device is not None and row.live:
+        sessions.said[row.id] = said
+    return said
+
+
+async def _session_view(
+    sessions: SwapSessions, session_id: str, request: Request | None = None
+) -> SwapSession:
     row = await sessions.row(session_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
     facts = sessions.facts(session_id)
+    extras = sessions.extras(session_id)
+    before, tunnel_name = await _said_of_peer(request, sessions, row)
     sending, receiving = _directions(row, facts)
     return SwapSession(
         id=row.id,
@@ -161,6 +203,18 @@ async def _session_view(sessions: SwapSessions, session_id: str) -> SwapSession:
         answered=facts is not None and facts.answered,
         sending=sending,
         receiving=receiving,
+        manifest=None if extras is None else extras.manifest,
+        now=None if extras is None else extras.now,
+        streams=None if extras is None else extras.streams,
+        moving_since=None if extras is None else extras.moving_since,
+        token_expires=None if extras is None else extras.token_expires,
+        swapped_before=before,
+        tunnel_name=tunnel_name,
+        refused=[] if extras is None else list(extras.refused),
+        refused_count=0 if extras is None else extras.refused_count,
+        kept_files=row.sent_files if extras is None or row.role == "host" else extras.kept_files,
+        kept_bytes=0 if extras is None else extras.kept_bytes,
+        retry_at=None if extras is None else extras.retry_at,
     )
 
 
@@ -246,17 +300,20 @@ async def join_swap(
 @router.get("/swap/sessions/{session_id}")
 async def swap_session(
     session_id: str,
+    request: Request,
     sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> SwapSession:
-    """One session: its state, the code once there is one, the counts and the measured rate."""
-    return await _session_view(sessions, session_id)
+    """One session: its state, the code once there is one, the counts and the measured rate, and
+    while it runs, its manifest and the file crossing now."""
+    return await _session_view(sessions, session_id, request)
 
 
 @router.post("/swap/sessions/{session_id}/code", dependencies=[Depends(csrf_protect)])
 async def answer_code(
     session_id: str,
     body: CodeAnswer,
+    request: Request,
     sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> SwapSession:
@@ -274,12 +331,13 @@ async def answer_code(
         )
     except SwapRefused as error:
         raise _refused(error) from None
-    return await _session_view(sessions, session_id)
+    return await _session_view(sessions, session_id, request)
 
 
 @router.post("/swap/sessions/{session_id}/end", dependencies=[Depends(csrf_protect)])
 async def end_swap(
     session_id: str,
+    request: Request,
     sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> SwapSession:
@@ -287,7 +345,7 @@ async def end_swap(
     if await sessions.row(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
     await sessions.end(session_id)
-    return await _session_view(sessions, session_id)
+    return await _session_view(sessions, session_id, request)
 
 
 @router.get("/swap/device")
@@ -402,6 +460,7 @@ async def keep_from_swaps(
 async def take_offer(
     session_id: str,
     body: TakeOffer,
+    request: Request,
     sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> SwapSession:
@@ -410,12 +469,20 @@ async def take_offer(
     if await sessions.row(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
     try:
-        await sessions.take(
-            session_id, Taken(skipped=frozenset(body.skipped), unticked=frozenset(body.unticked))
-        )
+        await sessions.take(session_id, _taken(sessions, session_id, body))
     except SwapRefused as error:
         raise _refused(error) from None
-    return await _session_view(sessions, session_id)
+    return await _session_view(sessions, session_id, request)
+
+
+def _taken(sessions: SwapSessions, session_id: str, body: TakeOffer) -> Taken:
+    """The answer as the session takes it, whole groups skipped included; 422 for a group the
+    offer does not have."""
+    taken = Taken(skipped=frozenset(body.skipped), unticked=frozenset(body.unticked))
+    try:
+        return sessions.with_groups(session_id, taken, body.skipped_groups)
+    except ValueError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(error)) from None
 
 
 @router.post("/swap/sessions/{session_id}/weigh", dependencies=[Depends(csrf_protect)])
@@ -430,9 +497,7 @@ async def weigh_answer(
     if await sessions.row(session_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
     try:
-        files, size = sessions.weigh_answer(
-            session_id, Taken(skipped=frozenset(body.skipped), unticked=frozenset(body.unticked))
-        )
+        files, size = sessions.weigh_answer(session_id, _taken(sessions, session_id, body))
     except SwapRefused as error:
         raise _refused(error) from None
     return SwapWeight(files=files, bytes=size)
@@ -460,12 +525,15 @@ async def weigh_picks(
             for one in weight.left_out
         ],
         left_out_other=weight.left_out_other,
+        groups=list(weight.groups),
+        learns=weight.learns,
     )
 
 
 @router.get("/swap/tunnels")
 async def swap_tunnels(
     tunnels: Annotated[TunnelStore, Depends(_tunnels)],
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
     viewer: Annotated[Viewer, Depends(require_admin)],
 ) -> list[SwapTunnel]:
     """Every tunnel, with whether it can host a swap: yes, no, or not tried yet.
@@ -480,6 +548,7 @@ async def swap_tunnels(
             # Only while it is up, as Sites and Tunnels says it: the server a tunnel that is not
             # connected was last on is not where a swap would go.
             endpoint=view.endpoint if view.up else None,
+            rate_bps=await sessions.store.last_rate(view.id),
         )
         for view in await tunnels.list()
     ]
@@ -524,3 +593,155 @@ async def add_held_faces(
     name = await _person_named(access, viewer, person_id)
     added = await recognition.claim_for(person_id, name)
     return HeldFaces(waiting=await recognition.held_for(person_id, name), added=added)
+
+
+# ================================================================================================
+# THE MANIFEST'S AND THE RECEIPT'S ROUTES
+# ================================================================================================
+
+#: The most files one page of a group holds.
+GROUP_PAGE_MOST = 200
+
+
+@router.get("/swap/sessions/{session_id}/groups/{key}/files")
+async def group_files(
+    session_id: str,
+    key: str,
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
+    viewer: Annotated[Viewer, Depends(require_admin)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=GROUP_PAGE_MOST)] = 100,
+) -> GroupFiles:
+    """A page of one group's files, in the offer's order: what a group row folds open to past
+    the first few the session view carries."""
+    if await sessions.row(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
+    try:
+        files, total = sessions.group_files(session_id, key, offset=offset, limit=limit)
+    except SwapRefused as error:
+        raise _refused(error) from None
+    except KeyError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "That group isn't in the offer.") from None
+    return GroupFiles(files=files, total=total)
+
+
+@router.post("/swap/token/read", dependencies=[Depends(csrf_protect)])
+async def read_token(
+    body: ReadToken,
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
+    viewer: Annotated[Viewer, Depends(require_admin)],
+) -> TokenRead:
+    """Who a pasted token is from and until when it is good, before Join: nothing is dialled, and
+    the address inside it is never said."""
+    try:
+        token = parse(body.token, sessions.now())
+    except TokenRefused as error:
+        raise _refused(SwapRefused(str(error), field=PASTED_FIELD)) from None
+    return TokenRead(
+        device_id=token.host_device,
+        expires=token.expires,
+        swapped_before=await sessions.store.swapped_before(token.host_device, ""),
+    )
+
+
+@router.post("/swap/sessions/{session_id}/retry", dependencies=[Depends(csrf_protect)])
+async def retry_swap(
+    session_id: str,
+    request: Request,
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
+    viewer: Annotated[Viewer, Depends(require_admin)],
+) -> SwapSession:
+    """Try now: the guest of a swap a tunnel cut off dials again immediately."""
+    if await sessions.row(session_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
+    try:
+        sessions.try_now(session_id)
+    except SwapRefused as error:
+        raise _refused(error) from None
+    return await _session_view(sessions, session_id, request)
+
+
+async def _receipt_view(
+    request: Request, sessions: SwapSessions, library: LibraryStore, session_id: str
+) -> SwapReceipt:
+    row = await sessions.row(session_id)
+    if row is None or row.live:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This swap has no receipt yet.")
+    kept = await receipt.read(sessions.store.database, session_id)
+    folder = None if row.folder_id is None else await library.get_folder(row.folder_id)
+    return receipt.view(
+        row,
+        kept,
+        folder=None
+        if folder is None
+        else ReceiptFolder(id=folder.id, path=folder.rel_path or folder.name),
+        tunnel=await _tunnel_name(request, row.tunnel_id),
+    )
+
+
+@router.get("/swap/receipts/{session_id}")
+async def swap_receipt(
+    session_id: str,
+    request: Request,
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
+    library: Annotated[LibraryStore, Depends(wiring.library)],
+    viewer: Annotated[Viewer, Depends(require_admin)],
+) -> SwapReceipt:
+    """A swap that has ended, signed: what landed or was sent per group and how it was filed, where,
+    how long, how fast, and whether it was undone. What History opens for a swap."""
+    return await _receipt_view(request, sessions, library, session_id)
+
+
+def _remover(request: Request) -> receipt.Remover:
+    return part_of(request, receipt.REMOVER)
+
+
+@router.post("/swap/receipts/{session_id}/undo", dependencies=[Depends(csrf_protect)])
+async def undo_swap(
+    session_id: str,
+    request: Request,
+    sessions: Annotated[SwapSessions, Depends(_sessions)],
+    library: Annotated[LibraryStore, Depends(wiring.library)],
+    access: Annotated[Repository, Depends(wiring.access)],
+    remover: Annotated[receipt.Remover, Depends(_remover)],
+    viewer: Annotated[Viewer, Depends(require_admin)],
+) -> SwapReceipt:
+    """Undo this swap: every file it landed goes from the library, and from the disk since they
+    sit in the folder the swap made; then the People, Sites and Usernames it made that nothing
+    else holds. Once: a second Undo finds it undone."""
+    shown = await _receipt_view(request, sessions, library, session_id)
+    if shown.undo is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This swap was undone already.")
+    if session_id in sessions.undoing:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This swap is being undone.")
+    if not shown.can_undo:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Nothing this swap brought is here to take back."
+        )
+    row = await sessions.row(session_id)
+    if row is None:  # pragma: no cover (read just above)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "There's no such swap.")
+    sessions.undoing.add(session_id)
+    try:
+        undone = await receipt.undo(
+            row,
+            database=sessions.store.database,
+            library=library,
+            access=access,
+            remover=remover,
+            actor=viewer,
+        )
+        await receipt.mark_undone(
+            sessions.store.database,
+            session_id,
+            ReceiptUndo(
+                at=sessions.now(),
+                files=undone.files,
+                from_disk=True,
+                people=undone.people,
+                sites=undone.sites,
+            ),
+        )
+    finally:
+        sessions.undoing.discard(session_id)
+    return await _receipt_view(request, sessions, library, session_id)

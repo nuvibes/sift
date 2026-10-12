@@ -1,6 +1,7 @@
 import type { paths } from './schema';
 import { CLIENT_HEADER, clientKind } from '$lib/shell/client-kind';
 import { UNREACHABLE } from '$lib/shell/unreachable';
+import { writeAnswered, writeSent } from './writes';
 
 /* The one way the app talks to the server. */
 
@@ -128,6 +129,7 @@ export async function request<T>(
 	options: RequestOptions = {}
 ): Promise<T> {
 	inFlight += 1;
+	const counted = MUTATING.has(method.toUpperCase()) && writeSent();
 	try {
 		if (method !== 'GET' || options.signal || options.keepalive || options.asBlob) {
 			return await send<T>(method, path, options);
@@ -154,6 +156,7 @@ export async function request<T>(
 		}
 	} finally {
 		inFlight -= 1;
+		writeAnswered(counted);
 	}
 }
 

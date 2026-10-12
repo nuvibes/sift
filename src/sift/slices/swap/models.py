@@ -239,6 +239,81 @@ class PersonRow(Wire):
     matched_by: MatchedBy | None = None
 
 
+#: A group of an offer, in the order Sift files things: People, Sites, Collections, Photo Sets,
+#: Songs, then the files under none of them.
+GroupKind = Literal["person", "site", "collection", "photo_set", "songs", "loose"]
+
+#: Where a group stands, as this side knows it: the client draws its own ticks before Take.
+GroupState = Literal[
+    "offered",
+    "taking",
+    "held",
+    "skipped",
+    "waiting",
+    "crossing",
+    "landed",
+    "sent",
+    "left_out",
+]
+
+#: Why an offered file is already here: the exact file, or the same picture by its fingerprint.
+HeldAs = Literal["same", "look"]
+
+#: How many of a group's files ride on the session view; the rest are a page each on request.
+GROUP_SAMPLE = 5
+
+
+class ManifestFile(Wire):
+    """One offered file as a group row folds open to it."""
+
+    key: str
+    title: str
+    kind: FileKind
+    size: int
+    duration_ms: int | None = None
+    width: int | None = None
+    height: int | None = None
+    held: HeldAs | None = None
+
+
+class ManifestGroup(Wire):
+    """One row of the manifest: a group of the offer with its totals, and where it stands.
+
+    `files` and `bytes` are what the group offers; `have` is how many of them this library holds
+    (null on the side that offered: the answer never says what the other side holds), `to_take`
+    how many will be or were taken. `done` counts the files landed or sent so far."""
+
+    key: str
+    kind: GroupKind
+    index: int | None = None
+    name: str | None = None
+    match_name: str | None = None
+    matched_by: MatchedBy | None = None
+    local_id: str | None = None
+    usernames: int = 0
+    faces: int = 0
+    files: int = 0
+    bytes: int = 0
+    have: int | None = None
+    to_take: int = 0
+    held_same: int = 0
+    held_look: int = 0
+    state: GroupState = "offered"
+    done: int = 0
+    failed: int = 0
+    crossing: int = 0
+    left_out: Literal["local", "swap"] | None = None
+    sample: list[ManifestFile] = Field(default=[])
+    more: int = 0
+
+
+class GroupFiles(Wire):
+    """A page of one group's files."""
+
+    files: list[ManifestFile] = Field(default=[])
+    total: int = 0
+
+
 class OfferScreen(Wire):
     """What the guest's offer screen draws; the totals count each file once."""
 
@@ -316,6 +391,28 @@ class SwapDirection(Wire):
     received_files: int | None = None
 
 
+class CrossingNow(Wire):
+    """The file crossing now: the one opened last of those still on their way."""
+
+    title: str
+    size: int
+    group: str
+
+
+RefusedWhy = Literal["bytes", "strip", "landing"]
+
+#: How many refused files the session view names; `refused_count` says how many there were.
+MAX_REFUSED_NAMED = 50
+
+
+class RefusedFile(Wire):
+    """A file that came and was not let in: its bytes were not what was offered, it could not be
+    stripped, or the landing failed."""
+
+    title: str
+    reason: RefusedWhy
+
+
 class SwapSession(Wire):
     """One session as the swap screen draws it: its state, the code, the counts, the rate."""
 
@@ -344,6 +441,26 @@ class SwapSession(Wire):
     answered: bool = False
     sending: SwapDirection | None = None
     receiving: SwapDirection | None = None
+    #: The groups of what this side receives (the guest's, from the offer) or, on the side that
+    #: only sends, of what it offered.
+    manifest: list[ManifestGroup] | None = None
+    now: CrossingNow | None = None
+    streams: int | None = None
+    #: When the first file moved, in seconds since the epoch.
+    moving_since: int | None = None
+    #: When the token runs out: the host's, while there is one to show.
+    token_expires: int | None = None
+    peer_name: str | None = None
+    #: Earlier swaps with the same device that moved a file or finished.
+    swapped_before: int | None = None
+    tunnel_name: str | None = None
+    refused: list[RefusedFile] = Field(default=[])
+    refused_count: int = 0
+    #: What has landed so far and stays, whatever happens next.
+    kept_files: int = 0
+    kept_bytes: int = 0
+    #: The guest, cut off: when it dials again on its own.
+    retry_at: int | None = None
 
 
 class WeighSwap(Wire):
@@ -362,6 +479,17 @@ class LeftOut(Wire):
     files: int
 
 
+class Learns(Wire):
+    """What the other side will learn from the offer, counted: the people named and their other
+    names, the Sites and Usernames the files are filed under, and the faces sent."""
+
+    people: int = 0
+    aliases: int = 0
+    sites: int = 0
+    usernames: int = 0
+    faces: int = 0
+
+
 class SwapWeight(Wire):
     """How many files and bytes the picks would offer, or an answer would bring, and what is out."""
 
@@ -369,6 +497,23 @@ class SwapWeight(Wire):
     bytes: int = 0
     left_out: list[LeftOut] = Field(default=[])
     left_out_other: int = 0
+    groups: list[ManifestGroup] = Field(default=[])
+    learns: Learns | None = None
+
+
+class ReadToken(Wire):
+    """A pasted token, read before Join: nothing is dialled."""
+
+    token: str = Field(min_length=1, max_length=400)
+
+
+class TokenRead(Wire):
+    """Who a token is from and until when it is good."""
+
+    device_id: str
+    device_name: str | None = None
+    expires: int
+    swapped_before: int | None = None
 
 
 class SwapDevice(Wire):
@@ -386,12 +531,14 @@ class TakeOffer(Wire):
 
     skipped: list[int] = Field(default=[], max_length=MAX_OFFER_PEOPLE)
     unticked: list[str] = Field(default=[], max_length=MAX_OFFER_FILES)
+    #: Whole groups skipped, by their manifest key.
+    skipped_groups: list[str] = Field(default=[], max_length=2 * MAX_OFFER_PEOPLE + 2)
 
     @model_validator(mode="after")
     def _bounded(self) -> TakeOffer:
         if any(index < 0 for index in self.skipped):
             raise ValueError("a person's place in the offer cannot be negative")
-        if any(len(key) > 64 for key in self.unticked):
+        if any(len(key) > 64 for key in (*self.unticked, *self.skipped_groups)):
             raise ValueError("a file key the offer could not have carried")
         return self
 
@@ -403,6 +550,8 @@ class SwapTunnel(Wire):
     name: str
     can_host: bool | None = None
     endpoint: str | None = None
+    #: The rate the last swap through it measured, in bits a second.
+    rate_bps: int | None = None
 
 
 class KeepFromSwaps(Wire):
@@ -437,3 +586,78 @@ class HeldFaces(Wire):
 
     waiting: int
     added: int = 0
+
+
+# The receipt: one per side, written when a swap ends, read back from History.
+
+ReceiptWay = Literal["landed", "sent"]
+FiledAs = Literal["created", "added"]
+
+
+class ReceiptGroup(Wire):
+    """One group of a receipt: what landed or was sent under it, and how it was filed here."""
+
+    way: ReceiptWay
+    kind: GroupKind
+    id: str | None = None
+    name: str | None = None
+    files: int = 0
+    bytes: int = 0
+    filed: FiledAs | None = None
+    faces: int = 0
+    usernames: int = 0
+
+
+class ReceiptSkipped(Wire):
+    """A group that was offered and not taken."""
+
+    kind: GroupKind
+    id: str | None = None
+    name: str | None = None
+    files: int = 0
+
+
+class ReceiptFolder(Wire):
+    """Where the files landed: the folder the swap made, by id and as the library names it."""
+
+    id: str
+    path: str
+    own: bool = True
+
+
+class ReceiptUndo(Wire):
+    """What the Undo took back."""
+
+    at: int
+    files: int = 0
+    from_disk: bool = False
+    people: int = 0
+    sites: int = 0
+
+
+class SwapReceipt(Wire):
+    """A swap, signed: what landed or was sent per group, where, how long, how fast, and its Undo."""
+
+    session_id: str
+    role: Literal["host", "guest"]
+    two_way: bool = False
+    device: str | None = None
+    device_name: str | None = None
+    started_at: int
+    ended_at: int | None = None
+    seconds: int | None = None
+    reason: str | None = None
+    files: int = 0
+    bytes: int = 0
+    back_files: int = 0
+    back_bytes: int = 0
+    rate: float | None = None
+    tunnel: str | None = None
+    cut_offs: int = 0
+    folder: ReceiptFolder | None = None
+    groups: list[ReceiptGroup] = Field(default=[])
+    skipped: list[ReceiptSkipped] = Field(default=[])
+    refused: int = 0
+    held: int = 0
+    undo: ReceiptUndo | None = None
+    can_undo: bool = False

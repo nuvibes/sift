@@ -12,6 +12,7 @@ import JoinSwap from './JoinSwap.svelte';
 const api = vi.hoisted(() => ({
 	swapTunnels: vi.fn(),
 	joinSwap: vi.fn(),
+	readToken: vi.fn(),
 	values: vi.fn(),
 	saved: vi.fn()
 }));
@@ -19,7 +20,8 @@ const api = vi.hoisted(() => ({
 vi.mock('./swap', async (real) => ({
 	...(await real<typeof import('./swap')>()),
 	swapTunnels: () => api.swapTunnels(),
-	joinSwap: (...args: unknown[]) => api.joinSwap(...args)
+	joinSwap: (...args: unknown[]) => api.joinSwap(...args),
+	readToken: (...args: unknown[]) => api.readToken(...args)
 }));
 
 vi.mock('$lib/settings-ui/settings', async (real) => ({
@@ -59,6 +61,7 @@ beforeEach(() => {
 	api.values.mockResolvedValue(new Map([['swap.guest_tunnel', 't-harbor']]));
 	api.saved.mockResolvedValue(undefined);
 	api.joinSwap.mockResolvedValue({ session_id: 's1' });
+	api.readToken.mockRejectedValue(new Error('not a token'));
 });
 
 afterEach(() => {
@@ -199,3 +202,26 @@ async function filledIn(): Promise<HTMLElement> {
 	await settled();
 	return where;
 }
+
+describe('who the token is from', () => {
+	it('says the device and how long the token is good for, read without dialling', async () => {
+		api.readToken.mockResolvedValue({
+			device_id: 'abcd1234',
+			device_name: null,
+			expires: Date.now() / 1000 + 3 * 3600 + 70,
+			swapped_before: 0
+		});
+		const where = draw();
+		const box = where.querySelector('textarea') as HTMLTextAreaElement;
+		box.value = 'ABCD EFGH';
+		box.dispatchEvent(new Event('input', { bubbles: true }));
+		flushSync();
+		await vi.waitFor(() =>
+			expect(where.textContent).toContain(
+				'From ABCD-1234 \u00b7 The token is good for another 3 h 1 min.'
+			)
+		);
+		expect(api.readToken).toHaveBeenCalledWith('ABCDEFGH');
+		expect(where.textContent).toContain("You haven't swapped with this device before.");
+	});
+});

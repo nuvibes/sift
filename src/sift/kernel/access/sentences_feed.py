@@ -119,6 +119,7 @@ FEED: Mapping[str, Act] = {
     # either table is read: the session they are about has no name a line may say.
     "swap_started": Act("{by} started a swap"),
     "swap_ended": Act("The swap ended"),
+    "swap_undone": Act("{by} undid a swap"),
     # A BACKUP RESTORED as this library: the subject is the backup file, named by its day.
     "restored": Act("{by} restored this library from {subjects}"),
     # A LIBRARY MADE FROM A SIFT DATABASE FILE: the subject is the file, named by its name.

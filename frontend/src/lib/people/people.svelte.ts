@@ -268,6 +268,8 @@ export class People {
 		this.#apply(id, body);
 		try {
 			const held = await api.put<components['schemas']['EntityStateView']>(path, { body });
+			// A page asked before this answer holds the old value.
+			this.#settled();
 			// The server's answer rather than the guess, so a value it clamped or refused shows as
 			// what was really stored.
 			this.#apply(id, held);
@@ -658,7 +660,10 @@ export class Sites {
 		const before = this.items;
 		this.#apply(id, body);
 		try {
-			this.#apply(id, await api.put<components['schemas']['EntityStateView']>(path, { body }));
+			const held = await api.put<components['schemas']['EntityStateView']>(path, { body });
+			// A page asked before this answer holds the old value.
+			this.#settled();
+			this.#apply(id, held);
 		} catch (error) {
 			this.items = before;
 			throw error;

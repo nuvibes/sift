@@ -69,6 +69,7 @@ MEANS: Mapping[str, str] = {
     "song_named": "A song Sift named from a Site's page, AcoustID or another file with the song",
     "swap_started": "A swap with another Sift started",
     "swap_ended": "A swap with another Sift ended",
+    "swap_undone": "A swap was undone: the files it landed were removed",
     "restored": "This library was restored from a backup",
     "adopted": "This library was created from a database file",
     "sharing_turned_on": "The computer running Sift started sharing the library on its network",

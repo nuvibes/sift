@@ -30,6 +30,8 @@ const {
 	HeldNewcomers,
 	HISTORY_SETTLE_MS
 } = await import('./changes.svelte');
+const { OwnChanges } = await import('./changes.svelte');
+const { writeAnswered, writeSent } = await import('$lib/api/writes');
 const { imports } = await import('./imports.svelte');
 const { Library } = await import('./library.svelte');
 
@@ -166,6 +168,30 @@ describe('a re-read at a walking pace', () => {
 		answer();
 		await vi.advanceTimersByTimeAsync(RE_ASKED_EVERY_MS * 2);
 		expect(read).toHaveBeenCalledTimes(1);
+	});
+
+	it("reads the feed's echo of this tab's own write immediately", () => {
+		// An hour ahead, so the answer it leaves behind is in the future of every later test.
+		vi.setSystemTime(Date.now() + 3_600_000);
+		const read = vi.fn();
+		const stop = following(libraryChanges, new WalkingPace(read));
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+
+		const counted = writeSent();
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+		expect(read, 'the echo of a write still out waited behind the pace').toHaveBeenCalledTimes(2);
+		writeAnswered(counted);
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+		expect(read, 'the echo just after the answer waited').toHaveBeenCalledTimes(3);
+
+		vi.advanceTimersByTime(5000);
+		asTheFeed(() => libraryChanges.changed());
+		flushSync();
+		expect(read, "somebody else's change later read immediately").toHaveBeenCalledTimes(3);
+		stop();
 	});
 
 	it('paces a store that lives as long as the tab the same way', () => {
@@ -340,5 +366,20 @@ describe('a newcomer to a list somebody is reading', () => {
 		expect(held.shown.map((row) => row.id)).toEqual(['x', 'y']);
 		stop();
 		box.remove();
+	});
+});
+
+describe("a store's own changes", () => {
+	it('tell a read begun before one, or during one, that its answer is not to be kept', async () => {
+		const changes = new OwnChanges();
+		const before = changes.mark();
+		let land: () => void = () => undefined;
+		const changing = changes.change(() => new Promise<void>((done) => (land = done)));
+		const during = changes.mark();
+		expect(changes.since(before)).toBe(false);
+		land();
+		await changing;
+		expect(changes.since(during)).toBe(false);
+		expect(changes.since(changes.mark())).toBe(true);
 	});
 });

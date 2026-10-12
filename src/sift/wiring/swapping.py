@@ -143,7 +143,9 @@ async def build_swap(
         exit_of=downloads.tunnels.exit_address,
         server_of=downloads.tunnels.server_address,
         path_of=path_of,
-        weigh=partial(swap_weight.weigh, store.access, store.database, search_service),
+        weigh=partial(
+            swap_weight.weigh, store.access, store.database, search_service, faces=face_descriptions
+        ),
     )
     await sessions.settle_after_restart()
     swap.register_handlers(sessions)

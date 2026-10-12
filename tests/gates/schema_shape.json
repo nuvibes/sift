@@ -175,7 +175,9 @@
     "ix_stash_scans_asset": "create index ix_stash_scans_asset on stash_box_scans ( asset_id , box_id , scanned_at )",
     "ix_stash_scans_box": "create index ix_stash_scans_box on stash_box_scans ( box_id )",
     "ix_swap_manifests_age": "create index ix_swap_manifests_age on swap_manifests ( updated_at )",
+    "ix_swap_sessions_peer": "create index ix_swap_sessions_peer on swap_sessions ( peer_device )",
     "ix_swap_sessions_state": "create index ix_swap_sessions_state on swap_sessions ( state )",
+    "ix_swap_sessions_tunnel": "create index ix_swap_sessions_tunnel on swap_sessions ( tunnel_id , ended_at )",
     "ix_tag_aliases_alias": "create index ix_tag_aliases_alias on tag_aliases ( alias collate nocase )",
     "ix_tag_aliases_tag": "create index ix_tag_aliases_tag on tag_aliases ( tag_id )",
     "ix_tag_links_box": "create index ix_tag_links_box on tag_stash_box_links ( box_id )",
@@ -2417,6 +2419,17 @@
       ],
       "options": "without rowid"
     },
+    "swap_receipts": {
+      "columns": {
+        "body": "text not null default '{}'",
+        "session_id": "text primary key references swap_sessions ( id ) on delete cascade",
+        "undo": "text",
+        "undone_at": "integer",
+        "written_at": "integer not null"
+      },
+      "constraints": [],
+      "options": "without rowid"
+    },
     "swap_sessions": {
       "columns": {
         "back_bytes": "integer not null default 0",
@@ -3371,7 +3384,7 @@
     "stash_boxes": 21,
     "stash_migration": 3,
     "suggestions": 11,
-    "swap": 5,
+    "swap": 6,
     "theater": 7,
     "tidy": 1,
     "tunnels": 1,

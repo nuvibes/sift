@@ -18,6 +18,12 @@
 	 * piece is in and checks, and filed once the landing has put it in the library, one at a time
 	 * after that. The sender's side says what it sent, as it always has.
 	 *
+	 * ## The Manifest under it
+	 *
+	 * The same rows the offer drew, each group's state the server's (crossing, landed, sent), the
+	 * file crossing now on its group's row, the rate over its streams and the time gone by this
+	 * screen's own clock: nothing here asks the server more often than the page already does.
+	 *
 	 * ## Both ways
 	 *
 	 * A swap that sends and receives draws each direction under the drawer's own words, Send and
@@ -25,23 +31,38 @@
 	 * one estimate for the whole (`timeLeftBothWays`): the two move at the same time, so the whole
 	 * takes as long as the slower.
 	 */
-	import { Button, Empty, Panel, ProgressBar, SectionHeading } from '$lib/components/common';
+	import { Button, Empty, Fold, Panel, ProgressBar, SectionHeading } from '$lib/components/common';
+	import { counted } from '$lib/entity/entity-counts';
+	import { elapsedWords, joined, rateWords, refusedWords } from './manifest';
+	import SwapManifest from './SwapManifest.svelte';
 	import { size, sizeOf } from '$lib/library/facts';
-	import {
-		receivedWords,
-		timeLeft,
-		timeLeftBothWays,
-		type SwapDirection,
-		type SwapSession
-	} from './swap';
+	import { receivedWords, timeLeft, timeLeftBothWays, type SwapDirection } from './swap';
+	import type { Session } from './wire';
 
 	interface Props {
-		session: SwapSession;
+		session: Session;
 		busy?: boolean;
 		onend: () => void;
 	}
 
 	let { session, busy = false, onend }: Props = $props();
+
+	/* A clock of this screen's own for the time gone; the session is read at the page's pace. */
+	let now = $state(Date.now() / 1000);
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now() / 1000), 1000);
+		return () => clearInterval(timer);
+	});
+	const pace = $derived(
+		joined(rateWords(session.rate_bps, session.streams), elapsedWords(session.moving_since, now))
+	);
+	const refused = $derived(session.refused ?? []);
+	const refusedCount = $derived(session.refused_count ?? refused.length);
+	const refusedSummary = $derived(
+		refusedCount === 1
+			? '1 file refused on import'
+			: `${counted(refusedCount)} files refused on import`
+	);
 
 	/* An exchange is a swap that sends and receives, and says so. */
 	const noun = $derived(session.two_way ? 'exchange' : 'swap');
@@ -125,6 +146,27 @@
 			<span>{timeLeft(session)}</span>
 		</p>
 	{/if}
+	{#if pace}<p class="figures">{pace}</p>{/if}
+	{#if session.manifest && session.manifest.length > 0}
+		<SwapManifest
+			groups={session.manifest}
+			label="What the {noun} carries"
+			sessionId={session.id}
+			now={session.now ?? null}
+		/>
+	{/if}
+	{#if refusedCount > 0}
+		<Fold summary={refusedSummary}>
+			<ul class="refused">
+				{#each refused as one, at (at)}
+					<li><span>{one.title}</span> <span class="why">{refusedWords(one.reason)}</span></li>
+				{/each}
+			</ul>
+			{#if refusedCount > refused.length}
+				<p class="why">And {counted(refusedCount - refused.length)} more.</p>
+			{/if}
+		</Fold>
+	{/if}
 	<div class="finish">
 		<Button tone="quiet" {busy} onclick={onend}>End the {noun}</Button>
 	</div>
@@ -148,6 +190,21 @@
 	.finish {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	.refused {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.why {
+		margin: 0;
+		font: var(--text-body-sm);
+		color: var(--sift-ink-3);
 	}
 
 	/* A direction: its heading, its files, its bar and its size, as one group. */

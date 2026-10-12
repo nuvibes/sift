@@ -36,7 +36,15 @@ from sift.slices.swap.frames import Chunk as Chunk
 from sift.slices.swap.frames import Conn as Conn
 from sift.slices.swap.frames import ProtocolError as ProtocolError
 from sift.slices.swap.handshake import LOST
-from sift.slices.swap.ingest import LandingSession, received_from_offer
+from sift.slices.swap.ingest import (
+    DIGEST,
+    STRIP,
+    UNWANTED,
+    Landed,
+    LandingSession,
+    Refused,
+    received_from_offer,
+)
 from sift.slices.swap.live import (
     _EMPTY,
     Answer,
@@ -47,7 +55,8 @@ from sift.slices.swap.live import (
     _remove,
     _wanted_indexes,
 )
-from sift.slices.swap.models import Diff, Offer, OfferScreen
+from sift.slices.swap.manifest import Grouping, grouping
+from sift.slices.swap.models import Diff, Offer, OfferScreen, RefusedWhy
 from sift.slices.swap.transfer import CHUNK_SIZE, MAX_RETRIES, RECORD_EVERY, RECORD_SECONDS
 
 log = get_logger(__name__)
@@ -84,6 +93,14 @@ class _Receiving(_Figures):
         self._opening: dict[int, asyncio.Lock] = {}
         #: Whether this side has said `done`: everything it wanted landed or failed.
         self.said_done = False
+        #: The offer's groups, read once when it arrives (`manifest.py`).
+        self.groups: Grouping | None = None
+        #: Why each refused file was refused, by its place in the offer.
+        self.refusals: dict[int, RefusedWhy] = {}
+        #: What each landed file was filed as, by its place in the offer, for the receipt.
+        self.landed: dict[int, Landed] = {}
+        #: The offer's indexes in the order they were opened: the last is the file crossing now.
+        self.opened: dict[int, None] = {}
 
     def _receiving_started(self) -> None:
         """What a side does once its answer is sent and the files can move: nothing on the host,
@@ -109,6 +126,7 @@ class _Receiving(_Figures):
         self.screen, answer = await live.owner.assess(offer)
         self.answer = answer
         self.offer = offer
+        self.groups = grouping(offer)
         await live.owner.store.set_offered(live.id, len(offer.files), back=self.back)
         await live.advance("offered")
         if not await live.until(self.taken):
@@ -279,6 +297,7 @@ class _Receiving(_Figures):
                     raise ProtocolError("a file header that disagrees with the one before")
                 return state
             path, done = await self._manifest_for(self.key_of(index), size, digest, once)
+            self.opened[index] = None
             count = transfer.chunk_count(size)
             missing = set(transfer.missing(done, count))
             state = _Incoming(
@@ -379,6 +398,7 @@ class _Receiving(_Figures):
         state.attempts[chunk] = state.attempts.get(chunk, 0) + 1
         if state.attempts[chunk] > MAX_RETRIES:
             log.info("swap.chunk_refused", swap=self.live.short_id, file=index)
+            self.refusals[index] = "bytes"
             await self._drop(index, state)
             await conn.send({"skip": index})
             return True
@@ -403,6 +423,7 @@ class _Receiving(_Figures):
             raise
         if whole is None:
             log.info("swap.file_refused", swap=self.live.short_id, file=index)
+            self.refusals[index] = "bytes"
             await self._drop(index, state)
             await conn.send({"skip": index})
             return
@@ -451,11 +472,14 @@ class _Receiving(_Figures):
                 )
                 # The landing counts the file on this row itself, in the transaction that files it
                 # (`store.count_landed_on`): a count written here as well would be a second one.
-                await live.owner.land(self.landing_session, received, ctx=live.context)
+                landed = await live.owner.land(self.landing_session, received, ctx=live.context)
+                if isinstance(landed, Landed):
+                    self.landed[index] = landed
                 self.done_files.add(index)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
+                self.refusals[index] = _refused_why(error)
                 # The file is counted as failed and the swap goes on. The type only: a landing's
                 # message can carry a path, and this line is about a session.
                 log.warning("swap.landing_failed", swap=live.short_id, error=type(error).__name__)
@@ -470,6 +494,15 @@ class _Receiving(_Figures):
 
 def _nothing() -> None:
     """No one counting what a connection moved."""
+
+
+def _refused_why(error: Exception) -> RefusedWhy:
+    """A landing's refusal in the screen's three words."""
+    if isinstance(error, Refused) and error.reason in (DIGEST, UNWANTED):
+        return "bytes"
+    if isinstance(error, Refused) and error.reason == STRIP:
+        return "strip"
+    return "landing"
 
 
 async def _on_disk(write: Callable[..., None], *args: Any) -> None:

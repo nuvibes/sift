@@ -19,7 +19,7 @@ import pytest
 from fastapi import FastAPI
 
 from sift.kernel import wiring
-from sift.kernel.tunnels import TunnelError
+from sift.kernel.tunnels import TUNNELS, TunnelError
 from sift.kernel.wiring import provide
 from sift.slices.auth import csrf_protect, master_key, require_admin
 from sift.slices.swap import lock
@@ -44,6 +44,11 @@ class _Library:
         return object() if folder_id == "folder" else None
 
 
+class _NoTunnels:
+    async def list(self) -> list[object]:
+        return []
+
+
 @pytest.fixture
 async def world(
     tmp_path: Path,
@@ -59,6 +64,7 @@ async def world(
     app = FastAPI()
     provide(app, SESSIONS, sessions)
     provide(app, wiring.LIBRARY, _Library())
+    provide(app, TUNNELS, _NoTunnels())
     app.include_router(router, prefix="/api")
     app.dependency_overrides[require_admin] = lambda: SimpleNamespace(id="admin")
     app.dependency_overrides[csrf_protect] = lambda: None
@@ -249,7 +255,7 @@ async def test_a_join_goes_through_the_tunnel_chosen_beside_it_and_each_tunnel_n
     import os
     import time
 
-    from sift.kernel.tunnels import TUNNELS, TunnelView
+    from sift.kernel.tunnels import TunnelView
     from sift.slices.swap import token
     from sift.slices.swap.device import device_id_of
 

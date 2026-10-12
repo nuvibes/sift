@@ -5,7 +5,17 @@ import { flushSync, mount, tick, unmount } from 'svelte';
 import { PAGE, type LedgerEvent, type LedgerPage } from '$lib/library/ledger';
 import { onRecord } from '$lib/shell/when';
 
-const mocks = vi.hoisted(() => ({ readLedger: vi.fn(), undoDecision: vi.fn(), undoAll: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+	readLedger: vi.fn(),
+	undoDecision: vi.fn(),
+	undoAll: vi.fn(),
+	readReceipt: vi.fn()
+}));
+
+vi.mock('$lib/components/swap/receipt', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/components/swap/receipt')>()),
+	readReceipt: mocks.readReceipt
+}));
 
 vi.mock('$lib/library/ledger', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/library/ledger')>()),
@@ -696,4 +706,52 @@ it("offers a run's Report only where the server says the line has one", async ()
 		(one) => one.textContent?.trim() === 'Report'
 	);
 	expect(reports).toHaveLength(1);
+});
+
+it("opens a swap's receipt under its line, and only on the line that ended a swap", async () => {
+	const swap = (id: string, verb: string) =>
+		event(id, {
+			verb,
+			subjects: [{ kind: 'swap', id: `session-${id}`, name: null, href: null, gone: false }],
+			pieces: [words('The swap with device DESK-2F9A ended: 12 files received')]
+		});
+	mocks.readLedger.mockResolvedValue(page([swap('e1', 'swap_ended'), swap('e2', 'swap_started')]));
+	mocks.readReceipt.mockResolvedValue({
+		session_id: 'session-e1',
+		role: 'guest',
+		two_way: false,
+		device: 'DESK-2F9A',
+		device_name: null,
+		started_at: at(0, 8),
+		ended_at: at(0, 9),
+		seconds: 600,
+		reason: 'done',
+		files: 12,
+		bytes: 1_200_000_000,
+		back_files: 0,
+		back_bytes: 0,
+		rate: 2_000_000,
+		tunnel: null,
+		cut_offs: 0,
+		folder: null,
+		groups: [],
+		skipped: [],
+		refused: 0,
+		held: 0,
+		undo: null,
+		can_undo: false
+	});
+
+	await draw();
+
+	const opens = [...host.querySelectorAll('button')].filter(
+		(one) => one.textContent?.trim() === 'Receipt'
+	);
+	expect(opens).toHaveLength(1);
+	opens[0].click();
+	await settle();
+	await settle();
+	expect(mocks.readReceipt).toHaveBeenCalledWith('session-e1');
+	expect(host.querySelector('.receipt .figure')?.textContent?.trim()).toBe('12');
+	expect(opens[0].textContent?.trim()).toBe('Hide receipt');
 });

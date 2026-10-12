@@ -146,6 +146,12 @@ class Landed:
     people: tuple[str, ...] = ()
     created: tuple[str, ...] = ()
     faces_held: int = 0
+    #: Each taken person as filed: the name they were offered by, who they are here, and whether
+    #: this landing made them; for the receipt.
+    named: tuple[tuple[str, str, bool], ...] = ()
+    #: The Site the file was filed under here, and its faces held, by person.
+    site_id: str | None = None
+    faces_by_person: tuple[tuple[str, int], ...] = ()
 
 
 class Refused(Exception):
@@ -302,6 +308,18 @@ class FaceHolding(Protocol):
 # --- landing one file -------------------------------------------------------------------------
 
 
+async def _refuse_unless_as_offered(session: LandingSession, received: Received) -> None:
+    """What the guest did not ask for is never read; bytes that are not the offered file go back."""
+    if received.key not in session.wanted:
+        log.warning("swap.file_refused", swap=session.short_id, reason=UNWANTED)
+        raise Refused(UNWANTED)
+    if not received.checked:
+        whole = await asyncio.to_thread(whole_digest, received.staged)
+        if whole != received.digest.strip().lower():
+            log.warning("swap.file_refused", swap=session.short_id, reason=DIGEST)
+            raise Refused(DIGEST)
+
+
 async def land(
     session: LandingSession,
     received: Received,
@@ -314,17 +332,7 @@ async def land(
     settings: Settings,
 ) -> Landed:
     """Land one received file; raises `Refused`, `IngressRejected` or `NoDestination` if not."""
-    if received.key not in session.wanted:
-        # Before anything reads the bytes: what the guest did not ask for is never read.
-        log.warning("swap.file_refused", swap=session.short_id, reason=UNWANTED)
-        raise Refused(UNWANTED)
-
-    if not received.checked:
-        whole = await asyncio.to_thread(whole_digest, received.staged)
-        if whole != received.digest.strip().lower():
-            log.warning("swap.file_refused", swap=session.short_id, reason=DIGEST)
-            raise Refused(DIGEST)
-
+    await _refuse_unless_as_offered(session, received)
     taken = [person for person in received.people if person.taken]
     scratch = await asyncio.to_thread(
         tempfile.TemporaryDirectory, prefix="swap-strip-", dir=received.staged.parent
@@ -354,10 +362,11 @@ async def land(
     finally:
         await asyncio.to_thread(scratch.cleanup)
 
-    filed = await _file_it(session, received, taken, outcome.asset_id, database)
+    filed, site_id = await _file_it(session, received, taken, outcome.asset_id, database)
     # The People and Username are indexed text written after the import, so the index is told again.
     await reindexer.touched(outcome.asset_id)
-    held = await _hold_faces(session, filed, faces)
+    by_person = await _hold_faces(session, filed, faces)
+    held = sum(by_person.values())
     people = [one.person_id for one in filed]
     created = [one.person_id for one in filed if one.created]
 
@@ -378,6 +387,9 @@ async def land(
         people=tuple(people),
         created=tuple(created),
         faces_held=held,
+        named=tuple((one.offered.name, one.person_id, one.created) for one in filed),
+        site_id=site_id,
+        faces_by_person=tuple(by_person.items()),
     )
 
 
@@ -398,10 +410,12 @@ async def _file_it(
     taken: Sequence[ArrivingPerson],
     asset_id: str,
     database: Database,
-) -> list[_Filed]:
-    """The People, Site, Username, arrival and count in one transaction, each marked as by swap."""
+) -> tuple[list[_Filed], str | None]:
+    """The People, Site, Username, arrival and count in one transaction, each marked as by swap.
+    The people filed, and the Site the file went under."""
     made = by_sift(VIA_SWAP)
     filed: list[_Filed] = []
+    site_id: str | None = None
     async with telling(database, EVERY_ADMIN, About.LIBRARY) as connection:
         for person in taken:
             person_id, is_new = await _person_for(connection, person)
@@ -419,14 +433,14 @@ async def _file_it(
         site = (received.site or "").strip()
         username = (received.username or "").strip()
         if site and username:
-            _, username_id = await seed_site_username_on(
+            site_id, username_id = await seed_site_username_on(
                 connection, site=site, name=username, made=made
             )
             await link_username_to_asset_on(
                 connection, asset_id=asset_id, username_id=username_id, source=VIA_SWAP
             )
         elif site:
-            await file_assets_under_site_on(
+            site_id = await file_assets_under_site_on(
                 connection, asset_ids=(asset_id,), site=site, source=VIA_SWAP, made=made
             )
         await _put_song_on(connection, session, asset_id, received.song)
@@ -440,7 +454,7 @@ async def _file_it(
             payload=json.dumps({"device": session.peer_device, "session": session.short_id}),
         )
         await store.count_landed_on(connection, session.id)
-    return filed
+    return filed, site_id
 
 
 SONG_SOURCE: Final = VIA_SWAP
@@ -501,20 +515,21 @@ async def _person_for(connection: Connection, person: ArrivingPerson) -> tuple[s
 
 async def _hold_faces(
     session: LandingSession, filed: Sequence[_Filed], faces: FaceHolding | None
-) -> int:
-    """Hold each taken person's fingerprints through the pack import; never fails the landing."""
+) -> dict[str, int]:
+    """Hold each taken person's fingerprints through the pack import; never fails the landing.
+    How many were held, by person."""
     offered_faces = [
         (one, one.offered.faces)
         for one in filed
         if one.offered.faces is not None and one.offered.faces.faces
     ]
+    added: dict[str, int] = {}
     if not offered_faces or faces is None:
-        return 0
+        return added
     here = await faces.recognizer()
     if here is None:
         log.info("swap.faces_not_held", swap=session.short_id, reason="faces_off")
-        return 0
-    added = 0
+        return added
     for one, offered in offered_faces:
         usable = _usable_here(offered, here)
         if not usable:
@@ -527,7 +542,7 @@ async def _hold_faces(
             )
             continue
         try:
-            added += await faces.hold(
+            added[one.person_id] = added.get(one.person_id, 0) + await faces.hold(
                 pack=f"swap {session.id} {one.person_id}",
                 person=one.name,
                 recognizer=offered.recognizer,
@@ -598,7 +613,7 @@ async def land_fingerprints(
                 continue
             name = await store.person_name_on(connection, person_id) or person.name
             filed.append(_Filed(person, person_id, name, is_new))
-    held = await _hold_faces(session, filed, faces)
+    held = sum((await _hold_faces(session, filed, faces)).values())
     log.info(
         "swap.fingerprints_landed",
         swap=session.short_id,

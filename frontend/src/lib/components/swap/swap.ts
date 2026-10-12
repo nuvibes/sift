@@ -10,6 +10,7 @@ import { filesSaid } from '$lib/entity/entity-counts';
 import { size } from '$lib/library/facts';
 import { NOT_ENOUGH_TO_SAY, exactly, sayWindow } from '$lib/shell/when';
 import { COPY as SITES } from '$lib/settings-ui/Sites.search';
+import type { GroupFiles, TokenRead } from './wire';
 
 export type SwapDirection = components['schemas']['SwapDirection'];
 
@@ -58,11 +59,48 @@ export function weighPicks(chosen: Chosen[]): Promise<SwapWeight> {
 export function weighAnswer(
 	id: string,
 	skipped: readonly number[],
-	unticked: readonly string[] = []
+	unticked: readonly string[] = [],
+	skippedGroups: readonly string[] = []
 ): Promise<SwapWeight> {
 	return api.post<SwapWeight>(`/swap/sessions/${encodeURIComponent(id)}/weigh`, {
-		body: { skipped: [...skipped], unticked: [...unticked] }
+		body: answerBody(skipped, unticked, skippedGroups)
 	});
+}
+
+/* `skipped_groups` goes only when a group other than a person is skipped. */
+function answerBody(
+	skipped: readonly number[],
+	unticked: readonly string[],
+	skippedGroups: readonly string[]
+) {
+	const groups = skippedGroups.length > 0 ? { skipped_groups: [...skippedGroups] } : {};
+	return { skipped: [...skipped], unticked: [...unticked], ...groups };
+}
+
+/** One group of the manifest, a page of its files at a time. */
+export function groupFiles(
+	id: string,
+	key: string,
+	offset = 0,
+	limit = GROUP_PAGE
+): Promise<GroupFiles> {
+	return api.get<GroupFiles>(
+		`/swap/sessions/${encodeURIComponent(id)}/groups/${encodeURIComponent(key)}/files`,
+		{ query: { offset, limit } }
+	);
+}
+
+/** How many files a group's page asks for. */
+export const GROUP_PAGE = 100;
+
+/** Who a pasted token is from and how long it is good for, read without dialling. */
+export function readToken(token: string): Promise<TokenRead> {
+	return api.post<TokenRead>('/swap/token/read', { body: { token: tokenFrom(token) } });
+}
+
+/** A guest cut off dials again now rather than at its next try. */
+export function retrySwap(id: string): Promise<SwapSession> {
+	return api.post<SwapSession>(`/swap/sessions/${encodeURIComponent(id)}/retry`);
 }
 
 export function readSession(id: string): Promise<SwapSession> {
@@ -84,10 +122,11 @@ export function answerCode(
 export function takeOffer(
 	id: string,
 	skipped: readonly number[],
-	unticked: readonly string[] = []
+	unticked: readonly string[] = [],
+	skippedGroups: readonly string[] = []
 ): Promise<SwapSession> {
 	return api.post<SwapSession>(`/swap/sessions/${encodeURIComponent(id)}/take`, {
-		body: { skipped: [...skipped], unticked: [...unticked] }
+		body: answerBody(skipped, unticked, skippedGroups)
 	});
 }
 
@@ -137,6 +176,18 @@ export function swapDevice(): Promise<SwapDevice> {
 
 export function resetDevice(): Promise<SwapDevice> {
 	return api.post<SwapDevice>('/swap/device/reset');
+}
+
+/* The host a guest joined, as its token named it, for "Reaching ..." before the hello names it.
+   Kept for the tab's life only. */
+const hostsJoined = new Map<string, string>();
+
+export function rememberHost(sessionId: string, device: string | null): void {
+	if (device) hostsJoined.set(sessionId, device);
+}
+
+export function hostJoined(sessionId: string): string | null {
+	return hostsJoined.get(sessionId) ?? null;
 }
 
 /** A pasted token as ONE string: every run of white space removed. */
@@ -236,7 +287,7 @@ export function cutOffWords(
 	const until = session.rejoin_until ? ` until ${at(session.rejoin_until)}` : '';
 	return session.role === 'host'
 		? `The connection to them was lost. They can rejoin with the same token${until}.`
-		: `The connection to them was lost. Sift keeps trying to reach them${until}. Join again with the same token to try now.`;
+		: `The connection to them was lost. Sift keeps trying to reach them${until}.`;
 }
 
 /** In the reason's own words; an unknown reason is said as it came. */
@@ -357,7 +408,11 @@ export function startBlocked(
 }
 
 /** The figure above Start, or what a swap of no files means for this kind. */
-export function sendingWords(weight: SwapWeight, chosen: readonly Chosen[], both: boolean): string {
+export function sendingWords(
+	weight: Pick<SwapWeight, 'files' | 'bytes'>,
+	chosen: readonly Chosen[],
+	both: boolean
+): string {
 	if (weight.files > 0) return `You would send ${filesAndSize(weight.files, weight.bytes)}.`;
 	const blocked = startBlocked(weight, chosen, both);
 	if (blocked) return blocked;

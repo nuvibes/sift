@@ -40,7 +40,8 @@
 	import { exactly, onRecord } from '$lib/shell/when';
 	import type { Column } from '$lib/components/common/DataRows.svelte';
 	import { phoneWidth } from '$lib/components/common/phone-width.svelte';
-	import { SvelteMap } from 'svelte/reactivity';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+	import SwapReceipt from '$lib/components/swap/SwapReceipt.svelte';
 	import { scrollParent } from '$lib/grid/cards.svelte';
 	import SettingGroup from './SettingGroup.svelte';
 	import Thumb from '$lib/components/organize/Thumb.svelte';
@@ -260,6 +261,19 @@
 		}
 	}
 
+	/* A SWAP'S RECEIPT, from its line: the one the swap left when it ended, opened under it. */
+	function swapOf(event: LedgerEvent): string | null {
+		if (event.verb !== 'swap_ended') return null;
+		return event.subjects.find((one) => one.kind === 'swap')?.id ?? null;
+	}
+
+	const openReceipts = new SvelteSet<string>();
+
+	function toggleReceipt(session: string): void {
+		if (openReceipts.has(session)) openReceipts.delete(session);
+		else openReceipts.add(session);
+	}
+
 	/* The page on screen again, which is what shows a line an Undo just took back as taken back,
 	   without moving anybody off the page they were on. */
 	async function reload(): Promise<void> {
@@ -468,6 +482,9 @@
 						<!-- The report as the server wrote it, selectable, under the line it is about. -->
 						<pre class="report">{reports.get(runOf(one) ?? '')}</pre>
 					{/if}
+					{#if swapOf(one) && openReceipts.has(swapOf(one) ?? '')}
+						<div class="receipt"><SwapReceipt sessionId={swapOf(one) ?? ''} /></div>
+					{/if}
 				{/snippet}
 				{#snippet at()}
 					<Tooltip label={exactly(one.at)}>
@@ -494,6 +511,17 @@
 							onclick={() => void toggleReport(run)}
 						>
 							{reports.has(run) ? COPY.hideReport : COPY.showReport}
+						</Button>
+					{/if}
+					{#if swapOf(one)}
+						{@const session = swapOf(one) ?? ''}
+						<Button
+							tone="link"
+							size="small"
+							aria-expanded={openReceipts.has(session)}
+							onclick={() => toggleReceipt(session)}
+						>
+							{openReceipts.has(session) ? COPY.hideReceipt : COPY.showReceipt}
 						</Button>
 					{/if}
 					{#if canUndo(one)}
@@ -619,6 +647,12 @@
 		color: var(--sift-ink-3);
 		font: var(--text-data);
 		white-space: nowrap;
+	}
+
+	/* A swap's receipt, the card itself, under the line it is about. */
+	.receipt {
+		margin-block-start: var(--space-2);
+		white-space: normal;
 	}
 
 	/* A run's report: the server's plain text, kept as it was written so it pastes as it reads. */

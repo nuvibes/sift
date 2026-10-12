@@ -4140,6 +4140,30 @@
         "title": "CreatorsWithArt",
         "type": "object"
       },
+      "CrossingNow": {
+        "description": "The file crossing now: the one opened last of those still on their way.",
+        "properties": {
+          "group": {
+            "title": "Group",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "size",
+          "group"
+        ],
+        "title": "CrossingNow",
+        "type": "object"
+      },
       "DayValue": {
         "description": "One calendar day's figure, for a heat-map: `day` is an ISO day on this device's calendar.",
         "properties": {
@@ -8773,6 +8797,30 @@
         "title": "GroupDetail",
         "type": "object"
       },
+      "GroupFiles": {
+        "description": "A page of one group's files.",
+        "properties": {
+          "files": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "GroupFiles",
+        "type": "object"
+      },
       "GroupList": {
         "description": "A page of groups, with the counts that tell an empty page's causes apart.",
         "properties": {
@@ -10929,6 +10977,45 @@
         "title": "LearningPath",
         "type": "object"
       },
+      "Learns": {
+        "description": "What the other side will learn from the offer, counted: the people named and their other\nnames, the Sites and Usernames the files are filed under, and the faces sent.",
+        "properties": {
+          "aliases": {
+            "default": 0,
+            "title": "Aliases",
+            "type": "integer"
+          },
+          "faces": {
+            "default": 0,
+            "title": "Faces",
+            "type": "integer"
+          },
+          "people": {
+            "default": 0,
+            "title": "People",
+            "type": "integer"
+          },
+          "sites": {
+            "default": 0,
+            "title": "Sites",
+            "type": "integer"
+          },
+          "usernames": {
+            "default": 0,
+            "title": "Usernames",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "people",
+          "aliases",
+          "sites",
+          "usernames",
+          "faces"
+        ],
+        "title": "Learns",
+        "type": "object"
+      },
       "LedgerActorView": {
         "description": "Who took an act, as the kind of doer and its name, read live so a rename shows.",
         "properties": {
@@ -12585,6 +12672,304 @@
           }
         },
         "title": "MakeWrite",
+        "type": "object"
+      },
+      "ManifestFile": {
+        "description": "One offered file as a group row folds open to it.",
+        "properties": {
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "enum": [
+                  "same",
+                  "look"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Held"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "video",
+              "image",
+              "gif"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "kind",
+          "size",
+          "duration_ms",
+          "width",
+          "height",
+          "held"
+        ],
+        "title": "ManifestFile",
+        "type": "object"
+      },
+      "ManifestGroup": {
+        "description": "One row of the manifest: a group of the offer with its totals, and where it stands.\n\n`files` and `bytes` are what the group offers; `have` is how many of them this library holds\n(null on the side that offered: the answer never says what the other side holds), `to_take`\nhow many will be or were taken. `done` counts the files landed or sent so far.",
+        "properties": {
+          "bytes": {
+            "default": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "crossing": {
+            "default": 0,
+            "title": "Crossing",
+            "type": "integer"
+          },
+          "done": {
+            "default": 0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "faces": {
+            "default": 0,
+            "title": "Faces",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "have": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Have"
+          },
+          "held_look": {
+            "default": 0,
+            "title": "Held Look",
+            "type": "integer"
+          },
+          "held_same": {
+            "default": 0,
+            "title": "Held Same",
+            "type": "integer"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "person",
+              "site",
+              "collection",
+              "photo_set",
+              "songs",
+              "loose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "left_out": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local",
+                  "swap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Out"
+          },
+          "local_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Id"
+          },
+          "match_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Name"
+          },
+          "matched_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "name",
+                  "alias"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matched By"
+          },
+          "more": {
+            "default": 0,
+            "title": "More",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "sample": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestFile"
+            },
+            "title": "Sample",
+            "type": "array"
+          },
+          "state": {
+            "default": "offered",
+            "enum": [
+              "offered",
+              "taking",
+              "held",
+              "skipped",
+              "waiting",
+              "crossing",
+              "landed",
+              "sent",
+              "left_out"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "to_take": {
+            "default": 0,
+            "title": "To Take",
+            "type": "integer"
+          },
+          "usernames": {
+            "default": 0,
+            "title": "Usernames",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "kind",
+          "index",
+          "name",
+          "match_name",
+          "matched_by",
+          "local_id",
+          "usernames",
+          "faces",
+          "files",
+          "bytes",
+          "have",
+          "to_take",
+          "held_same",
+          "held_look",
+          "state",
+          "done",
+          "failed",
+          "crossing",
+          "left_out",
+          "sample",
+          "more"
+        ],
+        "title": "ManifestGroup",
         "type": "object"
       },
       "MatchList": {
@@ -16978,6 +17363,22 @@
         "title": "ReadStash",
         "type": "object"
       },
+      "ReadToken": {
+        "description": "A pasted token, read before Join: nothing is dialled.",
+        "properties": {
+          "token": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "ReadToken",
+        "type": "object"
+      },
       "ReadingsRemoved": {
         "description": "How many marks were thrown away.",
         "properties": {
@@ -17344,6 +17745,216 @@
           "announced"
         ],
         "title": "RecapList",
+        "type": "object"
+      },
+      "ReceiptFolder": {
+        "description": "Where the files landed: the folder the swap made, by id and as the library names it.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "own": {
+            "default": true,
+            "title": "Own",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "path",
+          "own"
+        ],
+        "title": "ReceiptFolder",
+        "type": "object"
+      },
+      "ReceiptGroup": {
+        "description": "One group of a receipt: what landed or was sent under it, and how it was filed here.",
+        "properties": {
+          "bytes": {
+            "default": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "faces": {
+            "default": 0,
+            "title": "Faces",
+            "type": "integer"
+          },
+          "filed": {
+            "anyOf": [
+              {
+                "enum": [
+                  "created",
+                  "added"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filed"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "enum": [
+              "person",
+              "site",
+              "collection",
+              "photo_set",
+              "songs",
+              "loose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "usernames": {
+            "default": 0,
+            "title": "Usernames",
+            "type": "integer"
+          },
+          "way": {
+            "enum": [
+              "landed",
+              "sent"
+            ],
+            "title": "Way",
+            "type": "string"
+          }
+        },
+        "required": [
+          "way",
+          "kind",
+          "id",
+          "name",
+          "files",
+          "bytes",
+          "filed",
+          "faces",
+          "usernames"
+        ],
+        "title": "ReceiptGroup",
+        "type": "object"
+      },
+      "ReceiptSkipped": {
+        "description": "A group that was offered and not taken.",
+        "properties": {
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "enum": [
+              "person",
+              "site",
+              "collection",
+              "photo_set",
+              "songs",
+              "loose"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "files"
+        ],
+        "title": "ReceiptSkipped",
+        "type": "object"
+      },
+      "ReceiptUndo": {
+        "description": "What the Undo took back.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "integer"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "from_disk": {
+            "default": false,
+            "title": "From Disk",
+            "type": "boolean"
+          },
+          "people": {
+            "default": 0,
+            "title": "People",
+            "type": "integer"
+          },
+          "sites": {
+            "default": 0,
+            "title": "Sites",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "at",
+          "files",
+          "from_disk",
+          "people",
+          "sites"
+        ],
+        "title": "ReceiptUndo",
         "type": "object"
       },
       "RecentOut": {
@@ -17931,6 +18542,30 @@
           "mark"
         ],
         "title": "RefusedBy",
+        "type": "object"
+      },
+      "RefusedFile": {
+        "description": "A file that came and was not let in: its bytes were not what was offered, it could not be\nstripped, or the landing failed.",
+        "properties": {
+          "reason": {
+            "enum": [
+              "bytes",
+              "strip",
+              "landing"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "reason"
+        ],
+        "title": "RefusedFile",
         "type": "object"
       },
       "RefusedLink": {
@@ -24169,6 +24804,212 @@
         "title": "SwapJoined",
         "type": "object"
       },
+      "SwapReceipt": {
+        "description": "A swap, signed: what landed or was sent per group, where, how long, how fast, and its Undo.",
+        "properties": {
+          "back_bytes": {
+            "default": 0,
+            "title": "Back Bytes",
+            "type": "integer"
+          },
+          "back_files": {
+            "default": 0,
+            "title": "Back Files",
+            "type": "integer"
+          },
+          "bytes": {
+            "default": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "can_undo": {
+            "default": false,
+            "title": "Can Undo",
+            "type": "boolean"
+          },
+          "cut_offs": {
+            "default": 0,
+            "title": "Cut Offs",
+            "type": "integer"
+          },
+          "device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "files": {
+            "default": 0,
+            "title": "Files",
+            "type": "integer"
+          },
+          "folder": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReceiptFolder"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReceiptGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "held": {
+            "default": 0,
+            "title": "Held",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "refused": {
+            "default": 0,
+            "title": "Refused",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "host",
+              "guest"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
+          "skipped": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ReceiptSkipped"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "integer"
+          },
+          "tunnel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel"
+          },
+          "two_way": {
+            "default": false,
+            "title": "Two Way",
+            "type": "boolean"
+          },
+          "undo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReceiptUndo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "session_id",
+          "role",
+          "two_way",
+          "device",
+          "device_name",
+          "started_at",
+          "ended_at",
+          "seconds",
+          "reason",
+          "files",
+          "bytes",
+          "back_files",
+          "back_bytes",
+          "rate",
+          "tunnel",
+          "cut_offs",
+          "folder",
+          "groups",
+          "skipped",
+          "refused",
+          "held",
+          "undo",
+          "can_undo"
+        ],
+        "title": "SwapReceipt",
+        "type": "object"
+      },
       "SwapRefusal": {
         "description": "Where one thing stands with swaps: its own switch, whether it is out at all, and why.",
         "properties": {
@@ -24264,6 +25105,51 @@
             "title": "Id",
             "type": "string"
           },
+          "kept_bytes": {
+            "default": 0,
+            "title": "Kept Bytes",
+            "type": "integer"
+          },
+          "kept_files": {
+            "default": 0,
+            "title": "Kept Files",
+            "type": "integer"
+          },
+          "manifest": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ManifestGroup"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest"
+          },
+          "moving_since": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moving Since"
+          },
+          "now": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossingNow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "offer": {
             "anyOf": [
               {
@@ -24289,6 +25175,17 @@
               }
             ],
             "title": "Peer Device"
+          },
+          "peer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peer Name"
           },
           "rate_bps": {
             "anyOf": [
@@ -24322,6 +25219,19 @@
               }
             ]
           },
+          "refused": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RefusedFile"
+            },
+            "title": "Refused",
+            "type": "array"
+          },
+          "refused_count": {
+            "default": 0,
+            "title": "Refused Count",
+            "type": "integer"
+          },
           "rejoin_until": {
             "anyOf": [
               {
@@ -24332,6 +25242,17 @@
               }
             ],
             "title": "Rejoin Until"
+          },
+          "retry_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry At"
           },
           "role": {
             "enum": [
@@ -24394,6 +25315,28 @@
             "title": "State",
             "type": "string"
           },
+          "streams": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streams"
+          },
+          "swapped_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swapped Before"
+          },
           "token": {
             "anyOf": [
               {
@@ -24404,6 +25347,28 @@
               }
             ],
             "title": "Token"
+          },
+          "token_expires": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Expires"
+          },
+          "tunnel_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tunnel Name"
           },
           "two_way": {
             "default": false,
@@ -24457,7 +25422,20 @@
           "two_way",
           "answered",
           "sending",
-          "receiving"
+          "receiving",
+          "manifest",
+          "now",
+          "streams",
+          "moving_since",
+          "token_expires",
+          "peer_name",
+          "swapped_before",
+          "tunnel_name",
+          "refused",
+          "refused_count",
+          "kept_files",
+          "kept_bytes",
+          "retry_at"
         ],
         "title": "SwapSession",
         "type": "object"
@@ -24523,13 +25501,25 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "rate_bps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Bps"
           }
         },
         "required": [
           "id",
           "name",
           "can_host",
-          "endpoint"
+          "endpoint",
+          "rate_bps"
         ],
         "title": "SwapTunnel",
         "type": "object"
@@ -24546,6 +25536,24 @@
             "default": 0,
             "title": "Files",
             "type": "integer"
+          },
+          "groups": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ManifestGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "learns": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Learns"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "left_out": {
             "default": [],
@@ -24565,7 +25573,9 @@
           "files",
           "bytes",
           "left_out",
-          "left_out_other"
+          "left_out_other",
+          "groups",
+          "learns"
         ],
         "title": "SwapWeight",
         "type": "object"
@@ -25076,6 +26086,15 @@
             },
             "maxItems": 5000,
             "title": "Skipped",
+            "type": "array"
+          },
+          "skipped_groups": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10002,
+            "title": "Skipped Groups",
             "type": "array"
           },
           "unticked": {
@@ -25624,6 +26643,49 @@
         ],
         "title": "ToCheckShow",
         "type": "string"
+      },
+      "TokenRead": {
+        "description": "Who a token is from and until when it is good.",
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "expires": {
+            "title": "Expires",
+            "type": "integer"
+          },
+          "swapped_before": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Swapped Before"
+          }
+        },
+        "required": [
+          "device_id",
+          "device_name",
+          "expires",
+          "swapped_before"
+        ],
+        "title": "TokenRead",
+        "type": "object"
       },
       "TunnelItem": {
         "description": "One tunnel as the settings screen sees it; no public key, which names the account.",
@@ -53252,9 +54314,95 @@
         ]
       }
     },
+    "/api/swap/receipts/{session_id}": {
+      "get": {
+        "description": "A swap that has ended, signed: what landed or was sent per group and how it was filed, where,\nhow long, how fast, and whether it was undone. What History opens for a swap.",
+        "operationId": "swap_receipt_api_swap_receipts__session_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwapReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Swap Receipt",
+        "tags": [
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/receipts/{session_id}/undo": {
+      "post": {
+        "description": "Undo this swap: every file it landed goes from the library, and from the disk since they\nsit in the folder the swap made; then the People, Sites and Usernames it made that nothing\nelse holds. Once: a second Undo finds it undone.",
+        "operationId": "undo_swap_api_swap_receipts__session_id__undo_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwapReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Undo Swap",
+        "tags": [
+          "swap"
+        ]
+      }
+    },
     "/api/swap/sessions/{session_id}": {
       "get": {
-        "description": "One session: its state, the code once there is one, the counts and the measured rate.",
+        "description": "One session: its state, the code once there is one, the counts and the measured rate, and\nwhile it runs, its manifest and the file crossing now.",
         "operationId": "swap_session_api_swap_sessions__session_id__get",
         "parameters": [
           {
@@ -53386,6 +54534,124 @@
           }
         },
         "summary": "End Swap",
+        "tags": [
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/sessions/{session_id}/groups/{key}/files": {
+      "get": {
+        "description": "A page of one group's files, in the offer's order: what a group row folds open to past\nthe first few the session view carries.",
+        "operationId": "group_files_api_swap_sessions__session_id__groups__key__files_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupFiles"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Group Files",
+        "tags": [
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/sessions/{session_id}/retry": {
+      "post": {
+        "description": "Try now: the guest of a swap a tunnel cut off dials again immediately.",
+        "operationId": "retry_swap_api_swap_sessions__session_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwapSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Swap",
         "tags": [
           "swap"
         ]
@@ -53534,6 +54800,48 @@
           }
         },
         "summary": "Start Swap",
+        "tags": [
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/token/read": {
+      "post": {
+        "description": "Who a pasted token is from and until when it is good, before Join: nothing is dialled, and\nthe address inside it is never said.",
+        "operationId": "read_token_api_swap_token_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReadToken"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Token",
         "tags": [
           "swap"
         ]

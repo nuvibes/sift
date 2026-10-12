@@ -10,14 +10,29 @@
 	import { Button, Empty, Panel } from '$lib/components/common';
 	import { copyText } from '$lib/shell/clipboard';
 	import { toasts } from '$lib/shell/toasts.svelte';
+	import { elapsedWords, goodForWords, joined } from './manifest';
 
 	interface Props {
 		token: string;
 		/** The sentence the server sends with the token, word for word. */
 		sentence: string;
+		/** When the token stops working. */
+		expires?: number | null;
+		/** When the swap started, for how long it has waited. */
+		since?: number | null;
+		/** A line of what is known about them, once anything is. */
+		known?: string | null;
 	}
 
-	let { token, sentence }: Props = $props();
+	let { token, sentence, expires = null, since = null, known = null }: Props = $props();
+
+	/* A clock of this screen's own for the two times; nothing is asked of the server. */
+	let now = $state(Date.now() / 1000);
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now() / 1000), 1000);
+		return () => clearInterval(timer);
+	});
+	const waited = $derived(joined(elapsedWords(since, now), goodForWords(expires, now)));
 
 	async function copy(): Promise<void> {
 		if (await copyText(token)) toasts.show('Token copied');
@@ -38,6 +53,8 @@
 	</div>
 	<p class="sentence">{sentence}</p>
 	<Empty busy scope="block">Waiting for them to join</Empty>
+	{#if waited}<p class="sentence">{waited}</p>{/if}
+	{#if known}<p class="sentence">{known}</p>{/if}
 </Panel>
 
 <style>
