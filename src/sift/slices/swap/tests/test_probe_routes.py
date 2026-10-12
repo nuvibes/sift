@@ -39,7 +39,7 @@ class _Direct:
         yield None
 
 
-async def test_a_probe_is_hosted_sent_to_read_and_stopped(world: tuple) -> None:  # noqa: F811
+async def test_a_probe_is_hosted_sent_to_read_and_stopped(world: tuple[Any, ...]) -> None:  # noqa: F811
     client, sessions, _hoster, _route = world
     hoster = _Loopback()
     sessions.probes.hoster, sessions.probes.egress = hoster, _Direct()
@@ -73,7 +73,7 @@ async def test_a_probe_is_hosted_sent_to_read_and_stopped(world: tuple) -> None:
     assert hoster.stopped == ["t1"]
 
 
-async def test_the_probes_refusals(world: tuple) -> None:  # noqa: F811
+async def test_the_probes_refusals(world: tuple[Any, ...]) -> None:  # noqa: F811
     client, sessions, _hoster, _route = world
     # The world's hosting names an address nobody reaches: every stream fails, and the send says so.
     hosted = (await client.post("/api/swap/tunnels/t1/probe", json={"seconds": 5})).json()
