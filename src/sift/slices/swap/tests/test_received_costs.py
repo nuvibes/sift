@@ -61,6 +61,7 @@ class _Side(_Receiving):
             ended=asyncio.Event(),
             settle=_Live.settle,
             context=None,
+            spawn=lambda work, name: asyncio.ensure_future(work),
         )
         self._start_receiving("folder")
         self.offer = Offer(

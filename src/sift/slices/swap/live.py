@@ -339,6 +339,10 @@ class _Incoming:
     recorded_at: float = 0.0
     #: One record of the file at a time, so an older list never lands after a newer one.
     recording: asyncio.Lock = field(default_factory=asyncio.Lock)
+    #: The record running beside the streams, waited out before a share's last word, and how many
+    #: chunks it was spawned to write down (so the next is not spawned for the same ones).
+    record: asyncio.Task[Any] | None = None
+    pending: int = 0
 
     def is_dropped(self) -> bool:
         """Read afresh after every wait: another stream can drop the file meanwhile."""

@@ -344,7 +344,7 @@ class _Receiving(_Figures):
                 await conn.send({"ack": frame.index, "file": index})
                 continue
             good = len(frame.data) == transfer.chunk_length(size, frame.index) and (
-                transfer.chunk_digest(frame.data) == frame.digest
+                await asyncio.to_thread(transfer.chunk_digest, frame.data) == frame.digest
             )
             if not good:
                 if await self._refused_again(conn, index, state, frame.index):
@@ -360,13 +360,22 @@ class _Receiving(_Figures):
                 state.missing.discard(frame.index)
                 self.moved(len(frame.data))
             worked()
-            await self._record(state, key)
             remaining.discard(frame.index)
             await conn.send({"ack": frame.index, "file": index})
+            self._record_beside(state, key)
         await self._conclude(conn, index, state)
 
+    def _record_beside(self, state: _Incoming, key: str) -> None:
+        """The record, when due, beside the stream: a sync and a database write never sit ahead of
+        the ack the sender's window waits for."""
+        if not self._due(state):
+            return
+        state.pending = state.count - len(state.missing)
+        state.recorded_at = self.live.owner.clock()
+        state.record = self.live.spawn(self._record(state, key, final=True), "record")
+
     def _due(self, state: _Incoming) -> bool:
-        unrecorded = state.count - len(state.missing) - state.recorded
+        unrecorded = state.count - len(state.missing) - max(state.recorded, state.pending)
         waited = self.live.owner.clock() - state.recorded_at
         return unrecorded >= RECORD_EVERY or (unrecorded > 0 and waited >= RECORD_SECONDS)
 
@@ -384,7 +393,9 @@ class _Receiving(_Figures):
             if state.is_dropped():
                 return
             await live.owner.store.record_done(live.id, key, done, live.owner.now())
-            state.recorded, state.recorded_at = len(done), live.owner.clock()
+            state.recorded = len(done)
+            if not final:
+                state.recorded_at = live.owner.clock()
 
     async def record_all(self) -> None:
         """Every file part-way through written down as it stands, for a later swap to resume. A
@@ -408,6 +419,10 @@ class _Receiving(_Figures):
     async def _conclude(self, conn: Conn, index: int, state: _Incoming) -> None:
         """A share's chunks are all in: the stream that finds the file whole checks it and says
         `file_done` (or turns it down); any other stream says its share is done."""
+        # A record of the file still in flight ends first: a drop it meets is this share's word too.
+        if state.record is not None and not state.record.done():
+            with contextlib.suppress(Exception):
+                await state.record
         if state.dropped:
             await conn.send({"skip": index})
             return
