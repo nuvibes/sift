@@ -746,7 +746,7 @@ def test_a_segment_that_cannot_be_produced_is_not_reported_as_missing(
     response = client.get(f"/api/assets/{asset_id}/hls/0{tuning.SEGMENT_SUFFIX}")
 
     assert response.status_code == 503
-    assert "could not be prepared" in response.json()["detail"]
+    assert "couldn't be prepared" in response.json()["detail"]
 
 
 # --- the range parser, at its edges -------------------------------------------------------------------

@@ -923,6 +923,29 @@ async def test_a_first_part_takes_each_level_once_and_keeps_that_the_rest_is_to_
     assert not await runner.whole_to_come() and not await runner.whole_due()
 
 
+async def test_a_whole_run_that_could_not_measure_is_not_asked_for_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The quick part kept, the whole run fails (too few large files): the whole is held, so the
+    quiet-moment look stops asking, and the person's own Run now still runs it."""
+    calls: list[bool] = []
+
+    async def measure(**kwargs: object) -> Measurement:
+        calls.append(bool(kwargs.get("first_part")))
+        if len(calls) == 1:
+            return a_measurement()
+        return Measurement(cores=8, failed="too few large files to seek into")
+
+    monkeypatch.setattr(selftest, "measure", measure)
+    store = await a_store(tmp_path)
+    runner = a_runner(tmp_path, store)
+
+    await runner.run(first_part=True)
+    assert await runner.whole_due()
+    await runner.run()
+    assert await runner.whole_to_come() and not await runner.whole_due()
+
+
 async def test_a_first_part_that_could_not_measure_keeps_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

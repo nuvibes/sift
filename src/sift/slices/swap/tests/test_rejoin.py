@@ -120,7 +120,8 @@ async def test_a_cut_says_which_path_cut_it_and_what_that_path_met(
             live.armed = True
             live.watchdog._last = -1e9
             watching = asyncio.create_task(live.watch())
-            await _until(lambda: live.cut_at)
+            # The cut's line, not its first mark: cancelling the watch mid-cut would cut the line.
+            await _until(lambda: any(one.get("why") == CUT_SILENT for one in written))
             watching.cancel()
 
         async with _guest_rig(tmp_path / "streams", run=False, sleep=_no_wait) as rig:

@@ -388,6 +388,11 @@ class SelfTestRunner:
             )
             if first_part or measurement.failed:
                 source = None
+                if not first_part and measurement.failed:
+                    # Asked again at every quiet moment it would fail the same way; the person's
+                    # own Run now still runs it.
+                    await self.hold_whole()
+                    log.info("performance.benchmark.whole_held", why=measurement.failed)
             else:
                 source = await self._measure_more(workspace, found, budget)
             advice = self.recommend(measurement, current=current, run=found)

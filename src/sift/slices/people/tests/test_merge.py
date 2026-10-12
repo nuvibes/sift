@@ -20,6 +20,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel.access import Repository
+from sift.kernel.config import get_settings
+from sift.kernel.content import ContentStore
+from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor
 from sift.slices.people.tests.conftest import (
@@ -412,7 +415,6 @@ def test_weighing_a_merge_naming_nobody_answers_with_nothing(client: TestClient)
     a different refusal for a different reason."""
     import asyncio
 
-    from sift.kernel.db import Database
     from sift.slices.people.merge import merge_many, weigh
 
     sign_in(client)
@@ -428,7 +430,7 @@ def test_weighing_a_merge_naming_nobody_answers_with_nothing(client: TestClient)
                 await weigh(database, losing=jane, keeping=NEVER_EXISTED),
                 await merge_many(
                     database,
-                    _access(client),
+                    _access(database),
                     losing=[jane],
                     keeping=NEVER_EXISTED,
                     actor=Actor.sift("stash"),
@@ -462,8 +464,6 @@ def _still_there(client: TestClient, person_id: str) -> bool:
     """
     import asyncio
 
-    from sift.kernel.db import Database
-
     path = db_path(client)
 
     async def run() -> bool:
@@ -478,9 +478,9 @@ def _still_there(client: TestClient, person_id: str) -> bool:
     return asyncio.run(run())
 
 
-def _access(client: TestClient) -> Repository:
-    """The application's own permission layer, which a merge forgets grants through."""
-    return client.app.state.access  # type: ignore[attr-defined,no-any-return]
+def _access(database: Database) -> Repository:
+    """A permission layer on the test's own handle: the application's belongs to another loop."""
+    return Repository(database, ContentStore(database, get_settings()))
 
 
 def test_weighing_a_set_that_names_only_the_survivor_answers_with_nothing(
@@ -494,7 +494,6 @@ def test_weighing_a_set_that_names_only_the_survivor_answers_with_nothing(
     """
     import asyncio
 
-    from sift.kernel.db import Database
     from sift.slices.people.merge import weigh_many
 
     sign_in(client)
@@ -519,7 +518,6 @@ def test_weighing_a_set_where_one_of_them_is_not_there_answers_with_nothing(
     left one of the four out is a confirm screen promising less than the press would do."""
     import asyncio
 
-    from sift.kernel.db import Database
     from sift.slices.people.merge import weigh_many
 
     sign_in(client)
@@ -552,7 +550,6 @@ def test_a_set_that_cannot_be_finished_is_rolled_back_whole(client: TestClient) 
     """
     import asyncio
 
-    from sift.kernel.db import Database
     from sift.slices.people import merge as merge_module
 
     sign_in(client)
@@ -575,7 +572,7 @@ def test_a_set_that_cannot_be_finished_is_rolled_back_whole(client: TestClient) 
         try:
             return await merge_module.merge_many(
                 database,
-                _access(client),
+                _access(database),
                 losing=[jane, doe],
                 keeping=keeper,
                 actor=Actor.sift("stash"),
@@ -585,7 +582,7 @@ def test_a_set_that_cannot_be_finished_is_rolled_back_whole(client: TestClient) 
 
     merge_module._one_into = refuse_the_second
     try:
-        with pytest.raises(RuntimeError):
+        with pytest.raises(merge_module._PartialMerge):
             asyncio.run(run())
     finally:
         merge_module._one_into = real
@@ -1134,7 +1131,6 @@ def test_the_blanks_and_what_each_brings_answer_nothing_for_somebody_who_is_not_
     answer rather than an empty one, which a sheet would draw as "nothing is filled in"."""
     import asyncio
 
-    from sift.kernel.db import Database
     from sift.slices.people.merge import _filled, _what_each_brings
 
     sign_in(client)

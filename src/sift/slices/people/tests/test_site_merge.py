@@ -23,6 +23,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sift.kernel.access import Repository
+from sift.kernel.config import get_settings
+from sift.kernel.content import ContentStore
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import Actor
@@ -522,9 +524,9 @@ def _direct(client: TestClient, work: Callable[[Database], Awaitable[object]]) -
     return asyncio.run(run())
 
 
-def _access(client: TestClient) -> Repository:
-    """The application's own permission layer, which a merge forgets grants through."""
-    return client.app.state.access  # type: ignore[attr-defined,no-any-return]
+def _access(database: Database) -> Repository:
+    """A permission layer on the test's own handle: the application's belongs to another loop."""
+    return Repository(database, ContentStore(database, get_settings()))
 
 
 def test_weighing_a_merge_naming_a_site_that_is_not_there_answers_with_nothing(
@@ -582,11 +584,11 @@ def test_merging_a_SET_that_cannot_be_merged_writes_nothing_and_says_so(
     async def two(database: Database) -> object:
         return (
             await merge_many(
-                database, _access(client), losing=[real], keeping=real, actor=Actor.sift("stash")
+                database, _access(database), losing=[real], keeping=real, actor=Actor.sift("stash")
             ),
             await merge_many(
                 database,
-                _access(client),
+                _access(database),
                 losing=[NEVER_EXISTED],
                 keeping=real,
                 actor=Actor.sift("stash"),
@@ -635,7 +637,7 @@ def test_a_set_that_cannot_be_finished_leaves_every_site_where_it_was(
         try:
             await site_merge.merge_many(
                 database,
-                _access(client),
+                _access(database),
                 losing=[first, second],
                 keeping=keeping,
                 actor=Actor.sift("stash"),

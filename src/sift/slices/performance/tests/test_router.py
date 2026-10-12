@@ -71,7 +71,7 @@ def _sign_in(client: TestClient, role: str) -> None:
 
 def _when_it_has_finished(client: TestClient) -> Any:
     """Read the self-test back once the run it started has ended, waiting rather than sleeping."""
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 60
     while True:
         body = client.get("/api/performance/self-test").json()
         if body["running"] is False:

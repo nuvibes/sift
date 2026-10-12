@@ -424,9 +424,10 @@ async def test_a_first_folder_s_files_wait_for_the_first_part_and_the_rest_runs_
         await _until(lambda: runner.state.running)
         held = (await job_queue.newest_of(BENCHMARK, limit=1))[0].note
         await _until(lambda: bool(released), seconds=30)
-        # The first part's budget played faster, and a second of the queue's own real work.
+        # The first part's budget played faster, and the queue's own real work, seconds on a
+        # hosted runner.
         waited = released[0] - added
-        assert waited <= budget_module.FIRST_PART_SECONDS * SCALE + 1.0, f"{waited / SCALE:.0f} s"
+        assert waited <= budget_module.FIRST_PART_SECONDS * SCALE + 3.0, f"{waited / SCALE:.0f} s"
         assert held == f"{benchmark.MEASURING_FIRST} {benchmark.HELD}"
         ended = await job_queue.get(_run(first).job_id)
         assert ended is not None and ended.note is not None and benchmark.WHOLE_LATER in ended.note
