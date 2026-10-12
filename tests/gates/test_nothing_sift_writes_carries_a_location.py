@@ -68,7 +68,7 @@ HANDED_OUT: dict[str, str] = {
         " and Copy image go through the door"
     ),
     "slices/player/router.py::rendition": _PILLOW_JPEG,
-    "slices/player/router.py::hls_segment": (
+    "slices/player/router_hls.py::hls_segment": (
         "segments of a transcode Sift made to play a file, written by ffmpeg with no place tag"
     ),
     "kernel/serving.py::serve_file": "the shared helper; each caller is listed here on its own",

@@ -18,7 +18,7 @@ router = APIRouter(tags=["swap"])
 
 LOCKED = "Your saved keys are locked. Enter your password at the top of this page, then try again."
 NO_SINK = "No probe is hosted on this tunnel."
-UNREACHED = "The other device's sink could not be reached through this tunnel."
+UNREACHED = "The other device's sink couldn't be reached through this tunnel."
 
 
 def _sessions(request: Request) -> SwapSessions:
@@ -95,7 +95,7 @@ async def send_probe(
         secret = bytes.fromhex(body.secret)
     except ValueError:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "The secret is not hex."
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "The secret isn't hex."
         ) from None
     try:
         sent = await sessions.probes.send(

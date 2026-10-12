@@ -90,7 +90,7 @@
 		"src/sift/slices/people/router_sites.py": 1,
 		"src/sift/slices/performance/router.py": 3,
 		"src/sift/slices/player/policy.py": 10,
-		"src/sift/slices/player/router.py": 2,
+		"src/sift/slices/player/router.py": 1,
 		"src/sift/slices/player/service.py": 2,
 		"src/sift/slices/search/filter_help.py": 1,
 		"src/sift/slices/search/router.py": 2,

@@ -107,7 +107,7 @@ async def hls_segment(
         # 503, not 404: a failed build must not look like a refusal.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="That part of the video could not be prepared. Try again.",
+            detail="That part of the video couldn't be prepared. Try again.",
         ) from None
 
     size = (await asyncio.to_thread(produced.path.stat)).st_size

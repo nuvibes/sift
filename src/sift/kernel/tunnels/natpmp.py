@@ -14,7 +14,6 @@ import struct
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sift.kernel.log import get_logger
 
@@ -182,7 +181,7 @@ class NatPmp:
                 "tunnel.port",
                 tunnel=self._tunnel,
                 renewal=renewing,
-                asked_at=_when(asked_at),
+                asked_at=round(asked_at, 3),
                 took_ms=_since(started),
                 outcome="refused",
                 hop=exc.hop,
@@ -199,7 +198,7 @@ class NatPmp:
             "tunnel.port",
             tunnel=self._tunnel,
             renewal=renewing,
-            asked_at=_when(asked_at),
+            asked_at=round(asked_at, 3),
             took_ms=_since(started),
             outcome="given",
             tries=trace.tries,
@@ -296,11 +295,6 @@ def _close(transport: asyncio.DatagramTransport, replies: _Replies, trace: _Trac
     replies.stray = 0
     trace.heard = replies.heard or trace.heard
     transport.close()
-
-
-def _when(epoch: float) -> str:
-    """A moment as the log's own timestamps write it, to the millisecond."""
-    return datetime.fromtimestamp(epoch, UTC).isoformat(timespec="milliseconds")
 
 
 def _since(started: float) -> int:

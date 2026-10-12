@@ -384,7 +384,7 @@ async def test_a_port_given_is_one_line_with_when_and_for_how_long(
     assert line["outcome"] == "given"
     assert line["lifetime"] == 60
     assert line["tries"] == 1
-    assert line["asked_at"].endswith("+00:00") and "T" in line["asked_at"]
+    assert isinstance(line["asked_at"], float) and line["asked_at"] > 0
     assert isinstance(line["took_ms"], int) and line["took_ms"] >= 0
     _never_where(logs)
 
