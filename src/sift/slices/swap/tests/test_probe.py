@@ -85,3 +85,78 @@ async def test_a_sink_closes_itself_when_its_seconds_are_up(
     await asyncio.sleep(1.3)
     assert sink.done and hoster.stopped == ["t3"]
     await probes.stop("t3")
+
+
+class _Refused(_Hoster):
+    async def host_on(
+        self, tunnel_id: str, *, target_port: int, master_key: bytes, **_: Any
+    ) -> Any:
+        raise RuntimeError("no mapping")
+
+
+class _Proxied(_Egress):
+    """A proxy address of a scheme the probe cannot dial through."""
+
+    @contextlib.asynccontextmanager
+    async def through(self, route: str | None) -> AsyncIterator[str | None]:
+        yield "socks5://127.0.0.1:1"
+
+
+@pytest.mark.asyncio
+async def test_a_sink_that_could_not_be_hosted_closes_its_listener() -> None:
+    probes = Probes(_Refused(), _Egress())
+    with pytest.raises(RuntimeError):
+        await probes.host("t4", b"k" * 32, seconds=2)
+    assert probes.reading("t4") is None
+
+
+@pytest.mark.asyncio
+async def test_a_sink_with_nothing_yet_has_no_rate_and_refuses_a_short_opening() -> None:
+    probes = Probes(_Hoster(), _Egress())
+    sink = await probes.host("t5", b"k" * 32, seconds=2)
+    try:
+        assert sink.rate_bps is None
+        _reader, writer = await asyncio.open_connection("127.0.0.1", sink.external_port)
+        writer.write(b"short")
+        writer.close()
+        await writer.wait_closed()
+        for _ in range(50):
+            if sink.refused:
+                break
+            await asyncio.sleep(0.02)
+        assert sink.refused == 1 and sink.connections == 0 and sink.received == 0
+    finally:
+        await probes.stop("t5")
+
+
+@pytest.mark.asyncio
+async def test_a_sink_that_is_done_stops_counting_a_sender_still_sending() -> None:
+    probes = Probes(_Hoster(), _Egress())
+    sink = await probes.host("t6", b"k" * 32, seconds=2)
+    _reader, writer = await asyncio.open_connection("127.0.0.1", sink.external_port)
+    try:
+        writer.write(sink.secret)
+        await writer.drain()
+        for _ in range(50):
+            if sink.connections:
+                break
+            await asyncio.sleep(0.02)
+        sink.done = True
+        writer.write(b"x" * 1024)
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        counted = sink.received
+        writer.write(b"y" * 1024)
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        assert sink.received == counted <= 1024
+    finally:
+        writer.close()
+        await probes.stop("t6")
+
+
+@pytest.mark.asyncio
+async def test_a_send_through_a_proxy_sift_cannot_use_fails_every_stream() -> None:
+    probes = Probes(_Hoster(), _Proxied())
+    sent = await probes.send("t7", "127.0.0.1", 1, bytes(SECRET_BYTES), 1, 3)
+    assert (sent.streams, sent.failed, sent.sent) == (3, 3, 0)

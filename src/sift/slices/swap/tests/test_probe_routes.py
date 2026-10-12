@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from sift.kernel.tunnels import TunnelError
 from sift.slices.auth import master_key
 from sift.slices.swap.tests.test_router import world  # noqa: F401 (the routes' world)
 
@@ -99,3 +100,40 @@ async def test_the_probes_refusals(world: tuple[Any, ...]) -> None:  # noqa: F81
     app.dependency_overrides[master_key] = lambda: None
     locked = await client.post("/api/swap/tunnels/t1/probe", json={"seconds": 5})
     assert locked.status_code == 409 and "locked" in locked.json()["detail"]
+
+
+class _Down:
+    """A tunnel that is not up: hosting on it and sending through it are both refused."""
+
+    async def host_on(self, tunnel_id: str, **_: Any) -> Any:
+        raise TunnelError("The tunnel isn't connected.")
+
+    async def stop_hosting(self, tunnel_id: str) -> None:
+        return None
+
+    @contextlib.asynccontextmanager
+    async def through(self, route: str | None) -> AsyncIterator[str | None]:
+        if route is not None:
+            raise TunnelError("The tunnel isn't connected.")
+        yield None
+
+
+async def test_a_reading_before_any_byte_and_a_tunnel_that_is_down(
+    world: tuple[Any, ...],  # noqa: F811
+) -> None:
+    client, sessions, _hoster, _route = world
+    sessions.probes.hoster, sessions.probes.egress = _Loopback(), _Direct()
+    assert (await client.post("/api/swap/tunnels/t2/probe", json={"seconds": 5})).status_code == 200
+    quiet = (await client.get("/api/swap/tunnels/t2/probe")).json()
+    assert quiet["received"] == 0 and quiet["seconds"] is None
+    await client.delete("/api/swap/tunnels/t2/probe")
+
+    down = _Down()
+    sessions.probes.hoster, sessions.probes.egress = down, down
+    hosted = await client.post("/api/swap/tunnels/t2/probe", json={"seconds": 5})
+    assert hosted.status_code == 409 and "connected" in hosted.json()["detail"]
+    sent = await client.post(
+        "/api/swap/tunnels/t2/probe/send",
+        json={"address": "127.0.0.1", "port": 1, "secret": "00" * 32, "seconds": 1, "streams": 1},
+    )
+    assert sent.status_code == 409 and "connected" in sent.json()["detail"]

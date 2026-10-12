@@ -24,6 +24,7 @@ from sift.slices.swap.tests.test_session import (
     _ADDRESS,
     _PORT,
     VIEWER,
+    _cut_row,
     _database,
     _device,
     _dropped,
@@ -172,9 +173,8 @@ async def test_a_control_connection_that_lies_is_lost_and_one_gone_away_is_cut_o
         control.close()
 
         # Gone away is a tunnel dropping, not a lie: cut off, and waiting to be joined again.
-        await _until(lambda: rig.live.cut_at)
-        cut = await rig.sessions.row(rig.id)
-        assert cut is not None and cut.live and cut.cut_off_at is not None
+        cut = await _cut_row(rig.sessions, rig.id)
+        assert cut.live
 
 
 @pytest.mark.integration

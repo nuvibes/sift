@@ -1303,6 +1303,20 @@ async def _dropped(conn: Conn) -> None:
         await conn.read(5)
 
 
+async def _cut_row(sessions: SwapSessions, session_id: str) -> SessionRow:
+    """The row once the cut is written: `cut` marks itself in memory first and writes the row after
+    closing the connections, so a read right after `cut_at` lands can be a step early."""
+    loop = asyncio.get_running_loop()
+    began = loop.time()
+    while True:
+        row = await sessions.row(session_id)
+        if row is not None and row.cut_off_at is not None:
+            return row
+        if loop.time() - began > 10:
+            raise AssertionError("the cut was never written")
+        await asyncio.sleep(0.02)
+
+
 async def _ended_row(sessions: SwapSessions, session_id: str) -> SessionRow:
     """The row once the session is over and forgotten."""
     loop = asyncio.get_running_loop()

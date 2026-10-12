@@ -29,17 +29,16 @@ from sift.slices.swap.session import (
     Taken,
     hello,
 )
-from sift.slices.swap.store import SessionRow
 from sift.slices.swap.tests.test_session import (
     _ADDRESS,
     _PORT,
     VIEWER,
     _bad_chunk,
+    _cut_row,
     _device,
     _dropped,
     _Egress,
     _guest_rig,
-    _GuestRig,
     _header,
     _needs_psk,
     _read_until,
@@ -50,20 +49,6 @@ from sift.slices.swap.tests.test_session import (
 )
 from sift.slices.swap.transfer import CHUNK_SIZE
 from sift.testing.logs import uncached_log
-
-
-async def _cut_row(rig: _GuestRig) -> SessionRow:
-    """The row once the cut is written. `cut` records the cut in memory first and writes the row
-    after closing the connections, so a read right after `cut_at` lands can be a step early."""
-    await _until(lambda: rig.live.cut_at)
-    row = await rig.sessions.row(rig.id)
-    began = asyncio.get_running_loop().time()
-    while row is None or row.cut_off_at is None:
-        if asyncio.get_running_loop().time() - began > 10.0:
-            raise AssertionError("the cut was never written")
-        await asyncio.sleep(0.02)
-        row = await rig.sessions.row(rig.id)
-    return row
 
 
 @pytest.mark.integration
@@ -168,7 +153,7 @@ async def test_a_host_that_refuses_at_the_code_ends_the_guest_and_one_gone_cuts_
         control.close()
 
         # Gone away is a tunnel dropping: cut off at the code, and dialling again.
-        cut = await _cut_row(rig)
+        cut = await _cut_row(rig.sessions, rig.id)
         assert (cut.state, cut.live) == (state, True)
 
 
@@ -531,7 +516,7 @@ async def test_streams_that_cannot_be_kept_up_cut_the_swap_off(
         dropper = asyncio.create_task(drop_every_stream())
         try:
             await rig.take(control)
-            row = await _cut_row(rig)
+            row = await _cut_row(rig.sessions, rig.id)
         finally:
             dropper.cancel()
         assert (row.state, row.live) == ("transferring", True)

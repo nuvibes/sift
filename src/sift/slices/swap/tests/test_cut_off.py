@@ -30,6 +30,7 @@ from sift.slices.swap.tests.test_session import (
     _HOST_SESSION,
     _MASTER,
     VIEWER,
+    _cut_row,
     _database,
     _device,
     _dropped,
@@ -86,10 +87,8 @@ async def test_rejoin_the_same_guest_carries_the_file_on_from_the_chunk_it_had(
         rig.pinger.cancel()
         control.close()
         stream.close()
-        await _until(lambda: rig.live.cut_at)
-        row = await rig.sessions.row(rig.id)
-        assert row is not None and (row.state, row.live) == ("transferring", True)
-        assert row.cut_off_at is not None
+        cut = await _cut_row(rig.sessions, rig.id)
+        assert (cut.state, cut.live) == ("transferring", True)
         facts = rig.sessions.facts(rig.id)
         assert facts is not None and facts.token, "the token is shown again, to be sent again"
 
@@ -194,10 +193,9 @@ async def test_rejoin_a_cut_off_guest_dials_again_says_its_answer_again_and_take
         assert rig.pinger is not None
         rig.pinger.cancel()
         control.close()
-        await _until(lambda: live.cut_at)
-        row = await rig.sessions.row(rig.id)
-        assert row is not None and (row.state, row.live) == ("transferring", True)
-        assert rig.context.notes[-1] == swap.CUT_OFF_NOTE
+        row = await _cut_row(rig.sessions, rig.id)
+        assert (row.state, row.live) == ("transferring", True)
+        await _until(lambda: rig.context.notes[-1:] == [swap.CUT_OFF_NOTE])
         await _until(lambda: all(task.done() for task in live.streams.values()), 3)
 
         # A Join with the same token is the same session, and dials immediately.
