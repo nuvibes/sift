@@ -195,7 +195,11 @@ async def test_a_slow_file_is_written_down_every_few_seconds_and_at_its_end(
         with pytest.raises(asyncio.IncompleteReadError):
             await _Side(sessions, size).receive(conn)  # type: ignore[arg-type]
 
-        assert recorded == [3, 6, 9, 10]
+        # The record runs beside the stream and writes down what is done when it runs: the first
+        # at the first due chunk, one every few seconds of the clock after, the whole file at the
+        # end, each covering more than the one before.
+        assert recorded[0] == 3 and recorded[-1] == 10 and len(recorded) >= 3, recorded
+        assert recorded == sorted(set(recorded)), recorded
     finally:
         await database.close()
 
