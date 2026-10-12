@@ -228,10 +228,16 @@ test('every address settings gives out lands on a row that is seen, or says why 
 			continue;
 		}
 		const ownRow = row(page, to.key ?? '');
+		/* The ring goes after RING_MS, which a slow scroll can outlast: the row rung is followed
+		   by its id, not by the ring on it. */
+		const litId = await page.evaluate(
+			() => document.querySelector('[data-sift-found]')?.id || null
+		);
+		const rungRow = litId ? row(page, litId).first() : lit;
 		if ((await ownRow.count()) > 0 && !(await ownRow.first().isVisible()))
 			unseen.push(`${address}: rung and not visible`);
 		else if (!(await lit.isVisible())) unseen.push(`${address}: rung and hidden`);
-		else if (!(await arrives(lit))) unseen.push(`${address}: rung off screen`);
+		else if (!(await arrives(rungRow))) unseen.push(`${address}: rung off screen`);
 	}
 	expect(walked.size).toBeGreaterThan(150);
 	expect(unseen).toEqual([]);

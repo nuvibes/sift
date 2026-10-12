@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -61,13 +61,23 @@ class _Side(_Receiving):
             ended=asyncio.Event(),
             settle=_Live.settle,
             context=None,
-            spawn=lambda work, name: asyncio.ensure_future(work),
+            spawn=self._spawn,
         )
+        self.spawned: list[asyncio.Task[Any]] = []
         self._start_receiving("folder")
         self.offer = Offer(
             files=[OfferedFile(key="a", size=size, identity="id-a", kind="video", title="clip a")]
         )
         self.wanted, self.wanted_set = [0], {0}
+
+    def _spawn(self, work: Awaitable[Any], name: str) -> asyncio.Task[Any]:
+        task = asyncio.ensure_future(work)
+        self.spawned.append(task)
+        return task
+
+    async def settled(self) -> None:
+        """What the stream left running beside it, the record in flight among it, finished."""
+        await asyncio.gather(*self.spawned, return_exceptions=True)
 
 
 def _frames(count: int, size: int, digest: str, data: bytes) -> list[Any]:
@@ -151,8 +161,11 @@ async def test_a_file_cut_part_way_resumes_from_its_last_record_and_no_further_b
         _empty_writes(monkeypatch)
         frames = _frames(100, size, digest, bytes(CHUNK_SIZE))
 
+        side = _Side(sessions, size)
         with pytest.raises(asyncio.IncompleteReadError):
-            await _Side(sessions, size).receive(_Conn(frames))  # type: ignore[arg-type]
+            await side.receive(_Conn(frames))  # type: ignore[arg-type]
+        # The record runs beside the stream: a cut ends the stream, not the write in flight.
+        await side.settled()
 
         kept = await sessions.store.manifest(_SESSION, "a")
         assert kept is not None and kept.done == tuple(range(transfer.RECORD_EVERY))

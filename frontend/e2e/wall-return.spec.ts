@@ -151,6 +151,11 @@ test("a wall's crumb brings back the page and the scroll, exactly as the browser
 	await openVisiblePerson(page);
 	await page.goBack();
 	await expect(page).toHaveURL(/\/people(\?|$)/);
+	/* The pager reads the front until the anchored page lands, which a loaded machine can hold
+	   past the settle's two looks. */
+	await expect
+		.poll(() => range(page), { message: 'Back did not return to the page that was left' })
+		.toBe(left);
 	const backRange = await settledRange(page);
 	const backTop = await settledTop(page);
 	expect(backRange, 'Back did not return to the page that was left').toBe(left);
@@ -164,6 +169,9 @@ test("a wall's crumb brings back the page and the scroll, exactly as the browser
 	await openVisiblePerson(page);
 	await pressCrumb(page, 'People');
 	await expect(page).toHaveURL(/\/people(\?|$)/);
+	await expect
+		.poll(() => range(page), { message: 'the crumb returned to a different page of the wall' })
+		.toBe(backRange);
 	const crumbRange = await settledRange(page);
 	const crumbTop = await settledTop(page);
 

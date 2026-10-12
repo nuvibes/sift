@@ -13,8 +13,6 @@ import dataclasses
 import io
 import random
 import time
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -50,8 +48,8 @@ from sift.testing.fixtures import create_user
 #: The Undo's measure: three hundred files, as the brief asks it to be proven on.
 LANDED = 300
 
-#: No one write block of the Undo may hold the writer longer than this.
-HELD_BUDGET_SECONDS = 0.25
+#: The most files one removal may take, so no one write block holds the writer for the whole set.
+FILES_PER_BLOCK = 50
 
 
 def _picture(number: int) -> bytes:
@@ -174,19 +172,14 @@ async def test_the_undo_takes_back_every_file_the_swap_landed_and_nothing_else(
     before = await _count(temp_db, "SELECT COUNT(*) AS n FROM assets")
     assert before == LANDED + 2
 
-    held: list[float] = []
-    real = temp_db.write
+    taken: list[int] = []
+    real = remover.remove_many
 
-    @asynccontextmanager
-    async def timed() -> AsyncIterator[Any]:
-        began = time.monotonic()
-        try:
-            async with real() as connection:
-                yield connection
-        finally:
-            held.append(time.monotonic() - began)
+    async def counted(asset_ids: Any, **kwargs: Any) -> Any:
+        taken.append(len(asset_ids))
+        return await real(asset_ids, **kwargs)
 
-    monkeypatch.setattr(temp_db, "write", timed)
+    monkeypatch.setattr(remover, "remove_many", counted)
     began = time.monotonic()
     undone = await receipt.undo(
         row, database=temp_db, library=library_store, access=access, remover=remover, actor=admin
@@ -197,7 +190,8 @@ async def test_the_undo_takes_back_every_file_the_swap_landed_and_nothing_else(
     assert took < 30
 
     assert (undone.files, undone.people, undone.sites, undone.left) == (LANDED + 1, 1, 1, 1)
-    assert max(held) < HELD_BUDGET_SECONDS
+    # Counted, not timed: a hosted runner's clock says how loaded it is, not how long a block is.
+    assert max(taken) <= FILES_PER_BLOCK and len(taken) >= LANDED // FILES_PER_BLOCK
     # From the library: every file the swap brought, and the copy it laid beside the one here.
     assert await _count(temp_db, "SELECT COUNT(*) AS n FROM assets") == 2
     assert await content_store.get(already.asset.id) is not None
