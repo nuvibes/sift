@@ -32,6 +32,7 @@
 	import {
 		answerCode,
 		cutOffWords,
+		gaveUp,
 		endSwap,
 		hostJoined,
 		isLive,
@@ -296,7 +297,7 @@
 					     host shows the token again, since a port the provider moved remakes it. -->
 					<Panel label="The {noun}">
 						<p class="ended">{cutOffWords(session)}</p>
-						{#if rejoinWords(session.rejoin_until, now, session.role)}
+						{#if !gaveUp(session) && rejoinWords(session.rejoin_until, now, session.role)}
 							<p class="lands">{rejoinWords(session.rejoin_until, now, session.role)}</p>
 						{/if}
 						{#if session.kept_files}
@@ -317,6 +318,13 @@
 							{#if session.role === 'guest' && retryIn !== null}
 								<span class="lands" aria-live="polite">{retryWords(retryIn)}</span>
 								<Button {busy} onclick={() => void retry()}>Try again now</Button>
+							{:else if gaveUp(session)}
+								<Button {busy} onclick={() => void retry()}>Try again now</Button>
+								<Button
+									tone="primary"
+									onclick={() => open({ door: session?.two_way ? 'both-join' : 'join' })}
+									>Paste a new token</Button
+								>
 							{/if}
 							<Button tone="quiet" {busy} onclick={() => void end()}>End the {noun}</Button>
 						</div>

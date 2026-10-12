@@ -35,8 +35,14 @@ function guestReceipt(over: Partial<Receipt> = {}): Receipt {
 		back_files: 0,
 		back_bytes: 0,
 		rate: 23_600_000,
+		back_rate: null,
+		moving: null,
+		back_moving: null,
+		waited: null,
 		tunnel: 'NY-711',
 		cut_offs: 1,
+		cut_seconds: 0,
+		not_kept: 0,
 		folder: { id: 'folder-9', path: 'Swaps/Swap-825HYGXC', own: true },
 		groups: [
 			{
@@ -164,7 +170,15 @@ describe('the guest card', () => {
 	it('after the Undo, says what was removed and offers it no more', () => {
 		const card = draw(SwapReceiptCard, {
 			receipt: guestReceipt({
-				undo: { at: 1_790_002_000, files: 1065, from_disk: true, people: 1, sites: 0 },
+				undo: {
+					at: 1_790_002_000,
+					files: 1065,
+					from_disk: true,
+					people: 1,
+					sites: 0,
+					in_use: 0,
+					kept: 0
+				},
 				can_undo: false
 			}),
 			onundo: vi.fn(),
@@ -181,6 +195,100 @@ describe('the guest card', () => {
 			'Undone',
 			'Undone'
 		]);
+	});
+});
+
+describe('the numbers agree with each other', () => {
+	it('counts the time from the first byte and says the wait at the code apart', () => {
+		// 42 files, 543 MB, moving 45 s after three minutes at the code.
+		const card = draw(SwapReceiptCard, {
+			receipt: guestReceipt({
+				files: 42,
+				bytes: 543_000_000,
+				seconds: 420,
+				moving: 45,
+				waited: 180,
+				rate: 12_066_666.7,
+				cut_offs: 0
+			})
+		});
+		expect(said(card.querySelector('.context')!)).toBe('files landed, 543 MB, in under a minute');
+		expect(said(card)).toContain('average 12 MB/s');
+		expect(said(card)).toContain('Joined 3 min before the first file.');
+	});
+
+	it('a host started before the first file says so, and a short wait says nothing', () => {
+		const host = draw(SwapReceiptCard, {
+			receipt: guestReceipt({ role: 'host', folder: null, can_undo: false, waited: 300 })
+		});
+		expect(said(host)).toContain('Started 5 min before the first file.');
+		unmount(shown!);
+		shown = undefined;
+		const quick = draw(SwapReceiptCard, { receipt: guestReceipt({ waited: 5 }) });
+		expect(said(quick)).not.toContain('before the first file');
+	});
+
+	it('a run cut off at its end says how long it sat cut off beside the count', () => {
+		const card = draw(SwapReceiptCard, {
+			receipt: guestReceipt({ moving: 420, cut_offs: 1, cut_seconds: 720 })
+		});
+		expect(said(card.querySelector('.context')!)).toBe('files landed, 30 GB, in 7 min');
+		expect(said(card)).toContain('one cut-off (12 min)');
+		unmount(shown!);
+		shown = undefined;
+		const many = draw(SwapReceiptCard, { receipt: guestReceipt({ cut_offs: 13, cut_seconds: 9 }) });
+		expect(said(many)).toContain('13 cut-offs');
+		expect(said(many)).not.toContain('13 cut-offs (');
+	});
+
+	it('an exchange gives the other way its own average and says the files it did not keep', () => {
+		const card = draw(SwapReceiptCard, {
+			receipt: guestReceipt({
+				two_way: true,
+				reason: 'ended by you',
+				files: 13,
+				bytes: 60_000_000,
+				moving: 60,
+				rate: 1_000_000,
+				back_files: 971,
+				back_bytes: 8_700_000_000,
+				back_moving: 540,
+				back_rate: 16_100_000,
+				not_kept: 976,
+				skipped: [],
+				refused: 0,
+				held: 0
+			})
+		});
+		expect(said(card.querySelector('.context')!)).toBe('files landed, 60 MB, in 1 min');
+		expect(said(card)).toContain('And 971 files sent the other way, 8.7 GB, average 16 MB/s.');
+		expect(said(card)).toContain('average 1.0 MB/s');
+		expect(said(card)).toContain(
+			'Not taken 976 files received and not kept: it ended before they were added'
+		);
+	});
+
+	it('after an Undo, says what it kept and why, and keeps the Undo for files in use', () => {
+		const card = draw(SwapReceiptCard, {
+			receipt: guestReceipt({
+				files: 42,
+				undo: {
+					at: 1_790_002_000,
+					files: 30,
+					from_disk: true,
+					people: 0,
+					sites: 0,
+					in_use: 11,
+					kept: 1
+				},
+				can_undo: true
+			}),
+			onundo: vi.fn()
+		});
+		expect(said(card)).toContain(
+			'Undone: 30 files removed from the library and deleted from disk. 1 kept: already in the library. 11 still in use: Undo again later.'
+		);
+		expect(button(card, 'Undo this swap')).toBeTruthy();
 	});
 });
 
@@ -242,7 +350,15 @@ describe('the receipt read by its session', () => {
 		api.readReceipt.mockResolvedValue(guestReceipt());
 		api.undoSwap.mockResolvedValue(
 			guestReceipt({
-				undo: { at: 1_790_002_000, files: 1065, from_disk: true, people: 0, sites: 0 },
+				undo: {
+					at: 1_790_002_000,
+					files: 1065,
+					from_disk: true,
+					people: 0,
+					sites: 0,
+					in_use: 0,
+					kept: 0
+				},
 				can_undo: false
 			})
 		);

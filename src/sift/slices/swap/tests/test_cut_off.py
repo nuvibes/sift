@@ -23,6 +23,7 @@ from sift.slices import swap as swap_slice
 from sift.slices.swap import session as swap
 from sift.slices.swap import token as token_module
 from sift.slices.swap.frames import ProtocolError
+from sift.slices.swap.handshake import CUT_SILENT
 from sift.slices.swap.session import Chunk, Conn, SwapRefused, hello, read_hello
 from sift.slices.swap.store import SessionStore
 from sift.slices.swap.tests.test_session import (
@@ -795,16 +796,16 @@ async def test_cut_off_is_written_once_waits_out_its_token_once_and_never_after_
         def waiting_out() -> int:
             return sum(1 for task in live.tasks if task.get_name().startswith("swap.expiry."))
 
-        await live.cut()
-        await live.cut()
+        await live.cut(CUT_SILENT)
+        await live.cut(CUT_SILENT)
         assert len(written) == 1, "a session already cut off is not cut off again"
         await live.resume(_Said())  # type: ignore[arg-type]
-        await live.cut()
+        await live.cut(CUT_SILENT)
         assert len(written) == 2
         assert waiting_out() == 1, "the token is waited out once, however often it is cut"
 
         await rig.sessions.end(rig.id)
-        await live.cut()
+        await live.cut(CUT_SILENT)
         assert len(written) == 2, "an ended session is never cut off after"
         row = await rig.sessions.row(rig.id)
         assert row is not None and (row.state, row.live) == ("ended", False)

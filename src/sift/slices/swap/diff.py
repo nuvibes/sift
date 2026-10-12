@@ -19,14 +19,18 @@ within the duplicate rule this device is set to, and whose running time is withi
   offer; two different generations are two different numbers for one picture, so a file whose
   generation does not match anything held is wanted. Sending a duplicate costs time; skipping a new
   file would cost the file.
-- **The exact keys confirm and never decide.** When the file the fingerprint found also agrees on
-  `identity`, or on `oshash` and size, the screen says "the same file" rather than "a copy that
-  looks the same". An exact key that agrees with a file the fingerprint did NOT find decides
-  nothing: that is the rule as the design states it (the phash decides, the exact keys confirm).
+- **An equal identity decides "the same file" on its own**, fingerprinted or not: equal bytes
+  are the same file, and a file waiting for its first read has no fingerprint yet. The offered
+  identity is matched against each held file's own and against the identity a file landed by a
+  swap was offered under (`swap_landed_as`), because the strip on both sides changes the bytes:
+  the original offered again has another identity from the copy it landed as. The fingerprint
+  still decides every other match, since a remux or a re-encode leaves no exact key in common.
+  `oshash` with the size reads only a part of the file, so it confirms a fingerprint's match
+  ("the same file" rather than "a copy that looks the same") and decides nothing alone.
 
 What this does NOT cover: a GIF. A GIF's fingerprint is thirty frames judged by how many agree,
 and that judgement lives in the dedup feature's matcher; until the matcher is readable from here
-a GIF is always wanted.
+a GIF is wanted unless its identity is held.
 
 The comparison is bounded the way the queue's scan is: every fingerprint is split into four
 blocks, and a pair within N bits must have a block within N // 4 bits, so the held files are
@@ -73,8 +77,10 @@ from sift.kernel.access.catalog import (
     files_kept_from_swaps,
     people_named,
 )
+from sift.kernel.content.duplicates import DuplicateReads
 from sift.kernel.content.perceptual import distance
-from sift.kernel.db import Database
+from sift.kernel.db import Database, in_clause
+from sift.kernel.paging import MAX_PAGE_SIZE
 from sift.slices.swap import store
 from sift.slices.swap.models import (
     Diff,
@@ -277,9 +283,7 @@ def _gap_allows(offered: OfferedFile, held: Held, gap: int | None) -> bool:
 
 
 def _same_bytes(offered: OfferedFile, held: Held) -> bool:
-    """Whether an exact key agrees: the identity, or the `oshash` with the size."""
-    if offered.identity == held.identity:
-        return True
+    """Whether the `oshash` with the size agrees; an equal identity was decided before this."""
     return (
         offered.oshash is not None
         and offered.oshash == held.oshash
@@ -288,9 +292,14 @@ def _same_bytes(offered: OfferedFile, held: Held) -> bool:
     )
 
 
-def wanted(offer: Offer, held: Iterable[Held], rule: NearRule) -> Assessment:
-    """Which offered files the guest lacks, and for the rest what it holds and why."""
+def wanted(
+    offer: Offer, held: Iterable[Held], rule: NearRule, *, exact: Mapping[str, str] | None = None
+) -> Assessment:
+    """Which offered files the guest lacks, and for the rest what it holds and why. `exact` is
+    the file here for an identity, fingerprinted or not (`held_exactly`)."""
     holdings = list(held)
+    same_file = {one.identity: one.asset_id for one in holdings}
+    same_file.update(exact or {})
     indexes = {
         method: _Index(
             (one for one in holdings if _METHOD.get(one.media_type) == method),
@@ -302,6 +311,9 @@ def wanted(offer: Offer, held: Iterable[Held], rule: NearRule) -> Assessment:
     keys: list[str] = []
     already: dict[str, Already] = {}
     for offered in offer.files:
+        if (here := same_file.get(offered.identity)) is not None:
+            already[offered.key] = Already(reason="same", asset_id=here)
+            continue
         method = _METHOD.get(offered.kind)
         fingerprint = offered.video_phash if method == "video_phash" else offered.phash
         best: tuple[bool, int, str] | None = None
@@ -322,6 +334,22 @@ def wanted(offer: Offer, held: Iterable[Held], rule: NearRule) -> Assessment:
         else:
             already[offered.key] = Already(reason="near" if best[0] else "same", asset_id=best[2])
     return Assessment(wanted=tuple(keys), already=already)
+
+
+#: Which offered identities a swap landed here, and as which file.
+_LANDED_AS = "SELECT identity, asset_id FROM swap_landed_as WHERE identity IN (?*)"
+
+
+async def held_exactly(database: Database, identities: Sequence[str]) -> dict[str, str]:
+    """The file here for each offered identity: its own, else the one a swap landed it as."""
+    wanted_ids = list(dict.fromkeys(identities))
+    found: dict[str, str] = {}
+    for start in range(0, len(wanted_ids), MAX_PAGE_SIZE):
+        sql, params = in_clause(_LANDED_AS, wanted_ids[start : start + MAX_PAGE_SIZE])
+        for row in await database.fetch_all(sql, params):
+            found[str(row["identity"])] = str(row["asset_id"])
+    found.update(await DuplicateReads(database).held_by_identity(wanted_ids))
+    return found
 
 
 @dataclass(frozen=True, slots=True)
@@ -510,7 +538,14 @@ async def assess(
     function that makes the diff frame from the answer. Nothing leaves this device until that
     function is called, and then only the wanted keys (see the module docstring)."""
     kept = await files_kept_from_swaps(database)
-    judged = wanted(offer, (one for one in held if one.asset_id not in kept), rule)
+    exact = {
+        identity: asset_id
+        for identity, asset_id in (
+            await held_exactly(database, [one.identity for one in offer.files])
+        ).items()
+        if asset_id not in kept
+    }
+    judged = wanted(offer, (one for one in held if one.asset_id not in kept), rule, exact=exact)
     matches = await match_people(database, access, viewer, offer.people)
 
     def reply(choices: Choices) -> Diff:

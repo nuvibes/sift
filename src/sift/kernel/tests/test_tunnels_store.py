@@ -544,13 +544,20 @@ class _Provider:
         self.answers = list(answers) or [Mapped(_PUBLIC, 61000, 60)]
         self.asked: list[tuple[int, int]] = []
         self.relay_ports: list[int] = []
+        self.named: list[str] = []
 
-    def __call__(self, port: int) -> _Provider:
+    def __call__(self, port: int, *, tunnel: str = "") -> _Provider:
         self.relay_ports.append(port)
+        self.named.append(tunnel)
         return self
 
     async def map_tcp(
-        self, internal_port: int, external_requested: int = 0, lifetime: int = 60
+        self,
+        internal_port: int,
+        external_requested: int = 0,
+        lifetime: int = 60,
+        *,
+        renewing: bool = False,
     ) -> Mapped:
         self.asked.append((internal_port, external_requested))
         answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
@@ -631,6 +638,7 @@ async def test_hosting_restarts_the_tunnel_with_a_listener_and_hands_back_what_t
     )
     # Asked through the relay port the listener opened, for its inside port and no public port.
     assert provider.relay_ports == [listener.natpmp_port]
+    assert provider.named == ["Sweden"], "the port's log line would not name its tunnel"
     assert provider.asked == [(listener.internal_port, 0)]
     assert await store.can_host(running) is True
     assert running in store.processes
@@ -647,13 +655,20 @@ async def test_a_tunnel_whose_provider_gives_no_port_says_so_and_is_put_back(
 ) -> None:
     starts = _Starts(monkeypatch)
     monkeypatch.setattr(
-        store_module, "NatPmp", _Provider(NatPmpError("no answer from the provider"))
+        store_module,
+        "NatPmp",
+        _Provider(NatPmpError("no answer from the provider", kind="relay_closed", hop="proxy")),
     )
 
-    with pytest.raises(TunnelError) as refused:
+    with capture_logs() as logs, pytest.raises(TunnelError) as refused:
         await store.host_on(running, target_port=53002, master_key=master_key)
 
     assert str(refused.value) == CANNOT_HOST
+    # The same words on screen; the line beside them says which hop the question died at.
+    said = [entry for entry in logs if entry["event"] == "tunnel.hosting_refused"]
+    assert [(entry["tunnel"], entry["hop"], entry["kind"]) for entry in said] == [
+        ("Sweden", "proxy", "relay_closed")
+    ]
     assert CANNOT_HOST == (
         "This tunnel's provider didn't give it a port. A swap needs a tunnel made on a P2P VPN "
         "server with port forwarding on."
@@ -692,11 +707,13 @@ async def test_a_tunnel_that_will_not_start_to_host_is_not_measured_and_is_put_b
     starts.fail_with_listener = True
     monkeypatch.setattr(store_module, "NatPmp", _Provider())
 
-    with pytest.raises(TunnelError, match="did not connect"):
+    with capture_logs() as logs, pytest.raises(TunnelError, match="did not connect"):
         await store.host_on(running, target_port=53002, master_key=master_key)
 
     assert await store.can_host(running) is None
     assert starts.listeners[-1] is None and running in store.processes
+    said = [entry for entry in logs if entry["event"] == "tunnel.hosting_refused"]
+    assert [(entry["hop"], entry["kind"]) for entry in said] == [("client", "start")]
 
 
 async def test_a_tunnel_that_will_not_come_back_plain_after_hosting_says_why_and_the_stop_ends(
@@ -753,8 +770,12 @@ async def test_a_failed_renewal_ends_the_hosting_and_tells_the_session(
     async def on_lost(error: TunnelError) -> None:
         lost.append(error)
 
-    await store.host_on(running, target_port=53002, master_key=master_key, on_lost=on_lost)
-    await _until(lambda: store.hosting(running) is None and len(starts.listeners) == 2)
+    with capture_logs() as logs:
+        await store.host_on(running, target_port=53002, master_key=master_key, on_lost=on_lost)
+        await _until(lambda: store.hosting(running) is None and len(starts.listeners) == 2)
+
+    (gone,) = [entry for entry in logs if entry["event"] == "tunnel.hosting_lost"]
+    assert (gone["hop"], gone["kind"]) == ("gateway", "no_answer")
 
     assert [str(error) for error in lost] == [
         "The tunnel Sweden lost the port its provider gave it, so the swap was cut off."

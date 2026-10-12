@@ -23,7 +23,7 @@ from sift.kernel.content import ContentStore, FolderRow, Root
 from sift.kernel.db import Database
 from sift.kernel.destination import resolve_destination
 from sift.kernel.ingress import IngressRejected, NoDestination, Origin
-from sift.kernel.jobs import JobContext, JobQueue
+from sift.kernel.jobs import DEFAULT_PRIORITY, JobContext, JobQueue
 from sift.kernel.ledger import Actor
 from sift.slices.capture.pipeline import (
     ImportOutcome,
@@ -117,6 +117,36 @@ async def test_the_location_row_describes_the_copy_so_the_first_rescan_does_not_
     copied = Path(root.abs_path) / location.rel_path
     assert location.mtime == int(copied.stat().st_mtime)
     assert location.mtime != int(long_ago), "the row is about the copy, not the staged source"
+
+
+async def test_the_files_read_is_queued_at_the_urgency_the_caller_asks(
+    context_for: Context,
+    settings: Settings,
+    tmp_path: Path,
+    reindexer: RecordingReindexer,
+    default_folder: str,
+) -> None:
+    """A caller whose file somebody is waiting on puts its read ahead of the queue; left out, the
+    read waits its turn at the ordinary urgency."""
+    urgencies: list[list[int]] = []
+    for name, asked, source in (
+        ("ahead.mp4", 7, "testsrc2=size=64x64:rate=5"),
+        ("plain.mp4", None, "testsrc=size=64x64:rate=5"),
+    ):
+        staged = draw(tmp_path / "staging" / name, source, VIDEO_SECONDS)
+        ctx = await context_for("import", {"staging_id": name})
+        extra = {} if asked is None else {"probe_priority": asked}
+        await import_file(
+            path=staged,
+            origin=Origin.DROP,
+            dest_folder_id=default_folder,
+            ctx=ctx,
+            settings=settings,
+            reindexer=reindexer,
+            **extra,
+        )
+        urgencies.append([job.priority for job in await ctx.queue.children(ctx.job.id)])
+    assert urgencies == [[7], [DEFAULT_PRIORITY]]
 
 
 async def _twice(

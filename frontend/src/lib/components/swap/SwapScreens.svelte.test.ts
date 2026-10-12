@@ -401,7 +401,9 @@ describe('the progress', () => {
 					wanted_bytes: 6_000_000_000,
 					rate_bps: 80_000_000,
 					moving: true,
-					received_files: null
+					received_files: null,
+					streams: 4,
+					done: false
 				},
 				receiving: {
 					offered_files: 9,
@@ -411,7 +413,9 @@ describe('the progress', () => {
 					wanted_bytes: 0,
 					rate_bps: null,
 					moving: false,
-					received_files: null
+					received_files: null,
+					streams: null,
+					done: false
 				}
 			}),
 			onend: () => {}
@@ -426,6 +430,48 @@ describe('the progress', () => {
 		// 3 GB left at 80 Mbit/s, the one direction moving: five minutes, as every estimate says it.
 		expect(text).toContain('A few minutes left');
 		expect(text).not.toMatch(ADDRESS);
+	});
+
+	it('both ways, says each direction its own rate, and Done with the total once it has crossed', () => {
+		const where = draw(SwapProgress, {
+			session: session({
+				state: 'transferring',
+				two_way: true,
+				answered: true,
+				rate_bps: 139_000_000,
+				streams: 14,
+				sending: {
+					offered_files: 3261,
+					wanted_files: 3261,
+					files: 900,
+					bytes: 3_390_000_000,
+					wanted_bytes: 26_000_000_000,
+					rate_bps: 139_000_000,
+					moving: true,
+					received_files: null,
+					streams: 14,
+					done: false
+				},
+				receiving: {
+					offered_files: 13,
+					wanted_files: 13,
+					files: 13,
+					bytes: 60_000_000,
+					wanted_bytes: 60_000_000,
+					rate_bps: 8_024_820,
+					moving: true,
+					received_files: 13,
+					streams: 0,
+					done: true
+				}
+			}),
+			onend: () => {}
+		});
+		const text = (where.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).toContain('17 MB/s on 14 streams');
+		expect(text).toContain('60 MB Done');
+		// The finished direction's last rate is never drawn.
+		expect(text).not.toContain('1.0 MB/s');
 	});
 
 	it("counts files and bytes and says the session's own estimate", () => {

@@ -623,6 +623,10 @@ This reference lists every route Sift answers, grouped by what it's about. The f
 - `POST /api/swap/start`: Start Swap
 - `POST /api/swap/token/read`: Read Token
 - `GET /api/swap/tunnels`: Swap Tunnels
+- `GET /api/swap/tunnels/{tunnel_id}/probe`: Read Probe
+- `POST /api/swap/tunnels/{tunnel_id}/probe`: Host Probe
+- `DELETE /api/swap/tunnels/{tunnel_id}/probe`: Stop Probe
+- `POST /api/swap/tunnels/{tunnel_id}/probe/send`: Send Probe
 - `POST /api/swap/weigh`: Weigh Picks
 
 ## Tags

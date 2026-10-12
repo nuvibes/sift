@@ -22,6 +22,7 @@ vi.mock('$lib/api/client', async (real) => ({
 import {
 	canHostWords,
 	cutOffWords,
+	gaveUp,
 	endedWords,
 	joinSwap,
 	inFours,
@@ -212,10 +213,31 @@ describe('a swap cut off by a tunnel', () => {
 	it('says the connection was lost and how long the same token joins it again', () => {
 		const at = () => 'Oct 1, 2026, 3:04 AM';
 		expect(cutOffWords({ role: 'host', rejoin_until: 1790000000 }, at)).toBe(
-			'The connection to them was lost. They can rejoin with the same token until Oct 1, 2026, 3:04 AM.'
+			'The connection to them was lost. Their Sift keeps trying to rejoin until Oct 1, 2026, 3:04 AM. If it asks for a new token, send the one below.'
 		);
-		expect(cutOffWords({ role: 'guest', rejoin_until: 1790000000 }, at)).toBe(
+		const trying = {
+			role: 'guest',
+			state: 'cut_off',
+			rejoin_until: 1790000000,
+			retry_at: 5
+		} as const;
+		expect(cutOffWords(trying, at)).toBe(
 			'The connection to them was lost. Sift keeps trying to reach them until Oct 1, 2026, 3:04 AM.'
+		);
+		expect(gaveUp(trying)).toBe(false);
+	});
+
+	it('asks a guest that stopped dialling for the token the host shows now', () => {
+		const stopped = {
+			role: 'guest',
+			state: 'cut_off',
+			rejoin_until: 1790000000,
+			retry_at: null
+		} as const;
+		expect(gaveUp(stopped)).toBe(true);
+		expect(gaveUp({ ...stopped, role: 'host' })).toBe(false);
+		expect(cutOffWords(stopped)).toBe(
+			"The connection to them was lost, and Sift couldn't get through again. Ask for the token their screen shows now, then paste it here."
 		);
 	});
 });
@@ -254,7 +276,9 @@ describe('a swap that sends and receives', () => {
 			wanted_bytes: null,
 			rate_bps: null,
 			moving: false,
-			received_files: null
+			received_files: null,
+			streams: null,
+			done: false
 		};
 		const ended = session({
 			state: 'done',
@@ -282,7 +306,9 @@ describe('a swap that sends and receives', () => {
 			wanted_files: 1,
 			files: 0,
 			moving: true,
-			received_files: null
+			received_files: null,
+			streams: null,
+			done: false
 		};
 		const both = {
 			sending: { ...fast, bytes: 0, wanted_bytes: 600_000_000, rate_bps: 80_000_000 },
@@ -295,6 +321,22 @@ describe('a swap that sends and receives', () => {
 			NOT_ENOUGH_TO_SAY
 		);
 		expect(timeLeftBothWays({ sending: null, receiving: null })).toBe(NOT_ENOUGH_TO_SAY);
+	});
+
+	it('leaves a finished direction out of the estimate', () => {
+		const slow = { offered_files: 1, wanted_files: 1, files: 1, moving: true, bytes: 0 };
+		const sending = {
+			...slow,
+			received_files: null,
+			streams: null,
+			done: false,
+			wanted_bytes: 600_000_000,
+			rate_bps: 80_000_000
+		};
+		const finished = { ...sending, done: true, wanted_bytes: 60_000_000, rate_bps: null };
+		expect(timeLeftBothWays({ sending, receiving: finished })).toBe(
+			timeLeftBothWays({ sending, receiving: null })
+		);
 	});
 });
 

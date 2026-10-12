@@ -25,12 +25,14 @@ from sift.slices.swap.frames import Chunk as Chunk
 from sift.slices.swap.frames import Conn as Conn
 from sift.slices.swap.frames import ProtocolError as ProtocolError
 from sift.slices.swap.handshake import (
+    CUT_STREAMS_LOST,
     DISK_FULL,
     LOST,
     REASON_DONE,
     REDIAL_LIMIT,
     REDIAL_PAUSE_FIRST,
     REDIAL_PAUSE_MOST,
+    REJOIN_DIALS,
     USED,
     WRONG_DEVICE,
     code_of,
@@ -82,6 +84,10 @@ class GuestSession(_Receiving, _Live):
         self.back_streams: dict[int, asyncio.Task[Any]] = {}
         #: Set by a Join with this session's token while it is cut off: dial again now.
         self.nudged = asyncio.Event()
+        #: Whether joining turned this side's tunnel on, to be turned off again at the end, and
+        #: whether the drive has started (it holds the tunnel, so it turns it off once let go).
+        self.switched_on = False
+        self._drove = False
 
     def sending_half(self) -> _BackSending | None:
         return self.other_way if isinstance(self.other_way, _BackSending) else None
@@ -114,7 +120,8 @@ class GuestSession(_Receiving, _Live):
         return self.token.expires
 
     def try_now(self) -> bool:
-        """Try now: dial again immediately, while cut off. False when it is not cut off."""
+        """Try now: dial again immediately, while cut off, given up included. False when it is
+        not cut off."""
         if self.cut_at is None or self.ended.is_set():
             return False
         self.nudged.set()
@@ -134,9 +141,15 @@ class GuestSession(_Receiving, _Live):
         self.spawn(self.dial_again(), "redial")
 
     async def dial_again(self) -> None:
-        """Dial the host again every `RETRY_SECONDS`, or immediately on a Join, while cut off."""
+        """Dial the host again every `RETRY_SECONDS`, or immediately on a Join, while cut off.
+
+        After `REJOIN_DIALS` failures in a row it stops: the port in the token reaches nothing,
+        and the host, cut off as long, has made a new one. `retry_at` goes to None, which the
+        screen reads as asking for the new token; a Join with it, or Try now, dials again."""
+        failed = 0
         while self.cut_at is not None and not self.ended.is_set():
             self.nudged.clear()
+            self.retry_at = self.owner.now()
             try:
                 await self._rejoin()
                 return
@@ -147,8 +160,21 @@ class GuestSession(_Receiving, _Live):
                 ProtocolError,
                 TimeoutError,
                 lock.LockFailed,
-            ):
-                pass
+            ) as error:
+                failed += 1
+                log.info(
+                    "swap.rejoin_failed",
+                    swap=self.short_id,
+                    dials=failed,
+                    error=type(error).__name__,
+                    why=str(error) if isinstance(error, lock.LockFailed) else None,
+                )
+            if failed >= REJOIN_DIALS:
+                self.retry_at = None
+                log.info("swap.rejoin_given_up", swap=self.short_id, dials=failed)
+                await self.nudged.wait()
+                failed = 0
+                continue
             self.retry_at = self.owner.now() + int(self.owner.retry_seconds)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self.nudged.wait(), self.owner.retry_seconds)
@@ -216,15 +242,25 @@ class GuestSession(_Receiving, _Live):
                     self._open_stream(number, back=True)
 
     async def drive(self) -> None:
-        async with self.owner.egress.through(self.route) as proxy:
-            if proxy is None:
-                # Direct is refused for a swap: the guest's own address would be the one dialling.
-                log.info("swap.no_tunnel", swap=self.short_id)
-                await self.end(LOST, tell=False)
-                return
-            self.proxy = proxy
-            await self._drive()
-            await self.ended.wait()
+        self._drove = True
+        try:
+            async with self.owner.egress.through(self.route) as proxy:
+                if proxy is None:
+                    # Direct is refused for a swap: the guest's own address would be the one
+                    # dialling.
+                    log.info("swap.no_tunnel", swap=self.short_id)
+                    await self.end(LOST, tell=False)
+                    return
+                self.proxy = proxy
+                await self._drive()
+                await self.ended.wait()
+        finally:
+            # Only once the tunnel is let go: turning it off waits for whatever holds it.
+            await asyncio.shield(self._switch_off())
+
+    async def _switch_off(self) -> None:
+        switched_on, self.switched_on = self.switched_on, False
+        await self.owner.switch_off(self.route, switched_on)
 
     async def _dial(self) -> Conn:
         reader, writer = await lock.dial(self.address, self.port, self.proxy, self.secret)
@@ -340,11 +376,11 @@ class GuestSession(_Receiving, _Live):
         while not self.ended.is_set() and self._carrying(sending) and self.cut_at is None:
             try:
                 conn = await self._dial()
-            except lock.LockFailed:
+            except lock.LockFailed as error:
                 failures += 1
                 if failures >= REDIAL_LIMIT:
-                    log.info("swap.streams_lost", swap=self.short_id)
-                    await self.cut()
+                    log.info("swap.streams_lost", swap=self.short_id, error=type(error).__name__)
+                    await self.cut(CUT_STREAMS_LOST, error)
                     return
                 await self.owner.sleep(redial_pause(failures))
                 continue
@@ -373,10 +409,11 @@ class GuestSession(_Receiving, _Live):
                 OSError,
                 ProtocolError,
                 TimeoutError,
-            ):
+            ) as error:
                 failures += 1
                 if failures >= REDIAL_LIMIT:
-                    await self.cut()
+                    log.info("swap.streams_lost", swap=self.short_id, error=type(error).__name__)
+                    await self.cut(CUT_STREAMS_LOST, error)
                     return
             finally:
                 self._let_go(conn, sending, task)
@@ -425,6 +462,8 @@ class GuestSession(_Receiving, _Live):
         sending = self.sending_half()
         if sending is not None:
             await sending.let_go_of_everything()
+        if not self._drove:
+            await self._switch_off()
 
 
 def redial_pause(failures: int) -> float:

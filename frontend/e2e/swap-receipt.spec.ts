@@ -3,7 +3,8 @@ import { signInAsAdmin } from './admin';
 
 /*
  * A swap's receipt, opened from the line History keeps for it: the heavy number, the groups and how
- * each was filed, then Undo this swap, which asks once and then says what it removed.
+ * each was filed, then Undo this swap, which asks once and then says what it removed. An Undo that
+ * met files another program held open says so and is pressed again for those.
  *
  * The e2e server has one library and no second Sift to swap with, so the line and the receipt are
  * the server's shapes answered here; the removal itself is the server's own tests'.
@@ -49,8 +50,14 @@ const RECEIPT = {
 	back_files: 0,
 	back_bytes: 0,
 	rate: 1_900_000,
+	back_rate: null,
+	moving: 630,
+	back_moving: null,
+	waited: 180,
 	tunnel: null,
 	cut_offs: 0,
+	cut_seconds: 0,
+	not_kept: 0,
 	folder: { id: 'e2e-folder', path: 'Swaps/Swap-E2E', own: true },
 	groups: [
 		{
@@ -72,10 +79,16 @@ const RECEIPT = {
 	can_undo: true
 };
 
+const IN_USE = {
+	...RECEIPT,
+	can_undo: true,
+	undo: { at: NOW, files: 9, from_disk: true, people: 1, sites: 0, in_use: 2, kept: 1 }
+};
+
 const UNDONE = {
 	...RECEIPT,
 	can_undo: false,
-	undo: { at: NOW, files: 12, from_disk: true, people: 1, sites: 0 }
+	undo: { at: NOW, files: 11, from_disk: true, people: 1, sites: 0, in_use: 0, kept: 1 }
 };
 
 test('a swap ended, its receipt read from History, and Undo pressed', async ({ page }) => {
@@ -92,9 +105,9 @@ test('a swap ended, its receipt read from History, and Undo pressed', async ({ p
 	await page.route('**/api/swap/receipts/**', (route) => {
 		if (route.request().method() === 'POST') {
 			undos += 1;
-			return route.fulfill({ json: UNDONE });
+			return route.fulfill({ json: undos > 1 ? UNDONE : IN_USE });
 		}
-		return route.fulfill({ json: undos > 0 ? UNDONE : RECEIPT });
+		return route.fulfill({ json: [RECEIPT, IN_USE, UNDONE][Math.min(undos, 2)] });
 	});
 
 	await page.goto('/settings/tasks?show=history#activity.history');
@@ -102,6 +115,7 @@ test('a swap ended, its receipt read from History, and Undo pressed', async ({ p
 	const card = page.locator('.receipt');
 	await expect(card.locator('.figure')).toHaveText('12');
 	await expect(card).toContainText('files landed, 1.2 GB, in 11 min');
+	await expect(card).toContainText('Joined 3 min before the first file.');
 	await expect(card).toContainText('Bryn Calloway');
 	await expect(card).toContainText('created, 3 faces learned');
 	await expect(card).toContainText('2 already here');
@@ -113,8 +127,17 @@ test('a swap ended, its receipt read from History, and Undo pressed', async ({ p
 	await dialog.getByRole('button', { name: 'Undo this swap' }).click();
 
 	await expect(card).toContainText(
-		'Undone: 12 files removed from the library and deleted from disk. Removed with them: 1 person it created.'
+		'Undone: 9 files removed from the library and deleted from disk. 1 kept: already in the library. 2 still in use: Undo again later.'
 	);
 	expect(undos).toBe(1);
+
+	// Again, for the two that were in use: the question names only those.
+	await card.getByRole('button', { name: 'Undo this swap' }).click();
+	await expect(dialog).toContainText('2 files are removed from the library');
+	await dialog.getByRole('button', { name: 'Undo this swap' }).click();
+	await expect(card).toContainText(
+		'Undone: 11 files removed from the library and deleted from disk. 1 kept: already in the library. Removed with them: 1 person it created.'
+	);
+	expect(undos).toBe(2);
 	await expect(card.getByRole('button', { name: 'Undo this swap' })).toHaveCount(0);
 });

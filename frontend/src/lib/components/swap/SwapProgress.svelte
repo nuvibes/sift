@@ -27,9 +27,11 @@
 	 * ## Both ways
 	 *
 	 * A swap that sends and receives draws each direction under the drawer's own words, Send and
-	 * Receive: its files and its size, or what it waits for while it is not moving yet. Under both,
-	 * one estimate for the whole (`timeLeftBothWays`): the two move at the same time, so the whole
-	 * takes as long as the slower.
+	 * Receive: its files and its size, or what it waits for while it is not moving yet, and its own
+	 * rate over its own streams. A direction whose every file has crossed says Done with its
+	 * total, never the last rate it had. Under both, one estimate for the whole
+	 * (`timeLeftBothWays`): the two move at the same time, so the whole takes as long as the
+	 * slower.
 	 */
 	import { Button, Empty, Fold, Panel, ProgressBar, SectionHeading } from '$lib/components/common';
 	import { counted } from '$lib/entity/entity-counts';
@@ -53,8 +55,12 @@
 		const timer = setInterval(() => (now = Date.now() / 1000), 1000);
 		return () => clearInterval(timer);
 	});
+	/* An exchange says each direction's rate under its own heading; the time gone is the whole's. */
 	const pace = $derived(
-		joined(rateWords(session.rate_bps, session.streams), elapsedWords(session.moving_since, now))
+		joined(
+			session.two_way ? null : rateWords(session.rate_bps, session.streams),
+			elapsedWords(session.moving_since, now)
+		)
 	);
 	const refused = $derived(session.refused ?? []);
 	const refusedCount = $derived(session.refused_count ?? refused.length);
@@ -115,11 +121,19 @@
 	}
 
 	function bytesOf(one: SwapDirection): string {
+		if (one.done) return size(one.wanted_bytes || one.bytes) ?? '';
 		return one.wanted_bytes ? (sizeOf(one.bytes, one.wanted_bytes) ?? '') : (size(one.bytes) ?? '');
 	}
 
 	function fractionOf(one: SwapDirection): number | null {
+		if (one.done) return 100;
 		return one.wanted_bytes ? Math.min(100, (one.bytes / one.wanted_bytes) * 100) : null;
+	}
+
+	/* A finished direction's total, or a moving one's rate on its streams. */
+	function stateOf(one: SwapDirection): string {
+		if (one.done) return 'Done';
+		return rateWords(one.rate_bps, one.streams) ?? '';
 	}
 </script>
 
@@ -131,7 +145,10 @@
 				{#if way.direction?.moving}
 					<p class="files">{filesOf(way, way.direction)}</p>
 					<ProgressBar value={fractionOf(way.direction)} label={way.bar} />
-					<p class="figures"><span>{bytesOf(way.direction)}</span></p>
+					<p class="figures">
+						<span>{bytesOf(way.direction)}</span>
+						<span>{stateOf(way.direction)}</span>
+					</p>
 				{:else}
 					<Empty busy scope="block">{way.waiting}</Empty>
 				{/if}

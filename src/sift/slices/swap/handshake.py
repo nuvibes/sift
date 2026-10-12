@@ -72,6 +72,16 @@ REDIAL_PAUSE_MOST = 8.0
 #: How often a side that was cut off tries again: the host to host on its tunnel, the guest to dial.
 RETRY_SECONDS = 10.0
 
+#: Failed dials in a row before a cut-off guest asks for a new token, and the host hosts anew.
+REJOIN_DIALS = 6
+
+#: What cut a session off, on its `swap.cut_off` line.
+CUT_SILENT = "silent"
+CUT_SEND_FAILED = "control_send_failed"
+CUT_CONTROL_CLOSED = "control_closed"
+CUT_STREAMS_LOST = "streams_lost"
+CUT_HOSTING_LOST = "hosting_lost"
+
 #: What the session's task says of itself on Activity: before the other side is there, and cut off.
 WAITING_NOTE = "Waiting for them"
 CUT_OFF_NOTE = "Cut off, waiting for them"
@@ -157,6 +167,11 @@ LOCKED = (
 #: by that server and never reaches them. Refused before dialling (`SwapSessions.join`).
 SAME_SERVER = (
     "Your tunnel and theirs leave from the same server. Choose a tunnel on another server."
+)
+
+PAUSED = (
+    "All tasks are paused, and a swap runs as a task. Press Resume all tasks in Tasks and "
+    "Activity, then try again."
 )
 
 #: A swap both ways asks for a folder beside Start, and the guest's files with its They match.

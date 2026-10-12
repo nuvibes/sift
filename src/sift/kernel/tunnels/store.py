@@ -380,12 +380,16 @@ class TunnelStore:
             try:
                 await self._restart(spec, config, listener)
             except TunnelError:
+                # The client did not come up with the relay; the provider was never asked.
+                log.warning("tunnel.hosting_refused", tunnel=spec.name, hop="client", kind="start")
                 await self._put_back(spec, config, was_running=was_running)
                 raise
-            client = NatPmp(listener.natpmp_port)
+            client = NatPmp(listener.natpmp_port, tunnel=spec.name)
             try:
                 mapped = await client.map_tcp(listener.internal_port)
-            except NatPmpError:
+            except NatPmpError as exc:
+                # The words on screen stay the provider's; the line says where the question died.
+                log.warning("tunnel.hosting_refused", tunnel=spec.name, hop=exc.hop, kind=exc.kind)
                 await self._set_can_host(tunnel_id, can=False)
                 await self._put_back(spec, config, was_running=was_running)
                 raise TunnelError(CANNOT_HOST) from None
@@ -475,7 +479,13 @@ class TunnelStore:
             if hosted is None:
                 return
             # A fixed phrase from the provider, never an address.
-            log.warning("tunnel.hosting_lost", tunnel=hosted.spec.name, detail=str(error))
+            log.warning(
+                "tunnel.hosting_lost",
+                tunnel=hosted.spec.name,
+                detail=str(error),
+                hop=error.hop,
+                kind=error.kind,
+            )
         # Told outside the lock, as the session's end takes the same lock.
         await _tell_lost(
             hosted,

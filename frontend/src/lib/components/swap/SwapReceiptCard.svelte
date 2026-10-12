@@ -6,8 +6,11 @@
 	 * From the top: the heavy number and its context ("1,065 files landed, 30 GB, in 21 min"),
 	 * from whom and how; a row per group in the order Sift files things, with how each was filed and
 	 * its state at the end; what was not taken and why; where it landed; and at the foot Open the
-	 * folder and Undo this swap. After an Undo the card says what was removed and the rows read as
-	 * taken back.
+	 * folder and Undo this swap. After an Undo the card says what was removed, what it kept and
+	 * why, and the rows read as taken back; files another program held open keep the Undo.
+	 *
+	 * One clock: the time beside the number runs from the first byte to the last, less the time
+	 * cut off, and the average is over it; the wait before the first file is its own line.
 	 */
 	import { Badge, Button, DataRow, DataRows, Note, Panel, Problem } from '$lib/components/common';
 	import type { Column } from '$lib/components/common/DataRows.svelte';
@@ -25,6 +28,7 @@
 		howWords,
 		notTakenWords,
 		undoneWords,
+		waitWords,
 		type ReceiptGroup,
 		type ReceiptKind,
 		type SwapReceipt
@@ -79,7 +83,9 @@
 	const noun = $derived(receipt.two_way ? 'exchange' : 'swap');
 	const notTaken = $derived(notTakenWords(receipt));
 	const back = $derived(backWords(receipt));
-	const canUndo = $derived(receipt.can_undo && !receipt.undo && onundo !== undefined);
+	const wait = $derived(waitWords(receipt));
+	/* Again after an Undo that met files in use: the server says when (`can_undo`). */
+	const canUndo = $derived(receipt.can_undo && onundo !== undefined);
 
 	const COLUMNS: readonly Column[] = [
 		{ id: 'what', width: 'minmax(0, 1fr)' },
@@ -100,8 +106,9 @@
 				<span class="figure">{receipt.files.toLocaleString()}</span>
 				<span class="context">{contextWords(receipt)}</span>
 			</p>
-			{#if back}<p class="how">{back}</p>{/if}
 			<p class="how">{howWords(receipt)}</p>
+			{#if back}<p class="how">{back}</p>{/if}
+			{#if wait}<p class="how">{wait}</p>{/if}
 		</header>
 
 		{#if rows.length > 0}

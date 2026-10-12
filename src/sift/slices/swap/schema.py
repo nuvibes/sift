@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""What a swap records: this install's device, each session, each file's received chunks, and the
-receipt each side keeps when a swap ends.
+"""What a swap records: this install's device, each session, each file's received chunks, the
+receipt each side keeps when a swap ends, and the identity each landed file was offered under.
 
 The token's secret is never stored, and no row holds a peer's address. A session counts both
 ways: the sending columns are host to guest, the `back_` columns guest to host.
@@ -15,7 +15,7 @@ from sift.kernel.migrations import column_exists
 log = get_logger(__name__)
 
 COMPONENT = "swap"
-VERSION = 6
+VERSION = 7
 
 # `CHECK (id = 1)`: one install, one device id.
 _CREATE_DEVICE = """
@@ -112,6 +112,18 @@ _INDEXES_6 = (
     "CREATE INDEX IF NOT EXISTS ix_swap_sessions_tunnel ON swap_sessions(tunnel_id, ended_at)",
 )
 
+# The identity each landed file was offered under: the sender's own bytes, which the strip on
+# both sides changes, so the next offer of the same original is known for what it is.
+_CREATE_LANDED_AS = """
+CREATE TABLE IF NOT EXISTS swap_landed_as (
+  identity   TEXT PRIMARY KEY,
+  asset_id   TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+  landed_at  INTEGER NOT NULL
+) WITHOUT ROWID
+"""
+
+_INDEX_LANDED_AS = "CREATE INDEX IF NOT EXISTS ix_swap_landed_as_asset ON swap_landed_as(asset_id)"
+
 _INDEXES = (
     # The boot step ends every session a restart interrupted, by state.
     "CREATE INDEX IF NOT EXISTS ix_swap_sessions_state ON swap_sessions(state)",
@@ -139,6 +151,9 @@ async def initialize(connection: Connection, on_disk: int) -> None:
         await connection.execute(_CREATE_RECEIPTS)
         for statement in _INDEXES_6:
             await connection.execute(statement)
+    if on_disk < 7:
+        await connection.execute(_CREATE_LANDED_AS)
+        await connection.execute(_INDEX_LANDED_AS)
 
 
 async def _add_two_way(connection: Connection) -> None:

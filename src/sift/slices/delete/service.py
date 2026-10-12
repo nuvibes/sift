@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import json
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final, Literal, cast
 
@@ -165,6 +166,26 @@ def _delete_file(target: Path) -> None:
         os.unlink(target)
 
 
+#: Windows' sharing and lock violations: another process has the file open.
+_HELD_OPEN: Final = frozenset({32, 33})
+
+#: A file another program has open stays, and the selection says so.
+IN_USE: Final = "Another program has that file open, so it stays. Try again in a moment."
+IN_USE_MANY: Final = "Another program has those files open, so they stay. Try again in a moment."
+
+#: Any other refusal from the disk itself.
+NOT_DELETED: Final = "Sift couldn't delete that file from the disk."
+NOT_DELETED_MANY: Final = "Sift couldn't delete those files from the disk."
+
+
+def _held_open(error: OSError) -> bool:
+    """Whether the disk refused because another process has the file open."""
+    return getattr(error, "winerror", None) in _HELD_OPEN or error.errno in (
+        errno.EBUSY,
+        errno.ETXTBSY,
+    )
+
+
 def _remove_directory(target: Path) -> bool:
     """Remove one EMPTY directory, never a tree, so nothing Sift did not index goes. Says whether it
     went; never raises.
@@ -200,6 +221,38 @@ class Removal:
     #: The same reason worded for more than one; a per-file refusal names no count, so it is reused.
     reason_many: str | None
     vault_locked: bool
+    #: Files left because another process had one open; counted in `skipped` too.
+    in_use: int = 0
+
+
+@dataclass
+class _Tally:
+    """What a delete over a selection has come to so far."""
+
+    removed: int
+    skipped: int
+    reason: str | None
+    many: str | None
+    locked: bool
+    in_use: int = 0
+    to_forget: list[Location] = field(default_factory=list)
+
+
+async def _unlink_each(
+    resolved: Sequence[tuple[Location, Path]],
+) -> tuple[list[Location], OSError | None]:
+    """Unlink every copy the disk lets go: the copies that went, and the first refusal."""
+    went: list[Location] = []
+    refusal: OSError | None = None
+    for location, path in resolved:
+        try:
+            await asyncio.to_thread(_delete_file, path)
+        except OSError as error:
+            log.warning("delete.kept_on_disk", asset_id=location.asset_id, held=_held_open(error))
+            refusal = refusal or error
+            continue
+        went.append(location)
+    return went, refusal
 
 
 def _first_filename(locations: Sequence[Location]) -> str | None:
@@ -283,27 +336,22 @@ class Deleter:
         places = await self._content.locations_of(standing.allowed)
         pictures = await self._content.derivatives_of(standing.allowed)
         was_on = await self._was_on(standing.allowed)
-        to_forget: list[Location] = []
-        gone: list[str] = []
+        tally = _Tally(removed, skipped, reason, many, locked)
         for asset_id in standing.allowed:
             found = places.get(asset_id, [])
             if mode == "disk":
-                # Checked per file: a read-only folder refuses this file and leaves the rest.
-                try:
-                    resolved = [(one, await self._writable_path(one)) for one in found]
-                except DeleteRefused as no:
-                    skipped += 1
-                    if reason is None or not locked:
-                        # Such a refusal names no count, so it is true of thirty files.
-                        reason = reason if locked else str(no)
-                        many = many if locked else _said_of_many(no)
-                    continue
-                for _location, path in resolved:
-                    await asyncio.to_thread(_delete_file, path)
-            to_forget.extend(found)
-            gone.append(asset_id)
-            removed += 1
-        ended = await self._forget_selection(to_forget)
+                await self._off_the_disk(found, tally)
+            else:
+                tally.to_forget.extend(found)
+                tally.removed += 1
+        removed, skipped, reason, many, in_use = (
+            tally.removed,
+            tally.skipped,
+            tally.reason,
+            tally.many,
+            tally.in_use,
+        )
+        ended = await self._forget_selection(tally.to_forget)
         if ended:
             await self._access.forget_items(ended)
             for asset_id in ended:
@@ -322,6 +370,7 @@ class Deleter:
             removed=removed,
             ended=len(ended),
             skipped=skipped,
+            in_use=in_use,
             locked=locked,
         )
         return Removal(
@@ -330,6 +379,7 @@ class Deleter:
             reason=reason,
             reason_many=many,
             vault_locked=locked,
+            in_use=in_use,
         )
 
     async def remove_folder(self, folder_id: str, *, actor: Viewer) -> FolderCleared:
@@ -525,6 +575,30 @@ class Deleter:
             asset_removed=removed_asset,
         )
         return removed_asset
+
+    async def _off_the_disk(self, found: list[Location], tally: _Tally) -> None:
+        """One file's copies off the disk, the tally told what went and what kept the file."""
+        # Checked per file: a read-only folder refuses this file and leaves the rest.
+        try:
+            resolved = [(one, await self._writable_path(one)) for one in found]
+        except DeleteRefused as no:
+            tally.skipped += 1
+            if not tally.locked:
+                # Such a refusal names no count, so it is true of thirty files.
+                tally.reason, tally.many = str(no), _said_of_many(no)
+            return
+        went, refusal = await _unlink_each(resolved)
+        # The copies that went are forgotten; one still on the disk keeps the file.
+        tally.to_forget.extend(went)
+        if refusal is None:
+            tally.removed += 1
+            return
+        tally.skipped += 1
+        held = _held_open(refusal)
+        tally.in_use += int(held)
+        if not tally.locked:
+            tally.reason = IN_USE if held else NOT_DELETED
+            tally.many = IN_USE_MANY if held else NOT_DELETED_MANY
 
     async def _was_on(self, asset_ids: Sequence[str]) -> WasOn:
         """What each file is on and what it was (`WasOn`), read before anything is removed, since every

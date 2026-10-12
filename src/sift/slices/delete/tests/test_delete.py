@@ -4,6 +4,7 @@ its bytes on disk."""
 
 from __future__ import annotations
 
+import errno
 import json
 from collections.abc import Callable
 from dataclasses import replace
@@ -20,7 +21,11 @@ from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ledger import MOST_SUBJECTS
 from sift.kernel.reach import VAULT_LOCKED
+from sift.slices.delete import service
 from sift.slices.delete.service import (
+    IN_USE,
+    IN_USE_MANY,
+    NOT_DELETED,
     Deleter,
     DeleteRefused,
     NotAllowed,
@@ -734,6 +739,107 @@ async def test_the_vault_keeps_its_sentence_over_a_folders_refusal(
     assert done.reason == VAULT_LOCKED
     assert (read_only.path / "hidden.webm").exists()
     assert (read_only.path / "refused.mp4").exists()
+
+
+def _refusing(monkeypatch: pytest.MonkeyPatch, name: str, error: OSError) -> None:
+    """The disk refuses to unlink the file called `name`, and only that one."""
+    real = service._delete_file
+
+    def delete(target: Path) -> None:
+        if target.name == name:
+            raise error
+        real(target)
+
+    monkeypatch.setattr(service, "_delete_file", delete)
+
+
+def _held(code: int) -> OSError:
+    error = PermissionError(errno.EACCES, "The process cannot access the file")
+    error.winerror = code  # type: ignore[attr-defined,unused-ignore]
+    return error
+
+
+@pytest.mark.parametrize(
+    "error", [_held(32), _held(33), OSError(errno.EBUSY, "busy")], ids=["sharing", "lock", "busy"]
+)
+async def test_a_file_another_process_holds_open_is_skipped_counted_and_the_rest_go(
+    deleter: Deleter,
+    content_store: ContentStore,
+    managed: Library,
+    add_file: Any,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+    error: OSError,
+) -> None:
+    """One file open in another program ends nothing: the others go, it stays on the disk and in
+    the library, and the answer counts it as in use so a second try can take it."""
+    held = await add_file(managed, "held.mp4")
+    gone = await add_file(managed, "gone.webm", source="accepted.webm")
+    _refusing(monkeypatch, "held.mp4", error)
+
+    done = await deleter.remove_many([held.asset.id, gone.asset.id], mode="disk", actor=admin)
+
+    assert (done.removed, done.skipped, done.in_use, done.vault_locked) == (1, 1, 1, False)
+    assert (done.reason, done.reason_many) == (IN_USE, IN_USE_MANY)
+    assert (managed.path / "held.mp4").exists()
+    assert not (managed.path / "gone.webm").exists()
+    assert await content_store.get(held.asset.id) is not None
+    assert await content_store.get(gone.asset.id) is None
+
+
+async def test_a_file_with_one_copy_held_open_forgets_the_copy_that_went_and_stays(
+    deleter: Deleter,
+    content_store: ContentStore,
+    managed: Library,
+    add_file: Any,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copy whose bytes went is not left in the library pointing at nothing."""
+    first = await add_file(managed, "a/clip.mp4")
+    second = await add_file(managed, "b/held.mp4")
+    assert first.asset.id == second.asset.id
+    _refusing(monkeypatch, "held.mp4", _held(32))
+
+    done = await deleter.remove_many([first.asset.id], mode="disk", actor=admin)
+
+    assert (done.removed, done.in_use) == (0, 1)
+    assert not (managed.path / "a" / "clip.mp4").exists()
+    assert [one.filename for one in await content_store.locations(first.asset.id)] == ["held.mp4"]
+
+
+async def test_any_other_refusal_from_the_disk_is_skipped_with_its_own_reason(
+    deleter: Deleter,
+    managed: Library,
+    add_file: Any,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kept = await add_file(managed, "kept.mp4")
+    _refusing(monkeypatch, "kept.mp4", OSError(errno.EIO, "input/output error"))
+
+    done = await deleter.remove_many([kept.asset.id], mode="disk", actor=admin)
+
+    assert (done.removed, done.skipped, done.in_use, done.reason) == (0, 1, 0, NOT_DELETED)
+    assert (managed.path / "kept.mp4").exists()
+
+
+async def test_a_held_file_leaves_the_vaults_sentence_standing(
+    deleter: Deleter,
+    temp_db: Any,
+    managed: Library,
+    add_file: Any,
+    admin: Viewer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    hidden = await add_file(managed, "hidden.webm", source="accepted.webm")
+    held = await add_file(managed, "held.mp4")
+    await hide(temp_db, "asset", hidden.asset.id, admin.id)
+    _refusing(monkeypatch, "held.mp4", _held(32))
+
+    done = await deleter.remove_many([hidden.asset.id, held.asset.id], mode="disk", actor=admin)
+
+    assert (done.removed, done.skipped, done.in_use, done.reason) == (0, 2, 1, VAULT_LOCKED)
 
 
 # --- what the delete writes down ----------------------------------------------------------------

@@ -229,7 +229,7 @@ function leftWords(seconds: number | null): string {
 /** Both ways: as long as the slower direction moving. */
 export function timeLeftBothWays(session: Pick<SwapSession, 'sending' | 'receiving'>): string {
 	const moving = [session.sending, session.receiving].filter((one): one is SwapDirection =>
-		Boolean(one?.moving)
+		Boolean(one?.moving && !one.done)
 	);
 	if (moving.length === 0) return NOT_ENOUGH_TO_SAY;
 	const lefts = moving.map((one) => secondsLeft(one.rate_bps, one.wanted_bytes, one.bytes));
@@ -279,15 +279,27 @@ export function isLive(session: SwapSession | null): boolean {
 	return session !== null && !['done', 'ended', 'failed'].includes(session.state);
 }
 
-/** A tunnel cut off: not ended, and how long it can be joined again. */
+/** A guest cut off that has stopped dialling: only a new token from them reaches them now. */
+export function gaveUp(
+	session: Partial<Pick<SwapSession, 'role' | 'state' | 'retry_at'>>
+): boolean {
+	return session.role === 'guest' && session.state === 'cut_off' && !session.retry_at;
+}
+
+/** A tunnel cut off: not ended, how long it can be joined again, and what to do when it can't. */
 export function cutOffWords(
-	session: Pick<SwapSession, 'role' | 'rejoin_until'>,
+	session: Pick<SwapSession, 'role' | 'rejoin_until'> &
+		Partial<Pick<SwapSession, 'state' | 'retry_at'>>,
 	at: (when: number) => string = exactly
 ): string {
 	const until = session.rejoin_until ? ` until ${at(session.rejoin_until)}` : '';
-	return session.role === 'host'
-		? `The connection to them was lost. They can rejoin with the same token${until}.`
-		: `The connection to them was lost. Sift keeps trying to reach them${until}.`;
+	if (session.role === 'host') {
+		return `The connection to them was lost. Their Sift keeps trying to rejoin${until}. If it asks for a new token, send the one below.`;
+	}
+	if (gaveUp(session)) {
+		return "The connection to them was lost, and Sift couldn't get through again. Ask for the token their screen shows now, then paste it here.";
+	}
+	return `The connection to them was lost. Sift keeps trying to reach them${until}.`;
 }
 
 /** In the reason's own words; an unknown reason is said as it came. */

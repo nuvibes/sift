@@ -587,3 +587,17 @@ async def test_both_reads_are_bounded_by_the_callers_list_and_not_by_a_page(
 
     assert len(places) == len(many)
     assert len(measures) == len(many)
+
+
+async def test_a_file_is_held_by_its_identity_with_or_without_a_fingerprint(
+    db: Database, reads: DuplicateReads
+) -> None:
+    """Every page of a long list is asked, and a file waiting for its read answers as well."""
+    many = [f"a{n:04d}" for n in range(MAX_PAGE_SIZE + 7)]
+    for asset_id in many:
+        await add_asset(db, asset_id, phash=None, videohash=None)
+
+    held = await reads.held_by_identity([f"digest-{one}" for one in many] + ["digest-nobody"])
+
+    assert held == {f"digest-{one}": one for one in many}
+    assert await reads.held_by_identity([]) == {}

@@ -57,10 +57,10 @@ import contextlib
 import hmac
 import os
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from sift.kernel.access import Viewer
 from sift.kernel.ids import new_id
@@ -99,6 +99,7 @@ from sift.slices.swap.handshake import (
     NO_FOLDER,
     NO_TUNNEL,
     PASTED_FIELD,
+    PAUSED,
     PING_SECONDS,
     RATE_WINDOW_SECONDS,
     REFUSED,
@@ -176,6 +177,7 @@ from sift.slices.swap.live import (
     Prepare,
     ReadRoute,
     ServerOf,
+    Switch,
     Taken,
     Weigh,
     _Live,
@@ -406,6 +408,7 @@ class SwapSessions:
             raise SwapRefused(LOCKED)
         if two_way and not dest_folder_id:
             raise SwapRefused(NO_FOLDER, field=FOLDER_FIELD)
+        await self._refuse_while_paused()
         # With the key in hand the id is there or is made: only a missing key refuses, and that
         # was answered above.
         device = await ensure_device(self.store, self.secrets, master_key)
@@ -547,6 +550,7 @@ class SwapSessions:
         route = tunnel_id or await self.read_route()
         if route is None or route == "direct":
             raise SwapRefused(NO_TUNNEL, field=TUNNEL_FIELD)
+        await self._refuse_while_paused()
         # With the key in hand the id is there or is made: only a missing key refuses, and that
         # was answered above.
         device = await ensure_device(self.store, self.secrets, master_key)
@@ -555,21 +559,24 @@ class SwapSessions:
                 "This token was made on this device. Send it to the person you are swapping with.",
                 field=PASTED_FIELD,
             )
-        if await self._same_server(route, token):
-            log.info("swap.same_server")
-            raise SwapRefused(SAME_SERVER, field=TUNNEL_FIELD)
+        switched_on = await self._tunnel_ready(route, token, master_key)
         session_id = new_id()
         live = GuestSession(self, session_id, token, route=route, dest_folder_id=dest_folder_id)
-        await self.store.create(
-            session_id,
-            role="guest",
-            started_at=self.now(),
-            started_by=viewer_id,
-            tunnel_id=route,
-            peer_device=token.host_device,
-            token_expires=token.expires,
-            dest_folder_id=dest_folder_id,
-        )
+        live.switched_on = switched_on
+        try:
+            await self.store.create(
+                session_id,
+                role="guest",
+                started_at=self.now(),
+                started_by=viewer_id,
+                tunnel_id=route,
+                peer_device=token.host_device,
+                token_expires=token.expires,
+                dest_folder_id=dest_folder_id,
+            )
+        except BaseException:
+            await self.switch_off(route, switched_on)
+            raise
         self._live[session_id] = live
         try:
             job_id = await self.jobs.enqueue(
@@ -586,6 +593,60 @@ class SwapSessions:
         self._by_job[job_id] = session_id
         log.info("swap.joined", swap=live.short_id, swap_row=live.id)
         return session_id
+
+    async def _refuse_while_paused(self) -> None:
+        """A paused queue never runs the session's task, so a token would reach nobody: refused
+        before one is made. The pause as kept, which is what the workers hold to."""
+        holds = getattr(self.jobs, "holds", None)
+        if holds is None:
+            return
+        pause = await holds()
+        if pause.everything or SWAP_SESSION in pause.types:
+            log.info("swap.refused_while_paused")
+            raise SwapRefused(PAUSED)
+
+    async def _tunnel_ready(self, route: str, token: Token, master_key: bytes) -> bool:
+        """The tunnel to join through running and on another server than the token's: whether
+        joining switched it on (`_switch_on`). A refusal leaves it as it was found."""
+        switched_on = await self._switch_on(route, master_key)
+        try:
+            if await self._same_server(route, token):
+                log.info("swap.same_server")
+                raise SwapRefused(SAME_SERVER, field=TUNNEL_FIELD)
+        except BaseException:
+            await self.switch_off(route, switched_on)
+            raise
+        return switched_on
+
+    async def _switch_on(self, route: str, master_key: bytes) -> bool:
+        """The tunnel to join through running, started here if it is off: True when joining started
+        it, so the session's end turns it off again. One that will not start refuses to join, in
+        the tunnel's own words and by its name, before any session exists."""
+        tunnels = self.hoster
+        if not isinstance(tunnels, Switch):
+            return False
+        view = next((one for one in await tunnels.list() if one.id == route), None)
+        if view is None or view.running:
+            return False
+        try:
+            await tunnels.start(route, master_key)
+        except TunnelError as error:
+            log.info("swap.tunnel_would_not_start", detail=str(error))
+            raise SwapRefused(
+                f"The tunnel {view.name} is off and didn't start. {error}", field=TUNNEL_FIELD
+            ) from None
+        log.info("swap.tunnel_switched_on")
+        return not view.enabled
+
+    async def switch_off(self, route: str, switched_on: bool) -> None:
+        """Turn off a tunnel joining turned on, as the session ends: it was off before."""
+        tunnels = self.hoster
+        if not switched_on or not isinstance(tunnels, Switch):
+            return
+        try:
+            await tunnels.stop(route)
+        except TunnelError as error:
+            log.warning("swap.tunnel_not_switched_off", detail=str(error))
 
     async def _same_server(self, route: str, token: Token) -> bool:
         """Whether the guest's own tunnel is on the host's VPN server. Unknown (no answer in time,
@@ -696,6 +757,8 @@ class SwapSessions:
             moving=live.transferring,
             received_files=len(live.verified) if isinstance(live, _Receiving) else 0,
             back_received_files=len(back.verified) if isinstance(back, _Receiving) else 0,
+            streams=_running(_streams_of(live, back=False)),
+            back_streams=_running(_streams_of(live, back=True)),
         )
 
     async def row(self, session_id: str) -> SessionRow | None:
@@ -846,9 +909,13 @@ class SwapSessions:
             await asyncio.shield(live.end(ENDED_BY_YOU))
             raise
         except Exception as error:
-            # The type only. An error from a connection can carry the address it was dialling, and
-            # neither the log nor the task's row may hold that.
-            log.warning("swap.session_failed", swap=live.short_id, error=type(error).__name__)
+            # The type only, but for the tunnel's own words, which name no address. An error from a
+            # connection can carry the address it was dialling, and neither the log nor the task's
+            # row may hold that.
+            said = str(error) if isinstance(error, TunnelError) else None
+            log.warning(
+                "swap.session_failed", swap=live.short_id, error=type(error).__name__, detail=said
+            )
             await live.end(LOST, tell=False)
         finally:
             live.device = None
@@ -889,6 +956,20 @@ class SwapSessions:
             await self.store.drop_manifest(manifest.session_id, manifest.file_key)
             swept += 1
         return swept
+
+
+def _running(tasks: Iterable[asyncio.Task[Any]]) -> int:
+    """How many of a direction's streams are carrying now."""
+    return sum(1 for task in tasks if not task.done())
+
+
+def _streams_of(live: _Live, *, back: bool) -> Iterable[asyncio.Task[Any]]:
+    """A direction's streams: to the guest, or with `back` to the host. Each carries one way."""
+    if isinstance(live, HostSession):
+        return live.streams_in if back else live.stream_tasks
+    if isinstance(live, GuestSession):
+        return (live.back_streams if back else live.streams).values()
+    return ()  # pragma: no cover (a session is one side or the other)
 
 
 #: The live sessions behind the routes, on the application.

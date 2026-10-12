@@ -389,6 +389,10 @@ class SwapDirection(Wire):
     rate_bps: int | None = None
     moving: bool = False
     received_files: int | None = None
+    #: The streams carrying this direction now.
+    streams: int | None = None
+    #: Every file it wanted has crossed: the screen says its total, not a rate.
+    done: bool = False
 
 
 class CrossingNow(Wire):
@@ -679,6 +683,10 @@ class ReceiptUndo(Wire):
     from_disk: bool = False
     people: int = 0
     sites: int = 0
+    #: Files another program held open, left for a later Undo.
+    in_use: int = 0
+    #: Files the swap landed that the Undo leaves: they were already in the library.
+    kept: int = 0
 
 
 class SwapReceipt(Wire):
@@ -697,9 +705,20 @@ class SwapReceipt(Wire):
     bytes: int = 0
     back_files: int = 0
     back_bytes: int = 0
+    #: Bytes a second over `moving`; with `back_`, the other way's over its own.
     rate: float | None = None
+    back_rate: float | None = None
+    #: Seconds the files moved, from the first byte to the last, less the time cut off.
+    moving: int | None = None
+    back_moving: int | None = None
+    #: Seconds from the start of the session to its first byte.
+    waited: int | None = None
     tunnel: str | None = None
     cut_offs: int = 0
+    #: Seconds the session spent cut off.
+    cut_seconds: int = 0
+    #: Files received here whole that the end came before they were added to the library.
+    not_kept: int = 0
     folder: ReceiptFolder | None = None
     groups: list[ReceiptGroup] = Field(default=[])
     skipped: list[ReceiptSkipped] = Field(default=[])

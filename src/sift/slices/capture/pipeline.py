@@ -20,7 +20,7 @@ from sift.kernel.content import Asset, LocationStatus, Root
 from sift.kernel.content.hashing import identity_file
 from sift.kernel.destination import resolve_destination
 from sift.kernel.ingress import IngressResult, Kind, NoDestination, Origin, verify_ingress
-from sift.kernel.jobs import JobContext
+from sift.kernel.jobs import DEFAULT_PRIORITY, JobContext
 from sift.kernel.jobs.retrying import WaitingForSpace, is_disk_full
 from sift.kernel.log import get_logger
 from sift.kernel.paths import PathEscape, confine
@@ -96,8 +96,11 @@ async def import_file(
     ctx: JobContext,
     settings: Settings,
     reindexer: ReindexSeam,
+    probe_priority: int = DEFAULT_PRIORITY,
 ) -> ImportOutcome:
-    """Take one untrusted file in: verify it, copy it into a folder, record it, and queue its work."""
+    """Take one untrusted file in: verify it, copy it into a folder, record it, and queue its work.
+
+    `probe_priority` is the urgency of the file's read, which its later work inherits."""
     destination = await resolve_destination(ctx.library, dest_folder_id)
 
     checked = await asyncio.to_thread(verify_ingress, path, origin=origin, settings=settings)
@@ -114,6 +117,7 @@ async def import_file(
                 ctx=ctx,
                 settings=settings,
                 reindexer=reindexer,
+                probe_priority=probe_priority,
             )
         finally:
             await asyncio.to_thread(places.discard, unplaced)
@@ -146,7 +150,7 @@ async def import_file(
             path, ingested.asset.identity, settings=settings, root_id=destination.root.id
         )
         await _kept_for_the_passes(ctx, path, copied, ingested.asset, settings)
-        await ctx.enqueue_child(PROBE, {"asset_id": ingested.asset.id})
+        await ctx.enqueue_child(PROBE, {"asset_id": ingested.asset.id}, priority=probe_priority)
         # So a new file can be found by its name before anything rebuilds the index.
         await reindexer.touched(ingested.asset.id)
 

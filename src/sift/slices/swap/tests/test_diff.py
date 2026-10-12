@@ -20,6 +20,7 @@ from sift.kernel.ids import new_id
 from sift.slices.dedup.matcher import DEFAULT_ACCURACY, DEFAULT_MAX_DURATION_GAP_MS
 from sift.slices.dedup.service import _filter_params
 from sift.slices.swap.diff import (
+    Already,
     Held,
     NearRule,
     PersonMatch,
@@ -108,23 +109,41 @@ def test_a_file_within_the_rule_is_held_and_one_bit_past_it_is_wanted() -> None:
     assert found.already["near"].asset_id == "mine"
 
 
-def test_the_exact_keys_confirm_and_never_decide() -> None:
+def test_an_equal_identity_decides_and_the_oshash_only_confirms() -> None:
     edge = RULE.video_phash
     # Same bytes AND the fingerprint agrees: held, and said to be the same file.
     same = _file("same", identity="guest-copy")
-    # Same bytes by every exact key, but the fingerprint is past the rule: the keys decide nothing.
-    keys_only = _file(
-        "keys-only",
-        identity="guest-copy",
-        oshash="os",
-        video_phash=_hex(_flip(_BASE, edge + 1)),
+    # Same bytes, the fingerprint past the rule: the identity decides on its own.
+    bytes_only = _file(
+        "bytes-only", identity="guest-copy", video_phash=_hex(_flip(_BASE, edge + 1))
     )
-    # The oshash and size agree, and there is no fingerprint to compare at all.
+    # The fingerprint finds it and the oshash with the size agrees: the same file, confirmed.
+    confirmed = _file("confirmed", oshash="os")
+    # The oshash and size agree and there is no fingerprint: a part of the file decides nothing.
     no_print = _file("no-print", oshash="os", video_phash=None)
+    # The fingerprint alone: a copy that looks the same.
+    looks = _file("looks")
     held = [_held(oshash="os", size=1_000)]
-    found = wanted(_offer(same, keys_only, no_print), held, RULE)
-    assert found.already["same"].reason == "same"
-    assert found.wanted == ("keys-only", "no-print")
+    found = wanted(_offer(same, bytes_only, confirmed, no_print, looks), held, RULE)
+    assert {key: one.reason for key, one in found.already.items()} == {
+        "same": "same",
+        "bytes-only": "same",
+        "confirmed": "same",
+        "looks": "near",
+    }
+    assert found.wanted == ("no-print",)
+
+
+def test_a_file_here_with_no_fingerprint_yet_is_the_same_file_by_its_identity() -> None:
+    """A file waiting for its first read is held by its bytes; the fingerprint still finds the
+    look-alike, and a file with neither is wanted."""
+    exact = _file("exact", identity="landed-unread", video_phash=None, fingerprint_version=None)
+    looks = _file("looks", identity="another-encode")
+    new = _file("new", identity="nothing-here", video_phash=_hex(_BASE ^ 0xFFFF_0000_0000_0000))
+    found = wanted(_offer(exact, looks, new), [_held()], RULE, exact={"landed-unread": "unread"})
+    assert found.already["exact"] == Already(reason="same", asset_id="unread")
+    assert found.already["looks"].reason == "near"
+    assert found.wanted == ("new",)
 
 
 def test_the_duration_gap_reads_as_the_queue_reads_it() -> None:
@@ -433,6 +452,41 @@ def test_the_wire_copy_of_an_answer_carries_no_local_id() -> None:
     older = Diff.model_validate({"wanted": ["a"], "people": {"0": "p-theirs"}})
     assert older.wanted == ["a"]
     assert Diff.model_validate({"wanted": ["a"]}).people == {}
+
+
+async def test_an_offered_identity_is_held_by_its_own_bytes_or_by_what_a_swap_landed_it_as(
+    temp_db: Database, access: Repository
+) -> None:
+    """Neither file here has a fingerprint yet. One has the offered bytes; the other is a copy a
+    swap landed, whose bytes the strip changed, kept against the identity it was offered under.
+    A third, marked "Do not swap", is not held. Nothing else here is touched."""
+    admin = await create_user(temp_db, Role.ADMIN)
+    for asset_id, identity in (
+        ("own", "offered-a"),
+        ("landed", "stripped-b"),
+        ("marked", "offered-c"),
+    ):
+        await temp_db.execute(
+            "INSERT INTO assets (id, identity, media_type, added_at) VALUES (?, ?, 'video', ?)",
+            (asset_id, identity, _EPOCH),
+        )
+    await temp_db.execute(
+        "INSERT INTO swap_landed_as (identity, asset_id, landed_at) VALUES ('offered-b', 'landed', ?)",
+        (_EPOCH,),
+    )
+    await temp_db.execute("UPDATE assets SET keep_from_swaps = 1 WHERE id = 'marked'")
+    unprinted = {"video_phash": None, "fingerprint_version": None}
+    offer = _offer(
+        _file("a", identity="offered-a", **unprinted),
+        _file("b", identity="offered-b", **unprinted),
+        _file("c", identity="offered-c", **unprinted),
+        _file("d", identity="offered-d", **unprinted),
+    )
+
+    drawn, reply = await assess(temp_db, access, admin, offer, held=[], rule=RULE)
+
+    assert reply(_Choices()).wanted == ["c", "d"]
+    assert [(one.key, one.reason) for one in drawn.held] == [("a", "same"), ("b", "same")]
 
 
 async def test_do_not_swap_here_shapes_nothing_the_other_side_reads(

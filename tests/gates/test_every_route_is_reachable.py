@@ -31,6 +31,18 @@ CLIENT = REPO / "frontend" / "src"
 #: Routes with no caller in the client, and why each is not a fault. A reason, not a name: if the
 #: sentence is hard to write, somebody usually forgot the button.
 NOT_CALLED_FROM_THE_CLIENT: dict[tuple[str, str], str] = {
+    # --- The tunnel speed probe: an admin's measuring tool driven from a script until a screen
+    # carries it; the other device's answer is pasted between the two routes by hand.
+    ("POST", "/api/swap/tunnels/{tunnel_id}/probe"): "the tunnel speed probe, hosted by a script",
+    ("GET", "/api/swap/tunnels/{tunnel_id}/probe"): "the tunnel speed probe, read by a script",
+    (
+        "DELETE",
+        "/api/swap/tunnels/{tunnel_id}/probe",
+    ): "the tunnel speed probe, stopped by a script",
+    (
+        "POST",
+        "/api/swap/tunnels/{tunnel_id}/probe/send",
+    ): "the tunnel speed probe, sent by a script",
     ("GET", "/health"): "a container probe and an uptime monitor, deliberately outside the API",
     ("GET", "/{path:path}"): "the client itself, and the pages of it: this is what serves them",
     ("GET", "/api/loops/{loop_id}/thumb"): (

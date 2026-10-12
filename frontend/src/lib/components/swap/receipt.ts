@@ -6,7 +6,7 @@
 
 import { api } from '$lib/api/client';
 import type { components } from '$lib/api/schema';
-import { filesSaid } from '$lib/entity/entity-counts';
+import { counted, filesSaid } from '$lib/entity/entity-counts';
 import { size } from '$lib/library/facts';
 import { sayDuration } from '$lib/shell/duration';
 
@@ -49,35 +49,67 @@ export function deviceWords(receipt: Pick<SwapReceipt, 'device' | 'device_name'>
 		: (receipt.device_name ?? id);
 }
 
-/** The heavy number's context: "files landed, 30 GB, in 21 min". */
+/* Under a minute is not worth a sentence of its own. */
+const WORTH_SAYING_S = 60;
+
+/**
+ * The heavy number's context: "files landed, 7.2 GB, in 7 min". One clock: the time runs from the
+ * first byte to the last, less the time cut off, the span the average is over; the size is the
+ * files', the same as their rows'.
+ */
 export function contextWords(receipt: SwapReceipt): string {
 	const verb = receipt.role === 'guest' ? 'landed' : 'sent';
 	const noun = receipt.files === 1 ? 'file' : 'files';
 	const bytes = size(receipt.bytes);
-	const said = receipt.seconds === null ? null : sayDuration(receipt.seconds);
+	const length = receipt.moving ?? receipt.seconds;
+	const said = length === null ? null : sayDuration(length);
 	const took = said ? `, in ${said}` : '';
 	return `${noun} ${verb}${bytes ? `, ${bytes}` : ''}${took}`;
 }
 
-/** The other way of an exchange, said once under the number: "and 38 files received, 1.2 GB". */
+/** The wait before the first file, said apart: "Joined 3 min before the first file." */
+export function waitWords(receipt: Pick<SwapReceipt, 'role' | 'waited'>): string | null {
+	if (receipt.waited === null || receipt.waited < WORTH_SAYING_S) return null;
+	const how = receipt.role === 'guest' ? 'Joined' : 'Started';
+	return `${how} ${sayDuration(receipt.waited)} before the first file.`;
+}
+
+function averageWords(rate: number | null): string | null {
+	const said = rate ? size(rate) : null;
+	return said ? `average ${said}/s` : null;
+}
+
+/** The other way of an exchange, with its own average: "And 971 files sent the other way, 8.7 GB,
+ * average 16.1 MB/s." */
 export function backWords(receipt: SwapReceipt): string | null {
 	if (!receipt.two_way) return null;
 	const verb = receipt.role === 'guest' ? 'sent' : 'received';
 	if (receipt.back_files === 0) return `Nothing ${verb} the other way.`;
+	const parts = [`And ${filesSaid(receipt.back_files)} ${verb} the other way`];
 	const bytes = size(receipt.back_bytes);
-	return `And ${filesSaid(receipt.back_files)} ${verb} the other way${bytes ? `, ${bytes}` : ''}.`;
+	if (bytes) parts.push(bytes);
+	const average = averageWords(receipt.back_rate);
+	if (average) parts.push(average);
+	return `${parts.join(', ')}.`;
 }
 
-/** From whom and how: "From DESK-2F9A through NY-711, average 23.6 MB/s, one cut-off". */
+/** From whom and how: "From DESK-2F9A through NY-711, average 23.6 MB/s, one cut-off (12 min)". */
 export function howWords(receipt: SwapReceipt): string {
 	const whence = receipt.role === 'guest' ? 'From' : 'To';
 	const parts = [
 		`${whence} ${deviceWords(receipt)}${receipt.tunnel ? ` through ${receipt.tunnel}` : ''}`
 	];
-	const rate = receipt.rate ? size(receipt.rate) : null;
-	if (rate) parts.push(`average ${rate}/s`);
-	if (receipt.cut_offs === 1) parts.push('one cut-off');
-	else if (receipt.cut_offs > 1) parts.push(`${receipt.cut_offs} cut-offs`);
+	const average = averageWords(receipt.rate);
+	if (average) parts.push(average);
+	const cut =
+		receipt.cut_offs === 1
+			? 'one cut-off'
+			: receipt.cut_offs > 1
+				? `${receipt.cut_offs.toLocaleString()} cut-offs`
+				: null;
+	const cutFor =
+		receipt.cut_seconds >= WORTH_SAYING_S ? ` (${sayDuration(receipt.cut_seconds)})` : '';
+	if (cut) parts.push(`${cut}${cutFor}`);
 	return parts.join(', ');
 }
 
@@ -104,6 +136,11 @@ export function notTakenWords(receipt: SwapReceipt): string[] {
 	);
 	if (receipt.refused > 0) said.push(`${receipt.refused.toLocaleString()} refused on import`);
 	if (receipt.held > 0) said.push(`${receipt.held.toLocaleString()} already here`);
+	if (receipt.not_kept > 0) {
+		said.push(
+			`${filesSaid(receipt.not_kept)} received and not kept: it ended before ${receipt.not_kept === 1 ? 'it was' : 'they were'} added`
+		);
+	}
 	return said;
 }
 
@@ -119,18 +156,21 @@ function madeWords(people: number, sites: number): string | null {
 	return made.length ? made.join(' and ') : null;
 }
 
-/** What the Undo took away, said on the card after it. */
+/** What the Undo took away, said on the card after it, with what it left and why. */
 export function undoneWords(undo: ReceiptUndo): string {
 	const disk = undo.from_disk ? ' and deleted from disk' : '. They stay on disk';
 	const made = madeWords(undo.people, undo.sites);
 	const also = made ? ` Removed with them: ${made} it created.` : '';
-	return `Undone: ${filesSaid(undo.files)} removed from the library${disk}.${also}`;
+	const kept = undo.kept > 0 ? ` ${counted(undo.kept)} kept: already in the library.` : '';
+	const inUse = undo.in_use > 0 ? ` ${counted(undo.in_use)} still in use: Undo again later.` : '';
+	return `Undone: ${filesSaid(undo.files)} removed from the library${disk}.${kept}${inUse}${also}`;
 }
 
 /** The question the Undo asks first, naming the count and where the files go. */
 export function undoQuestion(receipt: SwapReceipt): { title: string; consequence: string } {
 	const noun = receipt.two_way ? 'exchange' : 'swap';
-	const count = landedHere(receipt);
+	// Again, after files were in use: only those are left to take back.
+	const count = receipt.undo?.in_use || landedHere(receipt);
 	const one = count === 1;
 	const disk = receipt.folder?.own
 		? `${one ? 'It is' : 'They are'} deleted from disk in ${receipt.folder.path}.`

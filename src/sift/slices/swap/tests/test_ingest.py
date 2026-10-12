@@ -30,13 +30,19 @@ from PIL import Image
 # The two components a landing writes into beyond the kernel's: the swap's own rows, and the
 # ledger's table.
 import sift.slices.swap.schema
-import sift.slices.workbench.schema  # noqa: F401
+import sift.slices.workbench.schema
 from sift.kernel.config import Settings
 from sift.kernel.content import ContentStore, FolderRow, LibraryStore, Root, songs
 from sift.kernel.db import Database
 from sift.kernel.ids import new_id
 from sift.kernel.ingress import IngressRejected, Origin
-from sift.kernel.jobs import JobContext, JobQueue, SystemCapabilities, register_handler
+from sift.kernel.jobs import (
+    WAITED_ON_PRIORITY,
+    JobContext,
+    JobQueue,
+    SystemCapabilities,
+    register_handler,
+)
 from sift.kernel.migrations import check_allows, widen_a_check
 from sift.slices.capture.pipeline import PROBE
 from sift.slices.capture.pipeline import import_file as capture_import_file
@@ -380,6 +386,44 @@ async def test_a_received_file_carries_none_of_the_forbidden_facts(
 
 
 # --- the refusals -----------------------------------------------------------------------------
+
+
+async def test_a_landed_file_is_read_first_and_kept_against_the_identity_it_was_offered_under(
+    lander: tuple[Lander, Told, Faces],
+    context: JobContext,
+    temp_db: Database,
+    tmp_path: Path,
+) -> None:
+    """The read goes ahead of every pass's backlog, so the next swap can recognise the file; and
+    the sender's identity is kept beside it, because the strip gave what landed another."""
+    run, _, _ = lander
+    received = _received(
+        _staged(tmp_path, "k1.part", _photo_with_location()), identity="sender-copy"
+    )
+
+    landed = await run(received)
+
+    reads = [job for job in await context.queue.children(context.job.id) if job.type == PROBE]
+    assert [job.priority for job in reads] == [ingest.LANDED_PRIORITY]
+    assert ingest.LANDED_PRIORITY < WAITED_ON_PRIORITY
+    kept = await temp_db.fetch_all("SELECT identity, asset_id FROM swap_landed_as", ())
+    assert [(row["identity"], row["asset_id"]) for row in kept] == [
+        ("sender-copy", landed.asset_id)
+    ]
+    own = await temp_db.fetch_one("SELECT identity FROM assets WHERE id = ?", (landed.asset_id,))
+    assert own is not None and own["identity"] != "sender-copy"
+
+
+async def test_a_library_from_before_gains_the_identities_landed_as(temp_db: Database) -> None:
+    await temp_db.initialize_schema()
+    async with temp_db.write() as connection:
+        await connection.execute("DROP TABLE swap_landed_as")
+        await sift.slices.swap.schema.initialize(connection, on_disk=6)
+    index = await temp_db.fetch_one(
+        "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'ix_swap_landed_as_asset'", ()
+    )
+    assert index is not None
+    assert await temp_db.fetch_all("SELECT * FROM swap_landed_as", ()) == []
 
 
 async def test_a_file_nobody_asked_for_is_refused_before_anything_reads_it(
@@ -869,6 +913,7 @@ def test_the_offer_is_read_through_its_own_shapes(tmp_path: Path) -> None:
         ("bryncalloway",),
     )
     assert ava.faces is not None and [one.digest for one in ava.faces.faces] == ["d1"]
+    assert received.identity == "i"
     with pytest.raises(ValueError):
         ingest.received_from_offer(
             {**file, "rating": 5}, people, matched={}, taken=None, staged=tmp_path, digest="ab"

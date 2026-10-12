@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
+from sift.kernel import lanes
+from sift.kernel.destination import resolve_destination
+from sift.kernel.ingress import NoDestination
 from sift.kernel.log import get_logger
 from sift.slices.swap import pieces, transfer
 from sift.slices.swap.frames import Chunk as Chunk
@@ -101,6 +104,9 @@ class _Receiving(_Figures):
         self.landed: dict[int, Landed] = {}
         #: The offer's indexes in the order they were opened: the last is the file crossing now.
         self.opened: dict[int, None] = {}
+        #: Offered people whose first file has landed, and those whose first is landing now.
+        self._settled: set[int] = set()
+        self._settling: dict[int, asyncio.Event] = {}
 
     def _receiving_started(self) -> None:
         """What a side does once its answer is sent and the files can move: nothing on the host,
@@ -372,18 +378,16 @@ class _Receiving(_Figures):
             return
         state.pending = state.count - len(state.missing)
         state.recorded_at = self.live.owner.clock()
-        state.record = self.live.spawn(self._record(state, key, final=True), "record")
+        state.record = self.live.spawn(self._record(state, key), "record")
 
     def _due(self, state: _Incoming) -> bool:
         unrecorded = state.count - len(state.missing) - max(state.recorded, state.pending)
         waited = self.live.owner.clock() - state.recorded_at
         return unrecorded >= RECORD_EVERY or (unrecorded > 0 and waited >= RECORD_SECONDS)
 
-    async def _record(self, state: _Incoming, key: str, *, final: bool = False) -> None:
-        """Write down the chunks the file holds, the staged file synced to the disk first: every
-        `RECORD_EVERY` chunks or `RECORD_SECONDS`, and with `final` whatever is unrecorded."""
-        if not (final or self._due(state)):
-            return
+    async def _record(self, state: _Incoming, key: str) -> None:
+        """Write down whatever chunks the file holds unrecorded, the staged file synced to the disk
+        first. When it is due is the caller's (`_record_beside`, `_conclude`, `record_all`)."""
         live = self.live
         async with state.recording:
             done = set(range(state.count)) - state.missing
@@ -394,15 +398,13 @@ class _Receiving(_Figures):
                 return
             await live.owner.store.record_done(live.id, key, done, live.owner.now())
             state.recorded = len(done)
-            if not final:
-                state.recorded_at = live.owner.clock()
 
     async def record_all(self) -> None:
         """Every file part-way through written down as it stands, for a later swap to resume. A
         failure here costs only the chunks since that file's last record."""
         for index, state in list(self.incoming.items()):
             with contextlib.suppress(Exception):
-                await self._record(state, self.key_of(index), final=True)
+                await self._record(state, self.key_of(index))
 
     async def _refused_again(self, conn: Conn, index: int, state: _Incoming, chunk: int) -> bool:
         """Ask for a bad chunk again, or past the retries drop the file; True when dropped."""
@@ -431,7 +433,7 @@ class _Receiving(_Figures):
             return
         state.checking = True
         try:
-            await self._record(state, self.key_of(index), final=True)
+            await self._record(state, self.key_of(index))
             whole = await self._whole_of(conn, index, state)
         except BaseException:
             state.checking = False
@@ -467,44 +469,83 @@ class _Receiving(_Figures):
         return whole if answer.get("pieces") == ours else None
 
     async def land_each(self) -> None:
-        """Hand each verified file to the landing, one at a time, in the order they finished."""
-        live = self.live
+        """Hand the verified files to the landing as they finish, as many together as the take-in
+        reads into the same library folder (`_landing_at_once`)."""
+        gate = asyncio.Semaphore(await self._landing_at_once())
         while True:
+            await gate.acquire()
             index, path, digest, _size = await self.landing.get()
-            try:
-                if self.offer is None or self.diff is None or self.landing_session is None:
-                    raise ProtocolError("a file before the diff")  # pragma: no cover
-                offer = self.offer
-                people = [one.model_dump(mode="json") for one in offer.people]
-                received = received_from_offer(
-                    offer.files[index].model_dump(mode="json"),
-                    people,
-                    matched=self.diff.people,
-                    taken=[n for n in range(len(people)) if n not in self.skipped],
-                    staged=path,
-                    digest=digest,
-                    checked=True,
-                )
-                # The landing counts the file on this row itself, in the transaction that files it
-                # (`store.count_landed_on`): a count written here as well would be a second one.
+            self.live.spawn(self._land_one(gate, index, path, digest), "land")
+
+    async def _landing_at_once(self) -> int:
+        """The take-in's number for the destination's storage (`lanes.reads_at_once`); one where
+        there is no destination to read it from, and the landing refuses each file anyway."""
+        library = getattr(self.live.context, "library", None)
+        if library is None:
+            return 1
+        try:
+            destination = await resolve_destination(library, self.dest_folder_id)
+        except NoDestination:
+            return 1
+        return max(1, lanes.reads_at_once(Path(destination.root.abs_path)))
+
+    @contextlib.asynccontextmanager
+    async def _first_of_each(self, people: Sequence[int]) -> AsyncIterator[None]:
+        """A person's first file lands alone: who they are here and their faces are settled by it
+        before another file of theirs is filed. A file waits holding no claim, so none deadlock."""
+        while busy := [self._settling[one] for one in people if one in self._settling]:
+            await busy[0].wait()
+        mine = {one for one in people if one not in self._settled}
+        for one in mine:
+            self._settling[one] = asyncio.Event()
+        landed = False
+        try:
+            yield
+            landed = True
+        finally:
+            for one in mine:
+                if landed:
+                    self._settled.add(one)
+                self._settling.pop(one).set()
+
+    async def _land_one(self, gate: asyncio.Semaphore, index: int, path: Path, digest: str) -> None:
+        live = self.live
+        try:
+            if self.offer is None or self.diff is None or self.landing_session is None:
+                raise ProtocolError("a file before the diff")  # pragma: no cover
+            offer = self.offer
+            people = [one.model_dump(mode="json") for one in offer.people]
+            received = received_from_offer(
+                offer.files[index].model_dump(mode="json"),
+                people,
+                matched=self.diff.people,
+                taken=[n for n in range(len(people)) if n not in self.skipped],
+                staged=path,
+                digest=digest,
+                checked=True,
+            )
+            async with self._first_of_each(offer.files[index].people):
+                # The landing counts the file on this row itself, in the transaction that files
+                # it (`store.count_landed_on`): a count written here as well would be a second.
                 landed = await live.owner.land(self.landing_session, received, ctx=live.context)
-                if isinstance(landed, Landed):
-                    self.landed[index] = landed
-                self.done_files.add(index)
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                self.refusals[index] = _refused_why(error)
-                # The file is counted as failed and the swap goes on. The type only: a landing's
-                # message can carry a path, and this line is about a session.
-                log.warning("swap.landing_failed", swap=live.short_id, error=type(error).__name__)
-                self.failed_files.add(index)
-            finally:
-                await asyncio.to_thread(_remove, path)
-                with contextlib.suppress(Exception):
-                    await live.owner.store.drop_manifest(live.id, self.key_of(index))
-                self.landing.task_done()
-                self.check_resolved()
+            if isinstance(landed, Landed):
+                self.landed[index] = landed
+            self.done_files.add(index)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            self.refusals[index] = _refused_why(error)
+            # The file is counted as failed and the swap goes on. The type only: a landing's
+            # message can carry a path, and this line is about a session.
+            log.warning("swap.landing_failed", swap=live.short_id, error=type(error).__name__)
+            self.failed_files.add(index)
+        finally:
+            gate.release()
+            await asyncio.to_thread(_remove, path)
+            with contextlib.suppress(Exception):
+                await live.owner.store.drop_manifest(live.id, self.key_of(index))
+            self.landing.task_done()
+            self.check_resolved()
 
 
 def _nothing() -> None:

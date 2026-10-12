@@ -200,6 +200,14 @@ SELECT asset_id, root_id, rel_path
 """
 
 
+# By the unique identity in chunks: which of these exact files are here, whatever their fingerprint.
+_HELD_BY_IDENTITY = """
+SELECT id, identity
+  FROM assets
+ WHERE identity IN (?*)
+"""
+
+
 # By primary key in chunks, so only the queued files are read, never the library.
 _MEASURES_OF = """
 SELECT id, size_bytes, width, height, added_at
@@ -325,6 +333,16 @@ class DuplicateReads:
                     height=row["height"],
                     added_at=int(row["added_at"]),
                 )
+        return found
+
+    async def held_by_identity(self, identities: Sequence[str]) -> dict[str, str]:
+        """The file here with each of these identities, keyed by identity; absent means none."""
+        found: dict[str, str] = {}
+        wanted = list(dict.fromkeys(identities))
+        for start in range(0, len(wanted), MAX_PAGE_SIZE):
+            sql, params = in_clause(_HELD_BY_IDENTITY, wanted[start : start + MAX_PAGE_SIZE])
+            for row in await self._db.fetch_all(sql, params):
+                found[str(row["identity"])] = str(row["id"])
         return found
 
 

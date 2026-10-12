@@ -832,5 +832,5 @@ async def test_a_file_dropped_while_its_chunks_were_synced_is_not_written_down(
             ),
         ),
     )
-    await half._record(state, "k", final=True)
+    await half._record(state, "k")
     assert recorded == []

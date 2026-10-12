@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from blake3 import blake3
 
@@ -45,7 +45,10 @@ from sift.slices.swap.handshake import (
     _HEARD,
     _STATE_OF,
     _TELL,
+    CUT_CONTROL_CLOSED,
     CUT_OFF_NOTE,
+    CUT_SEND_FAILED,
+    CUT_SILENT,
     ENDED_BY_THEM,
     EXIT_WAIT_SECONDS,
     LOST,
@@ -169,6 +172,17 @@ class Hoster(Protocol):
     ) -> Hosting: ...
 
     async def stop_hosting(self, tunnel_id: str) -> None: ...
+
+
+@runtime_checkable
+class Switch(Protocol):
+    """The tunnel manager's switch, for joining through a tunnel that is off (`TunnelStore`)."""
+
+    async def list(self) -> Sequence[Any]: ...
+
+    async def start(self, tunnel_id: str, master_key: bytes) -> None: ...
+
+    async def stop(self, tunnel_id: str, *, drain: bool = True) -> None: ...
 
 
 class Egress(Protocol):
@@ -386,12 +400,20 @@ class _Figures:
         self.failed_files: set[int] = set()
         #: Whether this direction's files are moving: what the Activity row's estimate waits for.
         self.transferring = False
+        #: When this direction's first and latest bytes moved (`owner.now`), or None before any.
+        self.first_moved_at: int | None = None
+        self.last_moved_at: int | None = None
 
     @property
     def resolved(self) -> bool:
         return len(self.done_files | self.failed_files) >= len(self.wanted)
 
     def moved(self, count: int) -> None:
+        if count > 0:
+            now = self.live.owner.now()
+            if self.first_moved_at is None:
+                self.first_moved_at = now
+            self.last_moved_at = now
         self.moved_bytes += count
         self.unsaved_bytes += count
         self.window_bytes += count
@@ -468,6 +490,8 @@ class _Live(_Figures):
         self.moving_since: int | None = None
         self.cut_offs = 0
         self.retry_at: int | None = None
+        #: Each cut joined again, from its start to the join (`owner.now`).
+        self.cut_spans: list[tuple[int, int]] = []
 
     # --- plumbing ------------------------------------------------------------------------------
 
@@ -554,15 +578,22 @@ class _Live(_Figures):
 
     # --- cut off, and joined again ----------------------------------------------------------------
 
-    async def cut(self) -> None:
+    async def cut(self, why: str, error: BaseException | None = None) -> None:
         """A tunnel cut the session off. It is NOT ended: the step is kept, the connections go,
-        and the session waits for the same token to join again until the token runs out."""
+        and the session waits for the same token to join again until the token runs out. `why`
+        is the path that cut it (`CUT_*`), and `error` what that path met, if anything."""
         if self.ended.is_set() or self.cut_at is not None:
             return
         self.cut_at = self.owner.now()
         self.cut_offs += 1
         self.armed = False
         self.resumed.clear()
+        self.retry_at = self.cut_at if self.role == "guest" else None
+        # The ping goes with the connection it pings on: a write on a closed lock is no error, so
+        # it would go on every two seconds until the end, said only by asyncio's own warning.
+        ping, self._ping = self._ping, None
+        if ping is not None:
+            ping.cancel()
         control, self.control = self.control, None
         if control is not None:
             control.close()
@@ -577,7 +608,14 @@ class _Live(_Figures):
                 task.cancel()
         await self.owner.store.cut_off(self.id, self.cut_at)
         await self.say(CUT_OFF_NOTE)
-        log.info("swap.cut_off", swap=self.short_id, role=self.role)
+        log.info(
+            "swap.cut_off",
+            swap=self.short_id,
+            role=self.role,
+            why=why,
+            error=None if error is None else type(error).__name__,
+            cut_offs=self.cut_offs,
+        )
         if not self._waiting_out:
             self._waiting_out = True
             self.spawn(self.wait_out_the_token(), "expiry")
@@ -606,13 +644,15 @@ class _Live(_Figures):
         from the step the row kept. The row first, so nothing reads the session as joined again
         while its row still says cut off."""
         await self.owner.store.rejoined(self.id)
+        if self.cut_at is not None:
+            self.cut_spans.append((self.cut_at, self.owner.now()))
         self.cut_at = None
         self.retry_at = None
         self.control = control
         self.conns.discard(control)
         self.watchdog.heard()
         self.armed = True
-        if self._ping is not None:  # pragma: no branch (pinging since the first hello was answered)
+        if self._ping is not None:
             self._ping.cancel()
         self._ping = self.spawn(self.ping(control), "ping")
         await self.say(f"Swap with device {self.peer}")
@@ -652,9 +692,9 @@ class _Live(_Figures):
             try:
                 await control.send(message)
                 return True
-            except (ConnectionError, OSError):
+            except (ConnectionError, OSError) as error:
                 if control is self.control:
-                    await self.cut()
+                    await self.cut(CUT_SEND_FAILED, error)
         return False
 
     # --- the end -------------------------------------------------------------------------------
@@ -747,7 +787,7 @@ class _Live(_Figures):
             await asyncio.sleep(min(0.5, self.watchdog.seconds / 4))
             if self.armed and self.watchdog.silent():
                 log.info("swap.silent", swap=self.short_id)
-                await self.cut()
+                await self.cut(CUT_SILENT)
 
     async def ping(self, control: Conn) -> None:
         while True:
@@ -798,11 +838,11 @@ class _Live(_Figures):
             # A lie is not a tunnel dropping: the peer said what a Sift does not, and is not waited
             # for. An end already under way keeps its own reason (`end` takes the first).
             await self.end(LOST, tell=False)
-        except (asyncio.IncompleteReadError, ConnectionError, OSError, TimeoutError):
+        except (asyncio.IncompleteReadError, ConnectionError, OSError, TimeoutError) as error:
             # Only the connection the session is on now: one a cut or a rejoin has already put
             # aside says nothing about the session when it closes.
             if not self.ended.is_set() and not self.closing_is_expected() and conn is self.control:
-                await self.cut()
+                await self.cut(CUT_CONTROL_CLOSED, error)
 
     async def on_message(self, frame: Mapping[str, Any]) -> None:
         """A control message. The words mean the same whichever side sends them: `offer` is what

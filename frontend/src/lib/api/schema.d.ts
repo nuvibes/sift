@@ -9296,7 +9296,7 @@ export interface paths {
          * Undo Swap
          * @description Undo this swap: every file it landed goes from the library, and from the disk since they
          *     sit in the folder the swap made; then the People, Sites and Usernames it made that nothing
-         *     else holds. Once: a second Undo finds it undone.
+         *     else holds. Once, unless files were in use: then again for those.
          */
         post: operations["undo_swap_api_swap_receipts__session_id__undo_post"];
         delete?: never;
@@ -9509,6 +9509,48 @@ export interface paths {
         get: operations["swap_tunnels_api_swap_tunnels_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/tunnels/{tunnel_id}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Probe */
+        get: operations["read_probe_api_swap_tunnels__tunnel_id__probe_get"];
+        put?: never;
+        /**
+         * Host Probe
+         * @description Host a sink behind this tunnel's mapped port for `seconds`; answer where to send.
+         */
+        post: operations["host_probe_api_swap_tunnels__tunnel_id__probe_post"];
+        /** Stop Probe */
+        delete: operations["stop_probe_api_swap_tunnels__tunnel_id__probe_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/swap/tunnels/{tunnel_id}/probe/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Probe
+         * @description Push bytes to a sink the other device hosts, through this tunnel, on `streams`.
+         */
+        post: operations["send_probe_api_swap_tunnels__tunnel_id__probe_send_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -17560,6 +17602,87 @@ export interface components {
             kind: string;
         };
         /**
+         * ProbeHost
+         * @description Host a sink behind a tunnel for `seconds`.
+         */
+        ProbeHost: {
+            /**
+             * Seconds
+             * @default 20
+             */
+            seconds: number;
+        };
+        /**
+         * ProbeHosted
+         * @description Where the other device sends: its address, port and the probe's secret, hex.
+         */
+        ProbeHosted: {
+            /** Address */
+            address: string;
+            /** Port */
+            port: number;
+            /** Seconds */
+            seconds: number;
+            /** Secret */
+            secret: string;
+        };
+        /**
+         * ProbeReading
+         * @description What a hosted sink has counted so far.
+         */
+        ProbeReading: {
+            /** Connections */
+            connections: number;
+            /** Done */
+            done: boolean;
+            /** Rate Bps */
+            rate_bps: number | null;
+            /** Received */
+            received: number;
+            /** Refused */
+            refused: number;
+            /** Seconds */
+            seconds: number | null;
+        };
+        /**
+         * ProbeSend
+         * @description Push bytes to a hosted sink through this device's tunnel.
+         */
+        ProbeSend: {
+            /** Address */
+            address: string;
+            /** Port */
+            port: number;
+            /**
+             * Seconds
+             * @default 20
+             */
+            seconds: number;
+            /** Secret */
+            secret: string;
+            /**
+             * Streams
+             * @default 1
+             */
+            streams: number;
+        };
+        /**
+         * ProbeSent
+         * @description What a send pushed, and the rate it made in bits a second.
+         */
+        ProbeSent: {
+            /** Failed */
+            failed: number;
+            /** Rate Bps */
+            rate_bps: number;
+            /** Seconds */
+            seconds: number;
+            /** Sent */
+            sent: number;
+            /** Streams */
+            streams: number;
+        };
+        /**
          * Produced
          * @description Where a file came from, for the copy's own page; the source is null once deleted.
          */
@@ -18175,6 +18298,16 @@ export interface components {
              * @default false
              */
             from_disk: boolean;
+            /**
+             * In Use
+             * @default 0
+             */
+            in_use: number;
+            /**
+             * Kept
+             * @default 0
+             */
+            kept: number;
             /**
              * People
              * @default 0
@@ -21048,6 +21181,11 @@ export interface components {
              */
             bytes: number;
             /**
+             * Done
+             * @default false
+             */
+            done: boolean;
+            /**
              * Files
              * @default 0
              */
@@ -21066,6 +21204,8 @@ export interface components {
             rate_bps: number | null;
             /** Received Files */
             received_files: number | null;
+            /** Streams */
+            streams: number | null;
             /** Wanted Bytes */
             wanted_bytes: number | null;
             /**
@@ -21094,6 +21234,10 @@ export interface components {
              * @default 0
              */
             back_files: number;
+            /** Back Moving */
+            back_moving: number | null;
+            /** Back Rate */
+            back_rate: number | null;
             /**
              * Bytes
              * @default 0
@@ -21109,6 +21253,11 @@ export interface components {
              * @default 0
              */
             cut_offs: number;
+            /**
+             * Cut Seconds
+             * @default 0
+             */
+            cut_seconds: number;
             /** Device */
             device: string | null;
             /** Device Name */
@@ -21131,6 +21280,13 @@ export interface components {
              * @default 0
              */
             held: number;
+            /** Moving */
+            moving: number | null;
+            /**
+             * Not Kept
+             * @default 0
+             */
+            not_kept: number;
             /** Rate */
             rate: number | null;
             /** Reason */
@@ -21164,6 +21320,8 @@ export interface components {
              */
             two_way: boolean;
             undo: components["schemas"]["ReceiptUndo"] | null;
+            /** Waited */
+            waited: number | null;
         };
         /**
          * SwapRefusal
@@ -38270,6 +38428,136 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SwapTunnel"][];
+                };
+            };
+        };
+    };
+    read_probe_api_swap_tunnels__tunnel_id__probe_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tunnel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeReading"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    host_probe_api_swap_tunnels__tunnel_id__probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tunnel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeHost"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeHosted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stop_probe_api_swap_tunnels__tunnel_id__probe_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tunnel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_probe_api_swap_tunnels__tunnel_id__probe_send_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tunnel_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeSend"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeSent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

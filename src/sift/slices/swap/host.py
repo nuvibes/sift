@@ -55,11 +55,13 @@ from sift.slices.swap.frames import Chunk as Chunk
 from sift.slices.swap.frames import Conn as Conn
 from sift.slices.swap.frames import ProtocolError as ProtocolError
 from sift.slices.swap.handshake import (
+    CUT_HOSTING_LOST,
     DISK_FULL,
     EXPIRED,
     LOST,
     OLDER,
     REASON_DONE,
+    REJOIN_DIALS,
     code_of,
     hello,
     read_hello,
@@ -107,6 +109,8 @@ class HostSession(_Sending, _Live):
         #: The listener's port on loopback: what the tunnel's listener targets, again after a cut.
         self.port = 0
         self.hosting = False
+        #: The cut the host last hosted again for, so one cut hosts again once.
+        self._rehosted_for: int | None = None
         self.hello_used = False
         #: Settled by They match. They don't match ends the session there and then.
         self.code_matched: asyncio.Future[None] = loop.create_future()
@@ -317,38 +321,37 @@ class HostSession(_Sending, _Live):
             await self.end(DISK_FULL)
 
     async def hosting_moved(self, hosting: Hosting) -> None:
-        """The provider moved the public port at a renewal. Before anybody has joined, the token is
-        made again for the new port (same secret, same expiry) and the screen shows it; after, the
-        guest is told where to dial its next stream."""
-        if self.token is None or self.ended.is_set():
+        """The provider gave another public port, at a renewal or a hosting again. The token is
+        made again for it (same secret, same expiry), which the screen shows before anybody joins
+        and while cut off; a guest joined is told where to dial its next stream. A move that comes
+        with the path down never reaches the guest, so the remade token is how it joins again."""
+        token = self.token
+        if token is None or self.ended.is_set():
             return
-        if self.control is None:
-            try:
-                moved = mint(
-                    hosting.public_ipv4,
-                    hosting.external_port,
-                    self.token.host_device,
-                    self.owner.now(),
-                    secret=self.secret,
-                )
-            except ValueError:
+        if (hosting.public_ipv4, hosting.external_port) == (token.address, token.port):
+            return
+        try:
+            moved = mint(
+                hosting.public_ipv4,
+                hosting.external_port,
+                token.host_device,
+                self.owner.now(),
+                secret=self.secret,
+            )
+        except ValueError:
+            if self.control is None:
                 await self.end(LOST, tell=False)
-                return
-            # The same server: a renewal moves the port, never the tunnel.
-            self.token = Token(
-                moved.address,
-                moved.port,
-                self.secret,
-                self.token.expires,
-                self.token.host_device,
-                self.token.server,
-            )
-            log.info("swap.token_remade", swap=self.short_id)
             return
-        with contextlib.suppress(Exception):
-            await self.control.send(
-                {"moved": {"address": hosting.public_ipv4, "port": hosting.external_port}}
-            )
+        # The same server: a renewal moves the port, never the tunnel.
+        self.token = Token(
+            moved.address, moved.port, self.secret, token.expires, token.host_device, token.server
+        )
+        log.info("swap.token_remade", swap=self.short_id, joined=self.control is not None)
+        if self.control is not None:
+            with contextlib.suppress(Exception):
+                await self.control.send(
+                    {"moved": {"address": hosting.public_ipv4, "port": hosting.external_port}}
+                )
 
     async def hosting_lost(self, error: TunnelError) -> None:
         """The hosting ended on its own: a renewal the provider refused. Nobody can reach this
@@ -359,7 +362,7 @@ class HostSession(_Sending, _Live):
         # lock it is telling this session under.
         self.hosting = False
         if self.cut_at is None:
-            await self.cut()
+            await self.cut(CUT_HOSTING_LOST, error)
         else:
             await self.on_cut()
 
@@ -367,17 +370,44 @@ class HostSession(_Sending, _Live):
         return [*self.stream_tasks, *self.streams_in]
 
     async def on_cut(self) -> None:
-        if not self.hosting and not self.ended.is_set():
+        if self.ended.is_set():
+            return
+        if not self.hosting:
             self.spawn(self.host_again(), "rehost")
+        if self.cut_at is not None and self._rehosted_for != self.cut_at:
+            self._rehosted_for = self.cut_at
+            self.spawn(self.unless_joined_again(self.cut_at), "port")
 
-    async def host_again(self) -> None:
+    async def unless_joined_again(self, cut_at: int) -> None:
+        """Still cut off once the guest would have given up dialling (`REJOIN_DIALS`): the port
+        the provider forwards may reach nothing now, though its renewals still answer, and only
+        the guest can tell from outside. So the hosting is made again on a fresh port, and the
+        token with it, for the person to send; a guest that can still reach the old one has
+        joined again by then."""
+        await asyncio.sleep(self.owner.retry_seconds * REJOIN_DIALS)
+        if self.ended.is_set() or self.cut_at != cut_at:
+            return
+        if self.hosting:
+            self.hosting = False
+            try:
+                await self.owner.hoster.stop_hosting(self.tunnel_id)
+            except Exception as error:  # hosting again below says whether the tunnel can
+                log.warning(
+                    "swap.stop_hosting_failed", swap=self.short_id, error=type(error).__name__
+                )
+        log.info("swap.hosting_anew", swap=self.short_id)
+        await self.host_again(wait=False)
+
+    async def host_again(self, *, wait: bool = True) -> None:
         """Host on the same tunnel again, every `RETRY_SECONDS` until it takes or the token runs
         out. The listener never closed; a port the provider moved remakes the token. It waits
-        first: the provider has just refused, and the tunnel is being put back as it was. A loss
-        heard while cut off starts another of these; whichever hosts first, the other then stops
-        rather than ask the tunnel for a second hosting."""
+        first unless told not to: the provider has just refused, and the tunnel is being put back
+        as it was. A loss heard while cut off starts another of these; whichever hosts first, the
+        other then stops rather than ask the tunnel for a second hosting."""
         while True:
-            await asyncio.sleep(self.owner.retry_seconds)
+            if wait:
+                await asyncio.sleep(self.owner.retry_seconds)
+            wait = True
             if self.hosting or self.ended.is_set():
                 return
             key = None
@@ -393,8 +423,10 @@ class HostSession(_Sending, _Live):
                         on_moved=self.hosting_moved,
                         on_lost=self.hosting_lost,
                     )
-                except TunnelError:
-                    pass
+                except TunnelError as error:
+                    log.info(
+                        "swap.hosting_again_failed", swap=self.short_id, error=type(error).__name__
+                    )
                 else:
                     self.hosting = True
                     log.info("swap.hosting_again", swap=self.short_id)

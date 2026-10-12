@@ -117,6 +117,10 @@ class LiveFacts:
     #: the receiver's screen says both and the two meet at the end.
     received_files: int = 0
     back_received_files: int = 0
+    #: The streams carrying each direction: host to guest, and with `back_`, guest to host. A
+    #: stream carries one direction only.
+    streams: int | None = None
+    back_streams: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

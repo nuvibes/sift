@@ -18,6 +18,7 @@ router = APIRouter(tags=["swap"])
 
 LOCKED = "Your saved keys are locked. Enter your password at the top of this page, then try again."
 NO_SINK = "No probe is hosted on this tunnel."
+UNREACHED = "The other device's sink could not be reached through this tunnel."
 
 
 def _sessions(request: Request) -> SwapSessions:
@@ -100,8 +101,10 @@ async def send_probe(
         sent = await sessions.probes.send(
             tunnel_id, body.address, body.port, secret, body.seconds, body.streams
         )
-    except lock.LockFailed as error:
+    except (lock.LockFailed, TunnelError) as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from None
+    if sent.failed == sent.streams:
+        raise HTTPException(status.HTTP_409_CONFLICT, UNREACHED)
     return ProbeSent(
         sent=sent.sent,
         seconds=round(sent.seconds, 3),

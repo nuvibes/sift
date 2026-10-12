@@ -49,7 +49,6 @@ from sift.slices.swap.models import (
     LeftOut,
     ReadToken,
     ReceiptFolder,
-    ReceiptUndo,
     RefusedBy,
     SessionState,
     StartSwap,
@@ -124,6 +123,7 @@ def _directions(
         rate_bps=None if facts is None else facts.rate_bps,
         moving=facts is not None and facts.moving,
         received_files=None if facts is None or row.role == "host" else facts.received_files,
+        streams=None if facts is None else facts.streams,
     )
     back = SwapDirection(
         offered_files=row.back_offered,
@@ -134,8 +134,26 @@ def _directions(
         rate_bps=None if facts is None else facts.back_rate_bps,
         moving=facts is not None and facts.back_moving,
         received_files=None if facts is None or row.role != "host" else facts.back_received_files,
+        streams=None if facts is None else facts.back_streams,
     )
+    for one in (first, back):
+        # Every file it wanted has crossed: counted by the sender as the receiver checks it, and
+        # by the receiver as it checks it.
+        crossed = one.files if one.received_files is None else one.received_files
+        one.done = one.wanted_files > 0 and crossed >= one.wanted_files
     return (first, back) if row.role == "host" else (back, first)
+
+
+def _rate(
+    row: SessionRow,
+    facts: LiveFacts | None,
+    ways: tuple[SwapDirection | None, SwapDirection | None],
+) -> int | None:
+    """The session's rate: one way's, or in an exchange the sum of the directions still moving."""
+    if not row.two_way:
+        return row.rate_bps if facts is None or facts.rate_bps is None else facts.rate_bps
+    moving = [one.rate_bps for one in ways if one is not None and one.moving and not one.done]
+    return sum(rate for rate in moving if rate) or None
 
 
 async def _tunnel_name(request: Request | None, tunnel_id: str | None) -> str | None:
@@ -192,7 +210,7 @@ async def _session_view(
         sent_files=row.sent_files,
         sent_bytes=max(row.sent_bytes, 0 if facts is None else facts.moved_bytes),
         wanted_bytes=None if facts is None else facts.wanted_bytes,
-        rate_bps=row.rate_bps if facts is None or facts.rate_bps is None else facts.rate_bps,
+        rate_bps=_rate(row, facts, (sending, receiving)),
         unwanted_files=0 if facts is None else facts.unwanted,
         received_files=None if facts is None or row.role == "host" else facts.received_files,
         started_at=row.started_at,
@@ -709,9 +727,9 @@ async def undo_swap(
 ) -> SwapReceipt:
     """Undo this swap: every file it landed goes from the library, and from the disk since they
     sit in the folder the swap made; then the People, Sites and Usernames it made that nothing
-    else holds. Once: a second Undo finds it undone."""
+    else holds. Once, unless files were in use: then again for those."""
     shown = await _receipt_view(request, sessions, library, session_id)
-    if shown.undo is not None:
+    if shown.undo is not None and shown.undo.in_use == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, "This swap was undone already.")
     if session_id in sessions.undoing:
         raise HTTPException(status.HTTP_409_CONFLICT, "This swap is being undone.")
@@ -735,13 +753,7 @@ async def undo_swap(
         await receipt.mark_undone(
             sessions.store.database,
             session_id,
-            ReceiptUndo(
-                at=sessions.now(),
-                files=undone.files,
-                from_disk=True,
-                people=undone.people,
-                sites=undone.sites,
-            ),
+            receipt.undone_of(row, shown.undo, undone, sessions.now()),
         )
     finally:
         sessions.undoing.discard(session_id)

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import unicodedata
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ from sift.kernel.ingress import (
     classify,
     read_ends,
 )
-from sift.kernel.jobs import JobContext
+from sift.kernel.jobs import DEFAULT_PRIORITY, WAITED_ON_PRIORITY, JobContext
 from sift.kernel.ledger import Actor, record_event
 from sift.kernel.log import get_logger
 from sift.kernel.seams import ReindexSeam
@@ -133,6 +134,9 @@ class Received:
     #: `digest` was read from these staged bytes by the session that wrote them, after the last
     #: chunk: the landing does not read them again for it.
     checked: bool = False
+    #: The sender's identity for its own copy. The strip changes the bytes, so what lands has
+    #: another; kept beside the landing so the next offer of that copy is known (`diff`).
+    identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +211,7 @@ def received_from_offer(
         username=entry.username,
         people=tuple(arriving),
         name=entry.name,
+        identity=entry.identity,
         song=(
             ArrivingSong(
                 name=entry.song.name,
@@ -268,8 +273,19 @@ class ImportFile(Protocol):
     """The one import pipeline, capture's `import_file`, handed in at boot."""
 
     async def __call__(
-        self, *, path: Path, origin: Origin, dest_folder_id: str | None, ctx: JobContext
+        self,
+        *,
+        path: Path,
+        origin: Origin,
+        dest_folder_id: str | None,
+        ctx: JobContext,
+        probe_priority: int = DEFAULT_PRIORITY,
     ) -> ImportOutcome: ...
+
+
+#: A landed file is read ahead of any pass's backlog, a press's included: the next swap recognises
+#: it only once it has its fingerprint, and the person who took it is waiting to see it.
+LANDED_PRIORITY: Final = WAITED_ON_PRIORITY - 1
 
 
 class ImportOutcome(Protocol):
@@ -357,7 +373,11 @@ async def land(
         top = await _folder_for(ctx.library, session.dest_folder_id, swap_folder(session))
         await record_folder(database, session, top.id)
         outcome = await import_file(
-            path=stripped, origin=Origin.SWAP, dest_folder_id=folder.id, ctx=ctx
+            path=stripped,
+            origin=Origin.SWAP,
+            dest_folder_id=folder.id,
+            ctx=ctx,
+            probe_priority=LANDED_PRIORITY,
         )
     finally:
         await asyncio.to_thread(scratch.cleanup)
@@ -444,6 +464,8 @@ async def _file_it(
                 connection, asset_ids=(asset_id,), site=site, source=VIA_SWAP, made=made
             )
         await _put_song_on(connection, session, asset_id, received.song)
+        if received.identity:
+            await connection.execute(_LANDED_AS, (received.identity, asset_id, int(time.time())))
 
         await record_event(
             connection,
@@ -458,6 +480,13 @@ async def _file_it(
 
 
 SONG_SOURCE: Final = VIA_SWAP
+
+#: The identity the file was offered under, against what it landed as; the latest landing wins.
+_LANDED_AS: Final = (
+    "INSERT INTO swap_landed_as (identity, asset_id, landed_at) VALUES (?, ?, ?)"
+    " ON CONFLICT (identity) DO UPDATE SET asset_id = excluded.asset_id,"
+    " landed_at = excluded.landed_at"
+)
 
 
 async def _put_song_on(

@@ -60,7 +60,7 @@ from sift.slices.swap.models import (
 from sift.slices.swap.store import SessionRow
 
 if TYPE_CHECKING:
-    from sift.slices.swap.live import _Live
+    from sift.slices.swap.live import _Figures, _Live
     from sift.slices.swap.receiving import _Receiving
     from sift.slices.swap.sending import _Sending
 
@@ -75,11 +75,14 @@ _KEEP = (
     "INSERT INTO swap_receipts (session_id, body, written_at) VALUES (?, ?, ?)"
     " ON CONFLICT(session_id) DO UPDATE SET body = excluded.body, written_at = excluded.written_at"
 )
-# Once: a second Undo of the same swap finds it undone and writes nothing.
+# Once, unless the last Undo left files another program held open: a second Undo of a swap
+# undone whole finds it undone and writes nothing.
 _UNDONE = (
     "INSERT INTO swap_receipts (session_id, body, written_at, undone_at, undo)"
     " VALUES (?, '{}', ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET"
     " undone_at = excluded.undone_at, undo = excluded.undo WHERE swap_receipts.undone_at IS NULL"
+    " OR CASE WHEN json_valid(swap_receipts.undo)"
+    " THEN json_extract(swap_receipts.undo, '$.in_use') END > 0"
 )
 
 
@@ -105,6 +108,8 @@ async def read(database: Database, session_id: str) -> Kept | None:
             from_disk=bool(said.get("from_disk", False)),
             people=int(said.get("people", 0)),
             sites=int(said.get("sites", 0)),
+            in_use=int(said.get("in_use", 0)),
+            kept=int(said.get("kept", 0)),
         )
     return Kept(body=body, undo=undo)
 
@@ -124,13 +129,16 @@ async def keep(database: Database, session_id: str, body: Mapping[str, Any], now
 
 
 async def mark_undone(database: Database, session_id: str, undo: ReceiptUndo) -> bool:
-    """Say the swap was undone, once. False when it already was."""
+    """Say the swap was undone, once, or again over an Undo that left files in use. False when
+    it already was."""
     said = json.dumps(
         {
             "files": undo.files,
             "from_disk": undo.from_disk,
             "people": undo.people,
             "sites": undo.sites,
+            "in_use": undo.in_use,
+            "kept": undo.kept,
         }
     )
     async with telling(database, EVERY_ADMIN, About.JOBS) as connection:
@@ -142,8 +150,16 @@ def body_of(live: _Live) -> dict[str, Any]:
     """What the receipt keeps of a session that is ending, read from its memory."""
     groups: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    refused = held = 0
+    refused = held = not_kept = 0
     receiving, sending = live.receiving_half(), live.sending_half()
+    if receiving is not None:
+        # Received whole and checked, and the end came before they were filed: they go with it.
+        not_kept = len(
+            receiving.verified
+            - receiving.done_files
+            - receiving.failed_files
+            - set(receiving.refusals)
+        )
     if receiving is not None and receiving.offer is not None and receiving.groups is not None:
         landed, passed = _landed(receiving, receiving.offer, receiving.groups)
         groups.extend(one.model_dump(mode="json") for one in landed)
@@ -162,7 +178,42 @@ def body_of(live: _Live) -> dict[str, Any]:
         "held": held,
         "cut_offs": live.cut_offs,
         "moving_since": live.moving_since,
+        "not_kept": not_kept,
+        **_clock(live),
     }
+
+
+def _clock(live: _Live) -> dict[str, int | None]:
+    """How long each direction moved and how long the session sat cut off: the receipt's one
+    clock. A direction moved from its first byte to its last, less the cuts inside that span; a
+    session ended while cut off stopped moving when it was cut."""
+    now = live.owner.now()
+    spans = [(int(a), int(b)) for a, b in getattr(live, "cut_spans", ())]
+    if live.cut_at is not None:
+        spans.append((live.cut_at, now))
+    said: dict[str, int | None] = {
+        "moving_seconds": None,
+        "back_moving_seconds": None,
+        "cut_seconds": sum(max(0, b - a) for a, b in spans),
+    }
+    for flow in live.flows():
+        key = "back_moving_seconds" if flow.back else "moving_seconds"
+        said[key] = _moved_for(live, flow, spans, now)
+    return said
+
+
+def _moved_for(
+    live: _Live, flow: _Figures, spans: Sequence[tuple[int, int]], now: int
+) -> int | None:
+    first = getattr(flow, "first_moved_at", None) or live.moving_since
+    if flow.moved_bytes <= 0 or first is None:
+        return None
+    last = getattr(flow, "last_moved_at", None)
+    if last is None:
+        last = live.cut_at if live.cut_at is not None else now
+    cut = sum(max(0, min(b, last) - max(a, first)) for a, b in spans)
+    # A file moved inside one second still took a second.
+    return max(1, last - first - cut)
 
 
 def _bytes_of(sizes: Sequence[int], members: Iterable[int], done: set[int]) -> tuple[int, int]:
@@ -281,19 +332,30 @@ def view(
     body = kept.body if kept is not None else {}
     moving_since = body.get("moving_since")
     seconds = None if row.ended_at is None else max(0, row.ended_at - row.started_at)
-    moving = (
-        None
-        if row.ended_at is None or not isinstance(moving_since, int)
-        else max(0, row.ended_at - moving_since)
-    )
-    files, size = row.sent_files, row.sent_bytes
+    moving, back_moving = _seconds(body, "moving_seconds"), _seconds(body, "back_moving_seconds")
+    if "moving_seconds" not in body and row.ended_at is not None and isinstance(moving_since, int):
+        # A receipt kept before each direction's clock: from the first byte to the end.
+        moving = max(0, row.ended_at - moving_since)
+    # The rate is what crossed the wire over the time it moved; the size is the files'.
     rate: float | None = None
     if moving:
-        rate = round(size / moving, 1)
+        rate = round(row.sent_bytes / moving, 1)
     elif row.rate_bps:
         rate = round(row.rate_bps / 8, 1)
+    back_rate = round(row.back_bytes / back_moving, 1) if back_moving else None
+    groups = [ReceiptGroup.model_validate(one) for one in body.get("groups", [])]
+    size, back_size = row.sent_bytes, row.back_bytes
+    if "groups" in body:
+        here = "landed" if row.role == "guest" else "sent"
+        size = sum(one.bytes for one in groups if one.way == here)
+        back_size = sum(one.bytes for one in groups if one.way != here)
     undo = kept.undo if kept is not None else None
     landed_here = row.sent_files if row.role == "guest" else row.back_files
+    cut_offs = max(
+        int(body.get("cut_offs", 0) or 0),
+        int(getattr(row, "cut_offs", 0) or 0),
+        int(row.cut_off_at is not None),
+    )
     return SwapReceipt(
         session_id=row.id,
         role="host" if row.role == "host" else "guest",
@@ -304,20 +366,52 @@ def view(
         ended_at=row.ended_at,
         seconds=seconds,
         reason=row.end_reason,
-        files=files,
+        files=row.sent_files,
         bytes=size,
         back_files=row.back_files,
-        back_bytes=row.back_bytes,
+        back_bytes=back_size,
         rate=rate,
+        back_rate=back_rate,
+        moving=moving,
+        back_moving=back_moving,
+        waited=max(0, moving_since - row.started_at) if isinstance(moving_since, int) else None,
         tunnel=tunnel,
-        cut_offs=int(body.get("cut_offs", 0) or 0),
+        cut_offs=cut_offs,
+        cut_seconds=int(body.get("cut_seconds", 0) or 0),
+        not_kept=int(body.get("not_kept", 0) or 0),
         folder=folder,
-        groups=[ReceiptGroup.model_validate(one) for one in body.get("groups", [])],
+        groups=groups,
         skipped=[ReceiptSkipped.model_validate(one) for one in body.get("skipped", [])],
         refused=int(body.get("refused", 0) or 0),
         held=int(body.get("held", 0) or 0),
         undo=undo,
-        can_undo=undo is None and not row.live and landed_here > 0 and row.folder_id is not None,
+        can_undo=(undo is None or undo.in_use > 0)
+        and not row.live
+        and landed_here > 0
+        and row.folder_id is not None,
+    )
+
+
+def _seconds(body: Mapping[str, Any], key: str) -> int | None:
+    value = body.get(key)
+    return value if isinstance(value, int) and value > 0 else None
+
+
+def undone_of(row: SessionRow, before: ReceiptUndo | None, undone: Undone, at: int) -> ReceiptUndo:
+    """What the receipt says after an Undo, counting an earlier Undo that left files in use: the
+    files the swap landed that neither removed nor in use were already in the library."""
+    landed_here = row.sent_files if row.role == "guest" else row.back_files
+    files = undone.files + (0 if before is None else before.files)
+    people = undone.people + (0 if before is None else before.people)
+    sites = undone.sites + (0 if before is None else before.sites)
+    return ReceiptUndo(
+        at=at,
+        files=files,
+        from_disk=True,
+        people=people,
+        sites=sites,
+        in_use=undone.in_use,
+        kept=max(0, landed_here - files - undone.in_use),
     )
 
 
@@ -515,6 +609,8 @@ class Undone:
     people: int
     sites: int
     left: int
+    #: Files another program held open: they stay for a later Undo.
+    in_use: int = 0
 
 
 async def _by_place(
@@ -558,15 +654,18 @@ async def undo(
                 in_folder.setdefault(location.asset_id, []).append(location.id)
     made = await _made_by(database, row, list(in_folder))
     whole, partly = await _by_place(access, actor, in_folder, here)
-    removed = 0
+    removed = in_use = 0
     for start in range(0, len(whole), UNDO_BATCH):
         batch = whole[start : start + UNDO_BATCH]
         result = await remover.remove_many(batch, mode="disk", actor=actor)
         removed += int(getattr(result, "removed", len(batch)))
+        in_use += int(getattr(result, "in_use", 0))
     for asset_id, location_id in partly:
         try:
             await remover.remove(asset_id, mode="disk", actor=actor, location_id=location_id)
             removed += 1
+        except PermissionError:
+            in_use += 1
         except Exception as error:
             log.warning("swap.undo_kept", swap=row.short_id, error=type(error).__name__)
     left = await _clear_emptied(library, remover, inside, actor=actor, short_id=row.short_id)
@@ -589,5 +688,6 @@ async def undo(
         people=people,
         sites=sites,
         left=left,
+        in_use=in_use,
     )
-    return Undone(files=removed, people=people, sites=sites, left=left)
+    return Undone(files=removed, people=people, sites=sites, left=left, in_use=in_use)

@@ -16464,6 +16464,180 @@
         "title": "PreviewView",
         "type": "object"
       },
+      "ProbeHost": {
+        "description": "Host a sink behind a tunnel for `seconds`.",
+        "properties": {
+          "seconds": {
+            "default": 20,
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "ProbeHost",
+        "type": "object"
+      },
+      "ProbeHosted": {
+        "description": "Where the other device sends: its address, port and the probe's secret, hex.",
+        "properties": {
+          "address": {
+            "title": "Address",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "integer"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "address",
+          "port",
+          "secret",
+          "seconds"
+        ],
+        "title": "ProbeHosted",
+        "type": "object"
+      },
+      "ProbeReading": {
+        "description": "What a hosted sink has counted so far.",
+        "properties": {
+          "connections": {
+            "title": "Connections",
+            "type": "integer"
+          },
+          "done": {
+            "title": "Done",
+            "type": "boolean"
+          },
+          "rate_bps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Bps"
+          },
+          "received": {
+            "title": "Received",
+            "type": "integer"
+          },
+          "refused": {
+            "title": "Refused",
+            "type": "integer"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          }
+        },
+        "required": [
+          "received",
+          "connections",
+          "refused",
+          "seconds",
+          "rate_bps",
+          "done"
+        ],
+        "title": "ProbeReading",
+        "type": "object"
+      },
+      "ProbeSend": {
+        "description": "Push bytes to a hosted sink through this device's tunnel.",
+        "properties": {
+          "address": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Address",
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "seconds": {
+            "default": 20,
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Seconds",
+            "type": "integer"
+          },
+          "secret": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Secret",
+            "type": "string"
+          },
+          "streams": {
+            "default": 1,
+            "maximum": 16.0,
+            "minimum": 1.0,
+            "title": "Streams",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "address",
+          "port",
+          "secret"
+        ],
+        "title": "ProbeSend",
+        "type": "object"
+      },
+      "ProbeSent": {
+        "description": "What a send pushed, and the rate it made in bits a second.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "rate_bps": {
+            "title": "Rate Bps",
+            "type": "integer"
+          },
+          "seconds": {
+            "title": "Seconds",
+            "type": "number"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "integer"
+          },
+          "streams": {
+            "title": "Streams",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "sent",
+          "seconds",
+          "streams",
+          "failed",
+          "rate_bps"
+        ],
+        "title": "ProbeSent",
+        "type": "object"
+      },
       "Produced": {
         "description": "Where a file came from, for the copy's own page; the source is null once deleted.",
         "properties": {
@@ -17944,6 +18118,16 @@
             "title": "From Disk",
             "type": "boolean"
           },
+          "in_use": {
+            "default": 0,
+            "title": "In Use",
+            "type": "integer"
+          },
+          "kept": {
+            "default": 0,
+            "title": "Kept",
+            "type": "integer"
+          },
           "people": {
             "default": 0,
             "title": "People",
@@ -17960,7 +18144,9 @@
           "files",
           "from_disk",
           "people",
-          "sites"
+          "sites",
+          "in_use",
+          "kept"
         ],
         "title": "ReceiptUndo",
         "type": "object"
@@ -24732,6 +24918,11 @@
             "title": "Bytes",
             "type": "integer"
           },
+          "done": {
+            "default": false,
+            "title": "Done",
+            "type": "boolean"
+          },
           "files": {
             "default": 0,
             "title": "Files",
@@ -24769,6 +24960,17 @@
             ],
             "title": "Received Files"
           },
+          "streams": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streams"
+          },
           "wanted_bytes": {
             "anyOf": [
               {
@@ -24794,7 +24996,9 @@
           "wanted_bytes",
           "rate_bps",
           "moving",
-          "received_files"
+          "received_files",
+          "streams",
+          "done"
         ],
         "title": "SwapDirection",
         "type": "object"
@@ -24825,6 +25029,28 @@
             "title": "Back Files",
             "type": "integer"
           },
+          "back_moving": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Back Moving"
+          },
+          "back_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Back Rate"
+          },
           "bytes": {
             "default": 0,
             "title": "Bytes",
@@ -24838,6 +25064,11 @@
           "cut_offs": {
             "default": 0,
             "title": "Cut Offs",
+            "type": "integer"
+          },
+          "cut_seconds": {
+            "default": 0,
+            "title": "Cut Seconds",
             "type": "integer"
           },
           "device": {
@@ -24899,6 +25130,22 @@
           "held": {
             "default": 0,
             "title": "Held",
+            "type": "integer"
+          },
+          "moving": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moving"
+          },
+          "not_kept": {
+            "default": 0,
+            "title": "Not Kept",
             "type": "integer"
           },
           "rate": {
@@ -24988,6 +25235,17 @@
                 "type": "null"
               }
             ]
+          },
+          "waited": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Waited"
           }
         },
         "required": [
@@ -25005,8 +25263,14 @@
           "back_files",
           "back_bytes",
           "rate",
+          "back_rate",
+          "moving",
+          "back_moving",
+          "waited",
           "tunnel",
           "cut_offs",
+          "cut_seconds",
+          "not_kept",
           "folder",
           "groups",
           "skipped",
@@ -54377,7 +54641,7 @@
     },
     "/api/swap/receipts/{session_id}/undo": {
       "post": {
-        "description": "Undo this swap: every file it landed goes from the library, and from the disk since they\nsit in the folder the swap made; then the People, Sites and Usernames it made that nothing\nelse holds. Once: a second Undo finds it undone.",
+        "description": "Undo this swap: every file it landed goes from the library, and from the disk since they\nsit in the folder the swap made; then the People, Sites and Usernames it made that nothing\nelse holds. Once, unless files were in use: then again for those.",
         "operationId": "undo_swap_api_swap_receipts__session_id__undo_post",
         "parameters": [
           {
@@ -54887,6 +55151,189 @@
         },
         "summary": "Swap Tunnels",
         "tags": [
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/tunnels/{tunnel_id}/probe": {
+      "delete": {
+        "operationId": "stop_probe_api_swap_tunnels__tunnel_id__probe_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tunnel_id",
+            "required": true,
+            "schema": {
+              "title": "Tunnel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stop Probe",
+        "tags": [
+          "swap",
+          "swap"
+        ]
+      },
+      "get": {
+        "operationId": "read_probe_api_swap_tunnels__tunnel_id__probe_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tunnel_id",
+            "required": true,
+            "schema": {
+              "title": "Tunnel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeReading"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Read Probe",
+        "tags": [
+          "swap",
+          "swap"
+        ]
+      },
+      "post": {
+        "description": "Host a sink behind this tunnel's mapped port for `seconds`; answer where to send.",
+        "operationId": "host_probe_api_swap_tunnels__tunnel_id__probe_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tunnel_id",
+            "required": true,
+            "schema": {
+              "title": "Tunnel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeHost"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeHosted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Host Probe",
+        "tags": [
+          "swap",
+          "swap"
+        ]
+      }
+    },
+    "/api/swap/tunnels/{tunnel_id}/probe/send": {
+      "post": {
+        "description": "Push bytes to a sink the other device hosts, through this tunnel, on `streams`.",
+        "operationId": "send_probe_api_swap_tunnels__tunnel_id__probe_send_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tunnel_id",
+            "required": true,
+            "schema": {
+              "title": "Tunnel Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeSend"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProbeSent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Probe",
+        "tags": [
+          "swap",
           "swap"
         ]
       }

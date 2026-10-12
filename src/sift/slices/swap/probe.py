@@ -178,7 +178,11 @@ class Probes:
             )
             elapsed = self.clock() - started
         sent = sum(one for one in results if isinstance(one, int))
-        failed = sum(1 for one in results if not isinstance(one, int))
+        failed = 0
+        for one in results:
+            if not isinstance(one, int):
+                failed += 1
+                log.info("swap.probe_stream_failed", tunnel=tunnel_id, why=type(one).__name__)
         log.info("swap.probe_sent", tunnel=tunnel_id, sent=sent, streams=streams, failed=failed)
         return Sent(sent, elapsed, streams, failed)
 
@@ -199,4 +203,6 @@ class Probes:
             return sent
         finally:
             writer.close()
+            with contextlib.suppress(Exception):
+                await writer.wait_closed()
         return sent

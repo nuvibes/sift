@@ -309,7 +309,22 @@ async def test_a_refused_removal_is_counted_out_and_the_rest_goes_on(
         remover=_Refusing(),
         actor=admin,
     )
-    assert (undone.files, undone.left) == (0, 1)
+    # Refused as a file another program holds open: counted, for a later Undo.
+    assert (undone.files, undone.left, undone.in_use) == (0, 1, 1)
+
+    class _Failing(_Refusing):
+        async def remove(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError("gone")
+
+    failed = await receipt.undo(
+        row,
+        database=temp_db,
+        library=library_store,
+        access=access,
+        remover=_Failing(),
+        actor=admin,
+    )
+    assert (failed.files, failed.in_use) == (0, 0)
 
 
 async def test_a_swap_with_no_folder_has_nothing_to_undo(temp_db: Database, admin: Viewer) -> None:

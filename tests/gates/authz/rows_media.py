@@ -218,6 +218,24 @@ ROWS: dict[tuple[str, str], Case] = {
     ),
     ("POST", "/api/swap/weigh"): Case(Policy.ADMIN, body={"chosen": []}),
     ("GET", "/api/swap/tunnels"): Case(Policy.ADMIN),
+    ("POST", "/api/swap/tunnels/{tunnel_id}/probe"): Case(
+        Policy.ADMIN,
+        params={"tunnel_id": "no-such-tunnel"},
+        body={"seconds": 5},
+        answers_anyway=409,
+    ),
+    ("GET", "/api/swap/tunnels/{tunnel_id}/probe"): Case(
+        Policy.ADMIN, params={"tunnel_id": "no-such-tunnel"}, answers_anyway=404
+    ),
+    ("DELETE", "/api/swap/tunnels/{tunnel_id}/probe"): Case(
+        Policy.ADMIN, params={"tunnel_id": "no-such-tunnel"}, destructive=True
+    ),
+    ("POST", "/api/swap/tunnels/{tunnel_id}/probe/send"): Case(
+        Policy.ADMIN,
+        params={"tunnel_id": "no-such-tunnel"},
+        body={"address": "127.0.0.1", "port": 9, "secret": "00" * 32, "seconds": 1, "streams": 1},
+        answers_anyway=409,
+    ),
     ("GET", "/api/swap/people/{person_id}/held-faces"): Case(
         Policy.ADMIN, params={"person_id": "no-such-person"}, answers_anyway=404
     ),
