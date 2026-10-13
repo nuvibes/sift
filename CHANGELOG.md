@@ -8,6 +8,10 @@ version's section, dated, when that version is published.
 
 ### What changed for you
 
+- **A file on a network share opens with one round trip instead of five.** Every read of a file's
+  bytes proved its path lay inside its library folder by resolving it, which on a share is five
+  round trips, about 320 ms at best and seconds while an import reads the same share. A share's
+  root is resolved once, and the file gets one look: about 110 ms, 66% less.
 - **An Identify pass no longer stalls the app at its first file.** Every worker used to build the
   face gallery for itself as the pass began, each reading and unpacking every reference face (13,271
   faces, 27 MB of numbers: 28 to 32 s each with 23 workers), and a video took up to 9.4 s to start

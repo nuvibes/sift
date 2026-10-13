@@ -3,14 +3,18 @@
 
 from __future__ import annotations
 
+import functools
 import json
+import os
 import re
+import stat
 from collections.abc import Mapping
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from sift.kernel.content.hashing import fingerprint
 from sift.kernel.content.identity_models import DerivativeKind
+from sift.kernel.content.mounts import storage_of
 from sift.kernel.ids import is_id
 from sift.kernel.paths import PathEscape, confine
 
@@ -37,14 +41,38 @@ def check_rel_path(rel_path: str) -> str:
     return rel_path
 
 
+@functools.lru_cache(maxsize=256)
+def _resolved_root(root: str) -> tuple[Path, bool]:
+    """A root's real path and whether it is on a share, once: a root does not move while Sift
+    runs, and a share answers each resolve with round trips."""
+    real = Path(root).resolve()
+    return real, storage_of(real).remote
+
+
 def _confine_to_root(candidate: Path, root: Path, location_id: str) -> Path:
     """The real, symlink-followed path, refused unless under the root; blocking, fail-closed.
 
-    The caller opens the RESOLVED path, so a symlink swapped in after the check cannot move it."""
+    The caller opens the RESOLVED path, so a symlink swapped in after the check cannot move it.
+    On a share the client does not follow the server's links, so resolving costs five round trips
+    and proves nothing: the root once resolved, the file's own name, and one look at the file, a
+    reparse point refused, stand for it."""
+    real_root, remote = _resolved_root(str(root))
+    if not remote:
+        try:
+            return confine(root, candidate)
+        except PathEscape:
+            raise ValueError(f"location {location_id} resolves outside its library root") from None
+    inside = real_root.joinpath(*candidate.relative_to(root).parts)
     try:
-        return confine(root, candidate)
-    except PathEscape:
-        raise ValueError(f"location {location_id} resolves outside its library root") from None
+        found = os.lstat(inside)
+    except OSError:
+        return inside
+    linked = stat.S_ISLNK(found.st_mode) or bool(
+        getattr(found, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+    if linked:
+        raise ValueError(f"location {location_id} resolves outside its library root")
+    return inside
 
 
 def _confine_to_cache(candidate: Path, cache_dir: Path) -> Path:
