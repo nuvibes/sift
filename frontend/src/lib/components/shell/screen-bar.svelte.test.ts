@@ -76,6 +76,15 @@ describe('pointing', () => {
 		expect(screenBar.open).toBe(null);
 	});
 
+	it('is pinned by a press, and then shuts only when pressed', () => {
+		screenBar.showByHover(FILTERS);
+		expect(screenBar.pin(FILTERS)).toBe(true);
+		screenBar.leaving();
+		vi.advanceTimersByTime(AFTER_THE_GRACE);
+		expect(screenBar.open).toBe(FILTERS);
+		expect(screenBar.pin(FILTERS), 'a pressed one is not pinned again').toBe(false);
+	});
+
 	it('stays open when the pointer comes back before the grace runs out', () => {
 		screenBar.showByHover(FILTERS);
 		screenBar.leaving();

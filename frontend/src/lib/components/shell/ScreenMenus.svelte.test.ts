@@ -163,6 +163,23 @@ describe('the order chooser, which is a menu rather than a panel', () => {
 		expect(screenBar.open).toBe(SORT_MENU);
 	});
 
+	it('stays open when the list a pause opened is pressed, as a panel does', () => {
+		// The list toggles on the press: without the pin, resting then clicking shut it.
+		moveTo(trigger('Sort by'), 150, 118);
+		pastTheDwell();
+		expect(screenBar.open).toBe(SORT_MENU);
+
+		trigger('Sort by').dispatchEvent(
+			new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })
+		);
+		flushSync();
+		expect(screenBar.open, 'the press shut the list the pause opened').toBe(SORT_MENU);
+
+		screenBar.leaving();
+		pastTheDwell();
+		expect(screenBar.open, 'pinned, so leaving does not shut it').toBe(SORT_MENU);
+	});
+
 	it('is what is open, so pointing at a panel beside it takes its place', () => {
 		// One row, one open thing: moving along the row swaps them.
 		moveTo(trigger('Sort by'), 150, 118);

@@ -124,6 +124,16 @@
 		}, dwell());
 	}
 
+	/* The list toggles on a mouse's press, so a press on a list the dwell opened is kept from it
+	   and pins the list instead, as a press on a panel does. */
+	function pinTheOrders(event: PointerEvent) {
+		if (event.button !== 0 || event.ctrlKey || event.pointerType === 'touch') return;
+		if (!screenBar.pin(SORT_MENU)) return;
+		cancel();
+		event.preventDefault();
+		event.stopPropagation();
+	}
+
 	/* A press is immediate and toggles; the dwell is dropped or it would close what it opened. */
 	function press(id: string) {
 		cancel();
@@ -180,6 +190,7 @@
 			onmousemove={() => sortable && openAfterDwell(SORT_MENU)}
 			onmouseleave={() => cancel()}
 			onpointerdown={() => cancel()}
+			onpointerdowncapture={pinTheOrders}
 			role="none"
 		>
 			<Select

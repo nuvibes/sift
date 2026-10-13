@@ -293,6 +293,19 @@ test('the hover lift is not clipped by the top of the scrolling body', async ({ 
 	).toBeGreaterThanOrEqual(scroller.y);
 });
 
+test('a press on the orders a pause opened keeps them open', async ({ page }) => {
+	// The list toggles on a press, so resting first and then pressing used to shut it again.
+	await open(page, '/tags');
+	const sort = page.getByRole('button', { name: /Sort by/ });
+	await expect(sort).toBeEnabled();
+	await sort.hover();
+	await expect(page.getByRole('option', { name: 'Newest first' })).toHaveCount(1);
+	await sort.click();
+	await page.mouse.move(0, 0);
+	await expect(page.getByRole('option', { name: 'Newest first' })).toHaveCount(1);
+	await page.keyboard.press('Escape');
+});
+
 test('every wall offers the same four orders the file grid does', async ({ page }) => {
 	// One sort vocabulary on every wall, read from the grid's own list.
 	const UNIVERSAL = ['Newest first', 'Oldest first', 'Name A-Z', 'Name Z-A'];

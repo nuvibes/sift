@@ -335,11 +335,18 @@ class ScreenBar {
 
 	/** Open or shut a panel by press; a press on a hover-opened one pins it. */
 	toggle(id: string): void {
+		if (this.pin(id)) return;
 		this.#cancelLeaving();
-		const pinning = this.open === id && this.#byHover;
 		this.#byHover = false;
-		if (pinning) return;
 		this.open = this.open === id ? null : id;
+	}
+
+	/** A press on the one pointing opened: it stays, as if pressed open. True when it was that. */
+	pin(id: string): boolean {
+		if (this.open !== id || !this.#byHover) return false;
+		this.#cancelLeaving();
+		this.#byHover = false;
+		return true;
 	}
 
 	/** Open this one, whatever was open before. What a control outside the bar calls. */
