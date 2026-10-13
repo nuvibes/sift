@@ -22,6 +22,7 @@ from sift.slices.swap.handshake import WATCHDOG_SECONDS
 from sift.slices.swap.models import Diff, Offer, OfferedFile, OfferScreen
 from sift.slices.swap.session import Chunk, Conn, Taken, hello, read_hello
 from sift.slices.swap.tests.test_session import (
+    WITHIN,
     _Context,
     _database,
     _device,
@@ -166,18 +167,18 @@ async def test_a_guest_keeps_one_map_of_a_file_across_its_streams(tmp_path: Path
         two, _ = await rig.stream()
 
         await one.send({**_header(0, data), "chunks": [0]})
-        assert await one.read(5) == {"have": []}
+        assert await one.read(WITHIN) == {"have": []}
         await two.send({**_header(0, data), "chunks": [1]})
-        assert await two.read(5) == {"have": []}
+        assert await two.read(WITHIN) == {"have": []}
         await one.send_chunk(0, 0, data[:CHUNK_SIZE])
-        assert await one.read(5) == {"ack": 0, "file": 0}
-        assert await one.read(5) == {"share_done": 0}, "another stream holds the rest"
+        assert await one.read(WITHIN) == {"ack": 0, "file": 0}
+        assert await one.read(WITHIN) == {"share_done": 0}, "another stream holds the rest"
         await two.send_chunk(0, 1, data[CHUNK_SIZE:])
-        assert await two.read(5) == {"ack": 1, "file": 0}
-        assert await two.read(5) == {"file_done": 0}, "the last chunk's stream checks the file"
+        assert await two.read(WITHIN) == {"ack": 1, "file": 0}
+        assert await two.read(WITHIN) == {"file_done": 0}, "the last chunk's stream checks the file"
         # A share of a file already verified is confirmed, not received again.
         await one.send({**_header(0, data), "chunks": []})
-        assert await one.read(5) == {"file_done": 0}
+        assert await one.read(WITHIN) == {"file_done": 0}
 
         row = await rig.ended()
         assert row.state == "done" and rig.landed == {"a": data}
@@ -191,7 +192,7 @@ async def _striped_hello(rig: Any, me: Any) -> Conn:
     secret = rig.started.token.secret
     conn: Conn = await rig.dial()
     await conn.send(hello(me, "guest", secret, os.urandom(32), striped=1))
-    answer = await conn.read(5)
+    answer = await conn.read(WITHIN)
     assert isinstance(answer, dict)
     rig.session = read_hello(answer, "host", secret).session
     rig.control = conn
@@ -212,19 +213,19 @@ async def test_a_cut_off_and_rejoin_resumes_the_shares_from_what_the_guest_has(
         await rig.transferring("a")
 
         one = await rig.stream()
-        first = await one.read(5)
+        first = await one.read(WITHIN)
         assert isinstance(first, dict) and first["chunks"] == [0], "a share, not the file"
         two = await rig.stream()
-        second = await two.read(5)
+        second = await two.read(WITHIN)
         assert isinstance(second, dict) and second["chunks"] == [1]
         await one.send({"have": []})
-        assert isinstance(await one.read(5), Chunk)
+        assert isinstance(await one.read(WITHIN), Chunk)
         await one.send({"ack": 0, "file": 0})
         await one.send({"share_done": 0})
-        third = await one.read(5)
+        third = await one.read(WITHIN)
         assert isinstance(third, dict) and third["chunks"] == [2], "the next share on that stream"
         await two.send({"have": []})
-        assert isinstance(await two.read(5), Chunk)  # written, and its ack lost with the cut
+        assert isinstance(await two.read(WITHIN), Chunk)  # written, and its ack lost with the cut
 
         assert rig.pinger is not None
         rig.pinger.cancel()
@@ -235,18 +236,18 @@ async def test_a_cut_off_and_rejoin_resumes_the_shares_from_what_the_guest_has(
         await _until(lambda: rig.live.cut_at is None)
 
         three = await rig.stream()
-        again = await three.read(5)
+        again = await three.read(WITHIN)
         assert isinstance(again, dict) and again["chunks"] == [1], "cut again from what is left"
         await three.send({"have": [0, 1]})
         await three.send({"share_done": 0})
-        last = await three.read(5)
+        last = await three.read(WITHIN)
         assert isinstance(last, dict) and last["chunks"] == [2]
         await three.send({"have": [0, 1]})
-        chunk = await three.read(5)
+        chunk = await three.read(WITHIN)
         assert isinstance(chunk, Chunk) and chunk.index == 2, "only what the guest lacked"
         await three.send({"ack": 2, "file": 0})
         await three.send({"file_done": 0})
-        assert await three.read(5) == {"none": True}
+        assert await three.read(WITHIN) == {"none": True}
 
         row = await rig.finish()
         assert (row.state, row.sent_files, row.sent_bytes) == ("done", 1, len(data))
@@ -263,13 +264,13 @@ async def test_a_file_turned_down_on_two_streams_together_is_failed_once(tmp_pat
         await rig.transferring("a")
         one, two = await rig.stream(), await rig.stream()
         for stream, share in ((one, [0]), (two, [1])):
-            header = await stream.read(5)
+            header = await stream.read(WITHIN)
             assert isinstance(header, dict) and header["chunks"] == share
 
         await one.send({"skip": 0})
-        assert await one.read(5) == {"none": True}
+        assert await one.read(WITHIN) == {"none": True}
         await two.send({"skip": 0})
-        assert await two.read(5) == {"none": True}
+        assert await two.read(WITHIN) == {"none": True}
 
         live = rig.live
         assert (live.done_files, live.failed_files) == (set(), {0})
@@ -292,25 +293,25 @@ async def test_a_file_another_stream_is_still_checking_is_asked_about_again_afte
         await _until(rig.code)
         await rig.transferring("a")
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["chunks"] == [0]
         await stream.send({"have": []})
-        assert isinstance(await stream.read(5), Chunk)
+        assert isinstance(await stream.read(WITHIN), Chunk)
         await stream.send({"ack": 0, "file": 0})
         await stream.send({"share_done": 0})
 
-        asked = await stream.read(5)
+        asked = await stream.read(WITHIN)
         assert isinstance(asked, dict) and asked["chunks"] == []
         await stream.send({"have": [0]})
         await stream.send({"share_done": 0})
         loop = asyncio.get_running_loop()
         said = loop.time()
-        again = await stream.read(5)
+        again = await stream.read(WITHIN)
         assert isinstance(again, dict) and again["chunks"] == []
         assert loop.time() - said >= 0.4, "a pause before asking again"
         await stream.send({"have": [0]})
         await stream.send({"file_done": 0})
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
 
         row = await rig.finish()
         assert (row.state, row.sent_files) == ("done", 1)

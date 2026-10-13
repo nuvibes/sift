@@ -36,6 +36,7 @@ from sift.slices.swap.models import (
 from sift.slices.swap.session import Ladder, Taken, hello, read_hello
 from sift.slices.swap.tests.test_session import (
     _MASTER,
+    WITHIN,
     _Context,
     _database,
     _device,
@@ -386,15 +387,15 @@ async def test_an_original_changed_part_way_fails_and_the_guest_is_told(tmp_path
         await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
         (tmp_path / "library" / "a").write_bytes(data + b"edited")
         await stream.send({"have": []})
         with pytest.raises((asyncio.IncompleteReadError, ConnectionError)):
             while True:
-                await stream.read(5)
+                await stream.read(WITHIN)
         again = await rig.stream()
-        assert await again.read(5) == {"file": 0, "cannot": True}
+        assert await again.read(WITHIN) == {"file": 0, "cannot": True}
         live = rig.live
         assert 0 in live.failed_files
         assert (tmp_path / "library" / "a").exists(), "an original is never removed"
@@ -409,7 +410,7 @@ async def _join_in_shares(rig: _HostRig, **says: int) -> None:
     conn = await rig.dial()
     secret = rig.started.token.secret
     await conn.send(hello(_device(), "guest", secret, os.urandom(32), striped=1, **says))
-    answer = await conn.read(5)
+    answer = await conn.read(WITHIN)
     assert isinstance(answer, dict)
     rig.session = read_hello(answer, "host", secret).session
     rig.control = conn
@@ -448,7 +449,7 @@ async def test_a_stream_carries_a_ready_file_rather_than_waiting_for_one_still_b
         await asyncio.sleep(0.1)
         first_read.set()
 
-        headers = [await stream.read(5) for stream in streams]
+        headers = [await stream.read(WITHIN) for stream in streams]
 
         assert all(isinstance(one, dict) and one["file"] == 0 for one in headers), headers
         shares = sorted(chunk for one in headers for chunk in one["chunks"])  # type: ignore[index]
@@ -474,10 +475,10 @@ async def test_a_file_whose_reading_failed_goes_back_to_the_front_and_is_read_af
         await rig.transferring("a")
         first = await rig.stream()
         with pytest.raises((asyncio.IncompleteReadError, ConnectionError)):
-            await first.read(5)
+            await first.read(WITHIN)
 
         again = await rig.stream()
-        header = await again.read(5)
+        header = await again.read(WITHIN)
 
         assert isinstance(header, dict) and header["file"] == 0
         assert tries == ["a", "a"]

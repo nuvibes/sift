@@ -33,6 +33,7 @@ from sift.slices.swap.tests.test_session import (
     _ADDRESS,
     _PORT,
     VIEWER,
+    WITHIN,
     _bad_chunk,
     _cut_row,
     _device,
@@ -89,7 +90,7 @@ async def test_a_host_that_does_not_answer_the_hello_as_this_sessions_host_ends_
 ) -> None:
     async with _guest_rig(tmp_path) as rig:
         conn = await rig.conn()
-        await conn.read(5)
+        await conn.read(WITHIN)
 
         if answer == "a chunk":
             await conn.send_chunk(0, 0, b"a chunk for a hello")
@@ -107,7 +108,7 @@ async def test_a_host_that_does_not_answer_the_hello_as_this_sessions_host_ends_
 async def test_a_token_the_host_has_taken_already_ends_the_guest_as_used(tmp_path: Path) -> None:
     async with _guest_rig(tmp_path) as rig:
         conn = await rig.conn()
-        await conn.read(5)
+        await conn.read(WITHIN)
 
         await conn.send({"refused": "used"})
 
@@ -285,7 +286,7 @@ async def test_a_file_nobody_asked_for_is_turned_down_and_one_the_host_cannot_se
         stream, _ = await rig.stream()
 
         await stream.send(_header(1, b"not asked for"))
-        assert await stream.read(5) == {"skip": 1}
+        assert await stream.read(WITHIN) == {"skip": 1}
         await stream.send({"file": 0, "cannot": True})
 
         row = await rig.ended()
@@ -307,16 +308,16 @@ async def test_a_chunk_sent_twice_is_written_once_and_a_verified_file_offered_ag
         two, _ = await rig.stream()
 
         await one.send(_header(0, first))
-        assert await one.read(5) == {"have": []}
+        assert await one.read(WITHIN) == {"have": []}
         for _ in range(2):
             await one.send_chunk(0, 0, first[:CHUNK_SIZE])
-            assert await one.read(5) == {"ack": 0, "file": 0}
+            assert await one.read(WITHIN) == {"ack": 0, "file": 0}
         await one.send_chunk(0, 1, first[CHUNK_SIZE:])
-        assert await one.read(5) == {"ack": 1, "file": 0}
-        assert await one.read(5) == {"file_done": 0}
+        assert await one.read(WITHIN) == {"ack": 1, "file": 0}
+        assert await one.read(WITHIN) == {"file_done": 0}
         # Offered again on another stream, as after a lost word: confirmed, not received again.
         await two.send(_header(0, first))
-        assert await two.read(5) == {"file_done": 0}
+        assert await two.read(WITHIN) == {"file_done": 0}
         await two.send({"file": 1, "cannot": True})
 
         row = await rig.ended()
@@ -354,7 +355,7 @@ async def test_a_stream_that_says_what_a_host_does_not_is_dropped_and_dialled_ag
             await stream.send({**_header(0, data), "size": 10**12})
         else:
             await stream.send(_header(0, data))
-            assert await stream.read(5) == {"have": []}
+            assert await stream.read(WITHIN) == {"have": []}
             await stream.send_chunk(1, 0, data)
 
         await _dropped(stream)
@@ -379,17 +380,17 @@ async def test_a_file_that_fails_its_check_is_skipped_and_forgotten(
 
         if fault == "a chunk past its retries":
             await stream.send(_header(0, data))
-            assert await stream.read(5) == {"have": []}
+            assert await stream.read(WITHIN) == {"have": []}
             for _ in range(transfer.MAX_RETRIES):
                 stream.writer.write(_bad_chunk(0, 0, data))
-                assert await stream.read(5) == {"again": 0, "file": 0}
+                assert await stream.read(WITHIN) == {"again": 0, "file": 0}
             stream.writer.write(_bad_chunk(0, 0, data))
         else:
             await stream.send(_header(0, data, digest="0" * 64))
-            assert await stream.read(5) == {"have": []}
+            assert await stream.read(WITHIN) == {"have": []}
             await stream.send_chunk(0, 0, data)
-            assert await stream.read(5) == {"ack": 0, "file": 0}
-        assert await stream.read(5) == {"skip": 0}
+            assert await stream.read(WITHIN) == {"ack": 0, "file": 0}
+        assert await stream.read(WITHIN) == {"skip": 0}
 
         row = await rig.ended()
         assert row.state == "done" and rig.landed == {}
@@ -430,10 +431,10 @@ async def test_a_file_an_earlier_swap_with_the_same_host_left_half_done_resumes_
 
         await stream.send(_header(0, whole))
 
-        assert await stream.read(5) == {"have": [0]}
+        assert await stream.read(WITHIN) == {"have": [0]}
         await stream.send_chunk(0, 1, whole[CHUNK_SIZE:])
-        assert await stream.read(5) == {"ack": 1, "file": 0}
-        assert await stream.read(5) == {"file_done": 0}
+        assert await stream.read(WITHIN) == {"ack": 1, "file": 0}
+        assert await stream.read(WITHIN) == {"file_done": 0}
         row = await rig.ended()
         assert rig.landed == {"a": whole}
         assert row.sent_bytes == 5, "only what this swap moved"
@@ -559,6 +560,8 @@ async def test_a_rising_rate_opens_no_stream_once_every_file_is_in(tmp_path: Pat
         live = rig.live
         stream, _ = await rig.stream()
         await _send_whole(stream, 0, data)
+        # Sent is not received: the claim starts once the guest has verified every file.
+        await _until(lambda: live.received_all)
 
         live.ladder = Ladder(best=-1.0)
         await _until(lambda: live.ladder.best != -1.0)
@@ -785,10 +788,10 @@ async def test_a_files_map_a_stopped_stream_left_in_this_session_is_taken_up_by_
 
         await stream.send(_header(0, whole))
 
-        assert await stream.read(5) == {"have": [0]}
+        assert await stream.read(WITHIN) == {"have": [0]}
         await stream.send_chunk(0, 1, whole[CHUNK_SIZE:])
-        assert await stream.read(5) == {"ack": 1, "file": 0}
-        assert await stream.read(5) == {"file_done": 0}
+        assert await stream.read(WITHIN) == {"ack": 1, "file": 0}
+        assert await stream.read(WITHIN) == {"file_done": 0}
         await rig.ended()
         assert rig.landed == {"a": whole}
 
@@ -806,7 +809,7 @@ async def _two_shares(rig: Any, data: bytes) -> tuple[swap.Conn, swap.Conn]:
     two, _ = await rig.stream()
     for stream, share in ((one, [0]), (two, [1])):
         await stream.send({**_header(0, data), "chunks": share})
-        assert await stream.read(5) == {"have": []}
+        assert await stream.read(WITHIN) == {"have": []}
     return one, two
 
 
@@ -823,13 +826,13 @@ async def test_a_second_header_for_a_file_that_disagrees_with_the_first_drops_th
         one, _ = await rig.stream()
         two, _ = await rig.stream()
         await one.send({**_header(0, data), "chunks": [0]})
-        assert await one.read(5) == {"have": []}
+        assert await one.read(WITHIN) == {"have": []}
 
         await two.send({**_header(0, data, digest="0" * 64), "chunks": [1]})
 
         await _dropped(two)
         await one.send_chunk(0, 0, data[:CHUNK_SIZE])
-        assert await one.read(5) == {"ack": 0, "file": 0}, "the file's first header stands"
+        assert await one.read(WITHIN) == {"ack": 0, "file": 0}, "the file's first header stands"
 
 
 @pytest.mark.integration
@@ -843,10 +846,10 @@ async def test_a_file_failed_on_another_stream_is_turned_down_on_this_one_at_its
         one, two = await _two_shares(rig, data)
 
         two.writer.write(_bad_chunk(0, 1, data[CHUNK_SIZE:]))
-        assert await two.read(5) == {"skip": 0}
+        assert await two.read(WITHIN) == {"skip": 0}
         await one.send_chunk(0, 0, data[:CHUNK_SIZE])
 
-        assert await one.read(5) == {"skip": 0}
+        assert await one.read(WITHIN) == {"skip": 0}
         assert rig.live.failed_files == {0} and not rig.staged("a").exists()
 
 
@@ -873,10 +876,10 @@ async def test_a_file_failed_on_another_stream_while_this_one_wrote_keeps_nothin
         assert await asyncio.to_thread(entered.wait, 5)
 
         two.writer.write(_bad_chunk(0, 1, data[CHUNK_SIZE:]))
-        assert await two.read(5) == {"skip": 0}
+        assert await two.read(WITHIN) == {"skip": 0}
         release.set()
 
-        assert await one.read(5) == {"skip": 0}
+        assert await one.read(WITHIN) == {"skip": 0}
         assert not rig.staged("a").exists(), "the chunk written after the failure went with it"
 
 
@@ -907,11 +910,11 @@ async def test_a_file_failed_on_another_stream_while_this_share_was_recorded_is_
         await asyncio.wait_for(recording.wait(), 5)
 
         two.writer.write(_bad_chunk(0, 1, data[CHUNK_SIZE:]))
-        assert await two.read(5) == {"skip": 0}
+        assert await two.read(WITHIN) == {"skip": 0}
         release.set()
 
-        assert await one.read(5) == {"ack": 0, "file": 0}
-        assert await one.read(5) == {"skip": 0}
+        assert await one.read(WITHIN) == {"ack": 0, "file": 0}
+        assert await one.read(WITHIN) == {"skip": 0}
 
 
 @pytest.mark.integration
@@ -940,7 +943,7 @@ async def test_a_chunk_two_streams_wrote_at_the_same_time_is_counted_once(
         two, _ = await rig.stream()
         for stream in (one, two):
             await stream.send(_header(0, data))
-            assert await stream.read(5) == {"have": []}
+            assert await stream.read(WITHIN) == {"have": []}
         for stream in (one, two):
             await stream.send_chunk(0, 0, data)
         for _ in range(2):
@@ -949,8 +952,8 @@ async def test_a_chunk_two_streams_wrote_at_the_same_time_is_counted_once(
 
         ends = set()
         for stream in (one, two):
-            assert await stream.read(5) == {"ack": 0, "file": 0}
-            said = await stream.read(5)
+            assert await stream.read(WITHIN) == {"ack": 0, "file": 0}
+            said = await stream.read(WITHIN)
             assert isinstance(said, dict)
             ends.add(next(iter(said)))
         assert ends == {"file_done", "share_done"}
@@ -997,7 +1000,7 @@ async def test_a_full_disk_ends_the_swap_in_its_own_words_and_dials_no_more(
                 dials += 1
                 with suppress(Exception):
                     await stream.send(_header(0, data))
-                    await stream.read(5)
+                    await stream.read(WITHIN)
                     await stream.send_chunk(0, 0, data)
                 stream = None
 
@@ -1048,7 +1051,7 @@ async def test_a_stream_that_fails_the_same_way_each_time_waits_longer_and_is_cu
                 dials += 1
                 with suppress(Exception):
                     await stream.send(_header(0, data))
-                    await stream.read(5)
+                    await stream.read(WITHIN)
                     await stream.send_chunk(0, 0, data)
 
         host = asyncio.create_task(answer_every_dial())

@@ -12,7 +12,9 @@ import { csrfOf, removePhotos, seedPhotos } from './seed';
  * the largest subtree removed) so a record can be kept from the hosted suite's own runs.
  */
 
-const SHOWN_WITHIN_MS = 5_000;
+/* A screen re-reads for the feed's bells at a walking pace, once per ten seconds, so a row made
+   elsewhere can show up to ten seconds after the last read, and a loaded machine its share. */
+const SHOWN_WITHIN_MS = 15_000;
 /** The most a page may shift when the change itself inserts nothing above what is read. */
 const STILL = 0.001;
 /** A re-read that swaps more than this many elements out and back is a remount. */

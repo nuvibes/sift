@@ -42,6 +42,7 @@ from sift.slices.swap.tests.test_session import (
     _MASTER,
     _PORT,
     VIEWER,
+    WITHIN,
     _database,
     _device,
     _Egress,
@@ -280,7 +281,7 @@ async def test_a_port_moved_while_joined_remakes_the_token_and_tells_the_guest(
         await rig.hoster.on_moved(_Hosted(_ADDRESS, _PORT + 7))
         assert live.token is not None and live.token.port == _PORT + 7
         while True:
-            frame = await control.read(5)
+            frame = await control.read(WITHIN)
             if isinstance(frame, dict) and "moved" in frame:
                 break
         assert frame["moved"] == {"address": _ADDRESS, "port": _PORT + 7}

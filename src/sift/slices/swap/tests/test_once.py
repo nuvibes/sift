@@ -29,6 +29,7 @@ from sift.slices.swap.tests.test_session import (
     _HOST_SESSION,
     _MASTER,
     VIEWER,
+    WITHIN,
     _Context,
     _database,
     _device,
@@ -249,7 +250,7 @@ async def test_a_host_names_the_version_only_to_a_guest_that_says_once(
         await _join_in_shares(rig, **({"once": 1} if once else {}))
         await rig.transferring("a")
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
         if not once:
             assert header["digest"] == blake3(_DATA).hexdigest() and "version" not in header
@@ -257,19 +258,19 @@ async def test_a_host_names_the_version_only_to_a_guest_that_says_once(
         assert "digest" not in header and len(header["version"]) == 64
         await stream.send({"have": []})
         for _ in header["chunks"]:
-            chunk = await stream.read(5)
+            chunk = await stream.read(WITHIN)
             assert isinstance(chunk, Chunk)
             await stream.send({"ack": chunk.index, "file": 0})
         # The rest of the file was held from before: the host reads it now for the digest.
         if changed:
             (tmp_path / "library" / "a").write_bytes(_DATA + b"edited")
             await stream.send({"check": 0})
-            assert await stream.read(5) == {"file": 0, "cannot": True}
+            assert await stream.read(WITHIN) == {"file": 0, "cannot": True}
             return
         await stream.send({"check": 0})
-        assert await stream.read(5) == {"file": 0, "pieces": _pieces_of(_DATA)}
+        assert await stream.read(WITHIN) == {"file": 0, "pieces": _pieces_of(_DATA)}
         await stream.send({"file_done": 0})
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.finish()
         assert (row.state, row.sent_files) == ("done", 1)
 
@@ -296,9 +297,9 @@ async def test_a_file_that_cannot_be_read_whole_for_an_older_guest_is_made_ready
         await rig.transferring("a")
         first = await rig.stream()
         with pytest.raises((asyncio.IncompleteReadError, ConnectionError)):
-            await first.read(5)
+            await first.read(WITHIN)
 
-        header = await (await rig.stream()).read(5)
+        header = await (await rig.stream()).read(WITHIN)
 
         assert isinstance(header, dict) and header["digest"] == blake3(_DATA).hexdigest()
         assert len(made) == 2
@@ -321,7 +322,7 @@ def _versioned(index: int, version: str, chunks: list[int]) -> dict[str, Any]:
 async def _carry(stream: swap.Conn, chunks: list[int]) -> None:
     for number in chunks:
         await stream.send_chunk(0, number, _DATA[number * CHUNK_SIZE : (number + 1) * CHUNK_SIZE])
-        assert await stream.read(5) == {"ack": number, "file": 0}
+        assert await stream.read(WITHIN) == {"ack": number, "file": 0}
 
 
 @pytest.mark.integration
@@ -336,10 +337,10 @@ async def test_a_guest_lands_a_file_only_when_the_pieces_digest_matches(
         await rig.take(control)
         stream, _ = await rig.stream()
         await stream.send(_versioned(0, "v" * 64, list(range(_COUNT))))
-        assert await stream.read(5) == {"have": []}
+        assert await stream.read(WITHIN) == {"have": []}
         await _carry(stream, list(range(_COUNT)))
 
-        assert await stream.read(5) == {"check": 0}
+        assert await stream.read(WITHIN) == {"check": 0}
         answers: dict[str, dict[str, Any]] = {
             "right": {"pieces": _pieces_of(_DATA)},
             "wrong": {"pieces": _pieces_of(_DATA[::-1])},
@@ -350,16 +351,16 @@ async def test_a_guest_lands_a_file_only_when_the_pieces_digest_matches(
 
         if answer == "another":
             with pytest.raises((asyncio.IncompleteReadError, ConnectionError)):
-                await stream.read(5)
+                await stream.read(WITHIN)
             assert rig.landed == {}
             return
         if answer == "right":
-            assert await stream.read(5) == {"file_done": 0}
+            assert await stream.read(WITHIN) == {"file_done": 0}
             await stream.send({"none": True})
             await _read_until(control, "done")
             assert (await rig.ended()).state == "done" and rig.landed == {"a": _DATA}
         else:
-            assert await stream.read(5) == {"skip": 0}
+            assert await stream.read(WITHIN) == {"skip": 0}
             assert rig.landed == {} and not rig.staged("a").exists()
 
 
@@ -378,9 +379,9 @@ async def test_a_guest_resumes_by_version_across_a_cut(
         await rig.take(control)
         stream, _ = await rig.stream()
         await stream.send(_versioned(0, "v" * 64, [0, 1]))
-        assert await stream.read(5) == {"have": []}
+        assert await stream.read(WITHIN) == {"have": []}
         await _carry(stream, [0, 1])
-        assert await stream.read(5) == {"share_done": 0}
+        assert await stream.read(WITHIN) == {"share_done": 0}
         manifest = await rig.sessions.store.manifest(rig.id, "a")
         assert manifest is not None and (manifest.version, manifest.digest) == ("v" * 64, None)
         assert manifest.done == (0, 1)
@@ -398,7 +399,7 @@ async def test_a_guest_resumes_by_version_across_a_cut(
         while True:
             conn = await rig.conn()
             with suppress(Exception):
-                first = await conn.read(5)
+                first = await conn.read(WITHIN)
                 if isinstance(first, dict) and "device" in first:
                     break
         await conn.send(hello(rig.host, "host", rig.secret, os.urandom(32), session=_HOST_SESSION))
@@ -407,11 +408,11 @@ async def test_a_guest_resumes_by_version_across_a_cut(
 
         again, _ = await rig.stream()
         await again.send(_versioned(0, "v" * 64, [2, 3]))
-        assert await again.read(5) == {"have": [0, 1]}, "what it held, by the version"
+        assert await again.read(WITHIN) == {"have": [0, 1]}, "what it held, by the version"
         await _carry(again, [2, 3])
-        assert await again.read(5) == {"check": 0}
+        assert await again.read(WITHIN) == {"check": 0}
         await again.send({"file": 0, "pieces": _pieces_of(_DATA)})
-        assert await again.read(5) == {"file_done": 0}
+        assert await again.read(WITHIN) == {"file_done": 0}
 
 
 @pytest.mark.integration

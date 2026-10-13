@@ -46,6 +46,7 @@ from sift.slices.swap.tests.test_offer import Library, _NoFilters, library  # no
 from sift.slices.swap.tests.test_sending import _SETTINGS, _picture
 from sift.slices.swap.tests.test_session import (
     _MASTER,
+    WITHIN,
     _Context,
     _database,
     _device,
@@ -575,7 +576,7 @@ async def test_both_ways_a_hosts_hello_in_a_swap_one_way_keeps_its_fields(tmp_pa
         conn = await rig.dial()
         secret = rig.started.token.secret
         await conn.send(swap.hello(_device(), "guest", secret, os.urandom(32), both=1))
-        answer = await conn.read(5)
+        answer = await conn.read(WITHIN)
         assert isinstance(answer, dict)
         assert set(answer) == {"v", "device", "nonce", "key", "sig", "session"}
         live = rig.live

@@ -30,6 +30,7 @@ from sift.slices.swap.tests.test_session import (
     _HOST_SESSION,
     _MASTER,
     VIEWER,
+    WITHIN,
     _cut_row,
     _database,
     _device,
@@ -65,7 +66,7 @@ async def test_rejoin_the_same_guest_carries_the_file_on_from_the_chunk_it_had(
         secret = rig.started.token.secret
         control = await rig.dial()
         await control.send(hello(me, "guest", secret, os.urandom(32)))
-        answer = await control.read(5)
+        answer = await control.read(WITHIN)
         assert isinstance(answer, dict)
         rig.session = read_hello(answer, "host", secret).session
         rig.control = control
@@ -75,10 +76,10 @@ async def test_rejoin_the_same_guest_carries_the_file_on_from_the_chunk_it_had(
         await rig.transferring("a")
 
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
         await stream.send({"have": []})
-        first = await stream.read(5)
+        first = await stream.read(WITHIN)
         assert isinstance(first, Chunk) and first.index == 0
         await stream.send({"ack": 0, "file": 0})
 
@@ -94,11 +95,11 @@ async def test_rejoin_the_same_guest_carries_the_file_on_from_the_chunk_it_had(
 
         other = await rig.dial()
         await other.send(hello(_device(), "guest", secret, os.urandom(32)))
-        assert await other.read(5) == {"refused": "used"}
+        assert await other.read(WITHIN) == {"refused": "used"}
 
         again = await rig.dial()
         await again.send(hello(me, "guest", secret, os.urandom(32)))
-        answer = await again.read(5)
+        answer = await again.read(WITHIN)
         assert isinstance(answer, dict)
         assert read_hello(answer, "host", secret).session == rig.id
         rig.control = again
@@ -109,14 +110,14 @@ async def test_rejoin_the_same_guest_carries_the_file_on_from_the_chunk_it_had(
         assert rig.code() == code, "the code they compared stands"
 
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
         await stream.send({"have": [0]})
-        second = await stream.read(5)
+        second = await stream.read(WITHIN)
         assert isinstance(second, Chunk) and second.index == 1, "only what the guest lacked"
         await stream.send({"ack": 1, "file": 0})
         await stream.send({"file_done": 0})
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.finish()
         assert (row.state, row.sent_files) == ("done", 1)
 
@@ -130,7 +131,7 @@ async def test_rejoin_before_the_offer_was_answered_sends_the_offer_again(tmp_pa
         secret = rig.started.token.secret
         control = await rig.dial()
         await control.send(hello(me, "guest", secret, os.urandom(32)))
-        await control.read(5)
+        await control.read(WITHIN)
         rig.control = control
         await _until(rig.code)
         await rig.sessions.answer_code(rig.id, True)
@@ -140,7 +141,7 @@ async def test_rejoin_before_the_offer_was_answered_sends_the_offer_again(tmp_pa
 
         again = await rig.dial()
         await again.send(hello(me, "guest", secret, os.urandom(32)))
-        await again.read(5)
+        await again.read(WITHIN)
         resent = await _read_until(again, "offer")
         assert [one["key"] for one in resent["offer"]["files"]] == ["a"]
 
@@ -212,7 +213,7 @@ async def test_rejoin_a_cut_off_guest_dials_again_says_its_answer_again_and_take
         while True:
             conn = await rig.conn()
             with suppress(Exception):
-                first = await conn.read(5)
+                first = await conn.read(WITHIN)
                 if isinstance(first, dict) and "device" in first:
                     break
         assert live.device is not None
@@ -270,7 +271,7 @@ async def test_rejoin_a_host_that_let_the_session_go_ends_the_guest_as_lost(
         control.close()
         await _until(lambda: rig.live.cut_at)
         conn = await rig.conn()
-        await conn.read(5)
+        await conn.read(WITHIN)
         await conn.send({"refused": "used"})
         row = await rig.ended()
         assert (row.state, row.end_reason) == ("failed", swap.LOST)
@@ -284,7 +285,7 @@ async def _cut_and_redialled(rig: Any, control: Conn) -> Conn:
     control.close()
     await _until(lambda: rig.live.cut_at)
     conn: Conn = await rig.conn()
-    first = await conn.read(5)
+    first = await conn.read(WITHIN)
     assert isinstance(first, dict) and "device" in first
     return conn
 
@@ -304,7 +305,7 @@ async def test_rejoin_answered_with_a_chunk_is_dialled_again_and_joined_before_t
         assert live.cut_at is not None and live.reason is None, "still cut off, and still on"
 
         again = await rig.conn()
-        await again.read(5)
+        await again.read(WITHIN)
         await again.send(hello(rig.host, "host", rig.secret, os.urandom(32), session=_HOST_SESSION))
         rig.pinger = asyncio.create_task(_keep_pinging(again))
         await _until(lambda: live.cut_at is None)

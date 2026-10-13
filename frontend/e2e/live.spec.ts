@@ -15,6 +15,16 @@ test('the application opens exactly one connection, whatever screen is on', asyn
 		open.add(socket);
 		socket.on('close', () => open.delete(socket));
 	});
+	// A new document takes the old one's socket with it, and its close is not always reported;
+	// the router's own moves fetch no document, so they keep the count.
+	page.on('request', (request) => {
+		if (
+			request.isNavigationRequest() &&
+			request.frame() === page.mainFrame() &&
+			request.resourceType() === 'document'
+		)
+			open.clear();
+	});
 
 	await page.goto('/settings/tasks?show=now');
 	await expect(page.getByRole('heading', { name: 'Tasks and Activity' })).toBeVisible();

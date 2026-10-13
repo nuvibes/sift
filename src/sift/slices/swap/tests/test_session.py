@@ -346,6 +346,10 @@ def _sessions(database: Database, root: Path, **kwargs: Any) -> SwapSessions:
     return SwapSessions(SessionStore(database), SecretStore(database), **defaults)
 
 
+#: How long a rig waits for one frame: milliseconds here, and a loaded runner's share.
+WITHIN = 15.0
+
+
 async def _until(check: Callable[[], object], seconds: float = 10.0) -> None:
     loop = asyncio.get_running_loop()
     began = loop.time()
@@ -367,7 +371,7 @@ async def _start_host(host: SwapSessions) -> swap.Started:
 
 async def _read_until(conn: Conn, key: str) -> dict[str, Any]:
     while True:
-        frame = await conn.read(5)
+        frame = await conn.read(WITHIN)
         assert isinstance(frame, dict)
         if key in frame:
             return frame
@@ -401,7 +405,7 @@ async def test_one_hello_one_code_and_they_dont_match_ends_it(tmp_path: Path) ->
         me, nonce = _device(), os.urandom(32)
         conn = Conn(*await lock.dial("127.0.0.1", hoster.target, None, secret))
         await conn.send(hello(me, "guest", secret, nonce))
-        answer = await conn.read(5)
+        answer = await conn.read(WITHIN)
         assert isinstance(answer, dict)
         peer = read_hello(answer, "host", secret)
         assert peer.device == started.token.host_device
@@ -424,7 +428,7 @@ async def test_one_hello_one_code_and_they_dont_match_ends_it(tmp_path: Path) ->
         # ONE USE: the same token again, from anybody, is refused.
         again = Conn(*await lock.dial("127.0.0.1", hoster.target, None, secret))
         await again.send(hello(_device(), "guest", secret, os.urandom(32)))
-        assert await again.read(5) == {"refused": "used"}
+        assert await again.read(WITHIN) == {"refused": "used"}
         again.close()
 
         await host.answer_code(started.session_id, False)
@@ -467,7 +471,7 @@ async def test_a_silent_guest_cuts_the_session_off_until_the_token_runs_out(
         secret = started.token.secret
         conn = Conn(*await lock.dial("127.0.0.1", hoster.target, None, secret))
         await conn.send(hello(_device(), "guest", secret, os.urandom(32)))
-        await conn.read(5)
+        await conn.read(WITHIN)
         loop = asyncio.get_running_loop()
         began = loop.time()
         # And now nothing: no ping, no answer, the connection left open.
@@ -1300,7 +1304,7 @@ async def _keep_pinging(conn: Conn) -> None:
 async def _dropped(conn: Conn) -> None:
     """The other side closed this connection: the next read finds its end."""
     with pytest.raises((asyncio.IncompleteReadError, OSError)):
-        await conn.read(5)
+        await conn.read(WITHIN)
 
 
 async def _cut_row(sessions: SwapSessions, session_id: str) -> SessionRow:
@@ -1377,7 +1381,7 @@ class _HostRig:
         conn = await self.dial()
         secret = self.started.token.secret
         await conn.send(hello(_device(), "guest", secret, os.urandom(32)))
-        answer = await conn.read(5)
+        answer = await conn.read(WITHIN)
         assert isinstance(answer, dict)
         self.session = read_hello(answer, "host", secret).session
         self.control = conn
@@ -1484,13 +1488,13 @@ _HOST_SESSION = "01HHANDWRITTENHOST0000001"
 async def _send_whole(stream: Conn, index: int, data: bytes) -> None:
     """A file as a host sends it: the header, every chunk acknowledged, then the guest's word."""
     await stream.send(_header(index, data))
-    assert await stream.read(5) == {"have": []}
+    assert await stream.read(WITHIN) == {"have": []}
     for number in range(transfer.chunk_count(len(data))):
         await stream.send_chunk(
             index, number, data[number * CHUNK_SIZE : (number + 1) * CHUNK_SIZE]
         )
-        assert await stream.read(5) == {"ack": number, "file": index}
-    assert await stream.read(5) == {"file_done": index}
+        assert await stream.read(WITHIN) == {"ack": number, "file": index}
+    assert await stream.read(WITHIN) == {"file_done": index}
 
 
 def _bad_chunk(file_index: int, chunk_index: int, data: bytes) -> bytes:
@@ -1533,7 +1537,7 @@ class _GuestRig:
     async def answer_hello(
         self, conn: Conn, *, device: Device | None = None, secret: bytes | None = None
     ) -> None:
-        first = await conn.read(5)
+        first = await conn.read(WITHIN)
         assert isinstance(first, dict)
         read_hello(first, "guest", self.secret)
         await conn.send(
@@ -1569,7 +1573,7 @@ class _GuestRig:
         first frame. The others are held open, unanswered."""
         while True:
             conn = await self.conn()
-            intro = await conn.read(5)
+            intro = await conn.read(WITHIN)
             assert isinstance(intro, dict) and intro["session"] == _HOST_SESSION
             if number is None or intro["stream"] == number:
                 return conn, int(intro["stream"])

@@ -24,6 +24,7 @@ from sift.slices.swap.tests.test_session import (
     _ADDRESS,
     _PORT,
     VIEWER,
+    WITHIN,
     _cut_row,
     _database,
     _device,
@@ -125,7 +126,7 @@ async def test_an_end_pressed_at_the_offer_tells_the_guest_and_a_second_match_se
 
         heard: list[dict[str, Any]] = []
         while True:
-            frame = await control.read(5)
+            frame = await control.read(WITHIN)
             assert isinstance(frame, dict)
             if "end" in frame:
                 break
@@ -219,7 +220,7 @@ async def test_a_stream_before_the_transfer_or_for_another_session_is_turned_awa
 
         stream = await rig.stream()
 
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
 
 
@@ -233,12 +234,12 @@ async def test_a_file_gone_from_the_host_is_said_so_and_one_the_guest_has_moves_
         await rig.transferring("a", "b")
         stream = await rig.stream()
 
-        assert await stream.read(5) == {"file": 0, "cannot": True}
-        header = await stream.read(5)
+        assert await stream.read(WITHIN) == {"file": 0, "cannot": True}
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 1
         # The guest verified this one in a session before, and the word was lost: it says so now.
         await stream.send({"file_done": 1})
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
 
         row = await rig.finish()
         assert (row.state, row.sent_files, row.sent_bytes) == ("done", 1, 0)
@@ -254,13 +255,13 @@ async def test_a_file_the_guest_turns_down_is_failed_and_its_stripped_copy_remov
         await rig.join()
         await rig.transferring("a", "a")  # named twice, wanted once
         stream = await rig.stream()
-        header = await stream.read(5)
+        header = await stream.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0
         assert rig.stripped(), "the copy the header describes is on disk"
 
         await stream.send({"skip": 0})
 
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.finish()
         assert (row.state, row.wanted_files, row.sent_files, row.sent_bytes) == ("done", 1, 0, 0)
         assert rig.stripped() == []
@@ -284,11 +285,11 @@ async def test_a_resumed_file_counts_only_what_this_session_sent_and_each_window
         await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
 
         # Chunk 0 arrived in an earlier session: only chunk 1 is sent, and only it is counted.
         await stream.send({"have": [0]})
-        chunk = await stream.read(5)
+        chunk = await stream.read(WITHIN)
         assert isinstance(chunk, Chunk) and (chunk.index, len(chunk.data)) == (1, 10)
         await stream.send({"ack": 1, "file": 0})
         await _until(lambda: any(rates) and rig.context.progress)
@@ -297,7 +298,7 @@ async def test_a_resumed_file_counts_only_what_this_session_sent_and_each_window
         # A second word about a chunk already acknowledged changes nothing.
         await stream.send({"ack": 1, "file": 0})
         await stream.send({"file_done": 0})
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
 
         row = await rig.finish()
         assert (row.state, row.sent_files, row.sent_bytes) == ("done", 1, 10)
@@ -325,7 +326,7 @@ async def test_a_transfer_of_nothing_measures_its_windows_and_reports_no_progres
         await _until(lambda: len(rates) >= 2)
 
         stream = await rig.stream()
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.finish()
         assert (row.state, row.wanted_files, row.sent_bytes) == ("done", 0, 0)
         assert set(rates) == {0}
@@ -339,17 +340,17 @@ async def test_a_chunk_asked_for_again_past_the_limit_fails_the_file(tmp_path: P
         await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
         await stream.send({"have": []})
 
         sent = 0
         for _ in range(transfer.MAX_RETRIES + 1):
-            chunk = await stream.read(5)
+            chunk = await stream.read(WITHIN)
             assert isinstance(chunk, Chunk) and chunk.index == 0
             sent += 1
             await stream.send({"again": 0, "file": 0})
 
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         assert sent == transfer.MAX_RETRIES + 1
         row = await rig.finish()
         assert (row.state, row.sent_files) == ("done", 0)
@@ -363,15 +364,15 @@ async def test_a_skip_from_the_guest_fails_the_file_at_any_point(tmp_path: Path,
         await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
         await stream.send({"have": []})
-        assert isinstance(await stream.read(5), Chunk)
+        assert isinstance(await stream.read(WITHIN), Chunk)
         if when == "after every ack":
             await stream.send({"ack": 0, "file": 0})
 
         await stream.send({"skip": 0})
 
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.finish()
         assert (row.state, row.sent_files) == ("done", 0)
         assert rig.stripped() == []
@@ -398,7 +399,7 @@ async def test_a_stream_answer_not_about_the_file_in_hand_drops_it_and_the_file_
         await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
         if answer == "a chunk for a header":
             await stream.send_chunk(0, 0, b"a guest sends no chunks")
         elif answer == "a have that is not a list":
@@ -407,7 +408,7 @@ async def test_a_stream_answer_not_about_the_file_in_hand_drops_it_and_the_file_
             await stream.send({"have": [9]})
         else:
             await stream.send({"have": []})
-            assert isinstance(await stream.read(5), Chunk)
+            assert isinstance(await stream.read(WITHIN), Chunk)
             if answer == "a chunk for a chunk":
                 await stream.send_chunk(0, 0, b"a guest sends no chunks")
             elif answer == "an ack for a chunk not sent":
@@ -422,7 +423,7 @@ async def test_a_stream_answer_not_about_the_file_in_hand_drops_it_and_the_file_
         await _dropped(stream)
 
         again = await rig.stream()
-        header = await again.read(5)
+        header = await again.read(WITHIN)
         assert isinstance(header, dict) and header["file"] == 0, "the file went back to the queue"
 
 
@@ -436,16 +437,16 @@ async def test_a_file_confirmed_just_after_the_guests_done_is_still_counted(
         control = await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
         await stream.send({"have": []})
-        assert isinstance(await stream.read(5), Chunk)
+        assert isinstance(await stream.read(WITHIN), Chunk)
 
         await control.send({"done": {"received": 1}})
         await asyncio.sleep(0.2)
         await stream.send({"ack": 0, "file": 0})
         await stream.send({"file_done": 0})
 
-        assert await stream.read(5) == {"none": True}
+        assert await stream.read(WITHIN) == {"none": True}
         row = await rig.ended()
         assert (row.state, row.sent_files, row.sent_bytes) == ("done", 1, len(data))
 
@@ -459,7 +460,7 @@ async def test_an_end_mid_transfer_closes_the_streams_and_removes_the_stripped_c
         control = await rig.join()
         await rig.transferring("a")
         stream = await rig.stream()
-        await stream.read(5)
+        await stream.read(WITHIN)
         assert rig.stripped()
 
         await rig.sessions.end(rig.id)
@@ -617,16 +618,16 @@ async def test_the_same_guest_joining_again_on_a_new_connection_closes_the_old_a
         me, secret = _device(), rig.started.token.secret
         first = await rig.dial()
         await first.send(hello(me, "guest", secret, os.urandom(32)))
-        assert isinstance(await first.read(5), dict)
+        assert isinstance(await first.read(WITHIN), dict)
         await _until(rig.code)
 
         again = await rig.dial()
         await again.send(hello(me, "guest", secret, os.urandom(32)))
-        answer = await again.read(5)
+        answer = await again.read(WITHIN)
         assert isinstance(answer, dict) and read_hello(answer, "host", secret).session == rig.id
         with pytest.raises((asyncio.IncompleteReadError, OSError)):
             while True:
-                await first.read(5)
+                await first.read(WITHIN)
 
         await again.send({"end": "ended"})
         row = await rig.ended()
