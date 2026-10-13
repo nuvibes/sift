@@ -38,6 +38,15 @@ _GALLERY_ROWS = (
     "ORDER BY r.person_id, r.id"
 )
 
+#: `_GALLERY_ROWS`'s rows as the matching needs them: who, where from, and the numbers as stored.
+_GALLERY_VECTORS = (
+    "SELECT r.person_id, r.origin, r.embedding FROM face_references AS r "
+    "WHERE r.recognizer = ? AND (r.origin != 'seed' OR (r.retired_at IS NULL AND NOT EXISTS ("
+    "SELECT 1 FROM face_references AS own WHERE own.person_id = r.person_id "
+    "AND own.origin != 'seed' AND own.recognizer = ?))) "
+    "ORDER BY r.person_id, r.id"
+)
+
 
 class PeopleStore(PicturesStore):
     """The people the face feature knows: the roster, the counts of their references, their aliases."""
@@ -137,6 +146,14 @@ class PeopleStore(PicturesStore):
         for row in rows:
             by_person.setdefault(str(row["person_id"]), []).append(_reference(row))
         return by_person
+
+    async def reference_vectors(self, recognizer: str) -> list[tuple[str, str, bytes]]:
+        """The gallery as (person, origin, stored vector) rows, for `matching.build_gallery_rows`:
+        the same rows as `reference_gallery`, read without building a record per face."""
+        rows = await self._db.fetch_all(_GALLERY_VECTORS, (recognizer, recognizer))
+        return [
+            (str(row["person_id"]), str(row["origin"]), bytes(row["embedding"])) for row in rows
+        ]
 
     async def people_with_faces(self, asset_id: str) -> list[str]:
         """Who this file's faces name. A question names nobody. See `NAMES_THE_FILE`."""

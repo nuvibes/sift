@@ -178,6 +178,8 @@ class FaceServiceBase:
         self._recorder = recorder
         # The reference gallery and the stamp it was built from (`_gallery_for`).
         self._gallery: tuple[tuple[int, str, int], int, str, matching.Gallery] | None = None
+        # One build at a time: a pass's workers all ask at its first file.
+        self._building = asyncio.Lock()
         self._runner: RunnerLike | None = None
         self._detector: detect.Detector | None = None
         self._recognizer: Recognizer | None = None
@@ -244,14 +246,27 @@ class FaceServiceBase:
         """Everybody's reference faces by `recognizer`, arranged for matching, kept until the
         references or the grouping setting move."""
         stamp = await self._store.reference_stamp()
+        held = self._held_gallery(stamp, groups, recognizer)
+        if held is not None:
+            return held
+        async with self._building:
+            # Built while this one waited: that answer is this one's too.
+            held = self._held_gallery(stamp, groups, recognizer)
+            if held is not None:
+                return held
+            rows = await self._store.reference_vectors(recognizer)
+            # Off the loop: clustering every person's references is real arithmetic.
+            gallery = await asyncio.to_thread(matching.build_gallery_rows, rows, groups=groups)
+            self._gallery = (stamp, groups, recognizer, gallery)
+            return gallery
+
+    def _held_gallery(
+        self, stamp: tuple[int, str, int], groups: int, recognizer: str
+    ) -> matching.Gallery | None:
         held = self._gallery
         if held is not None and held[0] == stamp and held[1] == groups and held[2] == recognizer:
             return held[3]
-        stored = await self._store.reference_gallery(recognizer)
-        # Off the loop: clustering every person's references is real arithmetic.
-        gallery = await asyncio.to_thread(matching.build_gallery, stored, groups=groups)
-        self._gallery = (stamp, groups, recognizer, gallery)
-        return gallery
+        return None
 
     async def refresh_status(self, asset_id: str) -> ScanStatus:
         """Work out where a file stands, counting appearances rather than faces."""

@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from sift.slices.faces import clustering, matching, recognize, tracking, tuning
-from sift.slices.faces.models import Attribution, Match, Reference, Vector
+from sift.slices.faces.models import Attribution, Match, Origin, Reference, Vector
 from sift.slices.faces.tests.conftest import DIMENSION, person_vector, unit
 
 pytestmark = pytest.mark.unit
@@ -412,3 +412,35 @@ def test_nothing_to_compare_with_is_no_likeness_rather_than_a_score_of_nothing()
     assert matching.likeness(person_vector(0, 0), gallery, None) is None
     assert matching.likeness(person_vector(0, 0), gallery, np.asarray([], dtype=np.intp)) is None
     assert matching.likeness((), gallery, rows["alice"]) is None
+
+
+def test_a_gallery_from_rows_is_the_gallery_from_references() -> None:
+    """The matrix build answers exactly what the record-per-face build does: the same rows in the
+    same order, the same numbers, the same people known by starters alone."""
+    by_person: dict[str, list[Reference]] = {
+        "ada": [reference("ada", 0, variant) for variant in range(3)]
+        + [reference("ada", 4, variant) for variant in range(3)],
+        "bo": [reference("bo", 1, 0)],
+        "cy": [
+            Reference(
+                id="cy-0",
+                person_id="cy",
+                vector=person_vector(2, 0),
+                quality=0.5,
+                crop_digest="cy-0",
+                origin=Origin.SEED,
+            )
+        ],
+    }
+    rows = [
+        (one.person_id, one.origin.value, recognize.pack(one.vector))
+        for references in by_person.values()
+        for one in references
+    ]
+    for groups in (1, 4):
+        whole = matching.build_gallery(by_person, groups=groups)
+        from_rows = matching.build_gallery_rows(rows, groups=groups)
+        assert from_rows.people == whole.people
+        assert np.allclose(from_rows.vectors, whole.vectors, atol=1e-6)
+        assert from_rows.starters_only == whole.starters_only == frozenset({"cy"})
+    assert len(matching.build_gallery_rows([])) == 0

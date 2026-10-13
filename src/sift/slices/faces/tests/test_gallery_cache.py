@@ -4,9 +4,12 @@ table, since six methods write a reference and a seventh would forget a flag."""
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from sift.kernel.ids import new_id
+from sift.slices.faces.service import FaceService
 from sift.slices.faces.store import Store
 
 pytestmark = [pytest.mark.integration]
@@ -62,3 +65,21 @@ async def test_an_unchanged_table_gives_the_same_stamp(store: Store, person: str
     await _reference(store, person)
 
     assert await store.reference_stamp() == await store.reference_stamp()
+
+
+async def test_workers_asking_together_build_the_gallery_once(service: FaceService) -> None:
+    """A pass's workers all ask at its first file: one build, the others wait for its answer."""
+    asked = 0
+    real = service._store.reference_vectors
+
+    async def slow(recognizer: str) -> list[tuple[str, str, bytes]]:
+        nonlocal asked
+        asked += 1
+        await asyncio.sleep(0.05)
+        return await real(recognizer)
+
+    service._store.reference_vectors = slow  # type: ignore[method-assign]
+    galleries = await asyncio.gather(*(service._gallery_for(1, "buffalo_s") for _ in range(6)))
+
+    assert asked == 1
+    assert all(one is galleries[0] for one in galleries)

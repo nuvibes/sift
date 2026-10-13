@@ -27,7 +27,9 @@ _BLOCK_VALUES = 4_000_000
 _LARGE_ISLAND = 4_000
 
 
-def pairs_above(vectors: Sequence[Vector], *, floor: float) -> Iterator[tuple[int, int]]:
+def pairs_above(
+    vectors: Sequence[Vector] | np.ndarray, *, floor: float
+) -> Iterator[tuple[int, int]]:
     """Every pair of descriptions at least this alike, as positions into `vectors`, low first.
 
     The swap point for an approximate index, should the library outgrow comparing everything.
@@ -128,14 +130,14 @@ def _merge(likeness: np.ndarray, *, join_above: float, most: int | None) -> list
 
 
 def agglomerate(
-    vectors: Sequence[Vector], *, join_above: float, most: int | None = None
+    vectors: Sequence[Vector] | np.ndarray, *, join_above: float, most: int | None = None
 ) -> list[list[int]]:
     """Group descriptions by likeness, returning each group's member positions.
 
     `most` caps the count by joining below the bar, which can cross islands, so that route compares
     everything; it is only given one person's references.
     """
-    if not vectors:
+    if len(vectors) == 0:
         return []
     matrix = np.asarray(vectors, dtype=np.float32)
 

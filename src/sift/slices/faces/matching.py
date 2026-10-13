@@ -37,9 +37,13 @@ class Gallery:
 def describe(references: Sequence[Reference], *, groups: int = tuning.MATCH_GROUPS) -> list[Vector]:
     """How to describe one person for matching: one blend of their references, or with `groups`
     one per cluster; the blend measures better at ordinary gallery sizes."""
-    if not references:
+    return describe_vectors([reference.vector for reference in references], groups=groups)
+
+
+def describe_vectors(vectors: Sequence[Vector] | np.ndarray, *, groups: int) -> list[Vector]:
+    """`describe` over the numbers alone."""
+    if len(vectors) == 0:
         return []
-    vectors = [reference.vector for reference in references]
     if groups <= 1:
         return [_blend(vectors)]
     clustered = agglomerate(
@@ -48,7 +52,7 @@ def describe(references: Sequence[Reference], *, groups: int = tuning.MATCH_GROU
     return [_blend([vectors[index] for index in members]) for members in clustered]
 
 
-def _blend(vectors: Sequence[Vector]) -> Vector:
+def _blend(vectors: Sequence[Vector] | np.ndarray) -> Vector:
     """The middle of several descriptions, at unit length so it compares as a single face does."""
     stacked = np.asarray(vectors, dtype=np.float32)
     middle = stacked.mean(axis=0)
@@ -76,6 +80,36 @@ def build_gallery(
     return Gallery(
         people=tuple(people),
         vectors=np.asarray(rows, dtype=np.float32),
+        starters_only=frozenset(starters),
+    )
+
+
+def build_gallery_rows(
+    rows: Sequence[tuple[str, str, bytes]], *, groups: int = tuning.MATCH_GROUPS
+) -> Gallery:
+    """`build_gallery` from (person, origin, stored vector) rows, the numbers unpacked as one
+    block: a gallery of thousands of faces is built without a record and a tuple per face."""
+    if not rows:
+        return Gallery(people=(), vectors=np.zeros((0, 0), dtype=np.float32))
+    matrix = np.frombuffer(b"".join(blob for _, _, blob in rows), dtype="<f4").reshape(
+        len(rows), -1
+    )
+    members: dict[str, list[int]] = {}
+    for at, (person_id, _origin, _blob) in enumerate(rows):
+        members.setdefault(person_id, []).append(at)
+    people: list[str] = []
+    described: list[Vector] = []
+    starters: set[str] = set()
+    for person_id in sorted(members):
+        where = members[person_id]
+        if all(rows[at][1] == Origin.SEED.value for at in where):
+            starters.add(person_id)
+        for description in describe_vectors(matrix[where], groups=groups):
+            people.append(person_id)
+            described.append(description)
+    return Gallery(
+        people=tuple(people),
+        vectors=np.asarray(described, dtype=np.float32),
         starters_only=frozenset(starters),
     )
 

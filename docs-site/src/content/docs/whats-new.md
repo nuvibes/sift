@@ -10,6 +10,11 @@ What's new lists what each release of Sift changes for you, newest first. To see
 
 ### What changed for you
 
+- **An Identify pass no longer stalls the app at its first file.** Every worker used to build the
+  face gallery for itself as the pass began, each reading and unpacking every reference face (13,271
+  faces, 27 MB of numbers: 28 to 32 s each with 23 workers), and a video took up to 9.4 s to start
+  while they did. One worker builds it now and the rest wait for its answer, and the build reads the
+  numbers as one block: 256 ms to 35 ms, 86% less.
 - **Screens re-read at a walking pace while an import runs.** A screen reads again for the live
   feed's bells at most once every ten seconds, immediately after a quiet spell and immediately for
   a change you made yourself; the file page went from 17 requests a second to 1.5, Downloads from
