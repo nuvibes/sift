@@ -38,7 +38,7 @@ dependencies = [
     # The streaming media fetcher. A resolved direct-CDN URL is streamed to disk in bounded chunks
     # with split connect/read timeouts and a stall floor, so a long-but-live transfer is not killed
     # while a dead socket is. Its egress is pinned to a vetted IP by the SSRF guard.
-    "aiohttp~=3.11",
+    "aiohttp~=3.14",
     # The roots a secure connection is checked against beside the machine's own (`kernel.fetch`): a
     # Windows install fetches a root only when a browser needs it, and Sift's own checks never ask.
     # A floor and no ceiling, because a newer set of roots is the point.
