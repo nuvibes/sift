@@ -94,7 +94,7 @@ dependencies = [
     # The picture library pillow-heif hands its pictures to, and the AVIF reader for an AVIF
     # photograph (libavif, which assembles a grid the same way). Declared because Sift imports it
     # directly; 11.2 is the first release that reads AVIF.
-    "pillow>=11.2",
+    "pillow>=13.0.0",
     # Not imported by Sift: uvicorn pulls it for its own command line, which Sift never runs (the
     # server is built by hand in main.py). Declared only to hold the floor above the release a
     # security advisory was fixed in (PYSEC-2026-2132, fixed in 8.3.3), so the lock cannot settle
