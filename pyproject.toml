@@ -42,7 +42,7 @@ dependencies = [
     # The roots a secure connection is checked against beside the machine's own (`kernel.fetch`): a
     # Windows install fetches a root only when a browser needs it, and Sift's own checks never ask.
     # A floor and no ceiling, because a newer set of roots is the point.
-    "certifi>=2026.6.17",
+    "certifi>=2026.10.18",
     # A browser at the TLS layer. The free middleman APIs the platform resolvers depend on (tikwm,
     # instasave, redgifs, reddit) reject an ordinary programmatic client on a fingerprint mismatch:
     # a plain request gets a 401/403 where an impersonated one gets JSON. Run at arm's length like
