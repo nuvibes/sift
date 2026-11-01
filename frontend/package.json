@@ -58,23 +58,23 @@
 		"gate:structure": "node scripts/gates.js"
 	},
 	"devDependencies": {
-		"@playwright/test": "1.63.0",
+		"@playwright/test": "1.64.1",
 		"@sveltejs/adapter-static": "3.0.10",
 		"@sveltejs/kit": "2.70.3",
 		"@sveltejs/vite-plugin-svelte": "7.3.1",
-		"@types/node": "22.20.4",
-		"@vitest/coverage-v8": "4.1.11",
+		"@types/node": "22.20.5",
+		"@vitest/coverage-v8": "4.1.12",
 		"fontkit": "2.0.4",
 		"jsdom": "29.1.1",
 		"openapi-typescript": "7.13.0",
-		"prettier": "3.9.9",
+		"prettier": "3.9.10",
 		"prettier-plugin-svelte": "4.1.1",
 		"subset-font": "2.9.0",
-		"svelte": "5.57.1",
-		"svelte-check": "4.7.6",
+		"svelte": "5.57.2",
+		"svelte-check": "4.7.7",
 		"typescript": "5.9.3",
-		"vite": "8.3.1",
-		"vitest": "4.1.11"
+		"vite": "8.3.5",
+		"vitest": "4.1.12"
 	},
 	"dependencies": {
 		"@fontsource-variable/archivo": "5.3.0",
@@ -89,9 +89,9 @@
 		"@fontsource-variable/sora": "5.3.0",
 		"@fontsource-variable/space-grotesk": "^5.3.0",
 		"@internationalized/date": "3.12.4",
-		"bits-ui": "2.19.3",
+		"bits-ui": "2.20.2",
 		"hls.js": "^1.7.3",
-		"material-symbols": "0.47.5",
+		"material-symbols": "0.48.1",
 		"motion": "12.43.0"
 	},
 	"overrides": {
